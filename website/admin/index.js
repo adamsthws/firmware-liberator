@@ -15,6 +15,7 @@ import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import schema from "../api/report-schema.json" with { type: "json" };
+import { SITE, THEME_SCRIPT, page as shellPage } from "../src/shell.mjs";
 import { verified } from "./access.js";
 import { emulatorSections, gatherEmulator, KINDS, SCOPE, setCause, upload } from "./emulator.js";
 import { bytes, columns, esc, FULL, lineChart, lines, meter, number, STYLE, table, tile, trends } from "./render.js";
@@ -34,8 +35,10 @@ const dayOf = (date) => date.toISOString().slice(0, 10);
 const HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   "Cache-Control": "no-store",
-  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; "
-    + "frame-ancestors 'none'; base-uri 'none'",
+  // The site's stylesheets and icons (src/shell.mjs), but no script but the
+  // theme's, served here: a change to the site can't run code in this view.
+  "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline' ${SITE}; script-src 'self'; `
+    + `img-src data: ${SITE}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
   "X-Robots-Tag": "noindex, nofollow",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
@@ -56,6 +59,9 @@ export async function handle(request, env, now = Date.now(), fetcher = fetch) {
   const who = await verified(request, env, now, fetcher);
   if (!who) {
     return reply(403, "Forbidden: sign in through Cloudflare Access.", { "Content-Type": "text/plain" });
+  }
+  if (url.pathname === "/assets/theme.js" && request.method === "GET") {
+    return new Response(THEME_SCRIPT, { headers: { ...HEADERS, "Content-Type": "text/javascript; charset=utf-8" } });
   }
   if (url.pathname === "/" && request.method === "GET") {
     return reply(200, await page(env, who, new Date(now), fetcher, url.searchParams.get("live") === "1"));
@@ -480,11 +486,10 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
         data.recent, "No reports yet.")
       + `</section>`,
   ];
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
-    + (live ? `<meta http-equiv="refresh" content="${LIVE_SECONDS}">` : "")
-    + `<meta name="robots" content="noindex, nofollow"><title>Admin · FirmwareLiberator</title><style>${STYLE}</style></head>`
-    + `<body><main><div class="top"><h1>Admin</h1><span class="who">${esc(who.email ?? "")} · ${esc(data.today)} · `
-    + `<a href="https://firmwareliberator.com/stats">public figures</a> · `
+  return shellPage("Admin", `<div class="admin"><div class="top"><h1>Admin</h1><span class="who">`
+    + `${esc(who.email ?? "")} · ${esc(data.today)} · <a href="${SITE}/stats">public figures</a> · `
     + (live ? `<a href="/">stop updating</a>` : `<a href="/?live=1">update every ${LIVE_SECONDS} s</a>`)
-    + `</span></div>${sections.join("")}</main></body></html>`;
+    + `</span></div>${sections.join("")}</div>`,
+  { heading: false, script: "", more: `<style>${STYLE}</style>`
+    + (live ? `<meta http-equiv="refresh" content="${LIVE_SECONDS}">` : "") });
 }

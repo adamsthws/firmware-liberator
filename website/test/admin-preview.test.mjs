@@ -1,5 +1,5 @@
 // scripts/admin-preview.mjs: the admin view's own page, from made-up figures,
-// and nothing else.
+// the theme's script it loads, and nothing else.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { previewer } from "../scripts/admin-preview.mjs";
@@ -11,6 +11,12 @@ test("GET / is the admin view's page, filled from the sample", async () => {
   assert.equal(status, 200);
   assert.match(body, /^<!doctype html>/);
   assert.match(body, /sonoff-s60/);
+});
+
+test("the theme's script the page loads is answered, as the view answers it", async () => {
+  const { status, type, body } = await answer("GET", "/assets/theme.js");
+  assert.deepEqual([status, type], [200, "text/javascript"]);
+  assert.match(body, /localStorage/);
 });
 
 test("nothing else is answered: the preview changes nothing", async () => {

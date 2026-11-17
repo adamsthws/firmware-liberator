@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { NOTIFY_URL } from "../public/assets/notify.mjs";
+import { head, header } from "../src/shell.mjs";
 
 const file = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
-const layout = readFileSync(new URL("../src/layouts/Page.astro", import.meta.url), "utf8");
+// The layout, and the shared look it puts in each page.
+const layout = readFileSync(new URL("../src/layouts/Page.astro", import.meta.url), "utf8") + head() + header();
 
 function headers() {
   const lines = file.split("\n").filter((line) => line.trim() && !line.startsWith("#"));

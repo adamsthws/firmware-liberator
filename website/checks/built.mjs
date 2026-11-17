@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { THEME_SCRIPT } from "../src/shell.mjs";
 import { EXTRA_PAGES, PAGES, SITE, retired, slug } from "../src/site.mjs";
 
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
@@ -70,4 +71,8 @@ test("the stats page has its figures, where the daily build must", () => {
   assert.ok(!process.env.REQUIRE_STATS || page.includes('class="tile hero"'), "no figures on /stats");
   assert.match(page, /<script src="\/assets\/stats\.js" defer><\/script>/);
   assert.doesNotMatch(page, /ENOENT|could not be read|answered \d{3}|\/tmp\/|\/home\//, "no build detail on the page");
+});
+
+test("the theme's script is built into the file each page loads", () => {
+  assert.equal(read("assets/theme.js"), THEME_SCRIPT);
 });

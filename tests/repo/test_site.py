@@ -42,7 +42,7 @@ class SiteTests(unittest.TestCase):
             self.assertEqual(status, "302", "a permanent redirect would be cached past the next release")
 
     def test_the_site_links_to_this_repository(self):
-        site = (ROOT / "website/src/site.mjs").read_text(encoding="utf-8")
+        site = (ROOT / "website/src/shell.mjs").read_text(encoding="utf-8")
         self.assertIn(f'export const REPOSITORY = "{REPOSITORY}";', site)
 
     def test_the_api_reads_this_repositorys_downloads(self):
@@ -50,7 +50,7 @@ class SiteTests(unittest.TestCase):
         self.assertIn(f'export const REPOSITORY = "{REPOSITORY}";', downloads)
 
     def test_the_site_is_at_the_address_the_repository_gives_it(self):
-        site = (ROOT / "website/src/site.mjs").read_text(encoding="utf-8")
+        site = (ROOT / "website/src/shell.mjs").read_text(encoding="utf-8")
         self.assertIn(f'export const SITE = "{WEBSITE.rstrip("/")}";', site)
         robots = (ROOT / "website/public/robots.txt").read_text(encoding="utf-8")
         self.assertIn(f"\nSitemap: {WEBSITE}sitemap-index.xml\n", robots)

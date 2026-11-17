@@ -4,9 +4,9 @@ import { execFileSync } from "node:child_process";
 import { globSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPOSITORY, SITE } from "./shell.mjs";
 
-export const REPOSITORY = "adamsthws/firmware-liberator";
-export const SITE = "https://firmwareliberator.com";
+export { REPOSITORY, SITE };
 export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 // Every Markdown file git tracks, so a link to one never leaves the site

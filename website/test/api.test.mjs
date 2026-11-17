@@ -1067,6 +1067,22 @@ test("the link asks first: opening it, as a mail scanner may, confirms nothing",
   assert.deepEqual(kept(bindings), nothingKept);
 });
 
+test("the pages an email links to have the site's look, and their policy lets it load", async () => {
+  const bindings = env();
+  const response = await readout.confirm(new Request("https://api.firmwareliberator.com/confirm?t=x"), bindings, NOW);
+  const html = await response.text();
+  assert.match(html, /<article class="markdown-body">/);
+  const policy = Object.fromEntries(response.headers.get("Content-Security-Policy").split(";")
+    .map((part) => part.trim().split(/\s+/)).map(([name, ...sources]) => [name, sources]));
+  const loaded = [...html.matchAll(/<(link|script)\b[^>]*?\b(?:href|src)="([^"]+)"/g)];
+  assert.ok(loaded.length >= 6, "the icons, both stylesheets and the theme's script");
+  for (const [, tag, url] of loaded) {
+    const directive = tag === "script" ? "script-src" : url.endsWith(".css") ? "style-src" : "img-src";
+    assert.ok(policy[directive].includes(new URL(url).origin), `${url} in ${directive}`);
+  }
+  assert.ok(policy["style-src"].includes("'unsafe-inline'"), "the shared style, inline");
+});
+
 test("confirmed, the address is kept once, with each of its devices and readouts, and the link is used up", async () => {
   const bindings = env({ enough: "NEWTHING" });   // wanted or not, an address is kept
   await signedUp(bindings);

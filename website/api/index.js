@@ -156,6 +156,7 @@ import { SUPPRESSED, sendMail } from "./mail.js";
 import { countedNetwork, refreshNetworks } from "./networks.js";
 import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
+import { SITE, page as shellPage } from "../src/shell.mjs";
 import { nightly } from "./nightly.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
@@ -1091,15 +1092,15 @@ async function keepAddress(env, { who, email, devices, readouts }, now, also = n
 const escape = (value) => String(value).replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
+// A page someone opens from an email's link, in the site's look
+// (src/shell.mjs), its stylesheets and script loaded from the site.
 function page(status, title, body) {
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>${escape(title)}</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem}
-button{font:inherit;padding:.5rem 1rem}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`,
+  return new Response(shellPage(title, body),
   { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
     // Never inside another site's page, which could dress its button up as
     // something else.
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline' ${SITE}; script-src ${SITE}; `
+      + `img-src ${SITE}; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" } });
 }
 

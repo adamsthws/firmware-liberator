@@ -31,6 +31,7 @@ is in [.github/readouts.md](../.github/readouts.md).
 |---|---|---|
 | A page | Its Markdown file | Push: the website workflow builds and deploys it |
 | How pages are addressed, linked or described | `src/site.mjs` | `npm test`, push |
+| How every page looks, the API's email-link pages and the admin view too | `src/shell.mjs`; a page made outside Astro uses its `page()` | `npm test`, push (those pages load the site's stylesheets) |
 | A limit or a path of the API | `api/`, and `api/openapi.json` (below) | `npm test`, push; `apply` for the firewall rule, made from `openapi.json` |
 | The API's database | A new file in `api/migrations/` (`api/database.js` says how one is written) | Run `apply`, then push |
 | A DNS record, rule, bucket or other Cloudflare setting | `cloudflare_settings.py` | Run `apply` (below), then push |

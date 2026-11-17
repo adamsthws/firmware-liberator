@@ -8,6 +8,7 @@ import { verified } from "../admin/access.js";
 import worker, * as admin from "../admin/index.js";
 import { d1 } from "../api/local-d1.mjs";
 import { writes } from "../api/reports.js";
+import { SITE, THEME_SCRIPT } from "../src/shell.mjs";
 
 const TEAM = "liberator";
 const AUD = "a".repeat(64);
@@ -88,6 +89,21 @@ test("the view shows what the database holds, as text, never markup, and is kept
   const response = await admin.handle(asked(await token()), bindings, NOW, keys);
   assert.equal(response.status, 200);
   assert.match(await response.text(), /<h1>Admin<\/h1>/);
+});
+
+test("the view has the site's look, its theme's script served from here, to the signed-in alone", async () => {
+  const { bindings } = await held();
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(html, /<article class="markdown-body">\n<div class="admin">/);
+  assert.ok(html.includes(`"${SITE}/assets/github-markdown-dark.css"`));
+  assert.match(html, /<script src="\/assets\/theme\.js"><\/script>/);
+  assert.match(html, /<button id="theme" type="button"/);
+  const script = (jwt) => admin.handle(new Request("https://admin.firmwareliberator.com/assets/theme.js",
+    { headers: jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {} }), bindings, NOW, keys);
+  const served = await script(await token());
+  assert.equal(served.headers.get("Content-Type"), "text/javascript; charset=utf-8");
+  assert.equal(await served.text(), THEME_SCRIPT);
+  assert.equal((await script(null)).status, 403);
 });
 
 test("a held report and a recent one say the device kind as well as the model", async () => {
@@ -320,11 +336,11 @@ test("what the plan includes is api_health.py's, and the view binds the API's da
   assert.equal(id("../admin/wrangler.jsonc"), id("../api/wrangler.jsonc"));
 });
 
-test("every answer is uncached, unframed, unindexed and runs no script", async () => {
+test("every answer is uncached, unframed, unindexed and runs no script but the theme's, its own", async () => {
   const response = await worker.fetch(asked(null), env());
   const csp = response.headers.get("Content-Security-Policy");
   assert.match(csp, /default-src 'none'/);
-  assert.doesNotMatch(csp, /script-src/);
+  assert.match(csp, /(^|; )script-src 'self'(;|$)/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow");
