@@ -78,8 +78,9 @@
 # AUTOFLASH_BEKEN_EMU_IMAGE names the image (default autoflash-beken-emu),
 # AUTOFLASH_BEKEN_EMU_NETWORK the device's network (default autoflash-beken-emu,
 # or autoflash-beken-emu-N), AUTOFLASH_BEKEN_EMU_COMPUTER a name for the
-# computer's container, AUTOFLASH_BEKEN_EMU_FLASH another whole flash under this
-# checkout (rebuild_dump.py's) for a new device to start from, and image.sh's
+# computer's container, AUTOFLASH_READOUT_URL where the computer's readouts go
+# in place of the API beside it, AUTOFLASH_BEKEN_EMU_FLASH another whole flash
+# under this checkout (rebuild_dump.py's) for a new device to start from, and image.sh's
 # own (AUTOFLASH_BEKEN_EMU_PUBLISHED, AUTOFLASH_BEKEN_EMU_NO_PULL,
 # AUTOFLASH_BEKEN_EMU_SOURCE_URL) where to get the image. In the container,
 # AUTOFLASH_BEKEN_EMU_DUMP is the dump its tools start from (a setting given,
@@ -347,7 +348,8 @@ case "${1:-}" in
         mkdir -p "$DEVICE_STATE/air"
         # The API's own code for its readouts (emulator-room.sh), one a device,
         # kept as long as the device runs, so a second computer's readout finds
-        # the first's; none with --no-api, the readouts kept unsent.
+        # the first's; none with --no-api, the readouts kept unsent; or a test
+        # server of yours (AUTOFLASH_READOUT_URL), as unattended-test.sh takes.
         readout_url=""
         if [ "$api" = 1 ]; then
             if docker ps -q --filter "name=^$DEVICE-api\$" | grep -q .; then
@@ -358,6 +360,7 @@ case "${1:-}" in
                 readout_url=$LOCAL_API_READOUT_URL
             fi
         fi
+        readout_url=${AUTOFLASH_READOUT_URL:-$readout_url}
         CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"}
                            --network "$NETWORK" -v "$DEVICE_STATE/ca.crt:/device/ca.crt:ro"
                            -v "$DEVICE_STATE/power:/device/power" -e AUTOFLASH_EMULATOR_POWER=/device/power

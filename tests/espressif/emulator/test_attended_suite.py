@@ -155,6 +155,17 @@ class RunTests(unittest.TestCase):
                 os.environ.pop("AUTOFLASH_API_ENOUGH", None)
                 self.assertNotIn("AUTOFLASH_API_ENOUGH", attended_suite.run_environment({}, "12:34:56:ab:cd:ef"))
 
+    def test_a_readout_where_the_api_is_down_goes_where_nothing_answers_with_no_api_started(self):
+        from unittest import mock
+        scenario = {"command": "readout", "api_down": True}
+        with mock.patch("tools.autoflash.records.read_device", return_value={}):
+            self.assertEqual(attended_suite.run_environment(scenario, "12:34:56:ab:cd:ef")["AUTOFLASH_READOUT_URL"],
+                             attended_suite.API_DOWN)
+        command = attended_suite.wrapper(61, scenario, "--", "--new", mac="12:34:56:ab:cd:ef")
+        self.assertIn("--no-api", command[:command.index("--")])
+        self.assertEqual(attended_suite.api_environment({"command": "readout"}), {})
+        self.assertNotIn("--no-api", attended_suite.wrapper(61, {"command": "readout"}, mac="12:34:56:ab:cd:ef"))
+
     def test_the_stub_lists_the_device_under_its_product_on_a_checkout_with_no_runs(self):
         # Seen on a fresh checkout: the stub listed no product, and the readout
         # of readout-then-not-needed was refused by the API (400) for no model.
@@ -251,7 +262,8 @@ class ScenarioTests(unittest.TestCase):
                 self.assertTrue(scenario.get("about"))
                 self.assertIn("expect", scenario)
                 self.assertLessEqual(set(scenario), {"about", "start", "prep", "args", "size", "minutes",
-                                                     "answers", "expect", "command", "again", "api_enough"})
+                                                     "answers", "expect", "command", "again", "api_enough",
+                                                     "api_down"})
                 for expect in (scenario["expect"], scenario.get("again", {}).get("expect", {})):
                     self.assertLessEqual(set(expect), {"exit", "result", "screen", "shows", "never"})
                     for wanted in expect.get("shows", []) + expect.get("never", []):

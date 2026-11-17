@@ -35,7 +35,9 @@ computer onto the device's own network or back ("wifi": "join", "home"), or
 signal the run ("signal": "TERM").
 `command`: "readout" for a readout, not a conversion; `api_enough`: true
 for the API beside the emulator to have enough readouts of the device's
-product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed.
+product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed;
+`api_down`: true for the readout to go where nothing answers (API_DOWN), so
+it cannot be sent and is kept.
 
 The verdict, from the recording alone (judge):
     PASS              ended as expected, every answer typed, nothing wrong
@@ -75,6 +77,7 @@ import codecs
 import concurrent.futures
 import datetime
 import json
+import os
 import queue
 import re
 import shutil
@@ -100,6 +103,9 @@ LOCKED_KEY = base64.b64encode(bytes(range(32))).decode()
 LOCKED_LOGIN = ("admin", "test-login-1")
 QUIT_FIRST = [{"when": "Which device is this run for|Press any key", "type": "q\r"}]
 DEVICE = "192.168.60.50"
+# Where an `api_down` scenario's readout goes: the discard port on the tool's
+# own computer, where nothing listens, so it is refused at once.
+API_DOWN = "http://127.0.0.1:9/v1/readout"
 
 
 def scenarios() -> dict[str, tuple[str, dict[str, Any]]]:
@@ -206,7 +212,6 @@ def docker(*args: str, check: bool = False) -> subprocess.CompletedProcess:
 
 def in_container(n: int, code: str) -> str:
     """Python in emulator `n`'s container, as the tool runs there."""
-    import os
     done = docker("exec", "-u", f"{os.getuid()}:{os.getgid()}", "-w", "/work", f"autoflash-emu-{n}",
                   "/opt/venv/bin/python", "-c", code)
     return (done.stdout + done.stderr).strip()
@@ -274,20 +279,30 @@ def run_environment(scenario: dict[str, Any], mac: str) -> dict[str, str]:
     the product from this checkout's earlier runs (emu.sh), and on one with
     none lists no product: a readout then sent no model, which the API
     refused (400)."""
-    import os
     from tools.autoflash import kinds, records
     environment = dict(os.environ)
     product = (records.read_device(mac).get("product_model") or kinds.SONOFF_S60.example_product_model).upper()
     environment.setdefault("AUTOFLASH_EMU_STUB_PRODUCT_MODEL", product)
     if scenario.get("api_enough"):
         environment["AUTOFLASH_API_ENOUGH"] = product
-    return environment
+    return environment | api_environment(scenario)
+
+
+def api_environment(scenario: dict[str, Any]) -> dict[str, str]:
+    """An `api_down` scenario's readout sent to API_DOWN, in either family."""
+    return {"AUTOFLASH_READOUT_URL": API_DOWN} if scenario.get("api_down") else {}
+
+
+def api_options(scenario: dict[str, Any]) -> list[str]:
+    """No API beside the emulator for an `api_down` scenario: its readout
+    goes to API_DOWN instead (api_environment)."""
+    return ["--no-api"] if scenario.get("api_down") else []
 
 
 def wrapper(n: int, scenario: dict[str, Any], *more: str, mac: str) -> list[str]:
     readout = ["--readout"] if scenario.get("command") == "readout" else []
     return [str(ROOT / "tools/espressif/emulator/unattended-test.sh"), f"--instance={n}", f"--device={mac}",
-            "--stub-cloud", *readout, *more]
+            "--stub-cloud", *readout, *api_options(scenario), *more]
 
 
 def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bool:
@@ -408,14 +423,15 @@ def run_beken(n: int, name: str, scenario: dict[str, Any], folder: Path, mac: st
                         timeout=1200)
         (state / "work/captures").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(run_answers(scenario, folder), state / "work/captures/answers.json")
-        command = [emu, "--instance", str(n), "computer", "tools/repo/unattended_run.py",
+        command = [emu, "--instance", str(n), *api_options(scenario), "computer", "tools/repo/unattended_run.py",
                    "--size", scenario.get("size", "100x40"), "--timeout", str(scenario.get("minutes", 60)),
                    "--attended", "--answers", "captures/answers.json", "--save", "captures/unattended/attended",
                    *(["--command", "readout"] if scenario.get("command") == "readout" else []),
                    "--", "--new", *scenario.get("args", [])]
         log.write("--- " + " ".join(command[1:]) + "\n")
         log.flush()
-        out = subprocess.run(command, capture_output=True, text=True)
+        out = subprocess.run(command, capture_output=True, text=True,
+                             env=dict(os.environ) | api_environment(scenario))
         log.write(out.stdout + out.stderr)
         for container in docker("ps", "--format", "{{.Names}}").stdout.split():
             if container.startswith(f"autoflash-beken-emu-{n}"):

@@ -458,7 +458,7 @@ class ComputerApiTests(unittest.TestCase):
     the device, one a device, so both sides of a readout are seen here; with
     --no-api, kept unsent. Docker a fake that says what it was asked."""
 
-    def run_computer(self, *options, api_running=False):
+    def run_computer(self, *options, api_running=False, readout_url=None):
         with tempfile.TemporaryDirectory() as tmp:
             checkout(tmp)
             shutil.copy2(ROOT / "tools/beken/emulator/computer.sh", Path(tmp, "tools/beken/emulator/computer.sh"))
@@ -486,7 +486,10 @@ class ComputerApiTests(unittest.TestCase):
             Path(tmp, "bin", "docker").chmod(0o755)
             done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *options, "computer", "x.py"],
                                   capture_output=True, text=True, timeout=60,
-                                  env={**os.environ, "PATH": f"{tmp}/bin:{os.environ['PATH']}"})
+                                  env={**{name: value for name, value in os.environ.items()
+                                          if name != "AUTOFLASH_READOUT_URL"},
+                                       "PATH": f"{tmp}/bin:{os.environ['PATH']}",
+                                       **({"AUTOFLASH_READOUT_URL": readout_url} if readout_url else {})})
             self.assertEqual(done.returncode, 0, done.stderr)
             asked = calls.read_text(encoding="utf-8").splitlines()
             started = next((n for n, line in enumerate(asked)
@@ -527,6 +530,13 @@ class ComputerApiTests(unittest.TestCase):
         self.assertIn(f"-e HOST_UID={os.getuid()} -e HOST_GID={os.getgid()}", computer)
         self.assertRegex(computer, rf"-v \S+/{state}/air:/device/air:ro")
         self.assertRegex(computer, rf"-v \S+/{state}/router:/device/router -e AUTOFLASH_EMULATOR_ROUTER=/device/router")
+
+    def test_a_readout_address_given_is_where_its_readouts_go(self):
+        # As unattended-test.sh takes it: the attended suite's api_down scenarios.
+        for options in ((), ("--no-api",)):
+            with self.subTest(options=options):
+                _, computer = self.run_computer(*options, readout_url="http://127.0.0.1:9/v1/readout")
+                self.assertIn("-e AUTOFLASH_READOUT_URL=http://127.0.0.1:9/v1/readout ", computer)
 
     def test_no_api_keeps_its_readouts_unsent(self):
         asked, computer = self.run_computer("--no-api")
