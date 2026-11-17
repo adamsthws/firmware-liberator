@@ -1789,6 +1789,29 @@ class OfferScreenTests(unittest.TestCase):
         self.assertIn("could not be sent: this computer could not reach the website", said)
         self.assertNotIn("urlopen", said)
 
+    def test_one_kept_is_named_as_the_runs_log_is_from_the_checkout(self):
+        # Seen in an emulator readout that could not be sent: its readout named
+        # from the root (/state/work/captures/...), its log under the report
+        # from the checkout (captures/...).
+        for batch in (None,):
+            with self.subTest(batch=batch), tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(runs, "ROOT", Path(tmp).resolve()), \
+                    mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                    mock.patch.object(readout, "send", side_effect=OSError("no route")):
+                ctx = a_ctx(tmp)
+                ctx.dir = Path(tmp, "captures/devices/123456abcdef/runs/1")
+                ctx.dir.mkdir(parents=True)
+                readouts = readout.readouts(ctx)
+                readouts.append(readout.Became.of(DEVICE))
+                ctx.readout = readouts[-1]
+                try:
+                    said = readout.offer(ctx, MANIFEST, None, batch=batch, device=DEVICE)
+                except readout.Abort as exc:
+                    said = str(exc)
+                self.assertIn("kept in captures/devices/123456abcdef/runs/1/readout", said)
+                self.assertNotIn(tmp, said)
+
+
 
 if __name__ == "__main__":
     unittest.main()

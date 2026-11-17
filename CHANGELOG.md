@@ -65,6 +65,9 @@ check.
   and it is sent as you next use the tool, which then does not ask again; the
   sign-up page is linked on a line of its own, clickable, as other links are,
   to sign up there instead.
+- A readout that could not be sent names where it is kept as the run's log is
+  named, from where you run the tool (`captures/devices/...`), not by the whole
+  path.
 
 ## 3.0.0
 

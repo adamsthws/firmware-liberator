@@ -152,8 +152,9 @@ class Unsent(Abort):
     (website_problem), and the file it is kept in to send later."""
 
     def __init__(self, why: str, path: Path) -> None:
-        super().__init__(f"the readout could not be sent: {why}. It is kept in {path}: send it later "
-                         "with this tool's readout --send")
+        # Named as the run's log is under the report: from the checkout.
+        super().__init__(f"the readout could not be sent: {why}. It is kept in {runs.display_path(path)}: send "
+                         "it later with this tool's readout --send")
         self.why, self.path = why, path
 
 
@@ -771,7 +772,7 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
     os.chmod(path, 0o600)
     url = upload_url()
     if url is None:
-        output.say(f"    Not sent from a test run: kept in {path}.")
+        output.say(f"    Not sent from a test run: kept in {runs.display_path(path)}.")
         ended = became(ctx)
         ended.outcome, ended.detail = KEPT, "a test run"
         return "" if back else SWITCH_OFF_AND_ON
@@ -805,7 +806,7 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
     if url is None:
         path.write_bytes(data)
         os.chmod(path, 0o600)
-        output.say(f"    Not sent from a test run: kept in {path}.")
+        output.say(f"    Not sent from a test run: kept in {runs.display_path(path)}.")
         ended.outcome, ended.detail = KEPT, "a test run"
     else:
         try:
