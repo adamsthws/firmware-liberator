@@ -441,31 +441,59 @@ def run_again(n: int, scenario: dict[str, Any], folder: Path, mac: str) -> tuple
     return (int(found.group(1)) if found else out.returncode), (ROOT / where.group(1) if where else None)
 
 
+BEKEN_EMU = ROOT / "tools/beken/emulator/beken-emu.sh"
+
+
 def run_beken(n: int, name: str, scenario: dict[str, Any], folder: Path, mac: str) -> tuple[int, Path | None]:
     """The scenario on Beken emulator `n`: a fresh S61, then the tool on the
-    computer on its Wi-Fi (beken-emu.sh computer), its eWeLink sign-in typed."""
-    emu = str(ROOT / "tools/beken/emulator/beken-emu.sh")
-    state = ROOT / f"captures/emulation/beken/state-{n}"
+    computer on its Wi-Fi (beken-emu.sh computer), its eWeLink sign-in typed.
+    The device is left running for a scenario's `again` (run_again_beken)."""
     with open(folder / "harness.log", "a", encoding="utf-8") as log:
-        subprocess.call([emu, "--instance", str(n), "--fresh", "device"], stdout=log, stderr=subprocess.STDOUT,
-                        timeout=1200)
-        (state / "work/captures").mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(run_answers(scenario, folder), state / "work/captures/answers.json")
-        command = [emu, "--instance", str(n), *api_options(scenario), "computer", "tools/repo/unattended_run.py",
-                   "--size", scenario.get("size", "100x40"), "--timeout", str(scenario.get("minutes", 60)),
-                   "--attended", "--answers", "captures/answers.json", "--save", "captures/unattended/attended",
-                   *(["--command", "readout"] if scenario.get("command") == "readout" else []),
-                   "--", "--new", *scenario.get("args", [])]
-        log.write("--- " + " ".join(command[1:]) + "\n")
-        log.flush()
-        out = subprocess.run(command, capture_output=True, text=True,
-                             env=dict(os.environ) | api_environment(scenario))
-        log.write(out.stdout + out.stderr)
-        for container in docker("ps", "--format", "{{.Names}}").stdout.split():
-            if container.startswith(f"autoflash-beken-emu-{n}"):
-                docker("stop", "-t", "30", container)
+        subprocess.call([str(BEKEN_EMU), "--instance", str(n), "--fresh", "device"], stdout=log,
+                        stderr=subprocess.STDOUT, timeout=1200)
+        result = beken_computer(n, scenario, run_answers(scenario, folder), "attended", ["--new"], log)
+        if not scenario.get("again"):
+            stop_beken(n)
+    return result
+
+
+def run_again_beken(n: int, scenario: dict[str, Any], folder: Path, mac: str) -> tuple[int, Path | None]:
+    """The tool once more on Beken emulator `n`'s device as the first run left
+    it, as run_again does on an S60's: no --new."""
+    again = scenario["again"]
+    with open(folder / "harness.log", "a", encoding="utf-8") as log:
+        try:
+            return beken_computer(n, {"command": scenario.get("command"), "size": scenario.get("size")} | again,
+                                  run_answers(again, folder, "again-answers-given.json"), "attended-again", [], log)
+        finally:
+            stop_beken(n)
+
+
+def beken_computer(n: int, scenario: dict[str, Any], answers: Path, save: str, first: list[str],
+                   log: Any) -> tuple[int, Path]:
+    """The tool run attended on the computer on Beken emulator `n`'s Wi-Fi:
+    its exit code, and its recording, kept under captures/unattended/`save`."""
+    state = state_of("beken", n)
+    (state / "work/captures").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(answers, state / f"work/captures/{answers.name}")
+    command = [str(BEKEN_EMU), "--instance", str(n), *api_options(scenario), "computer", "tools/repo/unattended_run.py",
+               "--size", scenario.get("size") or "100x40", "--timeout", str(scenario.get("minutes", 60)),
+               "--attended", "--answers", f"captures/{answers.name}", "--save", f"captures/unattended/{save}",
+               *(["--command", "readout"] if scenario.get("command") == "readout" else []),
+               "--", *first, *scenario.get("args", [])]
+    log.write("--- " + " ".join(command[1:]) + "\n")
+    log.flush()
+    out = subprocess.run(command, capture_output=True, text=True, env=dict(os.environ) | api_environment(scenario))
+    log.write(out.stdout + out.stderr)
     found = re.search(r"Exit code (-?\d+)", out.stdout)
-    return (int(found.group(1)) if found else out.returncode), state / "work/captures/unattended/attended"
+    return (int(found.group(1)) if found else out.returncode), state / f"work/captures/unattended/{save}"
+
+
+def stop_beken(n: int) -> None:
+    """Beken emulator `n` stopped: its device, and any computer or API beside it."""
+    for container in docker("ps", "--format", "{{.Names}}").stdout.split():
+        if container == f"autoflash-beken-emu-{n}" or container.startswith(f"autoflash-beken-emu-{n}-"):
+            docker("stop", "-t", "30", container)
 
 
 def state_of(family: str, n: int) -> Path:
@@ -555,10 +583,10 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
     verdicts = judged(scenario, folder, code, recording)
     if recording is not None:
         verdicts += readout_verdicts(scenario, family, state, since, code, folder, product)
-    if not verdicts and scenario.get("again") and family == "espressif":
+    if not verdicts and scenario.get("again"):
         since = time.time()
         try:
-            code, recording = run_again(n, scenario, folder, mac)
+            code, recording = (run_again_beken if family == "beken" else run_again)(n, scenario, folder, mac)
         except Exception as exc:  # noqa: BLE001 - as above
             code, recording = 125, None
             (folder / "harness.log").open("a", encoding="utf-8").write(f"HARNESS: {type(exc).__name__}: {exc}\n")
@@ -567,6 +595,8 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
         if recording is not None:
             verdicts += readout_verdicts(again, family, state, since, code, folder, product, "again-")
         verdicts = [f"{verdict.split(':')[0]}: again: {verdict.split(': ', 1)[1]}" for verdict in verdicts]
+    if family == "beken":
+        stop_beken(n)   # left running for an `again` not run: the first run did not pass
     verdict = "PASS" if not verdicts else verdicts[0].split(":")[0]
     # Kept beside every batch's folder, so one not sent goes with the next.
     emulator_stats.attended_run(RESULTS, family=family, device=device_of(family, mac).key, name=name,

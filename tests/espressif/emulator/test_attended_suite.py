@@ -246,6 +246,43 @@ class PrepTests(unittest.TestCase):
         self.assertTrue(any(re.search(answer["when"], asked) for answer in attended_suite.QUIT_FIRST))
 
 
+class BekenAgainTests(unittest.TestCase):
+    """An S61's scenario can be run again on the device as its first run left
+    it, as an S60's can (run_again): its device left running for that, and
+    stopped once it is done, or not needed."""
+
+    def run_one(self, first_passes):
+        calls = []
+        scenario = {"answers": [], "expect": {}, "again": {"answers": [], "expect": {}}}
+        with tempfile.TemporaryDirectory() as results, \
+                mock.patch.object(attended_suite, "run_beken", lambda *a: calls.append("first") or (0, Path("r"))), \
+                mock.patch.object(attended_suite, "run_again_beken",
+                                  lambda *a: calls.append("again") or (0, Path("r"))), \
+                mock.patch.object(attended_suite, "judged", return_value=[] if first_passes else ["FAIL-RESULT: x"]), \
+                mock.patch.object(attended_suite, "readout_verdicts", return_value=[]), \
+                mock.patch.object(attended_suite, "stop_beken", lambda n: calls.append("stopped")), \
+                mock.patch.object(attended_suite.emulator_stats, "attended_run"):
+            attended_suite.run_one(61, "s61-x", "beken", scenario, Path(results), None)
+        return calls
+
+    def test_it_is_run_again_then_stopped(self):
+        self.assertEqual(self.run_one(True), ["first", "again", "stopped"])
+
+    def test_a_first_run_that_failed_is_not_run_again_and_its_device_is_stopped(self):
+        self.assertEqual(self.run_one(False), ["first", "stopped"])
+
+    def test_the_device_is_left_running_only_for_an_again(self):
+        stopped = []
+        with mock.patch.object(attended_suite.subprocess, "call"), \
+                mock.patch.object(attended_suite, "beken_computer", return_value=(0, Path("r"))), \
+                mock.patch.object(attended_suite, "stop_beken", stopped.append), \
+                tempfile.TemporaryDirectory() as folder:
+            attended_suite.run_beken(61, "s61-x", {"answers": [], "again": {"answers": []}}, Path(folder), None)
+            self.assertEqual(stopped, [])
+            attended_suite.run_beken(61, "s61-x", {"answers": []}, Path(folder), None)
+            self.assertEqual(stopped, [61])
+
+
 class ReadoutVerdictTests(unittest.TestCase):
     """A readout's other side, after its run: what the API beside the emulator
     was asked and kept, or for an api_down scenario, the readout kept whole."""
