@@ -10,7 +10,7 @@ import time
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import account, detect, firewall, join, kinds, output, prompts, records, runs, testers
-from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
+from tools.autoflash.errors import Abort, StoppedPartWay
 from tools.autoflash.routes import arrival
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
@@ -149,8 +149,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
             "Only go ahead with a device you can afford to lose.",
             *testers.notice(kind),
         ])
-        if not prompts.require_word(prompts.CONSENT_WORD):
-            raise NothingWritten("not confirmed - nothing has been written to the device")
+        prompts.require_word(prompts.CONSENT_WORD)
         output.transient_end()  # agreed: the note and the question have done their job
         ctx.consented = True
 

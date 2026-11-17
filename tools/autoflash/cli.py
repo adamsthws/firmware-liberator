@@ -676,9 +676,9 @@ def _main() -> int:
 def goes_on(command: str, code: int) -> bool:
     """Whether the sitting offers what next after `command` ended with `code`:
     a conversion that finished, or a readout however it ended but by q or
-    Ctrl-C. One that failed or was not confirmed leaves its device's Sonoff
-    firmware in place, so another can be read out or converted; a conversion
-    that failed may leave its device needing seeing to first."""
+    Ctrl-C. One that failed leaves its device's Sonoff firmware in place, so
+    another can be read out or converted; a conversion that failed may leave
+    its device needing seeing to first."""
     return code == 0 or (command == "readout" and code == 1)
 
 

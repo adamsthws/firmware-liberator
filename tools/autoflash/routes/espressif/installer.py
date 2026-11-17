@@ -34,7 +34,7 @@ from tools.autoflash import (
     testers,
 )
 from tools.autoflash.device import DeviceError
-from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.errors import Abort
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED
 from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
@@ -155,8 +155,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
             "Only go ahead with a device you can afford to lose.",
             *testers.notice(kinds.of_run(ctx.state)),
         ])
-        if not prompts.require_word(prompts.CONSENT_WORD):
-            raise NothingWritten("not confirmed - nothing has been written to the device")
+        prompts.require_word(prompts.CONSENT_WORD)
         output.transient_end()  # agreed: the note and the question have done their job
         ctx.consented = True
 

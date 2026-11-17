@@ -19,6 +19,10 @@ check.
 - A readout that failed, or could not be sent, asks what next too, as one that
   finished does: read out another device or convert one, without starting the
   tool again. Before, it ended at the email question.
+- Typing `q` where the tool asks you to type PROCEED stops the run as `q` at any
+  question does: "Stopped as asked.", with nothing written to the device. It no
+  longer says FAILED, nor asks for a report or an issue, for a readout or a
+  conversion.
 
 ## 3.0.0
 

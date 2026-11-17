@@ -36,6 +36,11 @@ class QuitRun(SystemExit):
         self.reason = reason
 
 
+class Declined(QuitRun):
+    """q at a go-ahead (require_word): the run stops as q stops it anywhere,
+    and what asked has written nothing to the device yet (runner._execute)."""
+
+
 class NoOneToAnswer(QuitRun):
     """An unattended run reached a question it cannot answer for itself."""
 
@@ -1089,12 +1094,12 @@ def confirm(prompt: str) -> bool:
 
 def require_word(word: str, *, skip: bool = False) -> bool:
     """True once the operator types `word` - any capitalisation - and Enter;
-    False if they type q (or another quit word) instead.  Anything else - an
-    Enter or a y pressed by habit - is not taken as either: the question is
-    asked again, saying only the word itself goes ahead.
+    q (or another quit word) instead quits the run, as at every question
+    (Declined).  Anything else - an Enter or a y pressed by habit - is not
+    taken as either: the question is asked again, saying only the word itself
+    goes ahead.
 
-    With `skip` - one device among several - s passes this one by (False),
-    and q still quits the run (QuitRun), as it does everywhere."""
+    With `skip` - one device among several - s passes this one by (False)."""
     _ctrl_c_first()
     output.tell("")
     question = f"Type {word.upper()} to go ahead"
@@ -1115,8 +1120,6 @@ def require_word(word: str, *, skip: bool = False) -> bool:
         if skip and answer in SKIP_WORDS:
             return False
         if answer in QUIT_WORDS:
-            if skip:
-                raise QuitRun(answer)
-            return False
+            raise Declined(answer)
         output.rewind(mark)  # the wrong answer, and its question, off the screen
         prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", hint)

@@ -167,8 +167,8 @@ class UntestedKindTests(unittest.TestCase):
 
     def test_b2_asks_first_and_declined_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver") as sent, \
-                mock.patch.object(stock.prompts, "require_word", return_value=False) as asked:
-            with self.assertRaisesRegex(errors.NothingWritten, "not confirmed"):
+                mock.patch.object(stock.prompts, "require_word", side_effect=stock.prompts.Declined("q")) as asked:
+            with self.assertRaises(stock.prompts.Declined):
                 stock.step_push(self.context(tmp))
         sent.assert_not_called()
         asked.assert_called_once_with("proceed")

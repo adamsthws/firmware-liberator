@@ -263,8 +263,8 @@ class FromStockTests(unittest.TestCase):
             for patch in common:
                 patch.start()
                 self.addCleanup(patch.stop)
-            with mock.patch.object(stock.prompts, "require_word", return_value=False):
-                with self.assertRaises(errors.NothingWritten):
+            with mock.patch.object(stock.prompts, "require_word", side_effect=stock.prompts.Declined("q")):
+                with self.assertRaises(stock.prompts.Declined):
                     stock.step_push(ctx)
             with mock.patch.object(stock.prompts, "require_word", return_value=True) as asked, \
                     mock.patch.object(ota_push, "deliver", return_value=ota_push.Delivery(sent=False, error="login failed")):

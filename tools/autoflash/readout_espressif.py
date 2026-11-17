@@ -116,8 +116,7 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id:
             "Only go ahead with a device you can afford to lose."]),
     ])
     if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
-        raise NothingWritten("skipped as asked, nothing was sent to it" if skippable else
-                             "not confirmed - nothing has been sent to the device")
+        raise NothingWritten("skipped as asked, nothing was sent to it")
     output.transient_end()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     # Before anything else: a rule a run stopped part way left is taken over

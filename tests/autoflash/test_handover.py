@@ -32,12 +32,14 @@ class ConsentTests(unittest.TestCase):
             handover.consent_to_leave(ctx, "Tasmota")
         self.assertEqual(asked.call_count, 1)
 
-    def test_refused_it_says_nothing_was_written(self):
-        # A run stopped there does not say what the device is (past_the_commit).
+    def test_refused_it_quits_before_going_on(self):
+        # The runner records that nothing was written (runner._execute).
         from types import SimpleNamespace
-        with mock.patch.object(prompts, "require_word", return_value=False), \
-             mock.patch.object(prompts, "warning_box"), self.assertRaises(errors.NothingWritten):
-            handover.consent_to_leave(SimpleNamespace(state=SimpleNamespace(input=lambda key: None)), "Tasmota")
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: None))
+        with mock.patch.object(prompts, "require_word", side_effect=prompts.Declined("q")), \
+             mock.patch.object(prompts, "warning_box"), self.assertRaises(prompts.Declined):
+            handover.consent_to_leave(ctx, "Tasmota")
+        self.assertFalse(getattr(ctx, "consented", False))
 
     def test_proceed_in_any_case_goes_ahead(self):
         for reply in ("PROCEED", "proceed", " Proceed "):
@@ -58,7 +60,8 @@ class ConsentTests(unittest.TestCase):
     def test_q_stops(self):
         for reply in ("q", "quit", "Q"):
             with self.subTest(reply=reply):
-                self.assertFalse(self.consent("y", reply))
+                with self.assertRaises(prompts.Declined):
+                    self.consent("y", reply)
 
     def test_ctrl_c_there_stops_at_once_as_at_every_question(self):
         # Read as any question is: a Ctrl-C there is not a first press of

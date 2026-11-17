@@ -34,7 +34,7 @@ from tools.autoflash import (
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.phases import PhaseError, DeviceNeverConnected
-from tools.autoflash.prompts import QuitRun
+from tools.autoflash.prompts import Declined, QuitRun
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import tasmota
 from tools.autoflash.runs import ROOT
@@ -98,7 +98,11 @@ def _execute(ctx: Context, step: str) -> int:
         if step in routes.FAMILY.DESTRUCTIVE_STEPS:
             ctx.state.mark(step, ATTEMPTED, nothing_written=False)
         captured = handler(ctx)
-    except QuitRun:
+    except QuitRun as stopped:
+        if isinstance(stopped, Declined):
+            # Nothing written: the run is not offered back as one that wrote
+            # to its device (cli.wrote_to_device).
+            ctx.state.mark(step, FAILED, error="not confirmed", nothing_written=True)
         output.stage_end("stopped")
         return 130  # main() says so, once it has cleaned up
     except errors.GoBack as back:

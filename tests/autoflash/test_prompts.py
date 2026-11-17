@@ -213,8 +213,18 @@ class QuitOptionTests(unittest.TestCase):
         replies = iter(["s", "q"])
         with mock.patch("builtins.input", side_effect=lambda prompt: next(replies)), \
              mock.patch.object(prompts, "discard_typed_ahead"):
-            self.assertFalse(prompts.require_word(prompts.CONSENT_WORD))
+            with self.assertRaises(prompts.Declined):
+                prompts.require_word(prompts.CONSENT_WORD)
         self.assertEqual(next(replies, "both read"), "both read")
+
+    def test_q_at_a_go_ahead_quits_as_at_every_question(self):
+        # Seen: q here ended a readout or a conversion as FAILED, with an
+        # issue to open, where q at any other question stops as asked.
+        from unittest import mock
+        with mock.patch("builtins.input", return_value="q"), mock.patch.object(prompts, "discard_typed_ahead"):
+            with self.assertRaises(prompts.Declined) as stopped:
+                prompts.require_word(prompts.CONSENT_WORD)
+        self.assertIsInstance(stopped.exception, prompts.QuitRun)
 
     def test_quitting_a_standalone_tool_is_a_clean_exit(self):
         self.assertTrue(issubclass(prompts.QuitRun, SystemExit))
@@ -536,8 +546,9 @@ class WindowsConsoleKeyTests(unittest.TestCase):
             with self.subTest(key=repr(key)):
                 answer, _ = self.ask(
                     lambda: [prompts.ask_text("eWeLink account email"), prompts.require_word(prompts.CONSENT_WORD)],
-                    [("account email", "PROCEED\r"), ("Type PROCEED", key + "\r"), ("Only the TYPED word", "q\r")])
-                self.assertEqual(answer, ["PROCEED", False])
+                    [("account email", "PROCEED\r"), ("Type PROCEED", key + "\r"),
+                     ("Only the TYPED word", "PROCEED\r")])
+                self.assertEqual(answer, ["PROCEED", True])
 
     def test_the_answer_is_edited_with_the_arrows_home_end_and_delete(self):
         for keys in ("you@exampl.com" + "\xe0K" * 4 + "e" + "\xe0H\xe0P\r",   # back four, then up and down
@@ -845,8 +856,8 @@ class QuestionScreenTests(unittest.TestCase):
         # The consent word is typed, never brought back with the up arrow.
         code, answer, _, _, _, end = self.ask(
             '[prompts.ask_text("eWeLink account email"), prompts.require_word(prompts.CONSENT_WORD)]',
-            [("account email", "proceed\r"), ("Type PROCEED", "\x1b[A\r"), ("Only the TYPED word", "q\r")])
-        self.assertEqual((code, answer), (0, ["proceed", False]), end.render(colour=False))
+            [("account email", "proceed\r"), ("Type PROCEED", "\x1b[A\r"), ("Only the TYPED word", "proceed\r")])
+        self.assertEqual((code, answer), (0, ["proceed", True]), end.render(colour=False))
 
     def test_every_kind_of_question_is_here(self):
         # A public function reading the keyboard itself is a kind of question:

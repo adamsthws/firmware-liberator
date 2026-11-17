@@ -168,8 +168,8 @@ class OnwardTests(unittest.TestCase):
             ctx = a_context(tmp, firmware="esphome", source="openbeken")
             ctx.consented = False
             with mock.patch.object(handover.prompts, "warning_box"), \
-                    mock.patch.object(handover.prompts, "require_word", return_value=False):
-                with self.assertRaises(errors.NothingWritten):
+                    mock.patch.object(handover.prompts, "require_word", side_effect=handover.prompts.Declined("q")):
+                with self.assertRaises(handover.prompts.Declined):
                     onward.step_openbeken_to_esphome(ctx)
             self.assertEqual(self.server.commands, [])
 

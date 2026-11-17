@@ -6,7 +6,7 @@ from unittest import mock
 
 from tests.autoflash.test_readout import learned, record, start_run
 from tests.espressif.test_scrub import flash as wifi_flash
-from tools.autoflash import account, errors, hostsys, kinds, records, prompts, readout, readout_espressif, safety_locks
+from tools.autoflash import account, hostsys, kinds, records, prompts, readout, readout_espressif, safety_locks
 
 # A kind a whole readout is for (Readout wanted) that the tool does not convert:
 # the bridge has never run on a real one.
@@ -24,9 +24,9 @@ class BridgeTests(unittest.TestCase):
 
     def test_nothing_is_sent_without_proceed(self):
         with learned(BASICR4.wrapper_model, "ESP32C3"), \
-                mock.patch.object(prompts, "require_word", return_value=False), \
+                mock.patch.object(prompts, "require_word", side_effect=prompts.Declined("q")), \
                 mock.patch.object(hostsys, "run_tool") as sent:
-            with self.assertRaises(errors.NothingWritten):
+            with self.assertRaises(prompts.Declined):
                 readout.run(self.ctx, DEVICE)
         sent.assert_not_called()
         warned = " ".join(prompts.warning_box.call_args.args[1])

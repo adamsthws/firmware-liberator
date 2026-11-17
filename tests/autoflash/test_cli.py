@@ -366,6 +366,22 @@ class CtrlCEndsTheSittingTests(unittest.TestCase):
         self.assertTrue(self.stopped_by(lambda ctx: cli.convert(ctx, []), "cmd_run"))
 
 
+class DeclinedReadoutTests(unittest.TestCase):
+    """q at a readout's go-ahead stops it as q at any question does."""
+
+    def test_it_is_stopped_as_asked_not_failed(self):
+        # Seen: "FAILED: not confirmed", then the report and an issue to open.
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(args=SimpleNamespace(verbose=False, send=None), dir=Path("/x"), readouts=[])
+        with mock.patch.object(cli.output, "start"), mock.patch.object(cli.output, "finish"), \
+                mock.patch.object(cli.output, "tell") as told, mock.patch.object(cli.firewall, "release_firewall"), \
+                mock.patch.object(cli.runs, "forget_run_secrets"), mock.patch.object(cli.readout, "end") as ended, \
+                mock.patch.object(cli, "cmd_readout", side_effect=prompts.Declined("q")):
+            self.assertEqual(cli.read_out(ctx), 130)
+        self.assertEqual([call.args[0] for call in told.call_args_list], [prompts.STOPPED_AS_ASKED])
+        ended.assert_not_called()
+
+
 class StoppedReportTests(unittest.TestCase):
     """A run that did not finish asks for its report - but not one stopped
     before any stage began, which says nothing of how the tool does."""

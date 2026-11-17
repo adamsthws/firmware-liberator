@@ -1044,6 +1044,16 @@ class UnexpectedErrorTests(unittest.TestCase):
         self.assertEqual((code, state.status("E2")), (1, FAILED))
         self.assertIs(state.data["steps"]["E2"]["nothing_written"], False)
 
+    def test_q_at_the_go_ahead_quits_as_asked_and_is_taken_for_nothing_written(self):
+        # Seen: it said FAILED and asked for an issue, where q at any other
+        # question stops as asked. Nor is the run offered back next time as
+        # one that wrote to its device (cli.wrote_to_device).
+        code, state, ended, _, told = self.run_step("E2", prompts.Declined("q"))
+        self.assertEqual((code, state.status("E2")), (130, FAILED))
+        self.assertIs(state.data["steps"]["E2"]["nothing_written"], True)
+        ended.assert_called_once_with("stopped")
+        self.assertNotIn("FAILED", " ".join(str(call.args[0]) for call in told.call_args_list))
+
     def test_a_device_that_never_connected_stops_the_step_with_the_firewall_hint(self):
         from tools.autoflash.phases import DeviceNeverConnected
         with mock.patch.object(prompts, "section") as shown, \

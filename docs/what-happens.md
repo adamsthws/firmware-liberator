@@ -242,8 +242,9 @@ gives you the device's ESPHome page.
 
 Either way, the tool then asks what next: convert another device or read one
 out, looking for it afresh with your eWeLink sign-in kept, or `q` to end. A
-readout asks the same however it ends, even one that failed or that you did not
-go ahead with, unless you stopped it with `q` or Ctrl-C.
+readout asks the same however it ends, even one that failed, unless you stopped
+it with `q` or Ctrl-C. Typing `q` where the tool asks you to type PROCEED
+stops it as `q` at any question does: nothing has been written to the device.
 
 ### A Beken device
 

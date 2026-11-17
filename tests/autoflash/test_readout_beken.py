@@ -87,8 +87,8 @@ class RoundTripTests(unittest.TestCase):
         with mock.patch.object(rb.prompts, "warning_box", asked.warning), \
                 mock.patch.object(rb.prompts, "require_word", asked.word), \
                 mock.patch.object(rb, "deliver_readout") as sent:
-            asked.word.return_value = False
-            with self.assertRaises(rb.NothingWritten):
+            asked.word.side_effect = rb.prompts.Declined("q")
+            with self.assertRaises(rb.prompts.Declined):
                 rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
         sent.assert_not_called()
         # Warned not to cut its power before being asked.

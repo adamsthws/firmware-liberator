@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING
 
 from tools.autoflash import esphome_ota, kinds, output, prompts, testers, unlock
-from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.errors import Abort
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -29,8 +29,7 @@ def consent_to_leave(ctx: Context, what: str) -> None:
         "Only go ahead with a device you can afford to lose.",
         *testers.notice(kinds.of_run(ctx.state)),
     ])
-    if not prompts.require_word(prompts.CONSENT_WORD):
-        raise NothingWritten("not confirmed - nothing has been written to the device")
+    prompts.require_word(prompts.CONSENT_WORD)
     output.transient_end()
     ctx.consented = True
 

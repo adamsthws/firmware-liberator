@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import errors, firewall, handover, hostsys, kinds, output, prompts, report, runs, testers
+from tools.autoflash import firewall, handover, hostsys, kinds, output, prompts, report, runs, testers
 from tools.autoflash.routes.espressif import installer
 from tools.autoflash.state import RunState
 
@@ -48,7 +48,7 @@ class WarningTests(unittest.TestCase):
                     mock.patch.object(hostsys, "run_tool", return_value=0) as sent:
                 try:
                     installer.step_bridge(ctx)
-                except errors.NothingWritten:
+                except prompts.Declined:
                     pass
         return [call.args[0] for call in asked.call_args_list], sent.called
 
@@ -84,7 +84,9 @@ class WarningTests(unittest.TestCase):
                 self.assertNotIn("emulator", " ".join(testers.notice(kind)))
 
     def test_declined_nothing_is_sent(self):
-        self.assertEqual(self.bridge(kinds.SONOFF_POW_ELITE, lambda word: False), (["proceed"], False))
+        def refused(word):
+            raise prompts.Declined("q")
+        self.assertEqual(self.bridge(kinds.SONOFF_POW_ELITE, refused), (["proceed"], False))
 
     def test_a_converted_device_leaving_its_firmware_is_told_too_and_asked_once(self):
         with tempfile.TemporaryDirectory() as tmp, \

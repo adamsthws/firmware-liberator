@@ -27,12 +27,17 @@ class ReplaceOwnBuildTests(unittest.TestCase):
         result = {}
 
         def body(look):
+            def answer(word):
+                look()
+                if not agreed:
+                    raise prompts.Declined("q")
+                return True
             with mock.patch.object(esphome, "api_device_info", return_value=info), \
-                 mock.patch.object(prompts, "require_word", side_effect=lambda word: look() or agreed):
+                 mock.patch.object(prompts, "require_word", side_effect=answer):
                 try:
                     result["replaced"] = update.replace_own_build(ctx, "esphome", "2026.10.0-1")
-                except Abort as exc:
-                    result["refused"] = str(exc)
+                except prompts.Declined:
+                    result["refused"] = True
         asked, final = drawn(body)
         return asked[0], final, result
 
@@ -50,7 +55,7 @@ class ReplaceOwnBuildTests(unittest.TestCase):
     def test_declined_it_stays_to_say_why(self):
         _, final, result = self.replace(agreed=False)
         self.assertIn("Replacing your own build", final)
-        self.assertEqual(result["refused"], "not confirmed")
+        self.assertTrue(result["refused"])
 
 
 class ReplaceOnlyEsphomeTests(unittest.TestCase):

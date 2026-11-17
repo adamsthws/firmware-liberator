@@ -241,8 +241,7 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
         "Only go ahead with a device you can afford to lose.",
     ])
     if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
-        raise NothingWritten("skipped as asked, nothing was sent to it" if skippable else
-                             "not confirmed - nothing has been sent to the device")
+        raise NothingWritten("skipped as asked, nothing was sent to it")
     output.transient_end()
     device_ip = ctx.state.require("device_ip")[0]
     # From here until Sonoff's firmware is fetched back, the reader may stand

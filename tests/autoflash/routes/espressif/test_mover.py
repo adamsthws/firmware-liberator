@@ -334,7 +334,8 @@ class ESPHomeUpdateTests(RouteTestCase):
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True), \
                 mock.patch.object(prompts, "warning_box") as warned, \
-                mock.patch.object(prompts, "require_word", return_value=word):
+                mock.patch.object(prompts, "require_word", **(
+                    {"return_value": True} if word else {"side_effect": prompts.Declined("q")})):
             self.addCleanup(routes.apply_target, "tasmota", "sonoff")
             return ctx, routes.settle_route(ctx), warned
 
@@ -359,7 +360,7 @@ class ESPHomeUpdateTests(RouteTestCase):
                 self.replacing(esphome.ApiLocked(wrong=True))
 
     def test_not_agreeing_stops_before_anything_is_recorded(self):
-        with self.assertRaisesRegex(errors.Abort, "not confirmed"):
+        with self.assertRaises(prompts.Declined):
             self.replacing(self.ours("1.6.0", built=self.OWN), word=False)
 
     def test_another_projects_esphome_is_never_replaced(self):
