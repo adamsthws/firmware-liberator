@@ -115,7 +115,10 @@ SIZE = (100, 40)
 # The made-up key of the locked ESPHome builds (build_locked).
 LOCKED_KEY = base64.b64encode(bytes(range(32))).decode()
 LOCKED_LOGIN = ("admin", "test-login-1")
-QUIT_FIRST = [{"when": "Which device is this run for|Press any key", "type": "q\r"}]
+# The tool quit at its first question, for prep: and the email question it asks
+# as it ends answered, or the run waits there until its --timeout.
+QUIT_FIRST = [{"when": "Which device is this run for|Press any key", "type": "q\r"},
+              {"when": "\\[[Yy]/n\\]", "type": "n\r"}]
 DEVICE = "192.168.60.50"
 # Where an `api_down` scenario's readout goes: the discard port on the tool's
 # own computer, where nothing listens, so it is refused at once.

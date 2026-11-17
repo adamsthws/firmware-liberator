@@ -238,6 +238,14 @@ class RunTests(unittest.TestCase):
 
 
 
+class PrepTests(unittest.TestCase):
+    def test_the_run_quit_for_prep_answers_the_question_it_ends_with(self):
+        # Seen: it waited at the email question as it ended, eight minutes,
+        # until its --timeout, before every scenario with a prep.
+        asked = "Get an email as more devices are supported? [Y/n] (q to quit): "
+        self.assertTrue(any(re.search(answer["when"], asked) for answer in attended_suite.QUIT_FIRST))
+
+
 class ReadoutVerdictTests(unittest.TestCase):
     """A readout's other side, after its run: what the API beside the emulator
     was asked and kept, or for an api_down scenario, the readout kept whole."""
