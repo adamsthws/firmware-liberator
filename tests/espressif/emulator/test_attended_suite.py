@@ -178,6 +178,64 @@ class RunTests(unittest.TestCase):
         self.assertEqual(environment["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], "S60TPG")
 
 
+
+class ReadoutVerdictTests(unittest.TestCase):
+    """A readout's other side, after its run: what the API beside the emulator
+    was asked and kept, or for an api_down scenario, the readout kept whole."""
+
+    WANTED = '2026-11-17T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}'
+    DIGEST = "a" * 64
+
+    def verdicts(self, scenario, *, requests=(), stored=False, kept=False, whole=(), code=0, family="espressif"):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            state, folder = Path(tmp, "state"), Path(tmp, "results")
+            run = state / "work/captures/devices/12-34-56-ab-cd-ef/runs/1/run.log"
+            run.parent.mkdir(parents=True)
+            folder.mkdir()
+            run.write_text("=== run started ===\n[10:00:00] --- Stage 7 - Saving the readout\n", encoding="utf-8")
+            if kept:
+                (run.parent / "readout.tar").write_bytes(b"tar")
+            (state / "api").mkdir()
+            (state / "api/requests.log").write_text("".join(f"{line}\n" for line in requests), encoding="utf-8")
+            if stored:
+                (state / f"api/readouts__2026-11-17__{self.DIGEST[:24]}.tar").write_bytes(b"tar")
+            with mock.patch.object(attended_suite.fault_verdicts, "readout_problems", return_value=list(whole)):
+                found = attended_suite.readout_verdicts(scenario, family, state, 0, code, folder, "S60TPG")
+            self.copied = (folder / "api/requests.log").exists()
+        return [verdict.split(":")[0] for verdict in found]
+
+    def taken(self):
+        return f'2026-11-17T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-17-{self.DIGEST[:12]}"}}'
+
+    def test_a_readout_taken_whole_by_the_api_passes_and_what_it_kept_is_kept(self):
+        readout = {"command": "readout"}
+        for family in ("espressif", "beken"):
+            with self.subTest(family=family):
+                self.assertEqual(self.verdicts(readout, requests=[self.WANTED, self.taken()], stored=True,
+                                               family=family), [])
+                self.assertTrue(self.copied)
+
+    def test_a_readout_the_api_did_not_get_or_keep_whole_is_found(self):
+        readout = {"command": "readout"}
+        self.assertEqual(self.verdicts(readout), ["FAIL-NOT-ASKED"])
+        self.assertEqual(self.verdicts(readout, requests=[self.WANTED]), ["FAIL-NOT-SENT"])
+        self.assertEqual(self.verdicts(readout, requests=[self.WANTED, self.taken()]), ["FAIL-NOT-STORED"])
+        self.assertEqual(self.verdicts(readout, requests=[self.WANTED, self.taken()], stored=True,
+                                       whole=["no flash.bin.xz"]), ["FAIL-READOUT"])
+        self.assertEqual(self.verdicts(readout, requests=[self.WANTED, self.taken()], stored=True, kept=True),
+                         ["FAIL-KEPT-UNSENT"])
+
+    def test_with_the_api_down_the_readout_is_kept_whole(self):
+        down = {"command": "readout", "api_down": True}
+        self.assertEqual(self.verdicts(down, kept=True, code=1), [])
+        self.assertEqual(self.verdicts(down, code=1), ["FAIL-READOUT"])
+        self.assertEqual(self.verdicts(down, kept=True, whole=["no flash.bin.xz"], code=1), ["FAIL-READOUT"])
+
+    def test_a_conversion_has_no_readout_to_judge(self):
+        self.assertEqual(self.verdicts({}), [])
+
+
 def question_texts() -> list[str]:
     """Every text the tool can show, as it is written in its code: each
     string, an f-string's run-time parts as "...". The questions are among

@@ -1,6 +1,7 @@
-"""What both fault suites judge a run by beyond its steps being done: the
-end-of-run checks the report of a converting run gives, the readout.tar a
-readout keeps, and the screen each run left. A run whose steps all passed can
+"""What both fault suites, and the attended suite, judge a run by beyond its
+steps being done: the end-of-run checks the report of a converting run gives,
+the readout.tar a readout keeps, what the API beside the emulator was asked
+and kept of a readout sent to it, and the screen each run left. A run whose steps all passed can
 still end with a relay that did not switch, or a check that never got to run,
 and say so only there; or leave a stage's failed try on the screen
 (docs/testing.md#the-fault-suites)."""
@@ -173,6 +174,101 @@ def readout_problems(data: bytes, family: str) -> list[str]:
                         f"not the whole {WHOLE_FLASH:,}")
     return problems
 
+
+
+# A line of the API's requests.log (website/api/local.mjs): when, the method,
+# the path, the body's length, and the answer's status and body.
+API_REQUEST = re.compile(r"^\S+ (\w+) (\S+) \d+ -> (\d+) (.*)$")
+# What the readout of every device says as it starts on each one (readout.py).
+READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
+
+
+def api_asks(requests: str) -> tuple[list[list], list[tuple[int, str]]]:
+    """The API's requests.log as the tool's readouts made it: a /wanted for
+    each device, then each /readout of it sent, a 429 sent again. Each
+    device's [wanted, why not, [(status, id) of each send]] - wanted as the
+    tool takes it: one it could not read goes ahead - and the sends no
+    /wanted came before."""
+    asks: list[list] = []
+    unasked: list[tuple[int, str]] = []
+    for line in requests.splitlines():
+        found = API_REQUEST.match(line)
+        if not found:
+            continue
+        _, path, status, body = found.groups()
+        try:
+            answer = json.loads(body)
+        except ValueError:
+            answer = {}
+        answer = answer if isinstance(answer, dict) else {}
+        if path == "/v1/wanted":
+            asks.append([not (status == "200" and answer.get("wanted") is False), str(answer.get("why") or ""), []])
+        elif path == "/v1/readout":
+            (asks[-1][2] if asks else unasked).append((int(status), str(answer.get("id") or "")))
+    return asks, unasked
+
+
+def readout_api_problems(run: str, finished: bool, api: Path, account: int, device: str, family: str,
+                         kept: Iterable[str] = ()) -> tuple[list[tuple[str, str]], dict]:
+    """What one run of a readout sent to the API beside the emulator did
+    wrong, from its log (`run`), whether it finished, and what the API was
+    asked and kept (`api`, its folder): [(verdict, why)], [] for nothing; and
+    a summary. A readout of every device (readout --all) says each device's
+    name as it starts on it; one of the device alone does not. `account` is
+    how many devices the account holds, `device` the emulated device's
+    product model, of chip family `family`; `kept` the readouts the run kept
+    unsent. Judged by the API's own answers, never its rules: every device
+    asked /wanted once, all of them in a finished run (FAIL-NOT-ASKED); every
+    one wanted sent until taken - 201, after nothing but 429s - but the one a
+    stopped run stopped on (FAIL-NOT-SENT); none not wanted sent
+    (FAIL-SENT-UNWANTED); each taken in the API's store (FAIL-NOT-STORED),
+    the emulated device's whole (FAIL-READOUT); and none kept unsent
+    (FAIL-KEPT-UNSENT)."""
+    problems = []
+    devices = [(who, int(total)) for who, _, total in READING_OUT.findall(run)]
+    every = bool(devices)
+    if not every:
+        devices = [(f"the device ({device})", account)]
+    requests = api / "requests.log"
+    asks, unasked = api_asks(requests.read_text(encoding="utf-8", errors="replace") if requests.exists() else "")
+    if finished and (len(devices) != account or any(total != account for _, total in devices)):
+        problems.append(("FAIL-NOT-ASKED", f"{len(devices)} devices read out, of the account's {account}"))
+    if len(asks) != len(devices) and (finished or len(asks) != len(devices) - 1):
+        problems.append(("FAIL-NOT-ASKED", f"{len(asks)} asked /wanted, of {len(devices)} devices read out"))
+    stored = sorted(path.name for path in api.glob("readouts__*.tar")) if api.is_dir() else []
+    whole = False
+    for number, (wanted, why, sent) in enumerate(asks):
+        who = devices[number][0] if number < len(devices) else f"device {number + 1}"
+        statuses = [status for status, _ in sent]
+        if not wanted:
+            if sent:
+                problems.append(("FAIL-SENT-UNWANTED", f"{who}: not wanted ({why}), sent all the same"))
+            continue
+        if not sent:
+            if finished or number != len(asks) - 1:   # else the device the run stopped on
+                problems.append(("FAIL-NOT-SENT", f"{who}: wanted, never sent"))
+            continue
+        if statuses[-1] != 201 or any(status != 429 for status in statuses[:-1]):
+            problems.append(("FAIL-NOT-SENT", f"{who}: wanted, answered {', '.join(map(str, statuses))}"))
+            continue
+        # The API's id is <day>-<the readout's SHA-256, its first 12 digits>;
+        # its key readouts/<day>/<the first 24>.tar.
+        day, _, digest = sent[-1][1].rpartition("-")
+        kept_as = [name for name in stored if day and digest and name.startswith(f"readouts__{day}__{digest}")]
+        if not kept_as:
+            problems.append(("FAIL-NOT-STORED", f"{who}: taken as {sent[-1][1]!r}, not in the API's store"))
+        elif not every or who.endswith(f"({device})"):
+            whole = True
+            missing = readout_problems((api / kept_as[0]).read_bytes(), family)
+            if missing:
+                problems.append(("FAIL-READOUT", f"{who}: {'; '.join(missing)}"))
+    if unasked:
+        problems.append(("FAIL-SENT-UNWANTED", f"{len(unasked)} sent before any /wanted"))
+    problems += [("FAIL-KEPT-UNSENT", f"{name} kept unsent, though the API was there") for name in kept]
+    summary = {"devices": len(devices), "asked": len(asks), "wanted": sum(1 for ask in asks if ask[0]),
+               "taken": sum(1 for ask in asks if ask[2] and ask[2][-1][0] == 201),
+               "429": sum(1 for ask in asks for status, _ in ask[2] if status == 429), "device_whole": whole}
+    return problems, summary
 
 def first_stage_problems(data: bytes, runs: str) -> list[str]:
     """What a readout.tar lacks of the first stage alone of a device that runs

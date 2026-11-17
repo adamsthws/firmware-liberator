@@ -337,11 +337,6 @@ ACCOUNTS = {
 # The faults in the emulated device's read (READOUT_FAULTS), after the other
 # devices' first stages: the run stops there, and is run again.
 READOUT_ALL_FAULTS = [("read", "deviceoff", 1), ("read", "crash", 1)]
-# A line of the API's requests.log (website/api/local.mjs): when, the method,
-# the path, the body's length, and the answer's status and body.
-API_REQUEST = re.compile(r"^\S+ (\w+) (\S+) \d+ -> (\d+) (.*)$")
-# What the readout of every device says as it starts on each one.
-READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
 # Where the readout asks for the device to be switched off and on, and waits.
 # The answers read off a run's report, in its log, each up to the gap after
 # it, wherever it is (report.report_screen). The result is the line the
@@ -589,86 +584,6 @@ def device_product():
     dump's test copy has one), else its kind's example. The stub lists it so
     (AUTOFLASH_EMU_STUB_PRODUCT_MODEL), a product the tool asks /wanted of."""
     return ((records.read_device(MAC) if MAC else {}).get("product_model") or DEVICE.example_product_model).upper()
-
-
-def api_asks(requests):
-    """The API's requests.log as the tool's readout of every device made it:
-    a /wanted for each device, then each /readout of it sent, a 429 sent
-    again. Each device's [wanted, why not, [(status, id) of each send]] -
-    wanted as the tool takes it: one it could not read goes ahead - and the
-    sends no /wanted came before."""
-    asks, unasked = [], []
-    for line in requests.splitlines():
-        found = API_REQUEST.match(line)
-        if not found:
-            continue
-        _, path, status, body = found.groups()
-        try:
-            answer = json.loads(body)
-        except ValueError:
-            answer = {}
-        answer = answer if isinstance(answer, dict) else {}
-        if path == "/v1/wanted":
-            asks.append([not (status == "200" and answer.get("wanted") is False), str(answer.get("why") or ""), []])
-        elif path == "/v1/readout":
-            (asks[-1][2] if asks else unasked).append((int(status), str(answer.get("id") or "")))
-    return asks, unasked
-
-
-def readout_all_problems(run, finished, api, account, device, kept=()):
-    """What one run of a readout of every device did wrong, from its log
-    (`run`), whether it finished, and what the API was asked and kept (`api`,
-    its folder): [(verdict, why)], [] for nothing; and a summary. `account`
-    is how many devices the account holds, `device` the emulated device's product
-    model, `kept` the readouts the run kept unsent. Judged by the API's own
-    answers, never its rules: every device asked /wanted once, all of them in
-    a finished run (FAIL-NOT-ASKED); every one wanted sent until taken - 201,
-    after nothing but 429s - but the one a stopped run stopped on
-    (FAIL-NOT-SENT); none not wanted sent (FAIL-SENT-UNWANTED); each taken in
-    the API's store (FAIL-NOT-STORED), the device's whole (FAIL-READOUT); and
-    none kept unsent (FAIL-KEPT-UNSENT)."""
-    problems = []
-    devices = [(who, int(total)) for who, _, total in READING_OUT.findall(run)]
-    requests = api / "requests.log"
-    asks, unasked = api_asks(requests.read_text(encoding="utf-8", errors="replace") if requests.exists() else "")
-    if finished and (len(devices) != account or any(total != account for _, total in devices)):
-        problems.append(("FAIL-NOT-ASKED", f"{len(devices)} devices read out, of the account's {account}"))
-    if len(asks) != len(devices) and (finished or len(asks) != len(devices) - 1):
-        problems.append(("FAIL-NOT-ASKED", f"{len(asks)} asked /wanted, of {len(devices)} devices read out"))
-    stored = sorted(path.name for path in api.glob("readouts__*.tar")) if api.is_dir() else []
-    whole = False
-    for number, (wanted, why, sent) in enumerate(asks):
-        who = devices[number][0] if number < len(devices) else f"device {number + 1}"
-        statuses = [status for status, _ in sent]
-        if not wanted:
-            if sent:
-                problems.append(("FAIL-SENT-UNWANTED", f"{who}: not wanted ({why}), sent all the same"))
-            continue
-        if not sent:
-            if finished or number != len(asks) - 1:   # else the device the run stopped on
-                problems.append(("FAIL-NOT-SENT", f"{who}: wanted, never sent"))
-            continue
-        if statuses[-1] != 201 or any(status != 429 for status in statuses[:-1]):
-            problems.append(("FAIL-NOT-SENT", f"{who}: wanted, answered {', '.join(map(str, statuses))}"))
-            continue
-        # The API's id is <day>-<the readout's SHA-256, its first 12 digits>;
-        # its key readouts/<day>/<the first 24>.tar.
-        day, _, digest = sent[-1][1].rpartition("-")
-        kept_as = [name for name in stored if day and digest and name.startswith(f"readouts__{day}__{digest}")]
-        if not kept_as:
-            problems.append(("FAIL-NOT-STORED", f"{who}: taken as {sent[-1][1]!r}, not in the API's store"))
-        elif who.endswith(f"({device})"):
-            whole = True
-            missing = fault_verdicts.readout_problems((api / kept_as[0]).read_bytes(), "espressif")
-            if missing:
-                problems.append(("FAIL-READOUT", f"{who}: {'; '.join(missing)}"))
-    if unasked:
-        problems.append(("FAIL-SENT-UNWANTED", f"{len(unasked)} sent before any /wanted"))
-    problems += [("FAIL-KEPT-UNSENT", f"{name} kept unsent, though the API was there") for name in kept]
-    summary = {"devices": len(devices), "asked": len(asks), "wanted": sum(1 for ask in asks if ask[0]),
-               "taken": sum(1 for ask in asks if ask[2] and ask[2][-1][0] == 201),
-               "429": sum(1 for ask in asks for status, _ in ask[2] if status == 429), "device_whole": whole}
-    return problems, summary
 
 
 # The steps that run a Berry phase on the device (stage, restore, plan), each on
@@ -1393,8 +1308,9 @@ class Scenario:
         if target == "readout":
             args.append("--readout")
         # Kept unsent, for readout_problems to judge, but a readout of every
-        # device's, which the API's side judges (readout_all_problems).
-        if not every:
+        # device's, and the readout with no fault (to_api), which the API's
+        # side judges (fault_verdicts.readout_api_problems).
+        if not every and not self.to_api():
             args.append("--no-api")
         if STUB_CLOUD:
             args.append("--stub-cloud")
@@ -2348,9 +2264,9 @@ class Scenario:
 
     def run_readout_all(self, judged, fresh=False):
         """One run of the readout of every device, and what it did wrong
-        (readout_all_problems) added to `judged`; its row in the results. What
-        the API was asked and kept is kept beside the scenario's log, as the
-        next run starts the API afresh."""
+        (fault_verdicts.readout_api_problems) added to `judged`; its row in
+        the results. What the API was asked and kept is kept beside the
+        scenario's log, as the next run starts the API afresh."""
         since = time.time()
         code = self.run_tool("readout", fresh=fresh)
         logs = [(m, p, t) for m, p, t in run_logs(self.state) if m >= since]
@@ -2365,8 +2281,8 @@ class Scenario:
             # numbered parameters, and nothing was asked).
             if (self.state / "api-server.out").exists():
                 shutil.copy(self.state / "api-server.out", api / "api-server.out")
-        problems, summary = readout_all_problems(run, code == 0, api, len(ACCOUNTS[self.sc["account"]]) + 1,
-                                                 device_product(), kept)
+        problems, summary = fault_verdicts.readout_api_problems(
+            run, code == 0, api, len(ACCOUNTS[self.sc["account"]]) + 1, device_product(), "espressif", kept)
         judged.append({"code": code, "problems": problems, **summary})
         if problems:
             self.say(f"READOUT-ALL: {problems}")
@@ -2387,9 +2303,9 @@ class Scenario:
         return [device_product(), ACCOUNTS["enough"][0]["productModel"]]
 
     def finish_readout_all(self, results, judged, special):
-        """A readout of every device's verdict: each run as readout_all_problems
-        judges it, a finished run at the end, and the device on working Sonoff
-        firmware; in the many account, NOT-FIRED where the API never answered
+        """A readout of every device's verdict: each run as
+        fault_verdicts.readout_api_problems judges it, a finished run at the
+        end, and the device on working Sonoff firmware; in the many account, NOT-FIRED where the API never answered
         429, as its limit was never reached."""
         self.ended = True
         left = self.leftovers()
@@ -2434,9 +2350,40 @@ class Scenario:
             return "Readout kept, not sent"
         return f"Stopped: {failed[-1].strip()}" if failed else "no readout"
 
+    def to_api(self):
+        """Whether this scenario's readout goes to the API beside the emulator:
+        the one fresh from Sonoff's firmware with no fault, so both sides of a
+        readout are seen as a person's goes; each other is kept unsent, for
+        what a fault left of it."""
+        return self.sc["route"] == "sonoff>readout" and self.sc["fault"] == "none" and not self.sc.get("then")
+
+    def api_problems(self):
+        """What the API beside the emulator was asked and kept of this
+        scenario's newest readout (fault_verdicts.readout_api_problems), as
+        "VERDICT: why"; [] for nothing wrong, None with no run. What it was
+        asked and kept is kept beside the scenario's log."""
+        logs = [(m, p, t) for m, p, t in run_logs(self.state) if m >= self.started]
+        if not logs:
+            return None
+        api = Path(self.log).with_name(f"{Path(self.log).stem}-api")
+        shutil.rmtree(api, ignore_errors=True)
+        if (self.state / "api").is_dir():
+            shutil.copytree(self.state / "api", api)
+        else:
+            api.mkdir()
+        if (self.state / "api-server.out").exists():
+            shutil.copy(self.state / "api-server.out", api / "api-server.out")
+        kept = sorted(path.name for path in logs[-1][1].parent.glob("readout*.tar"))
+        problems, _ = fault_verdicts.readout_api_problems(fault_verdicts.last_run(logs[-1][2]), True, api, 1,
+                                                          device_product(), "espressif", kept)
+        return [f"{verdict}: {why}" for verdict, why in problems]
+
     def readout_kept(self):
         """What the newest readout.tar this scenario's runs kept lacks of a whole
-        readout (fault_verdicts.readout_problems), or None when none kept one."""
+        readout (fault_verdicts.readout_problems), or None when none kept one;
+        sent to the API (to_api), what the API did not take of it whole."""
+        if self.to_api():
+            return self.api_problems()
         kept = sorted((path.stat().st_mtime, path) for path in
                       records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
         kept = [path for written, path in kept if written >= self.started]
@@ -2490,7 +2437,9 @@ class Scenario:
             elif self.unexpected():
                 special = "FAIL-UNEXPECTED"
             elif not converted and self.notes["readout"]:
-                special = "FAIL-READOUT"  # no whole readout kept
+                # No whole readout kept; or sent, the API's verdict (api_problems).
+                first = self.notes["readout"][0].split(":")[0]
+                special = first if self.to_api() and first.startswith("FAIL-") else "FAIL-READOUT"
             elif not converted and self.notes["firmware"] != "sonoff":
                 special = "BRICK" if self.bricked() else "FAIL-NOT-SONOFF"
             elif unknown or final:

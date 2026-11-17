@@ -58,6 +58,13 @@ The verdict, from the recording alone (judge):
                       one its `never` wants nowhere: on the screen at any
                       answer, or at the end - a key pressed by accident,
                       echoed
+    FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-SENT-UNWANTED, FAIL-NOT-STORED,
+    FAIL-READOUT, FAIL-KEPT-UNSENT
+                      a readout's other side: what the API beside the
+                      emulator was asked and kept (readout_verdicts,
+                      fault_verdicts.readout_api_problems); of an `api_down`
+                      scenario's, FAIL-READOUT where the readout kept is not
+                      whole, or none was kept
 
     tools/espressif/emulator/attended_suite.py list
     tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] [--first-instance N] --device MAC
@@ -91,7 +98,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.autoflash import kinds, records  # noqa: E402
-from tools.repo import emulator_stats, unattended_run  # noqa: E402
+from tools.repo import emulator_stats, fault_verdicts, unattended_run  # noqa: E402
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
              "beken": ROOT / "tools/beken/emulator/attended"}
@@ -440,6 +447,47 @@ def run_beken(n: int, name: str, scenario: dict[str, Any], folder: Path, mac: st
     return (int(found.group(1)) if found else out.returncode), state / "work/captures/unattended/attended"
 
 
+def state_of(family: str, n: int) -> Path:
+    """Emulator `n`'s state: the tool's records under work/captures/, and the
+    API beside it in api/ (unattended-test.sh, beken-emu.sh computer)."""
+    return ROOT / ("captures/emulation/beken" if family == "beken" else "captures/emulation") / f"state-{n}"
+
+
+def readout_verdicts(scenario: dict[str, Any], family: str, state: Path, since: float, code: int,
+                     folder: Path, product: str, prefix: str = "") -> list[str]:
+    """A readout's other side, after its run (begun at `since`): what the API
+    beside the emulator was asked and kept, judged as the fault suites judge
+    it (fault_verdicts.readout_api_problems) and kept in `folder` as
+    `prefix`api/, as the next run starts it afresh; or for an `api_down`
+    scenario's, the readout kept for later, whole. [] for nothing wrong, and
+    for a run that is not a readout."""
+    if scenario.get("command") != "readout":
+        return []
+    logs = sorted((log.stat().st_mtime, log) for log in (state / "work/captures/devices").glob("*/runs/*/run.log")
+                  if log.stat().st_mtime >= since)
+    if not logs:
+        return ["FAIL-NOT-ASKED: the readout left no run log"]
+    run_folder = logs[-1][1].parent
+    run = fault_verdicts.last_run(logs[-1][1].read_text(encoding="utf-8", errors="replace"))
+    kept = sorted(run_folder.glob("readout*.tar"))
+    if scenario.get("api_down"):
+        if not kept:
+            return ["FAIL-READOUT: not sent, and not kept"]
+        missing = fault_verdicts.readout_problems(kept[-1].read_bytes(), family)
+        return [f"FAIL-READOUT: the readout kept: {'; '.join(missing)}"] if missing else []
+    api = folder / f"{prefix}api"
+    shutil.rmtree(api, ignore_errors=True)
+    if (state / "api").is_dir():
+        shutil.copytree(state / "api", api)
+    else:
+        api.mkdir()
+    if (state / "api-server.out").exists():   # what the API said: an error that stopped it shows there
+        shutil.copyfile(state / "api-server.out", api / "api-server.out")
+    problems, _ = fault_verdicts.readout_api_problems(run, code == 0, api, 1, product, family,
+                                                      [path.name for path in kept])
+    return [f"{verdict}: {why}" for verdict, why in problems]
+
+
 def judged(scenario: dict[str, Any], folder: Path, code: int, recording: Path | None,
            prefix: str = "") -> list[str]:
     """A run's verdicts, its recording kept in `folder` (names `prefix`ed)."""
@@ -471,7 +519,10 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
     folder = results / name
     folder.mkdir(parents=True, exist_ok=True)
     run = run_beken if family == "beken" else run_espressif
-    started = time.monotonic()
+    started, since = time.monotonic(), time.time()
+    state, product = state_of(family, n), device_of(family, mac).example_product_model
+    if family == "espressif":
+        product = run_environment(scenario, mac)["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"]
     try:
         code, recording = run(n, name, scenario, folder, mac)
     except Exception as exc:  # noqa: BLE001 - one scenario's trouble is its own; the rest go on
@@ -479,15 +530,20 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
         (folder / "harness.log").open("a", encoding="utf-8").write(f"HARNESS: {type(exc).__name__}: {exc}\n")
         docker("stop", f"autoflash-emu-{n}")
     verdicts = judged(scenario, folder, code, recording)
+    if recording is not None:
+        verdicts += readout_verdicts(scenario, family, state, since, code, folder, product)
     if not verdicts and scenario.get("again") and family == "espressif":
+        since = time.time()
         try:
             code, recording = run_again(n, scenario, folder, mac)
         except Exception as exc:  # noqa: BLE001 - as above
             code, recording = 125, None
             (folder / "harness.log").open("a", encoding="utf-8").write(f"HARNESS: {type(exc).__name__}: {exc}\n")
-        verdicts = [f"{verdict.split(':')[0]}: again: {verdict.split(': ', 1)[1]}"
-                    for verdict in judged(scenario["again"] | {"size": scenario.get("size", "100x40")},
-                                          folder, code, recording, "again-")]
+        again = {"command": scenario.get("command")} | scenario["again"]
+        verdicts = judged(again | {"size": scenario.get("size", "100x40")}, folder, code, recording, "again-")
+        if recording is not None:
+            verdicts += readout_verdicts(again, family, state, since, code, folder, product, "again-")
+        verdicts = [f"{verdict.split(':')[0]}: again: {verdict.split(': ', 1)[1]}" for verdict in verdicts]
     verdict = "PASS" if not verdicts else verdicts[0].split(":")[0]
     # Kept beside every batch's folder, so one not sent goes with the next.
     emulator_stats.attended_run(RESULTS, family=family, device=device_of(family, mac).key, name=name,

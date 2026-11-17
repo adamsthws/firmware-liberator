@@ -928,6 +928,17 @@ class InstanceTests(unittest.TestCase):
                          ("autoflash-beken-emu-3", "autoflash-beken-emu-3", "autoflash-beken-emu-computer-3"))
         self.assertEqual(instance.state, fault_suite.REPO / "captures/emulation/beken/state-3")
 
+    def test_stopping_takes_the_api_beside_it_away_too(self):
+        # Else its watcher takes it away only after the device has gone, and the
+        # next scenario's computer could find it, keeping what it is sent in a
+        # state reset() has cleared.
+        from unittest import mock
+        with mock.patch.object(fault_suite.subprocess, "run",
+                               return_value=SimpleNamespace(stdout="")) as run:
+            fault_suite.Instance(3).stop()
+        self.assertIn(mock.call(["docker", "rm", "-f", "autoflash-beken-emu-3-api"], capture_output=True),
+                      run.call_args_list)
+
 
 
 class EarlierRecordsTests(unittest.TestCase):
@@ -1070,6 +1081,54 @@ class ReadoutScenarioTests(unittest.TestCase):
             instance = self.instance(tmp)
             instance.last_events = lambda: happened(("phase", {"phase": "read-done"}))
             self.assertEqual(self.outcome(self.SC, instance, kept_after=1)[0]["result"], "MISTIMED")
+
+    PLAIN = {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none", "arg": "unattended", "at": 0}
+    DIGEST = "a" * 64
+
+    def sent(self, *, stored=True, whole=True):
+        """The readout with no fault, sent to the API beside the device: its
+        verdict, and how the tool was run."""
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp, "state/work/runs/1/run.log")
+            run.parent.mkdir(parents=True)
+            run.write_text("[10:00:00] === run started ===\n", encoding="utf-8")
+            api = Path(tmp, "state/api")
+            api.mkdir()
+            (api / "requests.log").write_text(
+                '2026-11-17T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}\n'
+                f'2026-11-17T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-17-{self.DIGEST[:12]}"}}\n',
+                encoding="utf-8")
+            if stored:
+                (api / f"readouts__2026-11-17__{self.DIGEST[:24]}.tar").write_bytes(b"tar")
+            runs = []
+            instance = SimpleNamespace(state=Path(tmp, "state"), runs=lambda: [run], answering=lambda: False,
+                                       last_log=lambda: "", last_events=list, stub_said=lambda: b"",
+                                       tool=lambda target, log, **options: runs.append((target, options)))
+            with mock.patch.object(fault_suite, "finish"), mock.patch.object(fault_suite, "recover"), \
+                    mock.patch.object(fault_suite, "settle"), \
+                    mock.patch.object(fault_suite, "sonoff_works", return_value=True), \
+                    mock.patch.object(fault_suite.fault_verdicts, "readout_problems",
+                                      return_value=[] if whole else ["no info.txt"]):
+                outcome = fault_suite.readout_scenario(instance, self.PLAIN, Path(tmp, "x.log"), {})
+            self.assertTrue(Path(tmp, "x-api/requests.log").exists())   # what the API was asked, kept
+        return outcome["result"], runs
+
+    def test_the_readout_with_no_fault_is_sent_to_the_api_and_judged_there(self):
+        result, runs = self.sent()
+        self.assertEqual((result, runs), ("PASS", [("readout", {"api": True})]))
+        self.assertTrue(fault_suite.to_api(self.PLAIN))
+        self.assertFalse(fault_suite.to_api(self.SC))
+
+    def test_one_the_api_did_not_keep_whole_fails_as_the_api_says(self):
+        self.assertEqual(self.sent(stored=False)[0], "FAIL-NOT-STORED")
+        self.assertEqual(self.sent(whole=False)[0], "FAIL-READOUT")
+
+    def test_a_readout_sent_to_the_api_runs_the_computer_with_it(self):
+        from unittest import mock
+        with mock.patch.object(fault_suite.subprocess, "Popen") as popen, tempfile.TemporaryDirectory() as tmp:
+            fault_suite.Instance(3).tool("readout", Path(tmp, "tool.log"), api=True)
+        self.assertEqual(popen.call_args.args[0][3:5], ["computer", "tools/repo/unattended_run.py"])
 
     def converted(self, code, said="", answering=True, kept=b"tar", events=()):
         from unittest import mock

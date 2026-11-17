@@ -5,6 +5,7 @@ import io
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from tools.autoflash import readout, report, report_upload
@@ -184,6 +185,106 @@ class ReadoutTests(unittest.TestCase):
 
     def test_something_not_a_readout_says_so(self):
         self.assertTrue(fault_verdicts.readout_problems(b"not a tar", "beken")[0].startswith("not a tar"))
+
+
+class ReadoutApiTests(unittest.TestCase):
+    """What a readout sent to the API beside the emulator did, judged by what
+    the API was asked and kept (requests.log, its store): a readout of every
+    device in the account, or of the device alone."""
+
+    DEVICE = "BASICR4"
+    RUN = ("[10:00:00] Reading out 'Test device 1' (TESTLIGHT) (1 of 3)...\n"
+           "[10:00:20] Reading out 'Test device 2' (TESTLIGHT) (2 of 3)...\n"
+           "[10:00:30] Reading out 'Device (stub)' (BASICR4) (3 of 3)...\n")
+    WANTED = '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}'
+    HELD = '2026-11-09T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
+    LIMITED = '2026-11-09T10:00:40.000Z POST /v1/readout 9000 -> 429 {"error":"too many readouts at once"}'
+
+    def taken(self, digest):
+        return f'2026-11-09T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-09-{digest[:12]}"}}'
+
+    def problems(self, requests, run=RUN, finished=True, stored=(), whole=(), kept=(), account=3,
+                 family="espressif"):
+        """readout_api_problems' verdicts of one run, the API's store holding
+        `stored` (digests), the device's readout lacking `whole`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            api = Path(tmp)
+            (api / "requests.log").write_text("".join(line + "\n" for line in requests), encoding="utf-8")
+            for digest in stored:
+                (api / f"readouts__2026-11-09__{digest[:24]}.tar").write_bytes(b"tar")
+            with mock.patch.object(fault_verdicts, "readout_problems", return_value=list(whole)) as judged:
+                problems, summary = fault_verdicts.readout_api_problems(run, finished, api, account, self.DEVICE,
+                                                                        family, kept)
+            self.judged = [call.args[1] for call in judged.call_args_list]
+        return [verdict for verdict, _ in problems], summary
+
+    A, B = "a" * 64, "b" * 64
+
+    def test_every_device_asked_each_wanted_one_taken_and_kept(self):
+        verdicts, summary = self.problems([self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.LIMITED,
+                                           self.LIMITED, self.taken(self.B)], stored=(self.A, self.B))
+        self.assertEqual(verdicts, [])
+        self.assertEqual((summary["asked"], summary["wanted"], summary["taken"], summary["429"]), (3, 2, 2, 2))
+        self.assertTrue(summary["device_whole"])
+
+    def test_a_device_not_asked(self):
+        self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD], stored=(self.A,))[0],
+                         ["FAIL-NOT-ASKED"])
+        # Nor read out at all: the account's three, two of them.
+        run = self.RUN.rsplit("[10:00:30]", 1)[0]
+        self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD], run=run, stored=(self.A,))[0],
+                         ["FAIL-NOT-ASKED"])
+
+    def test_a_device_not_wanted_but_sent(self):
+        verdicts, _ = self.problems([self.WANTED, self.taken(self.A), self.HELD, self.taken(self.B), self.WANTED,
+                                     self.taken(self.B)], stored=(self.A, self.B))
+        self.assertEqual(verdicts, ["FAIL-SENT-UNWANTED"])
+
+    def test_a_wanted_device_never_sent_or_never_taken(self):
+        self.assertEqual(self.problems([self.WANTED, self.HELD, self.WANTED, self.taken(self.B)],
+                                       stored=(self.B,))[0], ["FAIL-NOT-SENT"])
+        self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD, self.WANTED] + [self.LIMITED] * 7,
+                                       stored=(self.A,))[0], ["FAIL-NOT-SENT"])
+
+    def test_a_stopped_run_is_let_off_the_device_it_stopped_on(self):
+        requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED]
+        self.assertEqual(self.problems(requests, finished=False, stored=(self.A,))[0], [])
+        self.assertEqual(self.problems(requests, finished=True, stored=(self.A,))[0], ["FAIL-NOT-SENT"])
+
+    def test_an_answer_the_tool_could_not_read_is_wanted(self):
+        failed = '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 500 {"error":"x"}'
+        self.assertEqual(self.problems([failed, self.HELD, self.WANTED, self.taken(self.B)], stored=(self.B,))[0],
+                         ["FAIL-NOT-SENT"])
+
+    def test_one_taken_but_not_in_the_store_or_the_devices_not_whole(self):
+        requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.taken(self.B)]
+        self.assertEqual(self.problems(requests, stored=(self.A,))[0], ["FAIL-NOT-STORED"])
+        self.assertEqual(self.problems(requests, stored=(self.A, self.B), whole=["no efuse.bin.xz"])[0],
+                         ["FAIL-READOUT"])
+
+    def test_one_kept_unsent(self):
+        requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.taken(self.B)]
+        self.assertEqual(self.problems(requests, stored=(self.A, self.B), kept=["readout-1000000002.tar"])[0],
+                         ["FAIL-KEPT-UNSENT"])
+
+    def test_a_readout_of_the_device_alone_is_judged_as_the_one_device(self):
+        # The attended suite's, and each fault suite's readout sent to the API:
+        # no "Reading out" line names it, and the device is the one judged whole.
+        for family in ("espressif", "beken"):
+            with self.subTest(family=family):
+                verdicts, summary = self.problems([self.WANTED, self.taken(self.A)], run="", stored=(self.A,),
+                                                  account=1, family=family)
+                self.assertEqual(verdicts, [])
+                self.assertTrue(summary["device_whole"])
+                self.assertEqual(self.judged, [family])
+        self.assertEqual(self.problems([self.WANTED, self.taken(self.A)], run="", stored=(self.A,), account=1,
+                                       whole=["no flash.bin.xz"])[0], ["FAIL-READOUT"])
+        self.assertEqual(self.problems([], run="", account=1)[0], ["FAIL-NOT-ASKED"])
+        self.assertEqual(self.problems([], run="", account=1, finished=False)[0], [])
+        # Not needed (the API has enough of it): asked, and rightly not sent.
+        self.assertEqual(self.problems([self.HELD], run="", account=1)[0], [])
+        self.assertEqual(self.problems([self.HELD, self.taken(self.A)], run="", stored=(self.A,), account=1)[0],
+                         ["FAIL-SENT-UNWANTED"])
 
 
 class FirstStageTests(unittest.TestCase):

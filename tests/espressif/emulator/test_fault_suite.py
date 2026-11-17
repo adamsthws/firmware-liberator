@@ -1781,15 +1781,6 @@ class ReadoutAllScenarioTests(unittest.TestCase):
     kept."""
 
     DEVICE = "BASICR4"
-    RUN = ("[10:00:00] Reading out 'Test device 1' (TESTLIGHT) (1 of 3)...\n"
-           "[10:00:20] Reading out 'Test device 2' (TESTLIGHT) (2 of 3)...\n"
-           "[10:00:30] Reading out 'Device (stub)' (BASICR4) (3 of 3)...\n")
-    WANTED = '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}'
-    HELD = '2026-11-09T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
-    LIMITED = '2026-11-09T10:00:40.000Z POST /v1/readout 9000 -> 429 {"error":"too many readouts at once"}'
-
-    def taken(self, digest):
-        return f'2026-11-09T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-09-{digest[:12]}"}}'
 
     def scenario(self, account="mixed", step="start", fault="none", arg=None):
         arg = account if arg is None else arg
@@ -1832,9 +1823,12 @@ class ReadoutAllScenarioTests(unittest.TestCase):
                     mock.patch.object(fs, "STUB_CLOUD", True), \
                     mock.patch.dict(os.environ, {"AUTOFLASH_API_ENOUGH": "X"}):
                 sc.run_tool("readout", fresh=True)
-                other = fs.Scenario(26, {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none",
-                                         "arg": "unattended"}, str(log))
+                other = fs.Scenario(26, {"id": "x", "route": "sonoff>readout", "step": "read", "fault": "deviceoff",
+                                         "arg": 1}, str(log))
                 other.run_tool("readout")
+                plain = fs.Scenario(26, {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none",
+                                         "arg": "unattended"}, str(log))
+                plain.run_tool("readout")
             (args, ), options = call.call_args_list[0]
             self.assertIn("--readout", args)
             self.assertNotIn("--no-api", args)   # sent to the API, which judges them
@@ -1851,6 +1845,11 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             self.assertNotIn("AUTOFLASH_API_ENOUGH", options["env"])
             self.assertNotIn("AUTOFLASH_EMU_STUB_OTHERS", options["env"])
             self.assertNotIn("AUTOFLASH_LOCAL_READOUT_LIMIT", env)   # the website's own limit
+            # The readout with no fault is sent to the API, which judges it (api_problems).
+            (args, ), options = call.call_args_list[2]
+            self.assertNotIn("--no-api", args)
+            self.assertNotIn("--all", args)
+            self.assertNotIn("AUTOFLASH_EMU_STUB_OTHERS", options["env"])
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
         self.assertIn("--no-api) api=0", script)
         self.assertIn('"${AUTOFLASH_API_ENOUGH:-}"', script)
@@ -1883,67 +1882,6 @@ class ReadoutAllScenarioTests(unittest.TestCase):
                       (fs.REPO / "tools/repo/emulator-room.sh").read_text(encoding="utf-8"))
         self.assertIn("process.env.AUTOFLASH_LOCAL_READOUT_LIMIT",
                       (fs.REPO / "website/api/local.mjs").read_text(encoding="utf-8"))
-
-    def problems(self, requests, run=RUN, finished=True, stored=(), whole=(), kept=()):
-        """readout_all_problems' verdicts of one run, the API's store holding
-        `stored` (digests), the device's readout lacking `whole`."""
-        with tempfile.TemporaryDirectory() as tmp:
-            api = Path(tmp)
-            (api / "requests.log").write_text("".join(line + "\n" for line in requests), encoding="utf-8")
-            for digest in stored:
-                (api / f"readouts__2026-11-09__{digest[:24]}.tar").write_bytes(b"tar")
-            with mock.patch.object(fs.fault_verdicts, "readout_problems", return_value=list(whole)):
-                problems, summary = fs.readout_all_problems(run, finished, api, 3, self.DEVICE, kept)
-        return [verdict for verdict, _ in problems], summary
-
-    A, B = "a" * 64, "b" * 64
-
-    def test_every_device_asked_each_wanted_one_taken_and_kept(self):
-        verdicts, summary = self.problems([self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.LIMITED,
-                                           self.LIMITED, self.taken(self.B)], stored=(self.A, self.B))
-        self.assertEqual(verdicts, [])
-        self.assertEqual((summary["asked"], summary["wanted"], summary["taken"], summary["429"]), (3, 2, 2, 2))
-        self.assertTrue(summary["device_whole"])
-
-    def test_a_device_not_asked(self):
-        self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD], stored=(self.A,))[0],
-                         ["FAIL-NOT-ASKED"])
-        # Nor read out at all: the account's three, two of them.
-        run = self.RUN.rsplit("[10:00:30]", 1)[0]
-        self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD], run=run, stored=(self.A,))[0],
-                         ["FAIL-NOT-ASKED"])
-
-    def test_a_device_not_wanted_but_sent(self):
-        verdicts, _ = self.problems([self.WANTED, self.taken(self.A), self.HELD, self.taken(self.B), self.WANTED,
-                                     self.taken(self.B)], stored=(self.A, self.B))
-        self.assertEqual(verdicts, ["FAIL-SENT-UNWANTED"])
-
-    def test_a_wanted_device_never_sent_or_never_taken(self):
-        self.assertEqual(self.problems([self.WANTED, self.HELD, self.WANTED, self.taken(self.B)],
-                                       stored=(self.B,))[0], ["FAIL-NOT-SENT"])
-        self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD, self.WANTED] + [self.LIMITED] * 7,
-                                       stored=(self.A,))[0], ["FAIL-NOT-SENT"])
-
-    def test_a_stopped_run_is_let_off_the_device_it_stopped_on(self):
-        requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED]
-        self.assertEqual(self.problems(requests, finished=False, stored=(self.A,))[0], [])
-        self.assertEqual(self.problems(requests, finished=True, stored=(self.A,))[0], ["FAIL-NOT-SENT"])
-
-    def test_an_answer_the_tool_could_not_read_is_wanted(self):
-        failed = '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 500 {"error":"x"}'
-        self.assertEqual(self.problems([failed, self.HELD, self.WANTED, self.taken(self.B)], stored=(self.B,))[0],
-                         ["FAIL-NOT-SENT"])
-
-    def test_one_taken_but_not_in_the_store_or_the_devices_not_whole(self):
-        requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.taken(self.B)]
-        self.assertEqual(self.problems(requests, stored=(self.A,))[0], ["FAIL-NOT-STORED"])
-        self.assertEqual(self.problems(requests, stored=(self.A, self.B), whole=["no efuse.bin.xz"])[0],
-                         ["FAIL-READOUT"])
-
-    def test_one_kept_unsent(self):
-        requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.taken(self.B)]
-        self.assertEqual(self.problems(requests, stored=(self.A, self.B), kept=["readout-1000000002.tar"])[0],
-                         ["FAIL-KEPT-UNSENT"])
 
     def finish(self, judged, account="mixed", firmware="sonoff", code=0):
         sc = self.scenario(account=account)
@@ -1989,16 +1927,49 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             sc.go_readout_all()
         self.assertEqual(finish.call_args.args[2], "NOT-FIRED")
 
+    def test_the_readout_with_no_fault_is_judged_by_what_the_api_was_asked_and_kept(self):
+        digest = "a" * 64
+        plain = {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none", "arg": "unattended"}
+        for faulted in ({"step": "read", "fault": "crash", "arg": 1}, {"then": "sonoff"}):
+            self.assertFalse(fs.Scenario(26, plain | faulted, "/dev/null").to_api())
+
+        def judged(stored):
+            with tempfile.TemporaryDirectory() as tmp:
+                sc = fs.Scenario(26, plain, str(Path(tmp, "scenario.log")))
+                sc.state, sc.started = Path(tmp, "state"), 0
+                run = sc.state / "work/captures/devices/12-34-56-ab-cd-ef/runs/1/run.log"
+                run.parent.mkdir(parents=True)
+                run.write_text("=== run started ===\n", encoding="utf-8")
+                (sc.state / "api").mkdir()
+                (sc.state / "api/requests.log").write_text(
+                    '2026-11-17T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}\n'
+                    f'2026-11-17T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-17-{digest[:12]}"}}\n',
+                    encoding="utf-8")
+                if stored:
+                    (sc.state / f"api/readouts__2026-11-17__{digest[:24]}.tar").write_bytes(b"tar")
+                with mock.patch.object(fs, "device_product", return_value=self.DEVICE), \
+                        mock.patch.object(fs.fault_verdicts, "readout_problems", return_value=[]):
+                    found = sc.readout_kept()
+                self.assertTrue(Path(tmp, "scenario-api/requests.log").exists())   # kept beside its log
+                return [problem.split(":")[0] for problem in found]
+        self.assertTrue(fs.Scenario(26, plain, "/dev/null").to_api())
+        self.assertEqual(judged(stored=True), [])
+        self.assertEqual(judged(stored=False), ["FAIL-NOT-STORED"])
+
     def test_each_run_judged_from_its_own_api_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
             sc = self.scenario()
             sc.state, sc.log = Path(tmp, "state"), str(Path(tmp, "scenario.log"))
             run = sc.state / "work/captures/devices/unidentified/runs/1/run.log"
             run.parent.mkdir(parents=True)
-            run.write_text("=== run started ===\n" + self.RUN, encoding="utf-8")
+            run.write_text("=== run started ===\n"
+                           "[10:00:00] Reading out 'Test device 1' (TESTLIGHT) (1 of 3)...\n"
+                           "[10:00:20] Reading out 'Test device 2' (TESTLIGHT) (2 of 3)...\n"
+                           "[10:00:30] Reading out 'Device (stub)' (BASICR4) (3 of 3)...\n", encoding="utf-8")
             (run.parent / "readout-1000000001.tar").write_bytes(b"tar")
             (sc.state / "api").mkdir()
-            (sc.state / "api/requests.log").write_text(self.WANTED + "\n", encoding="utf-8")
+            (sc.state / "api/requests.log").write_text(
+                '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}\n', encoding="utf-8")
             (sc.state / "api-server.out").write_text("Error: column index out of range\n", encoding="utf-8")
             judged = []
             with mock.patch.object(sc, "run_tool", return_value=0), \

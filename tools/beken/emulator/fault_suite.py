@@ -360,6 +360,11 @@ class Instance:
         # Long enough for the device to keep its flash as it stops (device.py).
         for name in (self.computer, self.device):
             subprocess.run(["docker", "stop", "-t", "30", name], capture_output=True)
+        # The API beside it (beken-emu.sh computer) goes too: its watcher would
+        # take it away only after the device has gone, and the next scenario's
+        # computer could find it still there, keeping what it is sent in the
+        # state reset() is about to clear.
+        subprocess.run(["docker", "rm", "-f", f"{self.device}-api"], capture_output=True)
         # And gone (--rm), before a container of the same name is started again.
         for _ in range(30):
             found = subprocess.run(["docker", "ps", "-aq", "--filter", f"name=^({self.computer}|{self.device})$"],
@@ -438,13 +443,15 @@ class Instance:
         """The home Wi-Fi's router "off" or "on" (beken-emu.sh router)."""
         self.sh("router", how, timeout=60, check=True)
 
-    def tool(self, target: str, log: Path, new: bool = False, more: tuple[str, ...] = ()) -> subprocess.Popen:
+    def tool(self, target: str, log: Path, new: bool = False, more: tuple[str, ...] = (),
+             api: bool = False) -> subprocess.Popen:
         """A run of the tool to `target`, or a readout (target "readout"), on a
         terminal of its own as a person's (tools/repo/unattended_run.py): the
         screen it ends on is printed after it, for FAIL-SCREEN. A readout is
-        kept unsent (--no-api), for readout_problems to judge."""
-        args = (["--no-api", "computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
-                 "--env-file", "captures/tool.env"]
+        kept unsent (--no-api), for readout_problems to judge; with `api`, sent
+        to the API beside the emulator, for api_problems to judge."""
+        args = ([*([] if api else ["--no-api"]), "computer", "tools/repo/unattended_run.py", "--command",
+                 "readout", "--", "--env-file", "captures/tool.env"]
                 if target == "readout" else
                 ["--no-api", "computer", "tools/repo/unattended_run.py", "--", "--env-file", "captures/tool.env",
                  "--firmware", target] + (["--new"] if new else [])) + list(more)
@@ -983,6 +990,35 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
     return dict(result="PASS" if ok else "FAIL", runs=runs)
 
 
+def to_api(sc: dict) -> bool:
+    """Whether the scenario's readout goes to the API beside the emulator: the
+    one fresh from Sonoff's firmware with no fault, so both sides of a readout
+    are seen as a person's goes; each other is kept unsent, for what a fault
+    left of it."""
+    return sc["route"] == "sonoff>readout" and sc["fault"] == "none"
+
+
+def api_problems(instance: Instance, log: Path) -> list[str] | None:
+    """What the API beside the emulator was asked and kept of this scenario's
+    newest readout (fault_verdicts.readout_api_problems), as "VERDICT: why";
+    [] for nothing wrong, None with no run. What it was asked and kept is kept
+    beside the scenario's log."""
+    runs = instance.runs()
+    if not runs:
+        return None
+    api = log.with_name(f"{log.stem}-api")
+    shutil.rmtree(api, ignore_errors=True)
+    if (instance.state / "api").is_dir():
+        shutil.copytree(instance.state / "api", api)
+    else:
+        api.mkdir()
+    kept = sorted(path.name for path in runs[-1].parent.glob("readout*.tar"))
+    run = fault_verdicts.last_run(runs[-1].read_text(encoding="utf-8", errors="replace"))
+    problems, _ = fault_verdicts.readout_api_problems(run, True, api, 1, kinds.SONOFF_S61.example_product_model,
+                                                      "beken", kept)
+    return [f"{verdict}: {why}" for verdict, why in problems]
+
+
 def readout_problems(instance: Instance) -> list[str] | None:
     """What the newest readout.tar this scenario's runs kept lacks
     (fault_verdicts.readout_problems), or None when none kept one."""
@@ -1021,7 +1057,11 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     is kept. It passes when one is, and the device works on Sonoff's firmware."""
     if sc["route"].split(">")[0] != "sonoff":
         return converted_readout(instance, log, notes)
-    run = instance.tool("readout", log)
+    sent = to_api(sc)
+
+    def problems_now() -> list[str] | None:
+        return api_problems(instance, log) if sent else readout_problems(instance)
+    run = instance.tool("readout", log, api=sent)
     if sc["fault"] != "none":
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
@@ -1036,22 +1076,24 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
             time.sleep(sc["arg"])
     finish(run, instance)
     runs = 1
-    while readout_problems(instance) != [] and runs <= RECOVERY_RUNS:
+    while problems_now() != [] and runs <= RECOVERY_RUNS:
         since = len(instance.stub_said())
         recover(instance, "sonoff", notes)
         settle(instance, since)
         again = "sonoff" if instance.answering() else "readout"
         notes.setdefault("then", []).append(again)
-        finish(instance.tool(again, log), instance)
+        finish(instance.tool(again, log, api=sent and again == "readout"), instance)
         runs += 1
-    problems = readout_problems(instance)
+    problems = problems_now()
     notes["readout"] = problems if problems is not None else ["none kept"]
     if notes.get("mistimed"):
         return dict(result="MISTIMED", runs=runs)
     if not_fired(sc["fault"], notes):
         return dict(result="NOT-FIRED", runs=runs)
     if problems != []:
-        return dict(result="FAIL-READOUT", runs=runs)
+        # No whole readout kept; or sent, the API's verdict (api_problems).
+        first = notes["readout"][0].split(":")[0]
+        return dict(result=first if sent and first.startswith("FAIL-") else "FAIL-READOUT", runs=runs)
     return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=runs)
 
 

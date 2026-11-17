@@ -482,6 +482,13 @@ the suite reads either.
   the whole flash matching its own hash check (FAIL-READOUT), and the device
   ends answering as Sonoff's firmware (FAIL-NOT-SONOFF, or BRICK if its serial
   output ends as a device that cannot start does).
+- The readout with no fault (`sonoff>readout:start:none-unattended`) is sent
+  to the API beside the emulator instead, and judged by what the API was
+  asked and kept, as a readout of every device's runs are, below
+  (`fault_verdicts.readout_api_problems`): asked `/wanted`, sent, and kept
+  whole in the API's store (FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-NOT-STORED,
+  FAIL-READOUT), nothing kept unsent (FAIL-KEPT-UNSENT). What the API was
+  asked and kept is copied beside the scenario's log (`...-api/`).
 - A readout of a device on Tasmota, given its address, must keep its first
   stage alone - the firmware eWeLink offers, its manifest naming Tasmota and
   its memory not read (FAIL-READOUT) - end with no failure (FAIL-EXIT), send
@@ -887,6 +894,10 @@ for a Beken device, found by its hardware address as every device is.
   for a Beken device and the whole 4 MB flash (FAIL-READOUT), and the device,
   switched off and on, starts Sonoff's firmware and is back in eWeLink
   (FAIL-NOT-SONOFF).
+- The readout with no fault is sent to the API beside the emulator instead,
+  and judged by what the API was asked and kept, as the Espressif suite's is
+  (FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-NOT-STORED, FAIL-READOUT,
+  FAIL-KEPT-UNSENT), copied beside the scenario's log (`...-api/`).
 - A readout of a device on OpenBeken must keep its first stage alone, as the
   Espressif suite's of a device on Tasmota (FAIL-READOUT, FAIL-EXIT), serving
   the device nothing (FAIL-SENT), which must still answer on OpenBeken
@@ -1029,6 +1040,7 @@ otherwise it is:
 | FAIL-ANSWER | an answer that switches the device or the router, or moves the computer's Wi-Fi, failed to: the network not on the air to join, say |
 | FAIL-QUESTION | something was wrong as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice (an earlier try left on the screen) |
 | FAIL-SCREEN | the screen it ended on: as the fault suites' FAIL-SCREEN, and how it ended (`unattended_run.end_problems`) - the report's columns lined up and balanced, the links to support the project or the way to open an issue under it, the report ID and what was put on the clipboard as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there, or one its `expect.never` wants nowhere (at any answer or at the end: a key pressed by accident, echoed) |
+| FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-SENT-UNWANTED, FAIL-NOT-STORED, FAIL-READOUT, FAIL-KEPT-UNSENT | a readout's other side: what the API beside the emulator was asked and kept, as the fault suites judge a readout sent to it (`fault_verdicts.readout_api_problems`), copied into the scenario's results (`api/`, `again-api/`); an `api_down` scenario's FAIL-READOUT: the readout kept for later is not whole, or none was kept |
 | HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 
 Results and recordings go to `captures/emulation/attended/<time>/`.
