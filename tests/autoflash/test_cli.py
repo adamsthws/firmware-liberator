@@ -282,7 +282,7 @@ class AnotherDeviceTests(unittest.TestCase):
 
     def test_a_readout_starts_a_run_of_its_own(self):
         # Never an unfinished conversion carried on.
-        _, made, _, _ = self.main(codes=[1], answers=[], command="readout")
+        _, made, _, _ = self.main(codes=[130], answers=[], command="readout")
         self.assertEqual((made[0].run, self.ran), ("run-2", ["read_out"]))
 
     def test_status_looks_at_the_run_given_else_the_devices_latest(self):
@@ -299,12 +299,20 @@ class AnotherDeviceTests(unittest.TestCase):
         made[1].keep_sign_in.assert_called_once_with(made[0])
 
     def test_not_after_one_that_stopped(self):
-        for command in ("run", "readout"):
-            for code in (1, 2, 130):
-                with self.subTest(command=command, code=code):
-                    ended, made, asked, _ = self.main(codes=[code], answers=[], command=command)
-                    self.assertEqual((ended, len(made)), (code, 1))
-                    asked.assert_not_called()
+        for command, code in (("run", 1), ("run", 2), ("run", 130), ("readout", 130)):
+            with self.subTest(command=command, code=code):
+                ended, made, asked, _ = self.main(codes=[code], answers=[], command=command)
+                self.assertEqual((ended, len(made)), (code, 1))
+                asked.assert_not_called()
+
+    def test_after_a_readout_that_failed_or_was_not_confirmed(self):
+        # Seen: a readout that did not go ahead ended the sitting at the email
+        # question, with no way to read out or convert another device.
+        code, made, asked, _ = self.main(codes=[1, 0], answers=[self.READ_OUT, prompts.QuitRun("q")],
+                                         command="readout")
+        self.assertEqual((code, self.ran), (0, ["read_out", "read_out"]))
+        self.assertEqual(asked.call_args.args, ("What next", ["Convert a device", "Read out another device"]))
+        made[1].keep_sign_in.assert_called_once_with(made[0])
 
     def test_the_email_question_comes_once_as_the_sitting_ends_however_it_ends(self):
         for codes, answers in (([0, 0], [self.CONVERT, prompts.QuitRun("q")]), ([1], []), ([130], [])):

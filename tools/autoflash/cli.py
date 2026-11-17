@@ -659,7 +659,7 @@ def _main() -> int:
                 firewall.release_firewall(ctx)
             output.finish()
     code = read_out(ctx) if args.command == "readout" else convert(ctx, given)
-    while code == 0 and not args.send:
+    while goes_on(args.command, code) and not args.send:
         command = what_next(args.command)
         if command is None:
             break
@@ -673,8 +673,17 @@ def _main() -> int:
     return code
 
 
+def goes_on(command: str, code: int) -> bool:
+    """Whether the sitting offers what next after `command` ended with `code`:
+    a conversion that finished, or a readout however it ended but by q or
+    Ctrl-C. One that failed or was not confirmed leaves its device's Sonoff
+    firmware in place, so another can be read out or converted; a conversion
+    that failed may leave its device needing seeing to first."""
+    return code == 0 or (command == "readout" and code == 1)
+
+
 def what_next(last: str) -> str | None:
-    """After a conversion or a readout that finished, what is next, in the
+    """After a conversion that finished, or a readout (goes_on), what is next, in the
     same sitting: another device converted, or one read out - "run" or
     "readout" - with no command to type again.  None for nothing: q, or
     Ctrl-C.  Asked only of someone at the keyboard."""

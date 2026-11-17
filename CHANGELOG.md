@@ -14,6 +14,12 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
+## 3.1.0
+
+- A readout that failed, or could not be sent, asks what next too, as one that
+  finished does: read out another device or convert one, without starting the
+  tool again. Before, it ended at the email question.
+
 ## 3.0.0
 
 A major release because an option has gone: the tool's options say "device",
