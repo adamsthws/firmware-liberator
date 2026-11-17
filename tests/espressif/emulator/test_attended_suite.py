@@ -210,6 +210,16 @@ class RunTests(unittest.TestCase):
                 Path(tmp, "ca.crt").write_text("ca", encoding="utf-8")
                 self.assertTrue(attended_suite.beken_ready(61, Path(tmp)))
 
+    def test_two_batches_begun_the_same_second_have_a_results_folder_each(self):
+        # Seen: an S61 batch and an S60 one started together, and the second
+        # stopped at once on the first's folder (FileExistsError).
+        import datetime
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(attended_suite, "RESULTS", Path(tmp)):
+            now = datetime.datetime(2026, 11, 17, 23, 43, 9)
+            first, second = attended_suite.new_results(now), attended_suite.new_results(now)
+        self.assertEqual((first.name, second.name), ("20261117-234309", "20261117-234309-2"))
+
     def test_a_readout_scenario_runs_a_readout(self):
         command = attended_suite.wrapper(61, {"command": "readout"}, "--", "--new", mac="12:34:56:ab:cd:ef")
         self.assertIn("--readout", command[:command.index("--")])

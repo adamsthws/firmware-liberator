@@ -775,6 +775,22 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
     return line + "".join(f"\n    {verdict}" for verdict in verdicts)
 
 
+def new_results(now: datetime.datetime) -> Path:
+    """A batch's own results folder, named for when it began: another batch
+    begun the same second (the S61's beside the S60's, say) has that name,
+    so this one takes the next free -N after it."""
+    name = now.strftime("%Y%m%d-%H%M%S")
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    for number in range(1, 100):
+        folder = RESULTS / (name if number == 1 else f"{name}-{number}")
+        try:
+            folder.mkdir()
+            return folder
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"no results folder free for {name} in {RESULTS}")
+
+
 def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], results: Path, mac: str | None,
             workers: int, first: int) -> list[str]:
     """Each chosen scenario, `workers` at once (the S61's one at a time,
@@ -828,8 +844,7 @@ def main() -> int:
         parser.error(f"no such scenario: {', '.join(unknown)}")
     if not args.device and any(found[name][0] == "espressif" for name in chosen):
         parser.error("an S60's scenarios need --device: the backed-up device the emulator runs a copy of")
-    results = RESULTS / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    results.mkdir(parents=True)
+    results = new_results(datetime.datetime.now())
     lines = run_all(chosen, found, results, args.device, args.workers, args.first_instance)
     (results / "results.txt").write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
     print(emulator_stats.send(RESULTS), flush=True)
