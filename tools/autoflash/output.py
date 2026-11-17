@@ -106,11 +106,13 @@ class _State:
     stream_fresh = True               # a helper's output is at the start of a row
     after_stage = False               # a stage line was the last on screen: a gap before what follows
     after_blank = False               # a blank line was the last on screen
-    draws_notice = False              # a first Ctrl-C's notice is drawn under the stage line
+    draws_notice = False              # rows drawn under the stage line: a first Ctrl-C's notice, a wait's hint
     notice_rows = 0                   # rows of it on screen now
     working: str | None = None        # a wait outside any stage, its spinner drawn (working())
     working_started = 0.0
     working_drawn = False             # drawn yet: not until it has lasted WORKING_AFTER
+    stage_hint: str | None = None     # a wait within the stage under way (working()): under its line
+    stage_hint_started = 0.0          # once it has lasted HINT_AFTER
     paused = False                    # waiting for the keyboard: draw nothing
     held = False                      # between questions that belong together: no clock
     ticker: threading.Thread | None = None
@@ -205,6 +207,7 @@ def start(log_path: Path | None, *, verbose: bool) -> None:
     with _lock:
         _s.pending_prompt, _s.pending_answer = None, ""
         _s.live, _s.live_is_stage, _s.notice_rows, _s.working = 0, False, 0, None
+        _s.stage_hint = None
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             _s.log = log_path.open("a", encoding="utf-8")
@@ -767,6 +770,9 @@ def hold():
 # A wait outside any stage shorter than this shows nothing (working): its
 # line would only flash.
 WORKING_AFTER = 0.5
+# A wait within a stage says what it is under the stage's line once it has
+# lasted this long (working): the spinner alone says enough of a short one.
+HINT_AFTER = 3.0
 
 
 @contextlib.contextmanager
@@ -774,16 +780,22 @@ def working(text: str):
     """A wait outside any stage - the report being put together after the
     last one, a readout's - shown as `text` and the stages' spinner on a row
     of its own, below a blank one, once it has lasted WORKING_AFTER, and
-    taken away once it is over.  On a terminal in concise mode only:
-    elsewhere, or within a stage, whose own spinner turns, `text` is said as
-    a line, as any other."""
+    taken away once it is over.  Within a stage, whose own spinner turns,
+    `text` is logged, and shown under the stage's line once the wait has
+    lasted HINT_AFTER, while nothing else is under it - sending a readout
+    takes a minute or two, and a spinner alone looks stuck.  On a terminal
+    in concise mode only: elsewhere `text` is said as a line, as any other."""
     with _lock:
         shown = _s.concise and _s.ticker is not None and _s.stage is None
+        hinted = _s.concise and _s.ticker is not None and _s.stage is not None
+        before = _s.stage_hint, _s.stage_hint_started
     if not shown:
         say(text)
     with _lock:
         if shown:
             _s.working, _s.working_started, _s.working_drawn = text, time.monotonic(), False
+        if hinted:
+            _s.stage_hint, _s.stage_hint_started = text, time.monotonic()
     try:
         yield
     finally:
@@ -794,6 +806,9 @@ def working(text: str):
                     sys.stdout.write("\r" + " " * _s.live + "\r")
                     sys.stdout.flush()
                     _s.live = 0
+            if hinted:
+                _s.stage_hint, _s.stage_hint_started = before
+                tick()   # its row taken off now, not at the next turn
 
 
 def set_stage_width(width: int, most: int = 0) -> None:
@@ -1206,11 +1221,12 @@ def _draw_stage() -> None:
         _s.notice_rows = len(rows)
         _s.waited = True   # time has passed: a note said next stands apart (_print)
         return
-    # Below it, a first Ctrl-C's notice while it lasts (interrupt.notice),
-    # the cursor back at the end of the stage line after it.
+    # Below it, what the stage is waiting on once it has waited a while
+    # (working), and a first Ctrl-C's notice while it lasts (interrupt.notice),
+    # the cursor back at the end of the stage line after them.
     # Each row written over the last draw's, not erased first, so it does
     # not flicker; the rows go once it has fewer.
-    rows = _notice_rows() if _s.draws_notice else []
+    rows = [*_hint_rows(), *_notice_rows()] if _s.draws_notice else []
     notice = "".join(f"\n{row}\x1b[K" for row in rows)
     if rows:
         notice += f"\x1b[{len(rows)}A\r" + shown
@@ -1219,6 +1235,14 @@ def _draw_stage() -> None:
     sys.stdout.flush()
     _s.live, _s.live_is_stage = len(line), True
     _s.notice_rows = len(rows)
+
+
+def _hint_rows() -> list[str]:
+    """What the stage under way waits on, as a row under its line, once the
+    wait has lasted HINT_AFTER (working)."""
+    if _s.stage_hint is None or time.monotonic() - _s.stage_hint_started < HINT_AFTER:
+        return []
+    return [styled(_clip(f"{MARGIN}    {_s.stage_hint}"), DIM)]
 
 
 def _draw_working() -> None:

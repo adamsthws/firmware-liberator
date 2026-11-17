@@ -42,6 +42,10 @@ check.
   "Generating your report...", as a conversion's is.
 - A wait between stages, such as "Generating your report...", is shown only
   once it has lasted a moment: one over at once no longer flashes its line.
+- A long wait within a stage says what it is under the stage's line after a
+  few seconds - "Preparing to send - a few seconds to a minute or two..." as a
+  readout is sent, say - and takes it away once it is over. Before, only the
+  spinner turned.
 - A readout that could not be sent says why in plain words ("this computer
   could not reach the website. Check its internet connection", not
   "<urlopen error [Errno 113] No route to host>"), then its report; where it

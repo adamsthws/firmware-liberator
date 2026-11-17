@@ -16,6 +16,9 @@ from tools.autoflash import context, hostsys, join, output, phases, records, pro
 from tools.autoflash.state import RunState
 
 
+ANSI_RE = output.ANSI_RE
+
+
 class FakeTerminal(io.StringIO):
     def isatty(self):
         return True
@@ -2051,6 +2054,47 @@ class WorkingTests(OutputTestCase):
         text, _ = self.run_with(io.StringIO(), False, body)
         self.assertEqual(text, "\n Please share how it went!\n")
 
+
+    def hinted(self, wait, *, note=False):
+        """The screen while a wait within a stage has lasted `wait` seconds
+        (and a note under the stage line, with `note`), and once it is over."""
+        clock = [100.0]
+
+        def body():
+            output.stage_begin(8, "Saving the readout")
+            if note:
+                output.tell("    A note under the stage")
+            with output.working("Preparing to send - a minute or two..."):
+                clock[0] += wait
+                output._tick()
+                seen.append(rendered(terminal.getvalue()))
+            seen.append(rendered(terminal.getvalue()))
+            output.stage_end("complete")
+        seen, terminal = [], FakeTerminal()
+        with mock.patch.object(output, "colour_ok", return_value=True), \
+                mock.patch.object(output, "_tick_forever"), \
+                mock.patch.object(output.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            _, log = self.run_with(terminal, False, body)
+        self.assertIn("Preparing to send", log)   # logged either way
+        return [[ANSI_RE.sub("", row) for row in rows] for rows in seen]
+
+    def test_within_a_stage_a_long_wait_says_what_it_is_under_the_stage_line_then_goes(self):
+        # Seen: "Saving the readout" turned its spinner for a minute or two
+        # with nothing to say why.
+        during, after = self.hinted(output.HINT_AFTER)
+        self.assertTrue(during[-2].startswith("Stage 8 - Saving the readout - Underway"), during)
+        self.assertEqual(during[-1], "Preparing to send - a minute or two...")
+        self.assertFalse([row for row in after if "Preparing" in row], after)
+
+    def test_a_short_wait_within_a_stage_shows_only_its_spinner(self):
+        during, _ = self.hinted(output.HINT_AFTER / 2)
+        self.assertFalse([row for row in during if "Preparing" in row], during)
+
+    def test_no_hint_under_notes_the_stage_shows(self):
+        # They say what it is doing already; the stage line is above them.
+        during, _ = self.hinted(output.HINT_AFTER, note=True)
+        self.assertFalse([row for row in during if "Preparing" in row], during)
 
     def test_in_verbose_mode_or_within_a_stage_it_is_a_line_as_any_other(self):
         def body():
