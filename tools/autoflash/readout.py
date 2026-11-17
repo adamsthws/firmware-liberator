@@ -82,12 +82,13 @@ REPLACED = "replaced"
 DEVICE_KEYS = ("device_ip", "device_mac", "stock_version", "product_model", STATE_KEY, "readout_sent")
 
 
-# The stage lines a readout shows on screen, in order, as a conversion shows
+# The stage lines a readout may show on screen, in order, as a conversion shows
 # its route's steps - not the readout's two stages above, which are what it
 # reads. The first is the account's, once; the rest are each device's,
-# numbered again for each device of several (run_all). A readout a run turns
-# into (from_run) has done the first as that run's stage 2, and numbers on
-# from there.
+# numbered again for each device of several (run_all), and only those it has:
+# one read only in the first stage has nothing to read or restore, so those
+# are never shown (skip). A readout a run turns into (from_run) has done the
+# first as that run's stage 2, and numbers on from there.
 STAGES = (
     ("account", "Querying eWeLink for devices"),
     ("locate", "Locating the device on your network"),
@@ -97,9 +98,10 @@ STAGES = (
     ("restore", "Restoring Sonoff's firmware"),
     ("save", "Saving the readout"),
 )
-STAGE_KEYS = [key for key, _ in STAGES]
 # The number this readout's first stage, "account", takes (lay_out_stages).
 _first_stage = 1
+# The numbers the device's stages have taken so far, by key, each the next.
+_numbered: dict[str, int] = {}
 
 
 def lay_out_stages(first: int = 1) -> None:
@@ -108,6 +110,7 @@ def lay_out_stages(first: int = 1) -> None:
     wide as the longest, or the run's, where that is wider."""
     global _first_stage
     _first_stage = first
+    _numbered.clear()
     output.set_stage_width(max(output.stage_width(), *(len(name) for _, name in STAGES)),
                            max(output.most_stages(), first + len(STAGES) - 1))
 
@@ -115,13 +118,14 @@ def lay_out_stages(first: int = 1) -> None:
 def begin(key: str) -> None:
     """The readout's stage `key` under way, the one before it ended first."""
     output.stage_end("complete")
-    output.stage_begin(_first_stage + STAGE_KEYS.index(key), dict(STAGES)[key])
+    number = _first_stage if key == "account" else _numbered.setdefault(key, _first_stage + 1 + len(_numbered))
+    output.stage_begin(number, dict(STAGES)[key])
 
 
 def skip(key: str) -> None:
-    """The readout's stage `key` passed over: nothing for it to do."""
-    begin(key)
-    output.stage_end("skipped")
+    """The readout's stage `key` passed over: nothing for it to do, so no line
+    for it on the screen, and no number - the log says it was passed over."""
+    output.log_only(f"--- {dict(STAGES)[key]}: not needed")
 
 
 def stopped_by_ctrl_c(ctx: Context) -> str:
@@ -242,6 +246,10 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
     and the links to support the project; or for one that `failed`, the way to
     open an issue in their place (report.ask_for_an_issue)."""
     done = readouts(ctx)
+    # Made before anything of it is said, a wait shown while it is, as a
+    # conversion's report is (report.invite_report).
+    with output.working("Generating your report..."):
+        fields, devices = report_fields(done), report_devices(done)
     output.tell("")
     # How it ended, above the report, as a conversion's says: one that failed
     # has its FAILED line above already, even with a device read before it.
@@ -253,14 +261,13 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
         for line in said.splitlines():
             output.tell(line)
     output.tell("")
-    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done),
-                                     balance=False):
+    for line in report.report_screen(fields, right=REPORT_RIGHT, below=devices, balance=False):
         output.tell(line)
     if failed:
         # The report's id of the device that failed, as a conversion's that did.
         report_id = next((item.report_id for item in done if item.outcome in (FAILED, CRASHED)), None)
-        copy = report.report_screen(report_fields(done), report.CLIPBOARD_COLUMNS, right=REPORT_RIGHT, balance=False,
-                                    below=[*report_devices(done), *([(report.REPORT_ID, report_id)] if report_id else [])])
+        copy = report.report_screen(fields, report.CLIPBOARD_COLUMNS, right=REPORT_RIGHT, balance=False,
+                                    below=[*devices, *([(report.REPORT_ID, report_id)] if report_id else [])])
         report.ask_for_an_issue(report.clipboard_text(copy), report_id)
     else:
         report.hold_out_hat()
@@ -434,6 +441,7 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     device of several passed by."""
     ctx.readout = this = Became.of(device)
     readouts(ctx).append(this)
+    _numbered.clear()   # its stages numbered on from the account's
     # Its own report, sent as it ends however it ends: one a readout.
     report_upload.begin_readout(ctx)
     started, waited = time.monotonic(), output.waited()
@@ -734,8 +742,7 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
         ended = became(ctx)
         ended.outcome, ended.detail = KEPT, "a test run"
         return "" if back else SWITCH_OFF_AND_ON
-    with output.until_done():
-        return sent(ctx, data, url, path, back)
+    return sent(ctx, data, url, path, back)
 
 
 def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:

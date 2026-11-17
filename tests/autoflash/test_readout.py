@@ -537,9 +537,8 @@ class RunTests(unittest.TestCase):
             "2 Locating the device on your network", "complete",   # for its MAC: eWeLink's record has none
             "3 Probing the device", "complete",
             "4 Fetching the eWeLink firmware", "complete",
-            "5 Reading the device's memory", "skipped",           # no reading program for its chip
-            "6 Restoring Sonoff's firmware", "skipped",
-            "7 Saving the readout", "complete"])
+            # Nothing to read, so nothing to restore: no line for either.
+            "5 Saving the readout", "complete"])
 
     def test_a_first_stage_device_eWeLink_gives_no_mac_for_is_looked_for_never_asked_for(self):
         # Its report names it by its MAC, so a readout and a later conversion
@@ -568,7 +567,8 @@ class RunTests(unittest.TestCase):
                 mock.patch.object(readout, "answering_at") as looked:
             readout.run(self.ctx, given)
             looked.assert_not_called()
-            self.assertEqual(self.stages[:2], ["2 Locating the device on your network", "skipped"])
+            # Not looked for, so no line for it: the next stage takes its number.
+            self.assertEqual(self.stages[:2], ["2 Probing the device", "complete"])
         self.assertEqual(readout.readouts(self.ctx)[0].mac, "12:34:56:ab:cd:01")
 
     def test_one_read_in_full_restores_its_firmware_in_a_stage_of_its_own(self):
@@ -666,9 +666,7 @@ class RunTests(unittest.TestCase):
             readout.run(self.ctx, record("S60TPG", kinds.SONOFF_S60.stock_model))
         self.assertEqual(self.stages, [
             "2 Locating the device on your network", "complete", "3 Probing the device", "complete",
-            "4 Fetching the eWeLink firmware", "complete",
-            "5 Reading the device's memory", "skipped", "6 Restoring Sonoff's firmware", "skipped",
-            "7 Saving the readout", "complete"])
+            "4 Fetching the eWeLink firmware", "complete", "5 Saving the readout", "complete"])
 
     def test_a_kind_the_tool_knows_takes_its_own_name_when_ewelink_gives_none(self):
         from tools.autoflash import kinds
@@ -1284,6 +1282,7 @@ class ReportTests(unittest.TestCase):
         with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \
                 mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
                 mock.patch.object(output, "show_links"), mock.patch.object(output, "show_link"), \
+                mock.patch.object(output, "say"), \
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
             readout.end(SimpleNamespace(readouts=done), "", failed=failed)
         return shown
@@ -1331,6 +1330,21 @@ class ReportTests(unittest.TestCase):
         copied.assert_not_called()
         self.assertFalse([line for line in shown if "Report ID" in line or "clipboard" in line], shown)
 
+    def test_its_report_is_made_under_a_wait_shown_as_a_conversion_s_is(self):
+        happened = []
+
+        @contextlib.contextmanager
+        def working(text):
+            happened.append(text)
+            yield
+            happened.append("wait over")
+        fields = readout.report_fields
+        with mock.patch.object(output, "working", working), \
+                mock.patch.object(readout, "report_fields",
+                                  side_effect=lambda done: happened.append("made") or fields(done)):
+            self.shown_by_end(self.DONE)
+        self.assertEqual(happened, ["Generating your report...", "made", "wait over"])
+
     def test_one_that_read_nothing_out_says_so_above_its_report(self):
         shown = self.shown_by_end(self.DONE[2:])
         self.assertIn("Nothing was read out.", shown)
@@ -1341,6 +1355,7 @@ class ReportTests(unittest.TestCase):
         with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \
                 mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
                 mock.patch.object(output, "show_links", side_effect=lambda links, **_: shown.append(links)), \
+                mock.patch.object(output, "say"), \
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
             readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.")
         text = [item for item in shown if isinstance(item, str)]
@@ -1379,6 +1394,13 @@ class OfferTests(unittest.TestCase):
         self.assertFalse(kept)  # sent: no copy is left behind
         self.assertEqual(json.loads(sent["manifest.json"])["model"], MANIFEST["model"])
         self.assertEqual((said, self.became.outcome, self.became.detail), ("", readout.ACCEPTED, "r-1"))
+
+    def test_its_stage_turns_its_spinner_while_it_is_sent(self):
+        # Seen in a real readout: sending takes from a few seconds to a
+        # minute or two, and inside a block the stage's spinner stops.
+        with mock.patch.object(output, "transient_begin") as block:
+            self.offer()
+        block.assert_not_called()
 
     def test_from_a_test_run_it_is_kept_unsent(self):
         sent, _, kept = self.offer(None)

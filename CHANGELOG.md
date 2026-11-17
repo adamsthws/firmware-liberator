@@ -30,6 +30,12 @@ check.
 - Why an answer was not taken is a yellow warning marked `!`, as other
   warnings are. The note that a phone number needs its country code is shown
   only after a number typed without one.
+- A readout lists only the stages your device needs, numbered in turn: one
+  read only in the first stage no longer shows "Reading the device's memory"
+  and "Restoring Sonoff's firmware" as skipped. "Saving the readout" turns its
+  spinner while the readout is sent, which can take a minute or two; before, it
+  stood still and looked stuck. The report at the end is made under
+  "Generating your report...", as a conversion's is.
 
 ## 3.0.0
 
