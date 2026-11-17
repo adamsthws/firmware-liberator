@@ -85,9 +85,14 @@ def collect(names: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
             return loader.discover(str(TESTS / name), top_level_dir=str(TESTS))
         return loader.loadTestsFromName(name)
 
-    suite = (unittest.TestSuite(load(name) for name in names) if names
-             else loader.discover(str(TESTS), top_level_dir=str(TESTS)))
-    ids, broken = [], []
+    suites = [(name, load(name)) for name in names] if names else [
+        ("", loader.discover(str(TESTS), top_level_dir=str(TESTS)))]
+    # A name that matches no test - tests.autoflash for autoflash, say - would
+    # otherwise run nothing and say OK.
+    broken = [(name, "matches no test: names are under tests/, as autoflash.test_plans")
+              for name, suite in suites if name and not suite.countTestCases()]
+    suite = unittest.TestSuite(suite for _, suite in suites)
+    ids = []
     for test in flatten(suite):
         # A module that does not import comes back as a test that fails saying why.
         if type(test).__name__ == "_FailedTest":
