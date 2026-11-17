@@ -56,8 +56,9 @@ check.
   supported device ends as a readout too: its own report, not a conversion's,
   and no "Fix the cause, then run the same command again".
 - If the email sign-up cannot be sent, its question is taken off the screen,
-  and the sign-up page is linked on a line of its own, clickable, as other
-  links are.
+  and it is sent as you next use the tool, which then does not ask again; the
+  sign-up page is linked on a line of its own, clickable, as other links are,
+  to sign up there instead.
 
 ## 3.0.0
 

@@ -8,6 +8,11 @@ URL = "http://127.0.0.1:9/readout"
 
 
 class AskOnExitTests(unittest.TestCase):
+    def saved(self, settings):
+        """As runs.save_settings: the whole of them, replaced."""
+        self.settings.clear()
+        self.settings.update(settings)
+
     def setUp(self):
         self.settings = {}
         for patch in (mock.patch.object(signup, "SITTING", signup.Sitting()),
@@ -15,7 +20,7 @@ class AskOnExitTests(unittest.TestCase):
                       mock.patch.object(readout, "upload_url", return_value=URL),
                       mock.patch.object(interrupt, "window_closed", return_value=False),
                       mock.patch.object(runs, "load_settings", side_effect=lambda: dict(self.settings)),
-                      mock.patch.object(runs, "save_settings", side_effect=self.settings.update),
+                      mock.patch.object(runs, "save_settings", side_effect=self.saved),
                       mock.patch.object(output, "tell"), mock.patch.object(output, "log_only")):
             patch.start()
             self.addCleanup(patch.stop)
@@ -99,8 +104,10 @@ class AskOnExitTests(unittest.TestCase):
         self.assertEqual(list(devices), [("S60TPF", "SN-S60"), ("MINIR4", "")])
         self.assertEqual(list(readouts), ["2026-11-07-0123456789ab"])
 
-    def test_not_sent_says_where_to_sign_up_instead_and_asks_again_next_time(self):
+    def test_not_sent_says_it_goes_next_time_and_where_to_sign_up_instead(self):
         signup.saw_account("me@example.com")
+        signup.saw_devices([{"productModel": "MINIR4"}])
+        signup.sent_readout("2026-11-07-0123456789ab")
         self.notify.return_value = False
         with mock.patch.object(output, "transient_end") as cleared, \
                 mock.patch.object(output, "show_link") as linked:
@@ -108,8 +115,31 @@ class AskOnExitTests(unittest.TestCase):
         # The question and its options taken off, and the page linked on a
         # line of its own, as every link is: purple and clickable.
         cleared.assert_called_once()
-        self.assertEqual(said[-1], "That could not be sent just now. Instead, sign up at:")
+        self.assertEqual(said[-1], "That could not be sent just now: it is sent as you next use this tool. "
+                                   "Or sign up at:")
         linked.assert_called_once_with(signup.SIGNUP_PAGE)
+        self.assertEqual(signup.given(), "")
+        self.assertEqual(self.settings[signup.PENDING], {"email": "me@example.com", "devices": [["MINIR4", ""]],
+                                                         "readouts": ["2026-11-07-0123456789ab"]})
+
+    def test_one_not_sent_before_is_sent_as_the_next_sitting_ends_not_asked_again(self):
+        self.settings[signup.PENDING] = {"email": "me@example.com", "devices": [["MINIR4", ""]],
+                                         "readouts": ["2026-11-07-0123456789ab"]}
+        signup.saw_devices([{"productModel": "S60TPF", "extra": {"model": "SN-S60"}}])
+        said = self.answered()   # nothing to answer: no question
+        email, devices, readouts = self.notify.call_args.args
+        self.assertEqual((email, list(devices), list(readouts)),
+                         ("me@example.com", [("MINIR4", ""), ("S60TPF", "SN-S60")], ["2026-11-07-0123456789ab"]))
+        self.assertEqual(said[-1], "The email sign-up you gave last time went through: check me@example.com to confirm.")
+        self.assertEqual(signup.given(), "me@example.com")
+        self.assertNotIn(signup.PENDING, self.settings)
+
+    def test_one_not_sent_again_waits_for_the_next_sitting_still_not_asked(self):
+        self.settings[signup.PENDING] = {"email": "me@example.com", "devices": [], "readouts": []}
+        self.notify.return_value = False
+        self.assertEqual(self.answered(), [])
+        self.assertEqual(self.options, [])   # asked nothing
+        self.assertIn(signup.PENDING, self.settings)
         self.assertEqual(signup.given(), "")
 
     def test_an_address_taken_leaves_the_question_answered_on_the_screen(self):

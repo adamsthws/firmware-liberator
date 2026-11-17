@@ -9,8 +9,10 @@ owner's eWeLink account, seen as the sitting went (saw_devices), and the
 readouts they sent (sent_readout), so their own devices' news can reach them
 too. The eWeLink account's address is offered first, taken with Enter or y.
 
-Once an address is taken, it is kept in the settings (SETTING) and never
-asked for again on this computer: each later sitting sends its devices and
+One given that could not be sent is kept too (PENDING), with what it was
+to be sent with, and sent at the next sitting's end in place of the
+question. Once an address is taken, it is kept in the settings (SETTING)
+and never asked for again on this computer: each later sitting sends its devices and
 readouts with it, unasked, and the website adds them to the address's if it
 was confirmed. One removed or never confirmed is not emailed again; its
 owner can sign up again on the website (SIGNUP_PAGE). The `email` command
@@ -29,6 +31,8 @@ SIGNUP_PAGE = "https://firmwareliberator.com/notify"
 QUESTION = "Get an email as more devices are supported?"
 # The settings' key for the address taken (runs.load_settings).
 SETTING = "signup_email"
+# And for one given that could not be sent yet: {"email", "devices", "readouts"}.
+PENDING = "signup_pending"
 
 
 @dataclass
@@ -139,6 +143,8 @@ def ask_on_exit() -> None:
     if SITTING.stopped or prompts.UNATTENDED or interrupt.window_closed() or readout.upload_url() is None:
         return
     before = given()
+    if not before and send_pending():
+        return
     if before:
         # Only added to the address if it was confirmed: one removed by its
         # owner, or never confirmed, is not emailed again.
@@ -170,5 +176,38 @@ def ask_on_exit() -> None:
         output.tell("    Check your inbox to confirm.")
     else:
         output.transient_end()
-        output.tell("That could not be sent just now. Instead, sign up at:")
+        keep_pending(email.strip())
+        output.tell("That could not be sent just now: it is sent as you next use this tool. Or sign up at:")
         output.show_link(SIGNUP_PAGE)
+
+
+def keep_pending(email: str) -> None:
+    """`email`, given but not sent, kept with this sitting's devices and
+    readouts, to send as the next sitting ends (send_pending)."""
+    settings = runs.load_settings()
+    settings[PENDING] = {"email": email, "devices": [list(device) for device in SITTING.devices],
+                         "readouts": list(SITTING.readouts)}
+    runs.save_settings(settings)
+
+
+def send_pending() -> bool:
+    """An address given before that could not be sent then, sent now with what
+    it was to be sent with and this sitting's own, in place of the question:
+    True where there was one, sent or not - one not sent waits for the next."""
+    from tools.autoflash import readout   # readout imports this module
+    settings = runs.load_settings()
+    pending = settings.get(PENDING)
+    if not isinstance(pending, dict) or not is_email(str(pending.get("email") or "")):
+        return False
+    email = str(pending["email"])
+    devices = dict.fromkeys([*(tuple(device) for device in pending.get("devices") or []), *SITTING.devices])
+    readouts = dict.fromkeys([*(pending.get("readouts") or []), *SITTING.readouts])
+    if not readout.notify(email, devices, readouts):
+        output.log_only("    The email sign-up given before could not be sent this time either.")
+        return True
+    settings.pop(PENDING, None)
+    settings[SETTING] = email
+    runs.save_settings(settings)
+    output.tell("")
+    output.tell(f"The email sign-up you gave last time went through: check {email} to confirm.")
+    return True

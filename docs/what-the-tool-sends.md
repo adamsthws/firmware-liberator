@@ -159,7 +159,9 @@ readout: it is sent as a conversion's report is, and turned off the same way.
 ## Providing your email address (optional)
 
 As it exits, the tool asks whether you would like to receive a notification as more devices
-are supported. You can
+are supported. If your answer cannot be sent then, the tool keeps it in
+`captures/settings.json` and sends it as it next exits, instead of asking
+again. You can
 also sign up on the website's [notify page](https://firmwareliberator.com/notify).
 
 You are sent an email with a link to confirm your email address. An
