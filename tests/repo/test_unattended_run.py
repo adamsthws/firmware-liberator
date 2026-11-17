@@ -194,6 +194,21 @@ class AnswerTests(unittest.TestCase):
         name, word = answers[1].typed_at[0], answers[0].typed_at[0]
         self.assertLess(name, word)   # where each was typed, in the bytes written
 
+    def test_a_run_its_timeout_stops_says_how_much_it_had_written(self):
+        # For what it waited at: its stopping takes that off the screen.
+        script = textwrap.dedent("""
+            import signal, sys
+            signal.signal(signal.SIGTERM, lambda *_: (print("\\r\\x1b[2KStopped."), sys.exit(143)))
+            input("A question nobody answers: ")
+        """)
+        stopped = []
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                              timeout=2, timed_out=stopped.append)
+        self.assertEqual(code, 143, written)
+        self.assertEqual(len(stopped), 1)
+        self.assertIn(b"A question nobody answers", written[:stopped[0]])
+        self.assertIn(b"Stopped.", written[stopped[0]:])
+
     def test_an_answer_waits_for_its_question_not_a_note_that_says_its_words(self):
         # Seen: q typed at the firmware question, whose note said "your eWeLink
         # account", for the sign-in's "eWeLink account email" asked later.

@@ -68,6 +68,15 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("FAIL-UNUSED: 'Which firmware'", verdicts)
         self.assertIn("FAIL-RESULT: exit 124, not 0", verdicts)
 
+    def test_a_question_its_timeout_took_off_the_screen_is_found_unanswered(self):
+        raw, _ = recording(f" Which firmware would you like {HINT}: ")
+        stopped_at = len(raw)
+        raw += "\r\x1b[2K Stage 3 - Choosing the firmware - Stopped\n".encode()
+        scenario = {"answers": [], "expect": {"exit": 143}}
+        self.assertEqual(self.judge(raw, [], code=143, scenario=scenario), [])
+        self.assertEqual(attended_suite.judge(scenario, raw, [], 143, stopped_at=stopped_at),
+                         ["FAIL-UNANSWERED: 'Which firmware would you like (q to quit):'"])
+
     def test_an_optional_answer_need_not_be_typed(self):
         scenario = {"answers": [{"when": "Use it anyway", "type": "y\r", "optional": True}], "expect": {}}
         self.assertEqual(self.judge(b" done\r\n", [], scenario=scenario), [])

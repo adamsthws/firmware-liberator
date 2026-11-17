@@ -47,7 +47,8 @@ The verdict, from the recording alone (judge):
     PASS              ended as expected, every answer typed, nothing wrong
     FAIL-RESULT       ended otherwise: its exit code, or its report's Result
                       (the recorder's result.txt, from the run's log)
-    FAIL-UNANSWERED   it ended at a question no answer covers: new, or reworded
+    FAIL-UNANSWERED   it ended, or its --timeout stopped it, at a question no
+                      answer covers: new, or reworded
     FAIL-UNUSED       an answer never typed: its question no longer asked
     FAIL-ANSWER       an answer that switches the device or the router, or
                       moves the computer's Wi-Fi, failed to: the network not on
@@ -157,17 +158,21 @@ def question_problems(screen: unattended_run.Screen, wrapped_before: int) -> lis
 
 
 def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], code: int,
-          size: tuple[int, int] = SIZE, result: str | None = None, clipboard: str | None = None) -> list[str]:
+          size: tuple[int, int] = SIZE, result: str | None = None, clipboard: str | None = None,
+          stopped_at: int | None = None) -> list[str]:
     """The verdicts of a run, from its recording (screen.raw), the answers as
     the recorder kept them (answers.json, with typed_at), its exit code, its
-    report's Result (result.txt) and what it put on the clipboard
-    (clipboard.txt; "" for nothing, None where that is not known): empty
-    for a PASS."""
+    report's Result (result.txt), what it put on the clipboard
+    (clipboard.txt; "" for nothing, None where that is not known) and, for
+    a run its --timeout stopped, how much it had written then
+    (stopped-at.txt): empty for a PASS."""
     expect = scenario.get("expect", {})
     verdicts = []
     final = screen_at(raw, len(raw), size)
     text = final.render(colour=False)
-    asked = unattended_run.question(final)
+    # A run stopped by its timeout takes the question it waited at off the
+    # screen as it stops: seen, only "exit 143" said why one hung 20 minutes.
+    asked = unattended_run.question(final if stopped_at is None else screen_at(raw, stopped_at, size))
     if unattended_run.waiting(asked) and "(q to quit)" in asked:
         waiting = next(row for row in reversed(asked.splitlines()) if "(q to quit)" in row)
         verdicts.append(f"FAIL-UNANSWERED: {waiting.strip()[:70]!r}")
@@ -506,17 +511,19 @@ def judged(scenario: dict[str, Any], folder: Path, code: int, recording: Path | 
     """A run's verdicts, its recording kept in `folder` (names `prefix`ed)."""
     if recording is None or not (recording / "screen.raw").exists():
         return [f"HARNESS: no run to judge (exit {code}); see harness.log"]
-    for item in ("screen.raw", "screen.txt", "answers.json", "result.txt", "clipboard.txt"):
+    for item in ("screen.raw", "screen.txt", "answers.json", "result.txt", "clipboard.txt", "stopped-at.txt"):
         (folder / f"{prefix}{item}").unlink(missing_ok=True)
         if (recording / item).exists():
             shutil.copyfile(recording / item, folder / f"{prefix}{item}")
     size = tuple(int(part) for part in scenario.get("size", "100x40").split("x"))
     result, copied = folder / f"{prefix}result.txt", folder / f"{prefix}clipboard.txt"
     # The recorder's stand-in keeps what was copied: no file, nothing was.
+    stopped = folder / f"{prefix}stopped-at.txt"
     return judge(scenario, (folder / f"{prefix}screen.raw").read_bytes(),
                  json.loads((folder / f"{prefix}answers.json").read_text(encoding="utf-8")), code, size,
                  result.read_text(encoding="utf-8").strip() if result.exists() else None,
-                 copied.read_text(encoding="utf-8") if copied.exists() else "")
+                 copied.read_text(encoding="utf-8") if copied.exists() else "",
+                 int(stopped.read_text(encoding="utf-8")) if stopped.exists() else None)
 
 
 def device_of(family: str, mac: str | None) -> kinds.Kind:

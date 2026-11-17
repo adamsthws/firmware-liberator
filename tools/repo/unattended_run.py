@@ -44,6 +44,7 @@ import signal
 import tempfile
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -631,10 +632,13 @@ CONTROL = re.compile(r"\x1b\[[0-9;?]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1
 
 def record(command: list[str], size: tuple[int, int], live: bool,
            timeout: float | None, answers: list[Answer] = (),
-           environment: dict[str, str] | None = None) -> tuple[int, bytes]:
+           environment: dict[str, str] | None = None,
+           timed_out: Callable[[int], None] | None = None) -> tuple[int, bytes]:
     """Run `command` on a pseudo-terminal of `size`; its exit code and every
     byte it wrote.  `answers`: typed as their questions show (Answer).
-    `environment`: set for the run, over this one's."""
+    `environment`: set for the run, over this one's.  `timed_out`: told how
+    many bytes the run had written when `timeout` stopped it - what it was
+    waiting at, which its stopping takes off the screen."""
     import fcntl
     import pty
     import struct
@@ -662,6 +666,8 @@ def record(command: list[str], size: tuple[int, int], live: bool,
         try:
             if timeout and not stopping and time.monotonic() - started > timeout:
                 stopping = True
+                if timed_out:
+                    timed_out(len(written))
                 os.kill(pid, signal.SIGTERM)  # the tool tidies up on SIGTERM too
             if not select.select([fd], [], [], 0.5)[0]:
                 continue
@@ -793,10 +799,12 @@ def main() -> int:
     save.mkdir(parents=True, exist_ok=True)
     kept = save / "clipboard.txt"
     kept.unlink(missing_ok=True)   # a recording saved over another's
+    (save / "stopped-at.txt").unlink(missing_ok=True)
     started = time.time()
     with tempfile.TemporaryDirectory() as stand_in:
         code, written = record(command, size, live, args.timeout * 60 if args.timeout else None, answers,
-                               clipboard_stand_in(Path(stand_in), kept))
+                               clipboard_stand_in(Path(stand_in), kept),
+                               timed_out=lambda at: (save / "stopped-at.txt").write_text(f"{at}\n", encoding="utf-8"))
     result = logged_result(started)
 
     screen = Screen(*size)
