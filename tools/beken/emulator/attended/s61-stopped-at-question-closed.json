@@ -1,0 +1,56 @@
+{
+ "about": "An S61: the window closed (SIGHUP) as the firmware question waits, its notes above it: the run stops, the question and its notes taken off, nothing left under the stage's line",
+ "start": "fresh",
+ "minutes": 30,
+ "answers": [
+  {
+   "when": "Press any key",
+   "type": "x",
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
+  },
+  {
+   "when": "Press any key",
+   "type": "x",
+   "times": 2,
+   "optional": true
+  },
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r"
+  },
+  {
+   "when": "eWeLink password for",
+   "type": "made-up-password\r"
+  },
+  {
+   "when": "Which firmware should the device have",
+   "signal": "HUP",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
+  },
+  {
+   "when": "This computer's password \\(for sudo\\)",
+   "type": "autoflash\r",
+   "times": 6,
+   "optional": true
+  },
+  {
+   "when": "\\[[Yy]/n\\]",
+   "type": "n\r",
+   "optional": true
+  },
+  {
+   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
+   "type": "y\r",
+   "times": 3,
+   "optional": true
+  }
+ ],
+ "expect": {
+  "exit": 130
+ }
+}
