@@ -4,11 +4,18 @@
  "answers": [
   {
    "when": "Press any key",
-   "type": "x"
+   "type": "x",
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
   },
   {
    "when": "Which firmware should the device have",
-   "type": "1\r"
+   "type": "1\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
   },
   {
    "when": "This computer's password \\(for sudo\\)",
@@ -17,7 +24,15 @@
   {
    "when": "This computer's password \\(for sudo\\)",
    "type": "autoflash\r",
-   "times": 6,
+   "optional": true,
+   "shows": [
+    "^ *! That password was not accepted - try again\\.$"
+   ]
+  },
+  {
+   "when": "This computer's password \\(for sudo\\)",
+   "type": "autoflash\r",
+   "times": 5,
    "optional": true
   },
   {

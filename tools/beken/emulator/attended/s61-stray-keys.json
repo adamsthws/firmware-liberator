@@ -7,11 +7,23 @@
   {
    "when": "Press any key",
    "type": "x",
-   "times": 3
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
+  },
+  {
+   "when": "Press any key",
+   "type": "x",
+   "times": 2,
+   "optional": true
   },
   {
    "when": "Which firmware should the device have",
-   "type": "\u001b[A\u001b[B\u001b[C\u001b[D\u001b[H\u001b[F\u001bOP\t\u001b[5~1\r"
+   "type": "\u001b[A\u001b[B\u001b[C\u001b[D\u001b[H\u001b[F\u001bOP\t\u001b[5~1\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
   },
   {
    "when": "Stage +4 - .* +- Underway",

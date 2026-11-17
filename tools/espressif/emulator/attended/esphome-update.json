@@ -9,11 +9,18 @@
   },
   {
    "when": "Press any key",
-   "type": "x"
+   "type": "x",
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
   },
   {
    "when": "Which firmware should the device have",
-   "type": "2\r"
+   "type": "2\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
   },
   {
    "when": "This computer's password \\(for sudo\\)",

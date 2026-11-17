@@ -6,7 +6,16 @@
   {
    "when": "Press any key",
    "type": "x",
-   "times": 3
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
+  },
+  {
+   "when": "Press any key",
+   "type": "x",
+   "times": 2,
+   "optional": true
   },
   {
    "when": "eWeLink account email or phone number",
@@ -18,7 +27,10 @@
   },
   {
    "when": "Which firmware should the device have",
-   "type": "1\r"
+   "type": "1\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
   },
   {
    "when": "Type .+ to go ahead",

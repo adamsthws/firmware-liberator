@@ -28,15 +28,25 @@
   },
   {
    "when": "ESPHome web password",
-   "type": "test-login-1\r"
+   "type": "test-login-1\r",
+   "shows": [
+    "^ *! That is not its web login\\.$"
+   ]
   },
   {
    "when": "Press any key",
-   "type": "x"
+   "type": "x",
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
   },
   {
    "when": "Which firmware should the device have",
-   "type": "1\r"
+   "type": "1\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
   },
   {
    "when": "ESPHome API encryption key",
@@ -44,7 +54,10 @@
   },
   {
    "when": "ESPHome API encryption key",
-   "type": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\r"
+   "type": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\r",
+   "shows": [
+    "^ *! That is not an API encryption key"
+   ]
   },
   {
    "when": "This computer's password \\(for sudo\\)",

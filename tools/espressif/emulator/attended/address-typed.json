@@ -9,7 +9,11 @@
   },
   {
    "when": "Press any key",
-   "type": "x"
+   "type": "x",
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
   },
   {
    "when": "Which eWeLink account is this device in",
@@ -33,15 +37,24 @@
   },
   {
    "when": "The device's address",
-   "type": "192.168.60.99\r"
+   "type": "192.168.60.99\r",
+   "shows": [
+    "^ *! 'eth0' is not an address"
+   ]
   },
   {
    "when": "The device's address",
-   "type": "192.168.60.1\r"
+   "type": "192.168.60.1\r",
+   "shows": [
+    "^ *! Nothing answered at 192\\.168\\.60\\.99"
+   ]
   },
   {
    "when": "The device's address",
-   "type": "q\r"
+   "type": "q\r",
+   "shows": [
+    "^ *! 192\\.168\\.60\\.1 answered, but its hardware address could not be read"
+   ]
   },
   {
    "when": "This computer's password \\(for sudo\\)",

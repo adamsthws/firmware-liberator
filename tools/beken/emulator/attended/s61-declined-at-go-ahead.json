@@ -1,16 +1,32 @@
 {
- "about": "An S61 from Sonoff's firmware, q typed at the go-ahead before the first write: stopped as asked, not failed, nothing written",
+ "about": "An S61 from Sonoff's firmware, the account first typed as a phone number without its country code (hinted at), then q typed at the go-ahead before the first write: stopped as asked, not failed, nothing written",
  "start": "fresh",
  "minutes": 40,
  "answers": [
   {
    "when": "Press any key",
    "type": "x",
-   "times": 3
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
+  },
+  {
+   "when": "Press any key",
+   "type": "x",
+   "times": 2,
+   "optional": true
   },
   {
    "when": "eWeLink account email or phone number",
-   "type": "someone@example.invalid\r"
+   "type": "07700 900123\r"
+  },
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r",
+   "shows": [
+    "^ *! Hint: a phone number needs its country code"
+   ]
   },
   {
    "when": "eWeLink password for",
@@ -18,7 +34,10 @@
   },
   {
    "when": "Which firmware should the device have",
-   "type": "1\r"
+   "type": "1\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
   },
   {
    "when": "Type .+ to go ahead",
