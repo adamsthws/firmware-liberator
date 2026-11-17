@@ -36,7 +36,7 @@ def choose_port(ctx: Context, key: str, candidates: tuple[int, ...], serving: st
         raise Abort(
             f"ports {candidates[0]} and {candidates[1]}-{candidates[-1]} are all in use on this "
             f"computer, so there is nowhere to serve {serving} from. Stop whatever is "
-            "using them and run this again - nothing was sent to the device"
+            "using them and try again - nothing was sent to the device"
         )
     if port != candidates[0]:
         output.say(f"Port {candidates[0]} is in use on this computer; serving {serving} on {port} instead.")

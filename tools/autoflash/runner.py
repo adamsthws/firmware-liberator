@@ -128,7 +128,7 @@ def _execute(ctx: Context, step: str) -> int:
             ctx.state.mark(step, FAILED, error=back.reason)
             output.stage_end("stopped")
             message = (f"{back.reason}, after it was sent {times} times. Switch the device off and on, "
-                       "then run the same command again")
+                       "then try again")
             ctx.last_failure, ctx.last_failed_step = message, step
             ctx.last_failure_class = None
             output.tell(f"FAILED: {message}")

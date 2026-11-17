@@ -192,7 +192,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
             f"the delivery stopped part way: the device fetched {delivered.bytes_served:,} of "
             f"{len(container):,} bytes ({delivered.error or 'it stopped asking'}). It keeps its Sonoff firmware: "
             "switch it off and on, wait until it shows online in the eWeLink app - a few minutes after a "
-            "delivery cut off - then run the same command again")
+            "delivery cut off - then try again")
     seconds = round(time.monotonic() - started, 1)
     output.say(f"    The device has the whole image after {seconds}s; its bootloader installs it as it restarts.")
     return {"seconds": seconds, "firmware": firmware, "version": version, "bytes": len(container)}

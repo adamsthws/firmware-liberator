@@ -229,7 +229,7 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
         elif outcome == "gone":
             output.tell(f"    No word, but its network went: looking for it on '{ssid}'.")
         else:
-            output.tell("    No word from the device. If it doesn't show on your Wi-Fi, run this again.")
+            output.tell("    No word from the device. If it doesn't show on your Wi-Fi, try again.")
     if outcome in ("rejected", "manual"):
         prompts.section("Set the Wi-Fi up on the device's page instead", [
             f"Staying on its network, browse to http://{setup_network.SETUP_HOST}, choose your Wi-Fi,",
@@ -513,7 +513,7 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
         except Abort:
             if round_ == 2 or prompts.UNATTENDED:
                 raise Abort(f"{what} did not join '{ssid}' with the details sent through its own "
-                            "network. Check the network's name and password, then run this again") from None
+                            "network. Check the network's name and password, then try again") from None
         prompts.warn([f"{what} did not join '{ssid}' with those details: check its name and password."])
         output.transient_begin()
         prompts.section("The Wi-Fi details the device should use", [
@@ -553,4 +553,4 @@ def wait_while_device_busy(ctx: Context) -> None:
             return
         time.sleep(3.0)
     output.progress_clear()
-    output.tell("    Still no answer. If a step fails, switch it off and on, then run again.")
+    output.tell("    Still no answer. If a step fails, switch it off and on, then try again.")

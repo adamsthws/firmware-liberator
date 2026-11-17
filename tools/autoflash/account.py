@@ -189,8 +189,8 @@ def reached(devices: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     through it."""
     if devices is None:
         raise Abort("eWeLink could not be reached, and a device on Sonoff's firmware is found and converted "
-                    "through it. Nothing was written: check this computer's internet connection, then run the "
-                    "same command again")
+                    "through it. Nothing was written: check this computer's internet connection, then try "
+                    "again")
     return devices
 
 

@@ -52,8 +52,7 @@ def find_current_firmware(ctx: Context) -> str:
             # Its kind is its import module's to say, as the search finds it.
             found = detect.openbeken_device(given)
             if not found or found.firmware != running:
-                raise Abort(f"the device at {given} did not say twice alike what it runs: run the same command "
-                            "again")
+                raise Abort(f"the device at {given} did not say twice alike what it runs: try again")
             found.mac = mac
             adopt_device(ctx, found)
             return running
@@ -72,7 +71,7 @@ def find_current_firmware(ctx: Context) -> str:
             # converting from Sonoff). Sonoff's firmware may answer nothing here
             # but is on the network, so is still asked of eWeLink.
             raise Abort(f"nothing answers at {given}: check the device is switched on and on your Wi-Fi, "
-                        "then run the same command again")
+                        "then try again")
         if running in ("tasmota", "esphome", "midway", "installer", "untemplated"):
             adopt_device(ctx, detect.Found(given, running, mac))
             if mover:
@@ -180,7 +179,7 @@ RESTART_GRACE = 45.0
 # one no run of this computer's left. The bridge chose Sonoff's firmware for
 # the next start as it started, so switching it off and on puts it back.
 INSTALLER_LEFT = ("the device is on this tool's installer, left by {who}, and would not restart: switch it off "
-                  "and on to go back to Sonoff (settings kept), then run this again")
+                  "and on to go back to Sonoff (settings kept), then try again")
 
 
 def installer_left_by(ctx: Context, host: str, mac: str | None) -> str | None:

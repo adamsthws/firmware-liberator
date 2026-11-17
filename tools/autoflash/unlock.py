@@ -215,7 +215,7 @@ def ask_esphome_key(ctx: Context, host: str, *, wifi: bool = False) -> bool:
         if wifi:
             return False  # the Wi-Fi is asked for next, which stops the run
         raise Abort(f"{esphome_ota.WrongKey() if wrong else esphome_ota.NeedsEncryption()}: "
-                    f"{ESPHOME_KEY_HINT}; or remove that encryption: line, re-flash, then run this again")
+                    f"{ESPHOME_KEY_HINT}; or remove that encryption: line, re-flash, then try again")
     if wifi:
         secret, value = secret_or_retry("ESPHome's API encryption key", [
             f"ESPHome on the device at {host} has an encrypted API: type its key",

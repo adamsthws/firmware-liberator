@@ -75,8 +75,8 @@ def step_openbeken_check(ctx: Context, wait: float = ARRIVAL_WAIT, *, interim: b
     title = shown[0].upper() + shown[1:]
     found = until_back(ctx, look, title, (
         f"{title} has not answered on your Wi-Fi. The device installs it as it restarts, then reads its "
-        "Wi-Fi from the device's own store and joins; if it has not, switch the device off and on, then run "
-        "the same command again to check it"), sent_by=sent_by)
+        "Wi-Fi from the device's own store and joins; if it has not, switch the device off and on, then try "
+        "again to check it"), sent_by=sent_by)
     seconds = round(time.monotonic() - started, 1)
     version = openbeken.version(found)
     settled = found["interim"] == interim
@@ -283,7 +283,7 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
         "ESPHome has not answered on your Wi-Fi, and its own network "
         f"({names.esphome_network_hint(ctx)}) is not to be seen either. The device installs it as it "
         "restarts, then reads its Wi-Fi from the device's own store and joins; if it has not, "
-        "switch the device off and on, then run the same command again to check it"), sent_by=sent_by)
+        "switch the device off and on, then try again to check it"), sent_by=sent_by)
     seconds = round(time.monotonic() - started, 1)
     host = ctx.state.input("device_ip")
     if not kinds.of_run(ctx.state).has_meter:

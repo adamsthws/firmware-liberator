@@ -287,7 +287,7 @@ class ServeToDeviceTests(unittest.TestCase):
         # went wrong: OSError: the device fetched 278,528 of 951,664 bytes".
         with self.assertRaises(errors.StoppedPartWay) as stopped:
             self.serve([2])
-        self.assertIn("switch it off and on, then run the same command again", str(stopped.exception))
+        self.assertIn("switch it off and on, then try again", str(stopped.exception))
         self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
 
     def test_a_device_that_asks_for_nothing_even_restarted_wrote_nothing(self):

@@ -126,7 +126,7 @@ class BackOnSonoffTests(unittest.TestCase):
         advice = self.advice([error, sender.NOT_SENT], reported=[error, sender.NOT_SENT])
         self.assertNotIn("FIREWALL", advice)
         self.assertIn("connection to eWeLink failed", advice)
-        self.assertIn("run this again", advice)
+        self.assertIn("try again in a few minutes", advice)
 
     def test_a_send_refused_before_the_command_says_only_that_nothing_was_sent(self):
         import tools.espressif.serve_tasmota_ota as sender

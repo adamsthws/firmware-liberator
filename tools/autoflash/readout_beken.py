@@ -140,7 +140,7 @@ def wait_for_openbeken(ctx: Context, wait: float = ARRIVE_WAIT) -> str:
                                "The readout firmware", (
         "The readout firmware has not answered on your Wi-Fi. It installs as the device restarts, then reads "
         "the device's Wi-Fi from its stock store and joins; if it has not, switch the device off and on, then "
-        "run this again"))
+        "read it out again"))
     output.say(f"    OpenBeken answered at {found}.")
     return found
 

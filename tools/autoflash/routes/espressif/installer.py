@@ -95,7 +95,7 @@ def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> l
             "The device turned the installer down: it is still busy with an update",
             "that was cut off part way. It keeps its Sonoff firmware, so nothing is",
             "lost: switch the device off and on, wait for it to show online in the",
-            "eWeLink app, and run this again.",
+            "eWeLink app, and try again.",
         ]
     if output.tool_said("offline in eWeLink"):
         return [
@@ -113,7 +113,7 @@ def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> l
             "This computer's connection to eWeLink failed before the device was told",
             "to fetch the installer - eWeLink's servers, or this computer's",
             "internet, having trouble. Nothing was sent, so the device keeps its",
-            "Sonoff firmware: run this again in a few minutes.",
+            "Sonoff firmware: try again in a few minutes.",
         ]
     if ctx.state.input(DOWNLOADED_FROM) == ctx.listen_ip():
         # Seen in the fault suite: told it was the firewall, three times over,
@@ -123,7 +123,7 @@ def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> l
             "part of it from this computer earlier, so a firewall is not the cause.",
             "eWeLink's message most likely did not reach it. It keeps its Sonoff",
             "firmware, so nothing is lost: switch the device off and on, wait for it",
-            "to show online in the eWeLink app, and run this again.",
+            "to show online in the eWeLink app, and try again.",
         ]
     return firewall.firewall_hint(ctx)
 
@@ -860,7 +860,7 @@ def upload_tasmota(ctx: Context, image: Path, host: str = setup_network.SETUP_HO
     try:
         setup_network.upload_to_bridge(payload, host=host)
     except setup_network.SetupError as exc:
-        raise Abort(f"{exc}. The device still has the installer; run this again") from exc
+        raise Abort(f"{exc}. The device still has the installer; try again") from exc
     output.say(f"    Upload verified in {time.monotonic() - started:.0f}s; the device is restarting into Tasmota.")
 
 

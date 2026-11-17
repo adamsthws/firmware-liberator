@@ -128,7 +128,7 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(failures.classify(runner.unexpected(full)), "no-room")
         self.assertEqual(failures.classify(
             "the device turned it down, after it was sent 3 times. Switch the device off and on, "
-            "then run the same command again"), "not-taken")
+            "then try again"), "not-taken")
 
     def test_messages_that_could_be_taken_for_another(self) -> None:
         # Each where an earlier, broader pattern would otherwise win.

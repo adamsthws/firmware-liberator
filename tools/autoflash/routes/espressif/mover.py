@@ -172,7 +172,7 @@ def wait_for_mover(ctx: Context, what: str) -> bool:
         # which a run then sets it up through.
         raise Abort(
             f"{what} is not on your Wi-Fi, and its own network ({names.mover_network_hint(ctx)}) "
-            "is not showing: switch the device off and on, wait two minutes, then run this again")
+            "is not showing: switch the device off and on, wait two minutes, then try again")
     if joined != before:
         ctx.adopt_wifi(*joined)
         return True
@@ -391,7 +391,7 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
                 resent += 1
                 if resent > 2:
                     raise Abort("the device keeps going back to the startup firmware instead of starting "
-                                "ESPHome: switch it off and on, then run the same command again")
+                                "ESPHome: switch it off and on, then try again")
                 output.say("    The device went back to the mover: ESPHome restarted before it had")
                 output.say("    confirmed itself. Sending ESPHome again...")
                 step_esphome_from_mover(ctx)
@@ -420,4 +420,4 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
         "ESPHome was written and checked, but has not answered on your Wi-Fi within "
         "three minutes - most likely it cannot join it, and its own network "
         f"({names.esphome_network_hint(ctx)}) is not to be seen either. Switch the device off and "
-        "on, and run the same command again"))
+        "on, and try again"))

@@ -20,8 +20,9 @@ check.
   finished: unless you stopped it with `q` or Ctrl-C, you can read out or convert
   another device without starting the tool again. After a conversion that
   failed, it first offers to try that device again, carrying on from where it
-  stopped. Before, a run that failed ended at the email question. A conversion
-  that became a readout, the device not being supported, asks as a readout does.
+  stopped, and what failed says to try again rather than to run the tool again.
+  Before, a run that failed ended at the email question. A conversion that
+  became a readout, the device not being supported, asks as a readout does.
 - Typing `q` where the tool asks you to type PROCEED stops the run as `q` at any
   question does: "Stopped as asked.", with nothing written to the device. It no
   longer says FAILED, nor asks for a report or an issue, for a readout or a

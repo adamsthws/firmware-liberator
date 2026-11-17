@@ -78,7 +78,7 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
             output.say(f"    OpenBeken would not start the fetch ({refused}): restarting it, then asking again.")
             if not unstick():
                 raise NothingWritten(f"OpenBeken would not fetch {what}, and did not answer again after being "
-                                     "restarted: switch it off and on, then run the same command again",
+                                     "restarted: switch it off and on, then try again",
                                      failure="device-no-answer") from refused
             unstick = None
             fetch(url)
@@ -92,8 +92,8 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
                 output.say(f"    The device has not asked for {what} yet - restarting it, then asking again.")
                 if not unstick():
                     raise NothingWritten(f"the device asked for nothing of {what}, and did not answer again "
-                                         "after being restarted: switch it off and on, then run the same command "
-                                         "again", failure="device-no-answer")
+                                         "after being restarted: switch it off and on, then try again",
+                                         failure="device-no-answer")
                 unstick = None
                 fetch(url)
                 started = asked = time.monotonic()
@@ -103,7 +103,7 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
             raise StoppedPartWay(
                 f"the delivery stopped part way: the device fetched {server.unique_bytes_served():,} of "
                 f"{len(image):,} bytes of {what} in {FETCH_WAIT:.0f}s. It keeps the firmware it runs: switch it "
-                "off and on, then run the same command again")
+                "off and on, then try again")
     finally:
         output.progress_clear()
         server.shutdown()

@@ -229,7 +229,7 @@ def confirmed_by(ctx: Context, name: str, old: str, new: str, confirm: float, wa
         if (lost_since is not None and time.monotonic() - lost_since >= wait + confirm) \
                 or time.monotonic() - started >= 3 * (wait + confirm):
             raise Abort(f"{name} {new} was not seen running for a minute after it was sent: switch the "
-                        "device off and on, then run the same command again")
+                        "device off and on, then try again")
 
 
 def still_updated(ctx: Context) -> tuple[bool, str]:

@@ -180,7 +180,7 @@ def step_promote(ctx: Context) -> dict[str, Any]:
         # the new one being started.
         raise Abort(
             f"the device kept running its old firmware after {uploads} uploads: switch it off "
-            "and on, then run the same command again"
+            "and on, then try again"
         )
     device.command("SaveData 0")
     output.say("SaveData 0 - settings frozen so the migration's checks stay stable")

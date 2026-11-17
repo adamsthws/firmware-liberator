@@ -215,8 +215,8 @@ def commit_once(ctx: Context) -> dict[str, Any]:
         join.check_device_network(ctx)  # may rebuild the bundle
         if not of_this_bundle(ctx, "stage-report.json"):
             raise Abort(
-                "the firmware files changed since they were checked: run the same command "
-                "again. Nothing was written"
+                "the firmware files changed since they were checked: try again. "
+                "Nothing was written"
             )
     except Abort:
         for step in ("E1", "E2"):
@@ -254,8 +254,8 @@ def commit_once(ctx: Context) -> dict[str, Any]:
             raise CommitFailed(
                 f"commit refused before writing anything - {reason}. The device has "
                 "changed since it was checked, as it does after a power cut "
-                "during a commit or after being set up again. Its checks and "
-                "staging run again: run the same command", captured
+                "during a commit or after being set up again. Try again: its "
+                "checks and staging are done again first", captured
             )
         raise CommitFailed(str(phases.phase_failed("commit", code, captured)), captured)
     output.say("The new layout is written. The device restarts by itself, and the run carries on.")
@@ -405,7 +405,7 @@ def step_tasmota_back(ctx: Context) -> dict[str, Any]:
             how, outcome = install_official(ctx, app)
         if not outcome.startswith("rejoined"):
             raise Abort(f"official Tasmota is back on the device, but {outcome}: it lost its settings. "
-                        "Set it up there - its Wi-Fi, and the device's template - then run this again")
+                        "Set it up there - its Wi-Fi, and the device's template - then try again")
     found = None
     for _ in range(4):
         try:
@@ -448,7 +448,7 @@ def step_tasmota_update(ctx: Context) -> dict[str, Any]:
     how, outcome = install_official(ctx, app)
     if not outcome.startswith("rejoined"):
         raise Abort(f"Tasmota {new} is back on the device, but {outcome}: it lost its settings. Set it up "
-                    "there - its Wi-Fi, and the device's template - then run this again")
+                    "there - its Wi-Fi, and the device's template - then try again")
     return {"app_upload": how, "outcome": outcome}
 
 
@@ -727,7 +727,7 @@ def back_after_reset(ctx: Context, booted: str | None, uptime: int | None) -> No
     if not setup:
         raise Abort(
             "the device did not come back after its settings were reset, nor its network "
-            f"({names.setup_network_hint(ctx)}): switch it off and on, then run this again")
+            f"({names.setup_network_hint(ctx)}): switch it off and on, then try again")
     # Cut off just after the reset, say: its own network raised.
     output.tell("    It restarted without its Wi-Fi details: setting it up via its network.")
     join.configure_device_wifi(ctx, setup, join.SETTINGS_LOST)

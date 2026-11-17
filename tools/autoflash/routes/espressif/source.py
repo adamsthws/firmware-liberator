@@ -150,7 +150,7 @@ def esphome_safe_mode(ctx: Context, running: str) -> str:
     raise Abort(
         "the device answers only ESPHome's update service, and has not started ESPHome "
         f"in {ESPHOME_SAFE_MODE_WAIT / 60:.0f} minutes. Leave it switched on for ten "
-        "minutes, then run the same command again")
+        "minutes, then try again")
 
 
 def wrote_nothing(state: RunState) -> bool:

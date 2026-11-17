@@ -423,7 +423,7 @@ class CommitEvidenceTests(unittest.TestCase):
              mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
             with self.assertRaises(errors.Abort) as caught:
                 tasmota.commit_once(ctx)
-        self.assertIn("run the same command", str(caught.exception))
+        self.assertIn("Try again: its checks and staging are done again first", str(caught.exception))
         self.assertEqual([ctx.state.status(s) for s in ("E1", "E2")], [FAILED, FAILED])
 
     def test_a_bundle_changed_since_staging_sends_the_run_back_and_writes_nothing(self):
