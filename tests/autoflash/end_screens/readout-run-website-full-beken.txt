@@ -1,0 +1,18 @@
+ Stage 1 - Querying eWeLink for devices        - Complete
+ Stage 2 - Locating the device on your network - Complete
+ Stage 3 - Probing the device                  - Complete
+ Stage 4 - Fetching the eWeLink firmware       - Complete
+
+ Nothing was read out.
+
+     Liberator:    3.0.0                             Devices:    1
+     OS:           Ubuntu 24.04.5 LTS                Accepted:   0
+     Python:       3.12.3 (venv)                     Not needed: 0
+     Website full: S61STPF 1.2.0
+
+ You've reached the bit where I hold out my hat!
+ Free software, not free biscuits... Throw your friendly neighbourhood dev a biscuit:
+     GitHub: https://github.com/sponsors/adamsthws
+     Ko-fi:  https://ko-fi.com/adamsthws
+     PayPal: https://www.paypal.me/adamsthws
+     (Ctrl+click to open)

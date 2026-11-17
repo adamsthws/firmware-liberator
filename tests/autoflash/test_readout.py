@@ -462,10 +462,23 @@ def start_run(test: unittest.TestCase) -> None:
     test.tmp = tempfile.TemporaryDirectory()
     test.addCleanup(test.tmp.cleanup)
     test.ctx = a_ctx(test.tmp.name)
-    asked = account.Asked("1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
-    filed = mock.patch.object(runs, "file_device")
-    test.filed = filed.start()
-    test.addCleanup(filed.stop)
+
+    def started(patch):
+        found = patch.start()
+        test.addCleanup(patch.stop)
+        return found
+    test.filed = readout_world(started)
+
+
+def readout_world(enter, asked: account.Asked | None = None):
+    """What a readout meets beyond the tool - the network, eWeLink, the website,
+    this computer's records - stood in for, each patch given to `enter` (a
+    TestCase's start-and-clean-up, or an ExitStack's enter_context): DEVICE at
+    192.0.2.77, as eWeLink says it is (`asked`, a made-up NEWTHING by
+    default), wanted. The end screens (test_end_screens.py) run a readout in
+    the same world, so the two cannot drift apart. The filing of its run."""
+    asked = asked or account.Asked("1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
+    filed = enter(mock.patch.object(runs, "file_device"))
     for patch in (mock.patch.object(readout, "locate", return_value="192.0.2.77"),
                   # A first stage's look for its MAC alone: found nowhere, unless a test says.
                   mock.patch.object(readout, "answering_at", return_value=None),
@@ -481,8 +494,8 @@ def start_run(test: unittest.TestCase) -> None:
                   mock.patch.object(readout, "notify", return_value=True),
                   mock.patch.object(offered_firmware, "fetch",
                                     return_value=([offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9")], []))):
-        patch.start()
-        test.addCleanup(patch.stop)
+        enter(patch)
+    return filed
 
 
 def s60_asked() -> account.Asked:
@@ -1810,7 +1823,6 @@ class OfferScreenTests(unittest.TestCase):
                     said = str(exc)
                 self.assertIn("kept in captures/devices/123456abcdef/runs/1/readout", said)
                 self.assertNotIn(tmp, said)
-
 
 
 if __name__ == "__main__":

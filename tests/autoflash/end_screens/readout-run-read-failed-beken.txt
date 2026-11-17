@@ -1,0 +1,19 @@
+ Stage 1 - Querying eWeLink for devices        - Complete
+ Stage 2 - Locating the device on your network - Complete
+ Stage 3 - Probing the device                  - Complete
+ Stage 4 - Fetching the eWeLink firmware       - Complete
+ Stage 5 - Reading the device's memory         - Stopped
+
+ FAILED: the device stopped answering as its memory was read
+
+     Liberator: 3.0.0                                Devices:    1
+     OS:        Ubuntu 24.04.5 LTS                   Accepted:   0
+     Python:    3.12.3 (venv)                        Not needed: 0
+     Failed:    S61STPF 1.2.0
+
+ If it should not have stopped, please open an issue here:
+     https://firmwareliberator.com/issues
+     This report is on your clipboard.
+
+ This run's log:
+     captures/devices/123456abcdef/runs/1/run.log

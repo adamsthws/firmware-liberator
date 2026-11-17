@@ -1,0 +1,7 @@
+ Stage 1 - Querying eWeLink for devices        - Complete
+ Stage 2 - Locating the device on your network - Complete
+ Stage 3 - Probing the device                  - Complete
+ Stage 4 - Fetching the eWeLink firmware       - Complete
+ Stage 5 - Reading the device's memory         - Stopped
+
+ Stopped with Ctrl-C. If it was being read, switch it off and on to go back to Sonoff.

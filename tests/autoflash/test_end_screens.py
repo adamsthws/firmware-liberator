@@ -27,8 +27,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tests.autoflash import test_readout
 from tests.repo.test_report_answers import FIELDS as LONGEST
-from tools.autoflash import cli, hostsys, output, prompts, readout, report, runner, runs
+from tools.autoflash import (
+    account, cli, firewall, hostsys, kinds, output, prompts, readout, readout_beken, readout_espressif, report,
+    report_upload, runner, runs, signup,
+)
+from tools.autoflash.errors import Abort
+from tools.ewelink import firmware_name
 from tools.repo import unattended_run
 
 SAVED = Path(__file__).with_name("end_screens")
@@ -70,6 +76,33 @@ ACCEPTED = device("Kitchen", "S60TPG", "1.2.0", readout.ACCEPTED)
 UNNEEDED = device("Porch", "BASICR4", "1.1.0", readout.UNNEEDED)
 KEPT = device("Hall", "S61STPF", "1.0.2", readout.KEPT)
 FAILED = device("Garage", "S60TPG", "1.2.0", readout.FAILED, REPORT_ID)
+
+# A readout run through the readout's own code (readout_run), in each chip
+# family: the kind, as eWeLink lists it, and the chip its firmware names.
+FAMILIES = {"espressif": (kinds.SONOFF_S60, "ESP32C3"), "beken": (kinds.SONOFF_S61, "BK7238")}
+UPLOAD = "https://example.invalid/v1/readout"
+WANTED = readout.Wanted(True)
+# How a readout run ends, each drawn in every family (readout_run's options),
+# and which way it ends: the links to support the project, the way to open an
+# issue, or neither (a run stopped as asked: no report).
+READOUT_RUNS = {
+    "accepted": (dict(sent="2026-11-17-0123456789ab"), "hat"),
+    "not-needed": (dict(wanted=readout.Wanted(False, "enough")), "hat"),
+    "website-full": (dict(wanted=readout.Wanted(False, "full")), "hat"),
+    "kept": (dict(url=None), "hat"),
+    "not-sent": (dict(sent=OSError("<urlopen error [Errno 113] No route to host>")), "issue"),
+    "read-failed": (dict(stop=Abort("the device stopped answering as its memory was read")), "issue"),
+    "stopped": (dict(stop=KeyboardInterrupt()), "none"),
+}
+# What each readout run drawn ended as (readout.Became.outcome), for
+# test_every_readout_outcome_is_drawn_by_the_readouts_own_code.
+OUTCOMES_DRAWN: set[str] = set()
+# Each outcome no readout of one device ends as, and why.
+NOT_DRAWN = {
+    readout.SKIPPED: "one of several passed by: readout --all's (test_readout.RunAllTests)",
+    readout.NOT_READ: "the outcome before one is known: every readout ends otherwise",
+    readout.CRASHED: "the tool's own failure: the conversion-crashed ending draws how any run ends on one",
+}
 
 
 class Terminal(io.StringIO):
@@ -144,6 +177,67 @@ class EndScreenTests(unittest.TestCase):
         report.ask_for_an_issue()
 
     @staticmethod
+    def readout_run(family, sent="2026-11-17-0123456789ab", wanted=WANTED, url=UPLOAD, stop=None,
+                    send_later=False):
+        """A readout of one device as cli.read_out runs it, through every stage
+        of the readout's own code, of a `family` device on Sonoff's firmware;
+        only what lies beyond the tool stood in for, as the readout's own
+        tests stand in for it (test_readout.readout_world): the website
+        answering /wanted `wanted`, and a send `sent` - its reference, or an
+        exception raised - or, with no `url`, kept unsent as from a test run.
+        `stop`: raised as the device's memory is read. `send_later`: readout
+        --send of a readout kept from before."""
+        def draw():
+            kind, chip = FAMILIES[family]
+            asked = account.Asked("1.2.0", kind.stock_model, kind.example_product_model, [], {}, "1000abcdef")
+
+            def read(*_args, **_kwargs):
+                if stop is not None:
+                    raise stop   # as the memory is read
+                readout.restoring()   # as each chip's readout says, between the two
+                return {"flash.bin": b"\xff" * 64, "info.txt": b"{}"}, True
+            with ExitStack() as patches, tempfile.TemporaryDirectory() as tmp:
+                test_readout.readout_world(patches.enter_context, asked)
+                named = runs.display_path
+
+                def shown(path):
+                    # The run's folder, in a test a temporary one, as a run names its own.
+                    path = Path(path)
+                    return str(LOG.parent.relative_to(runs.ROOT) / path.name) if str(path).startswith(tmp) \
+                        else named(path)
+                patches.enter_context(mock.patch.object(runs, "display_path", shown))
+                for owner, name, value in (
+                        (firmware_name, "learn",
+                         mock.Mock(return_value=(firmware_name.Learned(kind.wrapper_model, chip, "eWeLink"), []))),
+                        (runs, "hold_device", mock.Mock()),
+                        (readout_espressif, "read_and_anonymise", mock.Mock(side_effect=read)),
+                        (readout_beken, "read_and_anonymise", mock.Mock(side_effect=read)),
+                        (readout_beken, "stock_from_offered", mock.Mock(return_value=object())),
+                        (readout, "ask_wanted", mock.Mock(return_value=wanted)),
+                        (readout, "upload_url", mock.Mock(return_value=url)),
+                        (readout, "send", mock.Mock(**({"side_effect": sent} if isinstance(sent, BaseException)
+                                                     else {"return_value": sent}))),
+                        (report_upload, "announce", mock.Mock()),
+                        (report_upload, "begin_readout", mock.Mock()),
+                        (report_upload, "send_readout", mock.Mock()),
+                        (signup, "sent_readout", mock.Mock()),
+                        (firewall, "release_firewall", mock.Mock()),
+                        # A readout kept to send later is named in the test's folder,
+                        # not this checkout's captures, where another test's would be.
+                        (readout, "TO_SEND", Path(tmp, "readouts-to-send")),
+                        (output, "start", mock.Mock())):   # the screen's run is begun already
+                    patches.enter_context(mock.patch.object(owner, name, value))
+                ctx = test_readout.a_ctx(tmp)
+                kept = Path(tmp, "readout.tar")
+                kept.write_bytes(b"tar")
+                ctx.args = SimpleNamespace(send=kept if send_later else None, device_ip=None, all=False,
+                                           verbose=False)
+                ctx.account_devices = lambda: [test_readout.record(kind.example_product_model, kind.stock_model)]
+                cli.read_out(ctx)
+                OUTCOMES_DRAWN.update(item.outcome for item in getattr(ctx, "readouts", []))
+        return draw
+
+    @staticmethod
     def readout_end(done, said="", failed_with=None):
         def draw():
             ctx = SimpleNamespace(readouts=list(done))
@@ -186,7 +280,14 @@ class EndScreenTests(unittest.TestCase):
         "conversion-failed-what-next": (then_what_next(conversion_failed(ESPRESSIF), "run", True), "issue"),
         "readout-failed-alone-what-next": (then_what_next(readout_end([FAILED], failed_with=FAILURE),
                                                           "readout", True), "issue"),
+        "readout-send-later": (readout_run("espressif", send_later=True), "none"),
     }
+    # Each way a readout run ends, in each chip family (a loop: a class's names
+    # are out of a comprehension's reach).
+    for _name, (_options, _ends) in READOUT_RUNS.items():
+        for _family in FAMILIES:
+            ENDINGS[f"readout-run-{_name}-{_family}"] = (readout_run(_family, **_options), _ends)
+    del _name, _options, _ends, _family
     # The longest each answer can be, and a long sitting's readout: checked, not kept.
     LONG = {
         "conversion-longest": (conversion(LONGEST), "hat"),
@@ -206,13 +307,15 @@ class EndScreenTests(unittest.TestCase):
             for columns in WIDTHS:
                 with self.subTest(ending=name, columns=columns):
                     screen, copied, wrapped = self.drawn(draw, columns)
-                    self.assertEqual(unattended_run.end_problems(screen, copied), [], screen)
-                    self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+                    self.assertEqual(unattended_run.screen_problems(screen, copied), [], screen)
                     self.assertEqual(wrapped, 0, f"a row the terminal wrapped itself:\n{screen}")
                     self.assertFalse([row for row in screen.splitlines() if len(row) >= columns], screen)
                     if ends == "hat":
                         self.assertIn(unattended_run.HAT, screen)
                         self.assertEqual(copied, "", "a run that did not fail leaves the clipboard alone")
+                    elif ends == "none":
+                        self.assertNotIn(unattended_run.HAT, screen)
+                        self.assertNotIn(unattended_run.ISSUE, screen)
                     else:
                         self.assertIn(unattended_run.ISSUE, screen)
                         self.assertNotIn(unattended_run.HAT, screen)
@@ -263,6 +366,21 @@ class EndScreenTests(unittest.TestCase):
                 kept = path.read_text(encoding="utf-8")
                 self.assertEqual(screen, kept, "drawn otherwise than kept (- kept, + drawn):\n" + "".join(
                     difflib.unified_diff(kept.splitlines(True), screen.splitlines(True), "kept", "drawn")))
+
+    def test_every_readout_outcome_is_drawn_by_the_readouts_own_code(self):
+        # A new way for a readout to end has its screen drawn here, by the
+        # code a run draws it with, in every chip family - or is said here
+        # not to be, and why.
+        OUTCOMES_DRAWN.clear()
+        for name, (draw, _) in self.ENDINGS.items():
+            if name.startswith("readout-run-"):
+                self.drawn(draw, 100)
+        self.assertEqual(sorted(OUTCOMES_DRAWN), sorted(set(readout.SAID) - set(NOT_DRAWN)))
+        self.assertEqual({name.rsplit("-", 1)[1] for name in self.ENDINGS if name.startswith("readout-run-")},
+                         set(FAMILIES))
+        # Every chip family the tool has, so a new one's readouts are drawn too.
+        from tools.autoflash import routes
+        self.assertEqual(set(routes.FAMILIES), set(FAMILIES))
 
     def test_every_ending_kept_is_one_drawn_here(self):
         self.assertEqual(sorted(path.stem for path in SAVED.glob("*.txt")), sorted(self.ENDINGS))
