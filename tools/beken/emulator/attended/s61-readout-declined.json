@@ -13,11 +13,6 @@
    "type": "made-up-password\r"
   },
   {
-   "when": "Which eWeLink account is this device in",
-   "type": "2\r",
-   "optional": true
-  },
-  {
    "when": "Which device should be read out",
    "type": "1\r",
    "optional": true

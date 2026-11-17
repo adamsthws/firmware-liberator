@@ -82,6 +82,23 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(done.stdout.endswith("is a placeholder the stub ignores.\n"), done.stdout)
 
 
+class AccountTests(unittest.TestCase):
+    """A run sat through against the stub types its sign-in, as a person does
+    and as the Beken emulator's attended runs do: given no account in
+    advance, the tool asks for it. Seen: given the stub's, an S60's attended
+    runs never asked, and its scenarios' answers to the sign-in were left
+    optional, never typed."""
+    text = SCRIPT.read_text(encoding="utf-8")
+
+    def test_a_stub_run_with_answers_is_given_no_account(self):
+        given = re.search(r'(?m)^elif \[ "\$stub" = 1 \] && \[ -n "\$answers_file" \]; then\n(?:    #.*\n)*(.*)\n',
+                          self.text)
+        self.assertIsNotNone(given, "a branch for a stub run with --answers")
+        self.assertEqual(given.group(1).strip(), '"${as_you[@]}" "$NAME" sh -c "umask 077 && : > $answers"')
+        # Before the stub's placeholder account, which an unattended run is given.
+        self.assertLess(given.start(), self.text.index("printf 'EWELINK_EMAIL=%s"))
+
+
 class SavedDeviceTests(unittest.TestCase):
     text = SCRIPT.read_text(encoding="utf-8")
 

@@ -1009,7 +1009,8 @@ A scenario is a file in `tools/espressif/emulator/attended/` (an S60's) or
 what is done to it first (a Tasmota web password, an ESPHome with a web login
 and encrypted updates, sudo remembering no password), the run's options, the
 answers, and how the run should end, with a second run after one stopped
-part way (`again`), as you would start it again. An answer can say what must
+part way (`again`), as you would start it again. The eWeLink sign-in is typed
+at its questions, in both chip families. An answer can say what must
 be on the screen as it is typed (`"shows"`), and what must not (`"never"`):
 why the answer before it was not taken, say, which is gone again by the end,
 or a list a key was pressed to clear. An answer can also switch

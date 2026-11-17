@@ -12,6 +12,18 @@
    "type": "x"
   },
   {
+   "when": "Which eWeLink account is this device in",
+   "type": "2\r"
+  },
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r"
+  },
+  {
+   "when": "eWeLink password for",
+   "type": "made-up-password\r"
+  },
+  {
    "when": "What now",
    "type": "3\r"
   },

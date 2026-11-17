@@ -25,7 +25,8 @@
 #   tools/espressif/emulator/unattended-test.sh --readout     a readout of the device (cli.py readout), not a conversion
 #   tools/espressif/emulator/unattended-test.sh --answers=FILE  a run as a person sits through it: its
 #                                                   questions asked, and answered as FILE says
-#                                                   (unattended_run.py --attended --answers)
+#                                                   (unattended_run.py --attended --answers);
+#                                                   with --stub-cloud, its sign-in typed too
 #   tools/espressif/emulator/unattended-test.sh --no-api     readouts kept unsent: by default they go to
 #                                                   the API Worker's own code (website/api/local.mjs),
 #                                                   in a container of its own beside the emulator,
@@ -250,6 +251,11 @@ answers=/tmp/autoflash-unattended.env
 if [ "$public" = 1 ]; then
     # None: a public device is past eWeLink, and nothing of this computer's
     # (its .env, its account) may reach a run that is kept as public.
+    "${as_you[@]}" "$NAME" sh -c "umask 077 && : > $answers"
+elif [ "$stub" = 1 ] && [ -n "$answers_file" ]; then
+    # None: a run sat through types its sign-in at the tool's questions, as a
+    # person does (and as the Beken emulator's attended runs do); the stub
+    # takes any account.
     "${as_you[@]}" "$NAME" sh -c "umask 077 && : > $answers"
 elif [ "$stub" = 1 ]; then
     # A placeholder account: the stub answers the account API and ignores it.

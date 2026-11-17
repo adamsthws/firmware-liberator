@@ -6,18 +6,11 @@
  "answers": [
   {
    "when": "eWeLink account email or phone number",
-   "type": "someone@example.invalid\r",
-   "optional": false
+   "type": "someone@example.invalid\r"
   },
   {
    "when": "eWeLink password for",
-   "type": "made-up-password\r",
-   "optional": false
-  },
-  {
-   "when": "Which eWeLink account is this device in",
-   "type": "2\r",
-   "optional": true
+   "type": "made-up-password\r"
   },
   {
    "when": "Which device should be read out",
