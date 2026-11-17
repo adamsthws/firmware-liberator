@@ -79,6 +79,23 @@ class DeviceLayoutTests(unittest.TestCase):
         self.assertIn("Kettle", found.describe())
         self.assertIn("1.2.0", found.describe())
 
+    def test_a_backup_says_what_the_device_is_and_a_test_copy_where_it_came_from(self):
+        # The emulator's test copies once all read "Emulator test copy", Sonoff unknown
+        # version, so only their MACs told a POW Elite from an NSPanel.
+        made_up, copied, converted = "12:34:56:ab:cd:01", "12:34:56:ab:cd:02", "12:34:56:ab:cd:03"
+        for mac in (made_up, copied, converted):
+            self.records.save_backup(b"F", efuse_with_mac(mac), {}, None if mac == made_up else "1.2.0",
+                                     date="2026-11-05")
+        self.records.remember_device(made_up, ewelink_name="Emulator test copy", product_model="POWR316D",
+                                     test_copy_of="https://example.com/Sonoff-Powr316D.bin")
+        self.records.remember_device(copied, ewelink_name="Emulator test copy", test_copy_of=converted)
+        self.records.remember_device(converted, ewelink_name="Kettle", model="BASICR4")
+        described = {backup.mac: backup.describe() for backup in self.records.backups()}
+        self.assertEqual(described[made_up], f"{made_up}  Sonoff POW Elite 16A (POWR316D)"
+                                             "  (test copy of a public dump, backed up 2026-11-05)")
+        self.assertEqual(described[copied], f"{copied}  (test copy of {converted}, Sonoff 1.2.0, backed up 2026-11-05)")
+        self.assertEqual(described[converted], f'{converted}  Sonoff BASICR4  ("Kettle", Sonoff 1.2.0, backed up 2026-11-05)')
+
     def test_a_beken_devices_own_data_runs_to_the_end_of_its_4_mb(self):
         start, size = records.BEKEN_REGION
         self.assertEqual((start, start + size), (0x3E0000, 4 * 1024 * 1024))

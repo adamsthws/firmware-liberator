@@ -23,7 +23,6 @@ class ChooseDeviceTests(unittest.TestCase):
             self.assertEqual(choose([A, B], None, B.mac, interactive=True), B)
         options = menu.call_args.args[1]
         self.assertTrue(options[0].startswith(B.mac))
-        self.assertIn("MAC address", " ".join(menu.call_args.kwargs["help_lines"]))
 
     def test_with_nobody_to_ask_the_last_one_is_used(self):
         self.assertEqual(choose([A, B], None, B.mac, interactive=False), B)

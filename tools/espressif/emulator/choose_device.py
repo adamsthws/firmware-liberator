@@ -3,7 +3,7 @@
 
 Every conversion keeps the device's Sonoff firmware in
 captures/devices/<mac>/sonoff-backup/ (tools/autoflash/records.py). This lists
-them, by MAC address, and writes the chosen one's directory and MAC to --out,
+them, by MAC address and what each is, and writes the chosen one's directory and MAC to --out,
 a line each, for emu.sh. A dump in captures/emulation/ (flash.bin and
 efuse.bin), the way the emulator used to be set up, is offered too.
 
@@ -37,9 +37,6 @@ from tools.autoflash import records  # noqa: E402
 from tools.autoflash.prompts import QuitRun, ask_choice  # noqa: E402
 
 LEGACY = ROOT / "captures" / "emulation"
-HINT = [
-    "Each device is named by its MAC address",
-]
 
 
 @dataclass(frozen=True)
@@ -83,8 +80,7 @@ def choose(found: list[Choice], wanted: str | None, last: str | None, interactiv
     # The one used last time first, so pressing 1 carries on with it.
     found = sorted(found, key=lambda c: c.mac != last)
     if interactive:
-        return found[ask_choice("Which device should the emulator run", [c.label for c in found],
-                                help_lines=HINT)]
+        return found[ask_choice("Which device should the emulator run", [c.label for c in found])]
     if last and found[0].mac == last:
         return found[0]
     raise SystemExit("Several devices are backed up; say which with --device <MAC>: "

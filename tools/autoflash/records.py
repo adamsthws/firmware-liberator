@@ -268,13 +268,27 @@ class Backup:
     taken: str
     name: str
     family: str = "espressif"
+    # eWeLink's product model (POWR316D), where known.
+    model: str = ""
+    # For the emulator's test copy: the device or public dump it was made from.
+    copy_of: str = ""
 
     def describe(self) -> str:
-        """For a menu: the MAC first, since that is what tells devices apart."""
-        extra = [f"Sonoff {self.version}"] + ([f"backed up {self.taken}"] if self.taken else [])
-        # The name eWeLink gave it, which tells nothing apart, is left out.
-        named = f'"{self.name}", ' if self.name and self.name not in {k.name for k in kinds.ALL} else ""
-        return f"{self.mac}  ({named}{', '.join(extra)})"
+        """For a menu: the MAC first, a column of its own, then what the device
+        is - which is what a person tells devices apart by."""
+        kind = kinds.for_account(self.model, None, kinds.EVERY)
+        what = (kind.name + (f" ({self.model})" if self.model not in kind.name else "")) if kind else self.model
+        extra = []
+        # The name eWeLink gave it - the model's own, or a test copy's - tells nothing apart.
+        if self.name and not self.copy_of and self.name not in {k.name for k in kinds.EVERY}:
+            extra.append(f'"{self.name}"')
+        if self.copy_of:
+            extra.append("test copy of " + (self.copy_of if MAC_RE.match(self.copy_of) else "a public dump"))
+        if self.version:
+            extra.append(f"Sonoff {self.version}")
+        if self.taken:
+            extra.append(f"backed up {self.taken}")
+        return "  ".join(part for part in (self.mac, what, f"({', '.join(extra)})" if extra else "") if part)
 
 
 def find_backup(mac: str) -> Backup | None:
@@ -287,9 +301,13 @@ def find_backup(mac: str) -> Backup | None:
         return None
     record = read_device(mac)
     return Backup(mac=folder_name(mac).replace("-", ":"), directory=directory,
-                  version=str(record.get("stock_version") or "unknown version"),
+                  version=str(record.get("stock_version") or ""),
                   taken=str(record.get("backed_up") or ""), name=str(record.get("ewelink_name") or ""),
-                  family=family)
+                  family=family,
+                  # A run keeps eWeLink's product model as model; the emulator's
+                  # test copies give theirs as product_model, as its tooling reads it.
+                  model=str(record.get("model") or record.get("product_model") or "").strip().upper(),
+                  copy_of=str(record.get("test_copy_of") or ""))
 
 
 def backups() -> list[Backup]:

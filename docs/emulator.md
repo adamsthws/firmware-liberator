@@ -45,7 +45,8 @@ takes one over Wi-Fi without converting, leaving the device on stock. The
 emulator runs a copy, so the backup is never written.
 
 - **Which device.** `emu.sh` lists the backups by MAC address (on the device's
-  label, and in your router and the eWeLink app) and asks which to run when
+  label, and in your router and the eWeLink app) and what each device is, where
+  its record says, and asks which to run when
   there are several; `--device <MAC>` chooses beforehand, and unattended, the
   device run last is used. A dump set up the older way,
   `flash.bin` and `efuse.bin` in `captures/emulation/`, is offered too.
