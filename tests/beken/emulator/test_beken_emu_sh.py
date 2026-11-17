@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -478,6 +479,8 @@ class ComputerApiTests(unittest.TestCase):
                 '  "ps -q --filter name=^autoflash-beken-emu-api$") %s ;;\n'
                 '  "logs "*) echo "API on 0.0.0.0:8080" ;;\n'
                 '  "inspect -f {{.State.Running}} "*) echo true ;;\n'
+                # The device runs a while: the watcher's last calls come after the script's.
+                '  "wait "*) sleep 1 ;;\n'
                 '  "inspect -f {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}} "*) echo 192.0.2.7 ;;\n'
                 'esac\n' % (calls, "echo abc123" if api_running else ":"), encoding="utf-8")
             Path(tmp, "bin", "docker").chmod(0o755)
@@ -486,6 +489,20 @@ class ComputerApiTests(unittest.TestCase):
                                   env={**os.environ, "PATH": f"{tmp}/bin:{os.environ['PATH']}"})
             self.assertEqual(done.returncode, 0, done.stderr)
             asked = calls.read_text(encoding="utf-8").splitlines()
+            started = next((n for n, line in enumerate(asked)
+                            if line.startswith("run -d --name autoflash-beken-emu-api")), None)
+            if started is not None:
+                # The API's watcher (local_api_goes_with) runs on after the script,
+                # calling docker, which writes here: the folder, taken away while it
+                # still did, was not empty. Its last call is the API's removal - after
+                # the start, as the script removes one left from before it starts one.
+                def removed() -> bool:
+                    after = calls.read_text(encoding="utf-8").splitlines()[started + 1:]
+                    return "rm -f autoflash-beken-emu-api" in after
+                deadline = time.monotonic() + 30
+                while not removed() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(removed())
             return asked, next(line for line in asked if line.startswith("run --rm -i"))
 
     def test_by_default_its_readouts_go_to_the_api_beside_the_device(self):
