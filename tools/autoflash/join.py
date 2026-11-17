@@ -514,7 +514,7 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
             if round_ == 2 or prompts.UNATTENDED:
                 raise Abort(f"{what} did not join '{ssid}' with the details sent through its own "
                             "network. Check the network's name and password, then run this again") from None
-        output.tell(f"    {what} did not join '{ssid}' with those details: check its name and password.")
+        prompts.warn([f"{what} did not join '{ssid}' with those details: check its name and password."])
         output.transient_begin()
         prompts.section("The Wi-Fi details the device should use", [
             "The 2.4 GHz network the device should be on, sent through its own network:",

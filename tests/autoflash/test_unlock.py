@@ -55,6 +55,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
     def setUp(self):
         self.private = mock.Mock()
         for patch in (mock.patch.object(output, "say"), mock.patch.object(output, "tell"),
+                      mock.patch.object(output, "show"),
                       mock.patch.object(prompts, "section"),
                       mock.patch.object(output, "transient_begin"),
                       mock.patch.object(output, "transient_end"),
@@ -141,7 +142,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
         with mock.patch.object(prompts, "ask_choice", side_effect=try_again):
             unlock.unlock_esphome(ctx)
         self.assertIsNone(ctx.esphome_password)
-        output.tell.assert_any_call("    ESPHome there still has an update password.")  # tried too soon
+        output.show.assert_any_call("! ESPHome there still has an update password.", output.BOLD, output.YELLOW)  # tried too soon
 
     def test_an_update_refused_for_it_later_is_asked_for_and_sent_again(self):
         ctx = self.ctx()  # none at the go-ahead: an X2 sending the startup firmware once more, say
@@ -169,8 +170,8 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
             unlock.unlock_esphome(ctx)
         self.assertEqual(menu.call_args.args[1][:2], ["Type its update password", "Type its API encryption key"])
         self.assertEqual((ctx.esphome_key, ctx.esphome_password), (self.KEY, None))
-        told = " ".join(str(call.args[0]) for call in output.tell.call_args_list)
-        self.assertIn("That is not an API encryption key", told)  # said why, and asked again
+        told = " ".join(str(call.args[0]) for call in output.show.call_args_list)
+        self.assertIn("! That is not an API encryption key", told)  # said why, and asked again
         self.private.assert_any_call(self.KEY_TEXT, "esphome-api-key")
 
     def test_one_taking_only_encrypted_updates_is_asked_for_its_key(self):
@@ -182,7 +183,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
             unlock.unlock_esphome(ctx)
         self.assertEqual(menu.call_args.args[1][0], "Type its API encryption key")
         self.assertEqual(ctx.esphome_key, self.KEY)  # the first, another key, refused on the device
-        output.tell.assert_any_call("    That is not its API encryption key.")
+        output.show.assert_any_call("! That is not its API encryption key.", output.BOLD, output.YELLOW)
         with mock.patch.object(prompts, "UNATTENDED", True):
             with self.assertRaisesRegex(errors.Abort,
                                         "only encrypted updates.*ESPHome YAML.*--esphome-api-key"
@@ -202,7 +203,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
         with mock.patch.object(prompts, "ask_choice", side_effect=choose), \
                 mock.patch.object(prompts, "ask_secret", return_value="s3cret-71"):
             unlock.unlock_esphome(ctx)
-        output.tell.assert_any_call("    ESPHome there still takes only encrypted updates.")
+        output.show.assert_any_call("! ESPHome there still takes only encrypted updates.", output.BOLD, output.YELLOW)
         self.assertEqual((ctx.esphome_key, ctx.esphome_password), (None, "s3cret-71"))  # then asked for that
 
     def test_a_key_given_that_is_not_its_own_is_asked_for_or_gone_on_without(self):

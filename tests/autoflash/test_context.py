@@ -71,6 +71,16 @@ class WifiFallbackTests(unittest.TestCase):
         asked.assert_called_once()
         self.assertIn("Tasmota is waiting on its setup network.", shown.call_args.args[1])
 
+    def test_a_password_the_bundle_cannot_take_is_a_warning_then_asked_again(self):
+        ctx = self.ctx(found=None, bundle_for="Home-2G")
+        with mock.patch.object(context, "recovery_image",
+                               side_effect=[prepare_imprinted_bundle.BundleError("too short"), b"image"]), \
+             mock.patch.object(prompts, "section"), mock.patch.object(prompts, "ask_secret", return_value="pw"), \
+             mock.patch.object(prompts, "ask_choice", return_value=0), mock.patch.object(output, "private"), \
+             mock.patch.object(prompts, "warn") as warned:
+            self.assertEqual(context.Context.wifi(ctx), ("Home-2G", "pw"))
+        warned.assert_called_once_with(["too short."])
+
     def test_details_typed_are_kept_out_of_the_log_and_reported_as_typed(self):
         ctx = self.ctx(found=None, bundle_for="Home-2G")
         recorded = {}
@@ -180,6 +190,16 @@ class EwelinkAccountTests(unittest.TestCase):
                        "test@.com", "test@example.c", "test@example.123", "two@at@example.com"):
             self.assertFalse(valid(answer)[0], answer)
 
+    def test_only_a_number_without_its_country_code_is_hinted_at(self):
+        # The hint is not on screen before a mistake, only after one it fits.
+        _, _, asked = self.email()
+        self.assertNotIn("help_lines", asked.call_args.kwargs)
+        valid = asked.call_args.kwargs["validate"]
+        for answer in ("07700 900123", "(07700) 900-123", "7700900123"):
+            self.assertTrue(valid(answer)[1].startswith("Hint: a phone number needs its country code"), answer)
+        for answer in ("test@test", "new@example", "12345", "abc 07700 900123"):
+            self.assertTrue(valid(answer)[1].startswith("That is neither an email address"), answer)
+
     def test_once_chosen_in_a_run_it_is_not_asked_again(self):
         email, menu, asked = self.email(remembered="old@example.com", chosen="run@example.com")
         self.assertEqual(email, "run@example.com")
@@ -244,6 +264,19 @@ class OneSignInTests(unittest.TestCase):
             self.assertEqual(context.Context._sign_in(ctx), ("eu", {"at": "token"}))
         self.assertEqual(signed.call_args.args[:2], ("you@example.com", "typed"))
         private.assert_called_once_with("token", "access-token")
+
+    def test_a_password_ewelink_refuses_is_a_warning_then_asked_again(self):
+        ctx = SimpleNamespace(email=lambda: "you@example.com", _ewelink_password="wrong",
+                              _last_region=lambda: "eu", _remember_region=lambda region: None,
+                              ewelink_env=lambda: None, forget_account=mock.Mock())
+        refused = context.EwelinkError("login failed: wrong account or password")
+        with mock.patch.object(context, "login_session", side_effect=[refused, ("eu", {"at": "t"})]), \
+                mock.patch.object(output, "private"), mock.patch.object(output, "transient_begin"), \
+                mock.patch.object(output, "transient_end"), mock.patch.object(prompts, "ask_choice", return_value=0), \
+                mock.patch.object(prompts, "warn") as warned:
+            self.assertEqual(context.Context._sign_in(ctx), ("eu", {"at": "t"}))
+        warned.assert_called_once_with(["login failed: wrong account or password."])
+        ctx.forget_account.assert_not_called()
 
     def test_another_accounts_region_is_not_written_over(self):
         from types import SimpleNamespace

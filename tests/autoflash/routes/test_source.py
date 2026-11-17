@@ -147,6 +147,7 @@ class FirmwareSearchCase(unittest.TestCase):
     def setUp(self):
         self.private = mock.Mock()
         for patch in (mock.patch.object(output, "say"), mock.patch.object(output, "tell"),
+                      mock.patch.object(output, "show"),
                       mock.patch.object(prompts, "section"),
                       mock.patch.object(output, "transient_begin"),
                       mock.patch.object(output, "transient_end"),
@@ -276,7 +277,7 @@ class TasmotaWebPasswordTests(FirmwareSearchCase):
             self.assertEqual(source.find_current_firmware(ctx), "tasmota")
         asked.assert_not_called()
         self.assertIsNone(ctx.web_password)
-        output.tell.assert_any_call("    Tasmota there still has a web password.")  # tried too soon
+        output.show.assert_any_call("! Tasmota there still has a web password.", output.BOLD, output.YELLOW)  # tried too soon
 
     def test_found_on_the_network_it_is_offered_and_asked_for_once_chosen(self):
         locked = detect.Found("192.0.2.42", "locked", "12:34:56:ab:cd:ef")
@@ -403,6 +404,7 @@ class EsphomeWebLoginTests(unittest.TestCase):
     def setUp(self):
         self.private = mock.Mock()
         for patch in (mock.patch.object(output, "say"), mock.patch.object(output, "tell"),
+                      mock.patch.object(output, "show"),
                       mock.patch.object(prompts, "section"),
                       mock.patch.object(output, "transient_begin"),
                       mock.patch.object(output, "transient_end"),
@@ -470,7 +472,7 @@ class EsphomeWebLoginTests(unittest.TestCase):
                 mock.patch.object(prompts, "ask_choice", side_effect=try_again):
             self.assertEqual(source.find_current_firmware(ctx), "esphome")
         self.assertIsNone(ctx.esphome_login)
-        output.tell.assert_any_call("    ESPHome there still has a web login.")  # tried too soon
+        output.show.assert_any_call("! ESPHome there still has a web login.", output.BOLD, output.YELLOW)  # tried too soon
 
     def test_found_on_the_network_it_is_offered_and_asked_for_once_chosen(self):
         locked = detect.Found("192.0.2.42", "esphome-login", "12:34:56:ab:cd:ef")

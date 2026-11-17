@@ -237,6 +237,20 @@ class OwnNetworkRecordedTests(SetupNetworkTestCase):
         self.assertEqual(ctx.state.input(join.OWN_NETWORK), [join.NOT_JOINED])
         event.assert_called_once_with("home")   # told to go back (output.EVENTS)
 
+    def test_details_it_did_not_join_with_are_a_warning_then_asked_again(self):
+        ctx = self.ctx()
+        ctx.wifi = lambda why=(): ("Home", "wrong")
+        with mock.patch.object(prompts, "find_ssid", return_value="esphome-abcdef"), \
+                mock.patch.object(prompts, "section"), mock.patch.object(output, "tell"), \
+                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"), \
+                mock.patch.object(join, "ask_credentials", return_value=("Home", "right")), \
+                mock.patch.object(join, "send_through_own_network"), mock.patch.object(output, "event"), \
+                mock.patch.object(join, "wait_for", side_effect=[errors.Abort("not back"), None]), \
+                mock.patch.object(prompts, "warn") as warned:
+            self.assertEqual(join.set_up_through_own_network(ctx, "ESPHome", bool, ("esphome-abcdef",)),
+                             ("Home", "right"))
+        warned.assert_called_once_with(["ESPHome did not join 'Home' with those details: check its name and password."])
+
     def test_its_network_not_seen_is_not_recorded(self):
         ctx = self.ctx()
         with mock.patch.object(prompts, "find_ssid", return_value=None), \

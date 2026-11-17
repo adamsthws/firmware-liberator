@@ -103,14 +103,14 @@ def secret_or_retry(title: str, lines: list[str], secrets: list[Secret],
                 answer = answered(functools.partial(secret.check, value)) if value else True
         except ValueError as exc:
             output.rewind(mark)
-            output.tell(f"    {exc}.")
+            prompts.warn([f"{exc}."])
             continue
         if answer is False:
             output.transient_end()
             return secret, value
         output.rewind(mark)
-        output.tell("    The device did not answer; choose again to try once more." if answer is None
-                    else f"    That is not its {secret.kind}." if secret else f"    {still}")
+        prompts.warn(["The device did not answer; choose again to try once more." if answer is None
+                      else f"That is not its {secret.kind}." if secret else still])
 
 
 def password_or_retry(title: str, lines: list[str], check: Callable[[str | None], bool | None], *,

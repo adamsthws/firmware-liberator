@@ -77,12 +77,19 @@ def _emit(lines: Iterable[str]) -> None:
         output.show(f"{BULLET}{line}")
 
 
+def warn(lines: Iterable[str]) -> None:
+    """Why an answer was not taken, marked and highlighted as warning_box's
+    title is, so it stands out from the question asked again under it."""
+    for line in lines:
+        output.show(f"! {line}", output.BOLD, output.YELLOW)
+
+
 def _retry(mark: output.Mark | None, lines: Iterable[str]) -> None:
     """A wrong answer: take it and its question off the screen again, back to
     `mark`, then say why before asking again - so wrong answers do not pile
     up, one under another, until the question is taller than the window."""
     output.rewind(mark)
-    _emit(lines)
+    warn(lines)
 
 
 _colour_ok = output.colour_ok
@@ -913,7 +920,7 @@ def ask_ipv4(
     # scroll out of reach of being taken away again.
     with output.hold():
         while True:
-            _emit(problem)
+            warn(problem)
             answer = ask_text(
                 question, help_lines=help_lines, default=default,
                 example=example, validate=validate,

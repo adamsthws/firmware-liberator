@@ -839,7 +839,7 @@ class QuestionScreenTests(unittest.TestCase):
         self.assertEqual((code, answer), (0, ""), end.render(colour=False))
         rows = [row for row in asked[2].render(colour=False).splitlines() if row.strip()]
         self.assertEqual(sum("(q to quit)" in row for row in rows), 1, "\n".join(rows))
-        self.assertEqual(rows[-3].strip(), "The two passwords did not match - try again.")
+        self.assertEqual(rows[-3].strip(), "! The two passwords did not match - try again.")
 
     def test_arrow_keys_edit_the_answer(self):
         # Seen in an attended emulator run: echoed by the terminal, the up
@@ -890,6 +890,20 @@ class Screen:
                 self.wrapped += self.wrap_next
                 super()._put(char)
         return Counting(width, height)
+
+
+class WrongAnswerTests(unittest.TestCase):
+    def test_why_an_answer_was_not_taken_is_a_warning(self):
+        # Marked and coloured as warning_box's title, to stand out from the question.
+        answers = iter(["", "no", "yes"])
+        with mock.patch.object(prompts, "_raw", side_effect=lambda *a, **k: next(answers)), \
+             mock.patch.object(prompts, "_ctrl_c_first"), mock.patch.object(output, "rewind"), \
+             mock.patch.object(output, "show") as shown:
+            prompts.ask_text("Say yes", validate=lambda answer: (answer == "yes", "Only yes will do."))
+        self.assertEqual(shown.call_args_list, [
+            mock.call("! An answer is needed here.", output.BOLD, output.YELLOW),
+            mock.call("! Only yes will do.", output.BOLD, output.YELLOW),
+        ])
 
 
 class AdminPasswordTests(unittest.TestCase):

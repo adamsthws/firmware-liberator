@@ -27,6 +27,9 @@ check.
   need, which clears once you go on, instead of a note that stayed above the
   stages. The list asks for your eWeLink account details, not the app on your
   phone.
+- Why an answer was not taken is a yellow warning marked `!`, as other
+  warnings are. The note that a phone number needs its country code is shown
+  only after a number typed without one.
 
 ## 3.0.0
 

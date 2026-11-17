@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,20 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import (
 )
 from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkError, account_name, get_devices,
                                           is_email, login_session, phone_number, session_env)
+
+# Digits written as a phone number is (spaces, dashes, dots, brackets, a +):
+# at least six, the fewest a number without its country code is likely to have.
+PHONE_LIKE = re.compile(r"\+?[\s().-]*(?:\d[\s().-]*){6,}")
+
+
+def account_answer(answer: str) -> tuple[bool, str]:
+    """For prompts.ask_text: whether `answer` is an eWeLink account, and why
+    not. Only a number missing its country code is told how to write one."""
+    if is_email(answer) or phone_number(answer) is not None:
+        return True, ""
+    if PHONE_LIKE.fullmatch(answer.strip()):
+        return False, "Hint: a phone number needs its country code, e.g. +44 7700 900123"
+    return False, "That is neither an email address nor a phone number with its country code."
 
 
 class Context:
@@ -230,7 +245,7 @@ class Context:
             try:
                 self.remember_wifi(ssid, password, recovery_image(self.manifest_path, ssid, password))
             except BundleError as exc:
-                output.tell(f"    {exc}.")
+                prompts.warn([f"{exc}."])
                 choice = prompts.ask_choice("What now", [
                     "Type the password again",
                     "Use a different network, or a changed password - enter both",
@@ -326,7 +341,7 @@ class Context:
                     raise
                 self._ewelink_password = None
                 output.transient_begin()
-                output.tell(f"    {exc}.")
+                prompts.warn([f"{exc}."])
                 choice = prompts.ask_choice("What now", [
                     "Type the password again",
                     "Use a different eWeLink account",
@@ -384,14 +399,7 @@ class Context:
             ]) == 0:
                 email = last
             else:
-                email = prompts.ask_text(
-                    "eWeLink account email or phone number",
-                    help_lines=["A phone number goes with its country code, as +44 7700 900123."],
-                    validate=lambda answer: (
-                        is_email(answer) or phone_number(answer) is not None,
-                        "That is neither an email address nor a phone number with its country code.",
-                    ),
-                )
+                email = prompts.ask_text("eWeLink account email or phone number", validate=account_answer)
             output.transient_end()
         email = account_name(email)
         self.remember_email(email)

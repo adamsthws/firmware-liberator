@@ -33,7 +33,7 @@ from typing import Any
 try:
     from tools.autoflash.imprint import ImprintError, imprint, imprinted_ssid
     from tools.autoflash import output
-    from tools.autoflash.prompts import QuitRun, ask_secret, ask_text
+    from tools.autoflash.prompts import QuitRun, ask_secret, ask_text, warn
     from tools.espressif.safeboot.prepare_safeboot_migration import artifact_record, obtain
     from tools.ewelink.get_device_key import INSPECTED
     from tools.espressif.safeboot.safeboot_migration import (
@@ -70,7 +70,7 @@ try:
 except ModuleNotFoundError:  # running from inside tools/
     from autoflash.imprint import ImprintError, imprint, imprinted_ssid
     from autoflash import output
-    from autoflash.prompts import QuitRun, ask_secret, ask_text
+    from autoflash.prompts import QuitRun, ask_secret, ask_text, warn
     from prepare_safeboot_migration import artifact_record, obtain
     from get_device_key import INSPECTED
     from safeboot_migration import (
@@ -444,7 +444,7 @@ def ask_password(ssid: str | None = None) -> str:
         if ask_secret("Same password again: ") == password:
             return password
         output.rewind(mark)
-        output.show("    The two passwords did not match - try again.")
+        warn(["The two passwords did not match - try again."])
 
 
 def _credentials(args: argparse.Namespace) -> tuple[str, str]:
