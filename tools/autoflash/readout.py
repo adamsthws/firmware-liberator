@@ -22,6 +22,7 @@ enough readouts of.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import lzma
@@ -29,6 +30,7 @@ import os
 import re
 import secrets
 import tarfile
+import threading
 import time
 import urllib.error
 from dataclasses import dataclass
@@ -781,6 +783,7 @@ def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
     try:
         reference = send(data, url)
     except (OSError, ValueError) as exc:
+        keep_to_send(path)
         raise Unsent(website_problem(exc), path) from exc
     path.unlink(missing_ok=True)
     ended = became(ctx)
@@ -809,9 +812,8 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
         except (OSError, ValueError) as exc:
             path.write_bytes(data)
             os.chmod(path, 0o600)
+            keep_to_send(path)   # sent beside the next run: nothing for the person to do
             ended.outcome, ended.detail = KEPT, f"not sent: {website_problem(exc)}"
-            todo.append(f"{ended.name}: its readout is kept in {path}: send it later with this tool's "
-                        "readout --send.")
         else:
             ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
             signup.sent_readout(ended.detail)
@@ -904,31 +906,175 @@ def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
     """POST a readout; the reference the store gave it. One turned away as too
     many at once - the website takes two a minute from one address, which a
     readout of every device reaches - is sent again every 15 seconds, for up
-    to a minute and a half, with the same work, good for 15 minutes."""
-    started = time.monotonic()
-    # The puzzle (proof) keeps floods of readouts away from the website.
-    with output.working("Preparing to send - a few seconds to a minute or two..."):
-        work = proof(data, tick=lambda: output.progress(f"working on it... {time.monotonic() - started:.0f}s"))
-    output.progress_clear()
+    to a minute and a half, with the same work, good for 15 minutes. Those
+    kept from before wait while it goes (send_kept)."""
+    _own_sending.set()
+    try:
+        started = time.monotonic()
+        # The puzzle (proof) keeps floods of readouts away from the website.
+        with output.working("Preparing to send - a few seconds to a minute or two..."):
+            work = proof(data, tick=lambda: output.progress(f"working on it... {time.monotonic() - started:.0f}s"))
+        output.progress_clear()
+        for wait in (*RATE_WAITS, None):
+            try:
+                return post(data, url, work, timeout)
+            except urllib.error.HTTPError as exc:
+                if exc.code != 429 or wait is None:
+                    raise OSError(f"the website answered {exc.code}") from exc
+                with output.working("The website takes two readouts a minute: sending it again shortly..."):
+                    time.sleep(wait)
+        raise AssertionError("unreachable: the last try returns or raises")
+    finally:
+        _own_sending.clear()
+
+
+def post(data: bytes, url: str, work: str, timeout: float = 120.0) -> str:
+    """POST a readout with its work, once: the reference the store gave it, or
+    ENOUGH. The website turning it away is an HTTPError, as urllib raises it."""
+    global _posted
     request = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/x-tar", "User-Agent": f"Autoflash/{__version__}",
         "X-Proof": work})
-    for wait in (*RATE_WAITS, None):
-        try:
-            with hostsys.urlopen(request, timeout=timeout) as response:
-                answer = json.loads(response.read().decode("utf-8"))
-            break
-        except urllib.error.HTTPError as exc:
-            if exc.code != 429 or wait is None:
-                raise OSError(f"the website answered {exc.code}") from exc
-            with output.working("The website takes two readouts a minute: sending it again shortly..."):
-                time.sleep(wait)
+    try:
+        with hostsys.urlopen(request, timeout=timeout) as response:
+            answer = json.loads(response.read().decode("utf-8"))
+    finally:
+        _posted = time.monotonic()
     if answer.get("enough"):
         return ENOUGH
     reference = str(answer.get("id") or "")
     if not reference:
         raise ValueError("the website gave no reference")
     return reference
+
+
+# Readouts that could not be sent, one small file each naming where it is kept
+# ({"path": ...}): sent beside a later run, as it starts (send_kept). Only
+# these: one kept by a test run, which sends nothing, is never sent later.
+TO_SEND = records.CAPTURES / "readouts-to-send"
+# One being sent is claimed by its name's suffix, so a second run beside it
+# leaves it be; one claimed longer ago than this was left by a run that ended
+# part way, and is sent again.
+SENDING = ".sending"
+CLAIM_LASTS = 3600.0
+# The website takes two readouts a minute from one address, and twenty a day:
+# those kept from before go one every SEND_KEPT_PACE seconds, never while one
+# of the run's own is being sent (send), nor sooner than that after it; the
+# daily limit, or any other turning away for now, leaves the rest for a later
+# run.
+SEND_KEPT_PACE = 30.0
+_posted = 0.0                      # when this process last sent a readout (time.monotonic)
+_own_sending = threading.Event()   # set while one of the run's own is being sent
+# What the website answers a readout it may take later: too many at once
+# (429), its proof of work no longer good - made, then waited on - (403), or
+# no more today, or not yet (5xx). Anything else it will never take.
+FOR_NOW = (403, 429)
+
+
+def to_send(path: Path) -> Path:
+    """The entry that names the readout kept at `path` among TO_SEND."""
+    return TO_SEND / f"{hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]}.json"
+
+
+def keep_to_send(path: Path) -> None:
+    """A readout kept at `path` because it could not be sent: sent beside the
+    next run (send_kept)."""
+    TO_SEND.mkdir(parents=True, exist_ok=True)
+    to_send(path).write_text(json.dumps({"path": str(path.resolve())}), encoding="utf-8")
+
+
+def forget_to_send(path: Path) -> None:
+    """The readout kept at `path`, sent: no later run sends it again."""
+    for entry in (to_send(path), to_send(path).with_name(to_send(path).name + SENDING)):
+        entry.unlink(missing_ok=True)
+
+
+def kept_to_send(now: float | None = None) -> list[Path]:
+    """The readouts to send, oldest first: each not claimed, or claimed by a
+    run that ended part way."""
+    if not TO_SEND.is_dir():
+        return []
+    now = time.time() if now is None else now
+    found = []
+    for path in [*TO_SEND.glob("*.json"), *TO_SEND.glob(f"*.json{SENDING}")]:
+        try:
+            made = path.stat().st_mtime
+        except FileNotFoundError:   # claimed by another run as this one looked
+            continue
+        if not path.name.endswith(SENDING) or now - made > CLAIM_LASTS:
+            found.append((made, path))
+    return [path for _, path in sorted(found)]
+
+
+def send_kept_beside() -> None:
+    """Readouts kept unsent before, sent beside this run as it starts, never in
+    its way. Not from the emulator: a readout one scenario kept would be sent
+    in the next, which the suites count as one sent unwanted."""
+    url = upload_url()
+    if url is None or hostsys.emulated() or not kept_to_send():
+        return
+    report_upload.in_background(lambda: send_kept(url))
+
+
+def wait_turn() -> None:
+    """Until a readout kept from before may go: none of the run's own being
+    sent, and SEND_KEPT_PACE since the last readout this process sent."""
+    while _own_sending.is_set() or time.monotonic() < _posted + SEND_KEPT_PACE:
+        time.sleep(1.0)
+
+
+def send_kept(url: str) -> None:
+    """Every kept readout sent to `url`, oldest first, paced (wait_turn), each
+    forgotten, and its file deleted, once the website has it; turned away for
+    now, it and the rest are left for a later run. One the website will
+    never take - its format too old, say - is forgotten, its file left where
+    it is, for readout --send. Each is claimed only as it is sent: one waited
+    on as the tool exits is left for the next run as it was."""
+    for entry in kept_to_send():
+        waiting = entry.with_name(entry.name.removesuffix(SENDING))
+        claimed = waiting.with_name(waiting.name + SENDING)
+        try:
+            path = Path(json.loads(entry.read_text(encoding="utf-8"))["path"])
+        except FileNotFoundError:   # another run sent it meanwhile
+            continue
+        except (OSError, ValueError, KeyError) as exc:   # not one this tool wrote
+            entry.unlink(missing_ok=True)
+            output.log_only(f"Kept readouts: {waiting.name} forgotten ({type(exc).__name__}: {exc}).")
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError as exc:   # its readout gone: nothing to send
+            entry.unlink(missing_ok=True)
+            output.log_only(f"Kept readouts: {path} forgotten ({type(exc).__name__}: {exc}).")
+            continue
+        wait_turn()
+        work = report_upload.proof_of(report_upload.work_beside(proof_of_work.body_subject(data), PROOF_BITS))
+        wait_turn()   # one of the run's own may have begun meanwhile
+        try:
+            os.replace(entry, claimed)
+        except OSError:   # another run took it first
+            continue
+        os.utime(claimed)
+        try:
+            if not work:
+                raise TimeoutError("its work was not made in time")
+            reference = post(data, url, work)
+        except urllib.error.HTTPError as exc:
+            if exc.code in FOR_NOW or exc.code >= 500:   # a later run sends it
+                os.replace(claimed, waiting)
+                output.log_only(f"Kept readouts: {path} not sent this time: the website answered {exc.code}.")
+                return
+            claimed.unlink()
+            output.log_only(f"Kept readouts: {path} turned away for good ({exc.code}): left for readout --send.")
+            continue
+        except (OSError, ValueError) as exc:
+            os.replace(claimed, waiting)
+            output.log_only(f"Kept readouts: {path} not sent this time: {type(exc).__name__}: {exc}")
+            return
+        path.unlink(missing_ok=True)
+        claimed.unlink()
+        signup.sent_readout("" if reference == ENOUGH else reference)
+        output.log_only(f"Kept readouts: {path} sent" + ("" if reference == ENOUGH else f", reference {reference}") + ".")
 
 
 def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -1029,5 +1175,6 @@ def send_saved(path: Path) -> str:
         reference = send(path.read_bytes(), url)
     except (OSError, ValueError) as exc:
         raise Abort(f"the readout could not be sent: {website_problem(exc)}") from exc
+    forget_to_send(path)
     signup.sent_readout("" if reference == ENOUGH else reference)
     return reference

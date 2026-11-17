@@ -657,6 +657,8 @@ def _main() -> int:
             else:
                 firewall.release_firewall(ctx)
             output.finish()
+    if not args.send:
+        readout.send_kept_beside()   # those kept unsent before, beside this sitting
     code = read_out(ctx) if args.command == "readout" else convert(ctx, given)
     # Whatever it ended in, but q or Ctrl-C (130): those were the way out.
     while code != 130 and not args.send:

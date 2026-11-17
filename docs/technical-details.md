@@ -247,6 +247,7 @@ again**: keep a copy of `captures/devices/` somewhere safe.
 | `devices/<MAC>/sonoff-backup/`, `device.json` | your device's Sonoff firmware and settings, and its record | nothing: **back it up** |
 | `devices/<MAC>/runs/`, `unattended/` | each run's state and log, and recordings of unattended runs | the next run |
 | `reports/` | reports of runs that could not be sent yet ([what the tool sends](what-the-tool-sends.md)) | nothing: a later run sends them |
+| `readouts-to-send/` | which readouts could not be sent yet: each names its file in its run's folder ([readouts](readouts.md)) | nothing: a later run sends them |
 | `safeboot-recovery-migration/`, `safeboot-recovery-migration-esp32/` | the firmware bundle, for each chip | the next run (A5) |
 | `settings.json`, `.autoflash-current`, `.safety-locks/` | the eWeLink email offered next time, and the region it signs in to, the run in progress, the locks' state | the next run |
 | `esphome-build/`, `firmware-build/`, `openbeken-build/` | build caches, for `update_firmware.py` | its next build |

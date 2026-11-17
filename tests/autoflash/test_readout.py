@@ -12,6 +12,7 @@ import re
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 from pathlib import Path
@@ -29,6 +30,18 @@ ASK_WANTED = readout.ask_wanted
 MANIFEST = {"format": 1, "model": "NEWTHING", "stock_model": "SN-ESP32C3-NEW-01", "stock_version": "1.0.0"}
 DEVICE = {"deviceid": "1000abcdef", "name": "Hall light", "productModel": "NEWTHING",
           "extra": {"model": "SN-ESP32C3-NEW-01", "uiid": 77}, "params": {"fwVersion": "1.0.0"}}
+
+
+_queue = tempfile.TemporaryDirectory()
+
+
+def setUpModule():
+    # A readout these tests keep unsent is queued here, never in this
+    # checkout's captures/, where the next run would send it.
+    patch = mock.patch.object(readout, "TO_SEND", Path(_queue.name) / "readouts-to-send")
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
+    unittest.addModuleCleanup(_queue.cleanup)
 
 
 def ended(ctx) -> list[tuple[str, str, str]]:
@@ -1110,8 +1123,11 @@ class RunAllTests(unittest.TestCase):
     def test_one_not_sent_is_kept_under_its_id_and_the_rest_go_on(self):
         said, manifests = self.run_all([DEVICE, self.other], send=[OSError("no route"), "r-2"])
         self.assertEqual(len(manifests), 2)
-        self.assertTrue((Path(self.tmp.name) / "readout-1000abcdef.tar").exists())
-        self.assertIn("readout --send", said)
+        kept = Path(self.tmp.name) / "readout-1000abcdef.tar"
+        self.assertTrue(kept.exists())
+        # Sent beside the next run, unasked: nothing to do, nor to say.
+        self.assertTrue(readout.to_send(kept).exists())
+        self.assertNotIn("readout --send", said)
 
     def test_a_full_readout_passed_by_at_its_question_lets_the_rest_go_on(self):
         # The first stage's go first: DEVICE's, then the BASICR4's full one.
@@ -1579,6 +1595,170 @@ class RunTurnedReadoutFailedTests(unittest.TestCase):
         labels = set(re.findall(r"(\w+(?: \w+)?): ", " ".join(shown)))
         self.assertTrue({"Devices", "Accepted", "Failed"} <= labels, shown)
         self.assertFalse({"Firmware", "Retries", "Checks", "Backup"} & labels, shown)
+
+
+class KeptToSendTests(unittest.TestCase):
+    """A readout that could not be sent is sent beside a later run, as it
+    starts: unasked, as it was to be sent anyway, and never one a test run
+    kept, which sends nothing."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        for patch in (mock.patch.object(readout, "TO_SEND", self.root / "queue"),
+                      mock.patch.object(output, "log_only"), mock.patch.object(output, "say"),
+                      mock.patch.object(readout.signup, "SITTING", readout.signup.Sitting()),
+                      mock.patch.object(readout.report_upload, "work_beside"),
+                      mock.patch.object(readout.report_upload, "proof_of", return_value="1:2"),
+                      mock.patch.object(readout, "_posted", 0.0)):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.paced = mock.patch.object(readout, "wait_turn")   # paced in tests of their own
+        self.paced.start()
+        self.addCleanup(self.paced.stop)
+
+    def kept(self, name, age=0.0):
+        path = self.root / name
+        path.write_bytes(name.encode())
+        readout.keep_to_send(path)
+        then = time.time() - age
+        os.utime(readout.to_send(path), (then, then))
+        return path
+
+    def send(self, *answers):
+        with mock.patch.object(readout, "post", side_effect=list(answers)) as posted:
+            readout.send_kept("http://127.0.0.1:9/readout")
+        return [call.args[0] for call in posted.call_args_list]
+
+    def test_one_not_sent_is_kept_to_send_one_a_test_run_kept_is_not(self):
+        for url, sending, queued in (("http://127.0.0.1:9/readout", OSError("no route"), True), (None, None, False)):
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(readout, "upload_url", return_value=url), \
+                    mock.patch.object(readout, "send", side_effect=sending):
+                ctx = a_ctx(tmp)
+                ctx.readout = readout.Became("'Hall'")
+                with contextlib.suppress(readout.Unsent):
+                    readout.offer(ctx, MANIFEST, None)
+                self.assertTrue((Path(tmp) / readout.NAME).exists())   # kept either way
+                self.assertEqual(readout.to_send(Path(tmp) / readout.NAME).exists(), queued)
+
+    def test_every_one_is_sent_oldest_first_each_deleted_and_its_reference_kept_for_the_sign_up(self):
+        kept = [self.kept("a.tar", 10), self.kept("b.tar", 20), self.kept("c.tar", 30)]
+        self.assertEqual(self.send("r-1", readout.ENOUGH, "r-3"), [b"c.tar", b"b.tar", b"a.tar"])
+        self.assertEqual([path.exists() for path in kept], [False] * 3)
+        self.assertEqual(readout.kept_to_send(), [])
+        self.assertEqual(list(readout.signup.SITTING.readouts), ["r-1", "r-3"])
+
+    def test_turned_away_for_now_or_not_reached_it_waits_for_a_later_run(self):
+        def answered(code, why):
+            return urllib.error.HTTPError("http://127.0.0.1:9/readout", code, why, None, None)
+        for trouble in (answered(429, "Too many"), answered(503, "Twenty a day"),
+                        # Its work gone stale while it waited for its turn: made afresh next time.
+                        answered(403, "Proof does not check out"),
+                        urllib.error.URLError(OSError(113, "No route to host"))):
+            with self.subTest(trouble=trouble):
+                path = self.kept("a.tar")
+                self.kept("b.tar", 5)
+                self.assertEqual(len(self.send(trouble)), 1)   # the rest not tried after it
+                self.assertTrue(path.exists())
+                self.assertEqual(len(readout.kept_to_send()), 2)
+
+    def clocked(self, own_sending_for=0.0):
+        """send_kept of three, paced on a clock of its own: when each was sent,
+        one of the run's own being sent for `own_sending_for` seconds first."""
+        self.paced.stop()
+        clock, sent = [1000.0], []
+
+        def sleep(seconds):
+            clock[0] += seconds
+            if clock[0] >= 1000.0 + own_sending_for:
+                readout._own_sending.clear()
+
+        def post(*_):
+            sent.append(clock[0])
+            readout._posted = clock[0]
+            return "r"
+        for name in ("a.tar", "b.tar", "c.tar"):
+            self.kept(name)
+        if own_sending_for:
+            readout._own_sending.set()
+        self.addCleanup(readout._own_sending.clear)
+        with mock.patch.object(readout.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(readout.time, "sleep", side_effect=sleep), \
+                mock.patch.object(readout, "post", side_effect=post):
+            readout.send_kept("http://127.0.0.1:9/readout")
+        self.paced.start()
+        return sent
+
+    def test_each_goes_a_pace_after_the_last_as_the_website_takes_two_a_minute(self):
+        sent = self.clocked()
+        self.assertEqual(len(sent), 3)
+        self.assertTrue(all(later - earlier >= readout.SEND_KEPT_PACE for earlier, later in zip(sent, sent[1:])), sent)
+
+    def test_none_goes_while_one_of_the_runs_own_is_being_sent(self):
+        sent = self.clocked(own_sending_for=90.0)
+        self.assertGreaterEqual(sent[0], 1000.0 + 90.0)
+
+    def test_the_runs_own_readout_holds_them_off_while_it_is_sent(self):
+        seen = []
+        with mock.patch.object(readout, "PROOF_BITS", 1), \
+                mock.patch.object(readout, "post", side_effect=lambda *_: seen.append(readout._own_sending.is_set()) or "r"):
+            readout.send(b"data", "http://127.0.0.1:9/readout")
+        self.assertEqual(seen, [True])
+        self.assertFalse(readout._own_sending.is_set())
+
+    def test_one_waited_on_is_not_claimed_so_the_tool_may_exit_meanwhile(self):
+        # Claimed, it would be passed over by the next run for CLAIM_LASTS.
+        self.kept("a.tar")
+        claims = []
+        self.paced.stop()
+        with mock.patch.object(readout, "wait_turn",
+                               side_effect=lambda: claims.append(list(readout.TO_SEND.glob("*" + readout.SENDING)))), \
+                mock.patch.object(readout, "post", return_value="r"):
+            readout.send_kept("http://127.0.0.1:9/readout")
+        self.paced.start()
+        self.assertEqual(claims, [[], []])
+
+    def test_one_turned_away_for_good_is_forgotten_its_file_left_for_readout_send(self):
+        path = self.kept("a.tar")
+        self.send(urllib.error.HTTPError("http://127.0.0.1:9/readout", 400, "Bad format", None, None))
+        self.assertTrue(path.exists())
+        self.assertEqual(readout.kept_to_send(), [])
+
+    def test_one_another_run_is_sending_is_left_be_unless_that_run_ended_part_way(self):
+        path = self.kept("a.tar")
+        claimed = readout.to_send(path).with_name(readout.to_send(path).name + readout.SENDING)
+        readout.to_send(path).rename(claimed)
+        self.assertEqual(self.send(), [])
+        then = time.time() - readout.CLAIM_LASTS - 1
+        os.utime(claimed, (then, then))
+        self.assertEqual(self.send("r-1"), [b"a.tar"])
+        self.assertFalse(path.exists())
+
+    def test_one_whose_file_is_gone_is_forgotten(self):
+        path = self.kept("a.tar")
+        path.unlink()
+        self.assertEqual(self.send(), [])
+        self.assertEqual(readout.kept_to_send(), [])
+
+    def test_sent_beside_the_run_never_from_the_emulator_or_a_test_run(self):
+        self.kept("a.tar")
+        for url, emulated, started in (("http://127.0.0.1:9/readout", False, True),
+                                       ("http://127.0.0.1:9/readout", True, False), (None, False, False)):
+            with self.subTest(url=url, emulated=emulated), \
+                    mock.patch.object(readout, "upload_url", return_value=url), \
+                    mock.patch.object(readout.hostsys, "emulated", return_value=emulated), \
+                    mock.patch.object(readout.report_upload, "in_background") as beside:
+                readout.send_kept_beside()
+            self.assertEqual(beside.called, started)
+
+    def test_one_sent_by_hand_is_not_sent_again(self):
+        path = self.kept("a.tar")
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "send", return_value="r-1"):
+            readout.send_saved(path)
+        self.assertEqual(readout.kept_to_send(), [])
 
 
 class OfferScreenTests(unittest.TestCase):

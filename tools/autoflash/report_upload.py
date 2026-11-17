@@ -81,8 +81,13 @@ def enabled(ctx: Context) -> bool:
 
 def start_work(report_id: str) -> subprocess.Popen[str]:
     """The report's proof of work, begun in a process of its own at the lowest priority."""
-    command = [sys.executable, "-m", "tools.autoflash.proof_of_work", proof_of_work.report_subject(report_id),
-               str(PROOF_BITS)]
+    return work_beside(proof_of_work.report_subject(report_id), PROOF_BITS)
+
+
+def work_beside(subject: str, bits: int) -> subprocess.Popen[str]:
+    """Proof of work for `subject` (proof_of_work), made in a process of its
+    own at the lowest priority, beside the run (proof_of reads it)."""
+    command = [sys.executable, "-m", "tools.autoflash.proof_of_work", subject, str(bits)]
     extra: dict[str, Any] = {}
     if hostsys.IS_WINDOWS:
         # Below normal priority, and no window of its own (Windows' values,

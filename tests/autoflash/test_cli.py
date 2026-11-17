@@ -217,7 +217,7 @@ class AnotherDeviceTests(unittest.TestCase):
                 return next(codes)
             return ran
         top, asked = mock.Mock(), mock.Mock(side_effect=list(answers))
-        self.exit_question = mock.Mock()
+        self.exit_question, self.sent_kept = mock.Mock(), mock.Mock()
         self.applied, self.looked = mock.Mock(), mock.Mock(return_value="run-latest")
         with contextlib.ExitStack() as patches:
             for patch in (
@@ -249,7 +249,8 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch.object(cli, "read_out", running("read_out")),
                     mock.patch.object(prompts, "ask_choice", asked),
                     mock.patch.object(cli.signup, "SITTING", cli.signup.Sitting()),
-                    mock.patch.object(cli.signup, "ask_on_exit", self.exit_question)):
+                    mock.patch.object(cli.signup, "ask_on_exit", self.exit_question),
+                    mock.patch.object(cli.readout, "send_kept_beside", self.sent_kept)):
                 patches.enter_context(patch)
             code = cli.main()
             self.stopped = cli.signup.SITTING.stopped
@@ -349,6 +350,12 @@ class AnotherDeviceTests(unittest.TestCase):
             with self.subTest(code=code):
                 _, _, asked, _ = self.main(codes=[code], answers=[prompts.QuitRun("q")], became_readouts={0})
                 self.assertEqual(asked.call_args.args, ("What next", ["Convert a device", "Read out another device"]))
+
+    def test_readouts_kept_unsent_before_are_sent_beside_the_sitting_once(self):
+        self.main(codes=[0, 0], answers=[self.CONVERT, prompts.QuitRun("q")])
+        self.sent_kept.assert_called_once_with()
+        self.main(codes=[0], answers=[], command="readout", more=["--send", "readout.tar"])
+        self.sent_kept.assert_not_called()   # that one is being sent by hand
 
     def test_the_email_question_comes_once_as_the_sitting_ends_however_it_ends(self):
         for codes, answers in (([0, 0], [self.CONVERT, prompts.QuitRun("q")]), ([1], [prompts.QuitRun("q")]),

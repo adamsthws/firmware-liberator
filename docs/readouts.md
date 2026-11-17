@@ -160,11 +160,17 @@ post about the device.
 
 A readout that could not be sent stays in the run's
 folder as `readout.tar` (`readout-<device id>.tar` when every device was read
-out at once). To send it later, run:
+out at once), and the tool sends it the next time you run it, beside
+whatever you do then: there is nothing for you to do. Several go one at a
+time, half a minute apart and never while a readout of yours is being sent,
+as the website takes two a minute; past its daily limit, the rest go another
+day. The run's log says when each went. To send it yourself instead, run:
 
 ```sh
 sh start.sh readout --send <path to readout.tar>
 ```
+
+To keep it from being sent, delete its file.
 
 ## Where it goes
 
