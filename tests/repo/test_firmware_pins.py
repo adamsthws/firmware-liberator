@@ -598,8 +598,23 @@ class BekenESPHomeDocTests(unittest.TestCase):
         self.assertIn(f"[ESPHome {s60} release]", notices.split(self.new["file"])[0])
 
 
+def docker_there(test):
+    """The commands that need Docker are all stood in for: whether this
+    computer has it is not the test's to depend on."""
+    from unittest import mock
+    which = uf.shutil.which
+    patch = mock.patch.object(uf.shutil, "which",
+                              side_effect=lambda name, *args, **kwargs: "/usr/bin/docker" if name == "docker"
+                              else which(name, *args, **kwargs))
+    patch.start()
+    test.addCleanup(patch.stop)
+
+
 class EveryDeviceUpdatedTests(unittest.TestCase):
     """The weekly update leaves no device behind, a device added included."""
+
+    def setUp(self):
+        docker_there(self)
 
     def test_every_device_has_its_esphome_built(self):
         for kind in kinds.READY:
@@ -765,6 +780,9 @@ class OpenBekenDueTests(unittest.TestCase):
 
 
 class OpenBekenEveryDeviceTests(unittest.TestCase):
+    def setUp(self):
+        docker_there(self)
+
     def test_every_beken_device_is_built_on_the_one_release(self):
         from unittest import mock
         built = []
