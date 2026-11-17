@@ -475,24 +475,9 @@ def bring_up_to_date(ctx: Context) -> bool:
     return True
 
 
-# Two rows, each within an 80-column window past the margin.
-WHAT_TO_EXPECT = ("Usually under 10 minutes; some stages show little for a minute or two.",
-                  "Keep the device powered and this computer on until the last stage completes.")
-
-
-def say_what_to_expect() -> None:
-    """Above a run's first stage, a conversion's or a readout's (cli.cmd_readout):
-    how long it takes, what its stages are like and what to leave alone meanwhile."""
-    output.tell("")
-    for row in WHAT_TO_EXPECT:
-        output.tell(row)
-    output.tell("")
-
-
 def run_steps(ctx: Context) -> int:
     started = time.monotonic()
     safety_locks.restore_left_locks(ROOT)  # a resumed run skips A5, which looks too
-    say_what_to_expect()
     try:
         if ctx.state.input("device_mac"):
             runs.hold_device(ctx, ctx.state.input("device_mac"))  # a run carried on: its device is known

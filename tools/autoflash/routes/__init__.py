@@ -64,12 +64,15 @@ def step_prerequisites(ctx: Context) -> dict[str, Any]:
     output.transient_begin()
     if runs.run_source(ctx.state) == "sonoff":
         needed = [
-            "- The eWeLink app on your phone, signed in (a throwaway account is fine).",
-            "- Your device set up in the app and connected to Wi-Fi.",
+            "- Your eWeLink account credentials (a throwaway account is fine).",
+            "- Your device set up in the eWeLink app and connected to Wi-Fi.",
         ]
     else:
         needed = ["- Your device connected to Wi-Fi, as it is now."]
-    prompts.section("Before you start, you'll need:", needed + ["- This computer on the same network as the device."])
+    prompts.section("You'll need:", needed + [
+        "- This computer on the same network as the device.",
+        "- Keep the device powered and this computer on (don't interrupt it).",
+    ])
     prompts.wait_for_key()
     output.transient_end()  # read: the list leaves the screen, the stage line stays
     return {"shown": True}

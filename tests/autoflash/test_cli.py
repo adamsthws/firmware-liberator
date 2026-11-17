@@ -904,14 +904,6 @@ class ReadoutCommandTests(unittest.TestCase):
         at = self.happened.index("Stage 1 - Querying eWeLink for devices")
         self.assertEqual(self.happened[at:at + 3], ["Stage 1 - Querying eWeLink for devices", "signed in", "complete"])
 
-    def test_what_to_expect_is_said_above_the_first_stage(self):
-        # As a conversion says it above its own.
-        self.read()
-        at = self.happened.index("Stage 1 - Querying eWeLink for devices")
-        said = " ".join(item.removeprefix("told: ") for item in self.happened[:at])
-        self.assertIn("Usually under 10 minutes", said)
-        self.assertIn("until the last stage completes", said)
-
     def test_it_ends_with_the_report(self):
         self.read()
         self.assertEqual(self.happened[-1], "report, after: chosen")   # what is left to do, then the report

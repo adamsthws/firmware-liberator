@@ -346,7 +346,6 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
         return 0
     ctx.readouts = []
     report_upload.announce(ctx)   # each readout sends its report (readout.run)
-    runner.say_what_to_expect()
     output.say("Signing in to eWeLink to see which devices are in the account...")
     readout.lay_out_stages()
     readout.begin("account")

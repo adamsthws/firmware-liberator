@@ -23,6 +23,10 @@ check.
   question does: "Stopped as asked.", with nothing written to the device. It no
   longer says FAILED, nor asks for a report or an issue, for a readout or a
   conversion.
+- Keeping the device powered and this computer on is listed with what you'll
+  need, which clears once you go on, instead of a note that stayed above the
+  stages. The list asks for your eWeLink account details, not the app on your
+  phone.
 
 ## 3.0.0
 

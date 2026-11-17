@@ -69,25 +69,6 @@ class ConfirmSkipTests(unittest.TestCase):
             self.assertIn("could not re-check", said)
 
 
-class WhatToExpectTests(unittest.TestCase):
-    """Above a run's first stage, a conversion's or a readout's: one note."""
-
-    def said(self):
-        rows = []
-        with mock.patch.object(runner.output, "tell", side_effect=lambda text="": rows.append(text)):
-            runner.say_what_to_expect()
-        return rows
-
-    def test_two_rows_between_blank_ones(self):
-        rows = self.said()
-        self.assertEqual((rows[0], rows[-1]), ("", ""))   # a blank row above and below
-        self.assertEqual(len(rows), 4)
-        self.assertTrue(rows[1].startswith("Usually under 10 minutes"))
-        self.assertTrue(rows[2].endswith("until the last stage completes."))
-        # Fits an 80-column window with the margin, unwrapped by it.
-        self.assertLess(max(len(row) for row in rows), 80 - len(runner.output.MARGIN))
-
-
 class RunStepsTests(unittest.TestCase):
     def test_a_full_disk_is_said_plainly_and_any_other_error_is_unexpected(self):
         for code in (errno.ENOSPC, errno.EDQUOT, errno.EFBIG):

@@ -113,7 +113,7 @@ class FamilyTests(unittest.TestCase):
                         self.assertGreaterEqual(unchosen[1], len(routes.STEPS))
 
     def test_before_you_start_lists_what_is_needed_for_any_device(self):
-        for source, needed in (("sonoff", "- Your device set up in the app and connected to Wi-Fi."),
+        for source, needed in (("sonoff", "- Your device set up in the eWeLink app and connected to Wi-Fi."),
                                ("tasmota", "- Your device connected to Wi-Fi, as it is now.")):
             shown = []
             ctx = SimpleNamespace(state=self.state(source=source))
@@ -122,9 +122,10 @@ class FamilyTests(unittest.TestCase):
                     mock.patch.object(routes.output, "transient_begin"), mock.patch.object(routes.output, "transient_end"):
                 routes.step_prerequisites(ctx)
             title, body = shown[0]
-            self.assertEqual(title, "Before you start, you'll need:")
+            self.assertEqual(title, "You'll need:")
             self.assertIn(needed, body)
-            self.assertEqual(body[-1], "- This computer on the same network as the device.")
+            self.assertEqual(body[-2:], ["- This computer on the same network as the device.",
+                                         "- Keep the device powered and this computer on (don't interrupt it)."])
             self.assertFalse(any("plug" in line for line in body))
             # The device is found through eWeLink, whatever its app settings.
             self.assertFalse(any("LAN Control" in line for line in body))
