@@ -1,0 +1,60 @@
+{
+ "about": "From Sonoff's firmware, q typed at the go-ahead before the first write: stopped as asked, not failed, nothing written",
+ "start": "fresh",
+ "minutes": 20,
+ "answers": [
+  {
+   "when": "Press any key",
+   "type": "x"
+  },
+  {
+   "when": "Which firmware should the device have",
+   "type": "1\r"
+  },
+  {
+   "when": "This computer's password \\(for sudo\\)",
+   "type": "autoflash\r",
+   "times": 6,
+   "optional": true
+  },
+  {
+   "when": "Type .+ to go ahead",
+   "type": "q\r"
+  },
+  {
+   "when": "Which eWeLink account is this device in",
+   "type": "2\r",
+   "optional": true
+  },
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r",
+   "optional": true
+  },
+  {
+   "when": "eWeLink password for",
+   "type": "made-up-password\r",
+   "optional": true
+  },
+  {
+   "when": "\\[[Yy]/n\\]",
+   "type": "n\r",
+   "optional": true
+  },
+  {
+   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
+   "type": "y\r",
+   "times": 3,
+   "optional": true
+  }
+ ],
+ "expect": {
+  "exit": 130,
+  "shows": [
+   "^ *Stopped as asked\\."
+  ],
+  "never": [
+   "FAILED"
+  ]
+ }
+}
