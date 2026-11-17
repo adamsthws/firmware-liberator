@@ -12,6 +12,9 @@ Each linter is handed the files of its kind:
     compile       Python, compiled as Python itself would: what parses yet will
                   not compile (more than 20 nested blocks, say, before 3.13),
                   which ruff misses
+    newer python  Python: what came in a Python newer than the oldest the tool
+                  runs on (tools/repo/newer_python.py), which a newer one
+                  compiles and tests without a word
     ruff          Python (.ruff.toml)
     shellcheck    shell scripts: *.sh, and files starting #!/bin/sh or bash
     actionlint    the workflows (with shellcheck on their scripts)
@@ -157,6 +160,8 @@ COMPILE = ("import sys\nfailed = 0\nfor name in sys.argv[1:]:\n    try:\n"
 
 LINTERS = [
     Linter("compile", python, lambda files: [sys.executable, "-c", COMPILE, *files], sys.executable),
+    Linter("newer python", python, lambda files: [sys.executable, "-m", "tools.repo.newer_python", *files],
+           sys.executable),
     Linter("ruff", python, lambda files: ["ruff", "check", "--quiet", "--force-exclude", *files], "ruff"),
     Linter("shellcheck", lambda path: shell(path) and CONTAINER not in path.parents,
            lambda files: ["shellcheck", *files], "shellcheck"),
