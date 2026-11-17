@@ -571,7 +571,7 @@ def run_steps(ctx: Context) -> int:
             # Kept on Tasmota, chosen at A3: as when it was asked for (above).
             if isinstance(ctx.finished, routes.NothingToDo) and runs.run_source(ctx.state) == "tasmota":
                 return rerun_on_tasmota(ctx)
-            return 0
+            return ctx.finished.code
         back = getattr(ctx, "go_back", None)
         if code == 0 and back:
             ctx.go_back = None

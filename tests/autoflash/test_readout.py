@@ -8,6 +8,7 @@ import io
 import lzma
 import json
 import os
+import re
 import tarfile
 import tempfile
 import threading
@@ -1454,6 +1455,132 @@ class EndsTheRunTests(unittest.TestCase):
         self.assertIn("Sent, thank you!", [call.args[0] for call in told.call_args_list])
 
 
+class WebsiteProblemTests(unittest.TestCase):
+    """Why the website could not be reached, said so someone can act on it."""
+
+    def test_each_is_said_plainly_and_logged_as_it_was(self):
+        import errno
+        import socket
+        import ssl
+        offline = "this computer could not reach the website. Check its internet connection"
+        for exc, said in (
+                (urllib.error.URLError(OSError(errno.EHOSTUNREACH, "No route to host")), offline),
+                (urllib.error.URLError(OSError(errno.ENETUNREACH, "Network is unreachable")), offline),
+                (urllib.error.URLError(socket.gaierror(-2, "Name or service not known")), offline),
+                (urllib.error.URLError(TimeoutError("timed out")), "the website did not answer in time"),
+                (TimeoutError("The read operation timed out"), "the website did not answer in time"),
+                (urllib.error.URLError(ConnectionRefusedError(111, "Connection refused")),
+                 "the website did not take the connection. Try again later"),
+                (ConnectionResetError(104, "Connection reset by peer"),
+                 "the website did not take the connection. Try again later"),
+                (urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed")),
+                 "no secure connection to the website could be made"),
+                (OSError("the website answered 503"), "the website answered 503")):
+            with self.subTest(exc=exc), mock.patch.object(output, "log_only") as logged:
+                self.assertTrue(readout.website_problem(exc).startswith(said), readout.website_problem(exc))
+                self.assertIn(str(exc), logged.call_args.args[0])
+
+
+class FailedTests(unittest.TestCase):
+    """A readout that failed, as it ends: why, then its report."""
+
+    def told(self, exc, began=True):
+        ctx = SimpleNamespace(readouts=[readout.Became("'Hall'", outcome=readout.FAILED)] if began else [])
+        with mock.patch.object(output, "tell") as told, mock.patch.object(output, "log_only") as self.logged, \
+                mock.patch.object(readout, "end") as ended:
+            readout.tell_failed(ctx, exc)
+        return [call.args[0] for call in told.call_args_list], ended
+
+    def test_one_not_sent_says_why_plainly_then_its_report_where_it_is_kept_in_the_log(self):
+        # Seen: "FAILED: the readout could not be sent (<urlopen error [Errno 113]
+        # No route to host>). It is kept in /a/long/path/readout.tar: send it later
+        # ...", run together on two rows, and the run's way to carry on under it.
+        path = runs.ROOT / "captures" / "devices" / "12-34-56-ab-cd-ef" / "runs" / "r" / "readout.tar"
+        said, ended = self.told(readout.Unsent("this computer could not reach the website", path))
+        self.assertEqual(said, ["The readout could not be sent: this computer could not reach the website."])
+        self.assertIn(str(path), self.logged.call_args.args[0])
+        ended.assert_called_once_with(mock.ANY, "", failed=True)
+
+    def test_any_other_failure_says_failed(self):
+        said, ended = self.told(errors.Abort("the device stopped answering"))
+        self.assertEqual(said, ["FAILED: the device stopped answering"])
+        ended.assert_called_once()
+
+    def test_one_that_reached_no_device_has_no_report(self):
+        self.told(errors.Abort("no network"), began=False)[1].assert_not_called()
+
+    def test_a_run_s_readout_that_failed_ends_as_a_readout_not_as_the_run(self):
+        # Seen: a readout chosen at A1 that could not be sent ended with the
+        # run's "Fix the cause, then run the same command again" and a
+        # conversion's report - Firmware, Retries, Checks - not a readout's.
+        unsent = readout.Unsent("this computer could not reach the website", Path("readout.tar"))
+
+        def fail(ctx, _devices):
+            ctx.readouts.append(readout.Became("'Hall'", outcome=readout.FAILED))
+            raise unsent
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_ctx(tmp)
+            with mock.patch.object(output, "stage_end"), mock.patch.object(output, "set_stage_width"), \
+                    mock.patch.object(readout, "read_out_chosen", side_effect=fail), \
+                    mock.patch.object(readout, "tell_failed") as told, self.assertRaises(errors.Finished) as ended:
+                readout.from_run(ctx, [DEVICE])
+        told.assert_called_once_with(ctx, unsent)
+        self.assertEqual((str(ended.exception), ended.exception.code), ("", 1))
+        self.assertTrue(ctx.reported, "the readout's report is shown: not the run's too")
+
+    def test_a_run_s_readout_that_failed_before_any_device_fails_as_the_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_ctx(tmp)
+            with mock.patch.object(output, "stage_end"), mock.patch.object(output, "set_stage_width"), \
+                    mock.patch.object(readout, "read_out_chosen", side_effect=errors.Abort("no network")), \
+                    mock.patch.object(readout, "tell_failed") as told, self.assertRaises(errors.Abort) as ended:
+                readout.from_run(ctx, [DEVICE])
+        self.assertNotIsInstance(ended.exception, errors.Finished)
+        told.assert_not_called()
+
+
+class RunTurnedReadoutFailedTests(unittest.TestCase):
+    """A readout chosen at A1, when the run found no supported device, that
+    failed: ended as a readout on its own ends, through the run's own A1."""
+
+    def test_it_shows_the_readout_s_failure_and_report_not_the_run_s(self):
+        # Seen: the readout's failure as "FAILED: ...", then "Fix the cause,
+        # then run the same command again" and a conversion's report.
+        def fail(ctx, _devices):
+            ctx.readouts.append(readout.Became("'Hall'", "M5-2C-120", outcome=readout.FAILED))
+            raise readout.Unsent("this computer could not reach the website", Path("readout.tar"))
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_ctx(tmp)
+            with mock.patch.object(output, "stage_end"), mock.patch.object(output, "set_stage_width"), \
+                    mock.patch.object(output, "tell") as told, mock.patch.object(output, "say"), \
+                    mock.patch.object(output, "log_only"), mock.patch.object(runner.routes, "begin_stage"), \
+                    mock.patch.object(readout, "read_out_chosen", side_effect=fail), \
+                    mock.patch.object(readout, "end") as ended, \
+                    mock.patch.object(runner.routes, "STEP_INDEX",
+                                      {"A1": ("Pair", lambda ctx: readout.from_run(ctx, [DEVICE]))}):
+                self.assertEqual(runner.execute(ctx, "A1"), 0)
+            said = [call.args[0] for call in told.call_args_list if call.args]
+            self.assertEqual(ctx.finished.code, 1)   # the run exits failed (runner.run_steps)
+            self.assertTrue(ctx.reported)            # its own report is not offered too (cli.stopped_report)
+        self.assertIn("The readout could not be sent: this computer could not reach the website.", said)
+        self.assertFalse([line for line in said if line.startswith("FAILED") or "Fix the cause" in line], said)
+        ended.assert_called_once_with(ctx, "", failed=True)
+
+    def test_its_report_is_the_readout_s(self):
+        # The readout's fields, never a conversion's.
+        done = [readout.Became("'Hall'", "M5-2C-120", "", "1.0.0", None, readout.FAILED)]
+        shown = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \
+                mock.patch.object(output, "show"), mock.patch.object(output, "show_link"), \
+                mock.patch.object(output, "say"), mock.patch.object(report.hostsys, "copy_to_clipboard"), \
+                mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+            readout.end(SimpleNamespace(readouts=done), "", failed=True)
+        # Two columns a row: each label is a word or two before a colon.
+        labels = set(re.findall(r"(\w+(?: \w+)?): ", " ".join(shown)))
+        self.assertTrue({"Devices", "Accepted", "Failed"} <= labels, shown)
+        self.assertFalse({"Firmware", "Retries", "Checks", "Backup"} & labels, shown)
+
+
 class OfferScreenTests(unittest.TestCase):
     """A readout that cannot be sent says why, and where it is kept."""
 
@@ -1475,6 +1602,12 @@ class OfferScreenTests(unittest.TestCase):
     def test_left_when_sending_fails_to_say_what(self):
         _, said = self.offer("http://127.0.0.1:9/readout", sending=OSError("no route"))
         self.assertIn("could not be sent", said)
+
+    def test_why_it_was_not_sent_is_said_plainly(self):
+        no_route = urllib.error.URLError(OSError(113, "No route to host"))
+        _, said = self.offer("http://127.0.0.1:9/readout", sending=no_route)
+        self.assertIn("could not be sent: this computer could not reach the website", said)
+        self.assertNotIn("urlopen", said)
 
 
 if __name__ == "__main__":

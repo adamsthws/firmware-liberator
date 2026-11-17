@@ -282,6 +282,17 @@ class RunStepsTests(unittest.TestCase):
         stand_ins["rerun_on_tasmota"].assert_not_called()
         stand_ins["close_firewall_rules"].assert_called_once()
 
+    def test_a_readout_chosen_instead_that_failed_ends_the_run_failed_as_it_said_already(self):
+        # Its failure and report said by the readout (readout.from_run): not
+        # the run's way to carry on too, as nothing was converted.
+        def read_out(ctx, step):
+            ctx.finished = errors.Finished("", code=1)
+            return 0
+        code, _, stand_ins = self.run_steps(execute_with_retries=mock.Mock(side_effect=read_out))
+        self.assertEqual(code, 1)
+        stand_ins["tell_how_to_carry_on"].assert_not_called()
+        stand_ins["close_firewall_rules"].assert_called_once()
+
     def test_nothing_to_do_on_tasmota_checks_its_meter(self):
         code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=routes.NothingToDo("on Tasmota")),
                                               run_source=mock.Mock(return_value="tasmota"))

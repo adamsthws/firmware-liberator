@@ -102,9 +102,21 @@ class AskOnExitTests(unittest.TestCase):
     def test_not_sent_says_where_to_sign_up_instead_and_asks_again_next_time(self):
         signup.saw_account("me@example.com")
         self.notify.return_value = False
-        self.assertIn(f"    That could not be sent just now: sign up at {signup.SIGNUP_PAGE} instead.",
-                      self.answered("y"))
+        with mock.patch.object(output, "transient_end") as cleared, \
+                mock.patch.object(output, "show_link") as linked:
+            said = self.answered("y")
+        # The question and its options taken off, and the page linked on a
+        # line of its own, as every link is: purple and clickable.
+        cleared.assert_called_once()
+        self.assertEqual(said[-1], "That could not be sent just now. Instead, sign up at:")
+        linked.assert_called_once_with(signup.SIGNUP_PAGE)
         self.assertEqual(signup.given(), "")
+
+    def test_an_address_taken_leaves_the_question_answered_on_the_screen(self):
+        signup.saw_account("me@example.com")
+        with mock.patch.object(output, "transient_end") as cleared:
+            self.assertEqual(self.answered("y")[-1], "    Check your inbox to confirm.")
+        cleared.assert_not_called()
 
     def test_once_an_address_is_taken_it_is_never_asked_for_again(self):
         signup.saw_account("me@example.com")
@@ -211,10 +223,12 @@ class ChangeTests(unittest.TestCase):
 
     def test_one_not_sent_is_not_kept(self):
         self.notify.return_value = False
-        code, said = self.run_with(1)
+        with mock.patch.object(output, "show_link") as linked:
+            code, said = self.run_with(1)
         self.assertEqual(code, 1)
         self.assertEqual(self.settings[signup.SETTING], "me@example.com")
-        self.assertIn(signup.SIGNUP_PAGE, said[0])
+        self.assertEqual(said, ["That could not be sent just now. Try again later, or sign up at:"])
+        linked.assert_called_once_with(signup.SIGNUP_PAGE)
 
     def test_q_or_ctrl_c_change_nothing(self):
         for stop in (prompts.QuitRun("q"), KeyboardInterrupt()):

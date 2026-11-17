@@ -22,12 +22,15 @@ enough readouts of.
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import lzma
 import os
 import re
 import secrets
+import socket
+import ssl
 import tarfile
 import time
 import urllib.error
@@ -143,6 +146,54 @@ def restoring() -> None:
     """Reading done, the device's Sonoff firmware next: each chip's readout
     says when (readout_espressif, readout_beken)."""
     begin("restore")
+
+
+class Unsent(Abort):
+    """A readout made but not sent: `why`, in words someone can act on
+    (website_problem), and the file it is kept in to send later."""
+
+    def __init__(self, why: str, path: Path) -> None:
+        super().__init__(f"the readout could not be sent: {why}. It is kept in {path}: send it later "
+                         "with this tool's readout --send")
+        self.why, self.path = why, path
+
+
+# What an OSError's errno says when this computer has no way to the website:
+# no network, or none out of it. Windows' sockets give their own numbers.
+NO_WAY_THERE = {errno.EHOSTUNREACH, errno.ENETUNREACH, errno.ENETDOWN,
+                *(getattr(errno, name) for name in ("WSAEHOSTUNREACH", "WSAENETUNREACH", "WSAENETDOWN")
+                  if hasattr(errno, name))}
+
+
+def website_problem(exc: BaseException) -> str:
+    """Why the website could not be reached, said so someone can act on it:
+    "<urlopen error [Errno 113] No route to host>" means nothing to most.
+    The error itself goes to the log."""
+    output.log_only(f"    The website could not be reached: {type(exc).__name__}: {exc}")
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) and not isinstance(
+        exc, urllib.error.HTTPError) else exc
+    if isinstance(reason, socket.gaierror) or (isinstance(reason, OSError) and reason.errno in NO_WAY_THERE):
+        return "this computer could not reach the website. Check its internet connection"
+    if isinstance(reason, TimeoutError):
+        return "the website did not answer in time. Check this computer's internet connection, or try again later"
+    if isinstance(reason, ssl.SSLError):
+        return "no secure connection to the website could be made: something on this network may be in the way"
+    if isinstance(reason, ConnectionError):
+        return "the website did not take the connection. Try again later"
+    return str(exc)
+
+
+def tell_failed(ctx: Context, exc: BaseException) -> None:
+    """A readout that failed, as it ends: why, then - where any device was
+    read out - the readout's report and the way to open an issue (end). Where
+    one left unsent is kept, to send later, is the log's to say (docs/readouts.md)."""
+    if isinstance(exc, Unsent):
+        output.tell(f"The readout could not be sent: {exc.why}.")
+        output.log_only(f"It is kept, to send later with this tool's readout --send: {exc.path}")
+    else:
+        output.tell(f"FAILED: {exc}")
+    if readouts(ctx):
+        end(ctx, "", failed=True)
 
 
 class WebsiteFull(NothingWritten):
@@ -751,8 +802,7 @@ def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
     try:
         reference = send(data, url)
     except (OSError, ValueError) as exc:
-        raise Abort(f"the readout could not be sent ({exc}). It is kept in {path}: send it later "
-                    "with this tool's readout --send") from exc
+        raise Unsent(website_problem(exc), path) from exc
     path.unlink(missing_ok=True)
     ended = became(ctx)
     ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
@@ -780,7 +830,7 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
         except (OSError, ValueError) as exc:
             path.write_bytes(data)
             os.chmod(path, 0o600)
-            ended.outcome, ended.detail = KEPT, f"not sent: {exc}"
+            ended.outcome, ended.detail = KEPT, f"not sent: {website_problem(exc)}"
             todo.append(f"{ended.name}: its readout is kept in {path}: send it later with this tool's "
                         "readout --send.")
         else:
@@ -974,7 +1024,18 @@ def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
     output.stage_end("complete")
     lay_out_stages(first=2)
     ctx.readouts = []
-    end(ctx, read_out_chosen(ctx, devices))
+    try:
+        said = read_out_chosen(ctx, devices)
+    except (Abort, OSError, ValueError) as exc:
+        if not readouts(ctx):
+            raise   # none begun: the run's own failure, as any stage's
+        # Ended as a readout on its own ends (cli.read_out), with its report:
+        # not the run's too, nor the run's way to carry on, as nothing was
+        # converted.
+        tell_failed(ctx, exc)
+        ctx.reported = True
+        raise Finished("", code=1) from exc
+    end(ctx, said)
     # Said already, with the report: the run has nothing more to say.
     raise Finished("")
 
@@ -985,6 +1046,9 @@ def send_saved(path: Path) -> str:
     url = upload_url()
     if url is None:
         raise Abort("readouts are not sent from a test run")
-    reference = send(path.read_bytes(), url)
+    try:
+        reference = send(path.read_bytes(), url)
+    except (OSError, ValueError) as exc:
+        raise Abort(f"the readout could not be sent: {website_problem(exc)}") from exc
     signup.sent_readout("" if reference == ENOUGH else reference)
     return reference

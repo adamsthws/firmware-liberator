@@ -123,7 +123,8 @@ def change() -> int:
         output.say("That is the address kept already.")
         return 0
     if not readout.notify(email, ()):
-        output.say(f"That could not be sent just now: try again later, or sign up at {SIGNUP_PAGE}.")
+        output.say("That could not be sent just now. Try again later, or sign up at:")
+        output.show_link(SIGNUP_PAGE)
         return 1
     remember(email)
     output.say(f"Check your inbox to confirm. To stop emails to {before}, use the link in any of them.")
@@ -148,18 +149,26 @@ def ask_on_exit() -> None:
     address = account_address()
     options = [*([f"Yes, at {address}", "Use a different address"] if address else ["Add an email address"]),
                "No, thank you"]
+    output.tell("")
+    # The question and its answer stay only once the address is taken: one
+    # that could not be sent leaves where to sign up instead.
+    output.transient_begin()
     try:
-        output.tell("")
         choice = prompts.ask_choice(f"{QUESTION} [{'Y/n' if address else 'y/n'}]", options,
                                     shortcuts={**({"": 0} if address else {}), "y": 0, "yes": 0,
                                                "n": len(options) - 1, "no": len(options) - 1})
         if choice == len(options) - 1:
+            output.transient_keep()
             return
         email = address if choice == 0 and address else ask_address()
     except (prompts.QuitRun, KeyboardInterrupt):
+        output.transient_keep()
         return
     if readout.notify(email.strip(), SITTING.devices, SITTING.readouts):
+        output.transient_keep()
         remember(email.strip())
         output.tell("    Check your inbox to confirm.")
     else:
-        output.tell(f"    That could not be sent just now: sign up at {SIGNUP_PAGE} instead.")
+        output.transient_end()
+        output.tell("That could not be sent just now. Instead, sign up at:")
+        output.show_link(SIGNUP_PAGE)

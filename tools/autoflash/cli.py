@@ -724,11 +724,9 @@ def read_out(ctx: Context) -> int:
         output.tell(readout.stopped_by_ctrl_c(ctx))
         return 130
     except (Abort, OSError, ValueError) as exc:
-        output.tell(f"FAILED: {exc}")
         # One that reached a device ends with its report, as a conversion that
         # failed does: each device's ending so far, then the way to open an issue.
-        if readout.readouts(ctx):
-            readout.end(ctx, "", failed=True)
+        readout.tell_failed(ctx, exc)
         return 1
     finally:
         firewall.release_firewall(ctx)

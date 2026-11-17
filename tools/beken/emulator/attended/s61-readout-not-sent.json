@@ -63,7 +63,7 @@
  "expect": {
   "exit": 1,
   "shows": [
-   "^ *FAILED: the readout could not be sent",
+   "^ *The readout could not be sent: ",
    "^ *Failed: +S61\\S* "
   ]
  }

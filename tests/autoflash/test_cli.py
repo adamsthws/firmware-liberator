@@ -366,6 +366,34 @@ class CtrlCEndsTheSittingTests(unittest.TestCase):
         self.assertTrue(self.stopped_by(lambda ctx: cli.convert(ctx, []), "cmd_run"))
 
 
+class RunTurnedReadoutFailedTests(unittest.TestCase):
+    """A run that became a readout at A1 (readout.from_run), which failed and
+    showed its own report: the run ends failed, with no conversion's report
+    after it - seen: Firmware, Retries, Checks under a readout's failure."""
+
+    def test_no_conversion_report_is_offered_sent_or_the_issue_link_given_again(self):
+        from types import SimpleNamespace
+
+        def readout_failed(ctx):
+            ctx.stage_begun, ctx.reported = True, True   # as from_run leaves it
+            return 1
+        ctx = SimpleNamespace(args=SimpleNamespace(verbose=False, send=None, unattended=False), dir=Path("/x"),
+                              state=mock.Mock(), readouts=[], reported=False)
+        with mock.patch.object(cli.output, "start"), mock.patch.object(cli.output, "finish"), \
+                mock.patch.object(cli.output, "tell"), mock.patch.object(cli.output, "say"), \
+                mock.patch.object(cli.firewall, "release_firewall"), mock.patch.object(cli, "log_run_choice"), \
+                mock.patch.object(cli.report_upload, "begin"), mock.patch.object(cli.report_upload, "send") as sent, \
+                mock.patch.object(cli.report, "invite_stopped_report") as invited, \
+                mock.patch.object(cli.report, "ask_for_an_issue") as issue, \
+                mock.patch.object(cli.report, "send_cancelled_report") as cancelled, \
+                mock.patch.object(cli, "cmd_run", side_effect=readout_failed):
+            self.assertEqual(cli.convert(ctx, []), 1)
+        invited.assert_not_called()
+        issue.assert_not_called()
+        cancelled.assert_not_called()
+        sent.assert_not_called()
+
+
 class DeclinedReadoutTests(unittest.TestCase):
     """q at a readout's go-ahead stops it as q at any question does."""
 

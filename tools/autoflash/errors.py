@@ -35,7 +35,12 @@ class NothingWritten(Abort):
 
 class Finished(NothingWritten):
     """The run ends here by the person's choice, with nothing converted: a
-    readout instead (readout.py). Its message is what the run ends by saying."""
+    readout instead (readout.py). Its message is what the run ends by saying;
+    `code`, what the run exits with: 1 for a readout that failed."""
+
+    def __init__(self, message: str = "", code: int = 0) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class GoBack(Exception):
