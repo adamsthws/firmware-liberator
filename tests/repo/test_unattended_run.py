@@ -100,6 +100,18 @@ class StageProblemsTests(unittest.TestCase):
             "Stage  8 - Installing interim firmware  - Complete"),
             ["Stage 8 - Installing interim firmware: passed, with what it showed while under way left above it"])
 
+    def test_a_stage_with_its_outcome_straight_under_its_underway_line_is_found(self):
+        # As a readout whose sending failed left it: nothing shown between the
+        # two, so the one line should have said both.
+        self.assertEqual(self.problems(
+            "Stage 6 - Restoring Sonoff's firmware - Skipped",
+            "Stage 7 - Saving the readout          - Underway",
+            "Stage 7 - Saving the readout          - Stopped",
+            "",
+            "FAILED: the readout could not be sent"),
+            ["Stage 7 - Saving the readout: shown underway, then stopped on the row under it - "
+             "one line should say it"])
+
     def test_a_stage_left_retrying_is_found_as_one_left_underway(self):
         self.assertEqual(self.problems("Stage  9 - Preparing memory layout - Retrying",
                                        "Stage 10 - Updating the bootloader - Complete"),

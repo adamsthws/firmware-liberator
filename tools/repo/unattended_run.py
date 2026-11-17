@@ -255,6 +255,8 @@ def stage_problems(screen: str) -> list[str]:
     - a stage that passed still has its "Underway" line above its outcome:
       what it showed under that line - notes, instructions, a part that went
       again - was left on the screen;
+    - a stage's outcome is on the row straight under its "Underway" line:
+      nothing shown between them, so the one line should have said it;
     - two blank rows follow one another.
 
     Each run of a sitting is looked at on its own (NEXT_RUN): the next one's
@@ -273,7 +275,9 @@ def _run_problems(screen: str) -> list[str]:
     ended: set[str] = set()
     shown_under: set[str] = set()   # stages with an "Underway" line on the screen
     devices = [device.start() for device in NEXT_DEVICE.finditer(screen)]
+    last = None
     for row in STAGE_ROW.finditer(screen):
+        before, last = last, row
         while devices and devices[0] < row.start():
             devices.pop(0)
             ended.clear()   # the next device's stages are its own
@@ -285,6 +289,9 @@ def _run_problems(screen: str) -> list[str]:
             underway = stage
             shown_under.add(stage)
             continue
+        if underway == stage and screen.count("\n", before.end(), row.start()) == 1:
+            problems.append(f"{stage}: shown underway, then {outcome.lower()} on the row under it - "
+                            "one line should say it")
         underway = None
         if stage in ended:
             problems.append(f"{stage}: shown {outcome.lower()}, after an earlier outcome - "
