@@ -6,6 +6,7 @@ import ast
 import io
 import json
 import re
+import tempfile
 import threading
 import time
 import unittest
@@ -121,6 +122,55 @@ class JudgeTests(unittest.TestCase):
         raw, _ = recording(" Nothing was read out.\n")
         self.assertEqual(self.judge(raw, [], scenario=scenario),
                          ["FAIL-SCREEN: not shown: '^ *Not needed: +1$'"])
+
+    def test_a_line_an_answer_wants_shown_must_be_on_the_screen_as_it_is_typed(self):
+        # As why the answer before it was not taken: gone again by the end.
+        scenario = {"answers": [{"when": "Account", "type": "123\r"},
+                                {"when": "Account", "type": "a@b.example\r", "shows": ["^ *! Hint: "]}],
+                    "expect": {}}
+        for said, verdicts in ((" ! Hint: a phone number needs its country code\n", []),
+                               ("", ["FAIL-SCREEN: not shown at 'Account': '^ *! Hint: '"])):
+            with self.subTest(said=said):
+                raw, marks = recording(f" Account {HINT}: ", "|", "123\n", "\x1b[1F\x1b[2K", said,
+                                       f" Account {HINT}: ", "|", "a@b.example\n", "\x1b[1F\x1b[2K" * 2, " Done\n")
+                answers = [{"when": "Account", "type": item["type"], "typed_at": [marks[i]]}
+                           for i, item in enumerate(scenario["answers"])]
+                self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), verdicts)
+
+    def test_two_answers_alike_are_judged_each_by_its_own_checks(self):
+        # The right password typed twice: only the first, after a wrong one,
+        # wants why on the screen - and finds it missing, once.
+        scenario = {"answers": [{"when": "Password", "type": "wrong\r"},
+                                {"when": "Password", "type": "right\r", "shows": ["^ *! Not accepted"]},
+                                {"when": "Password", "type": "right\r"}], "expect": {}}
+        wipe = "\n\x1b[2J\x1b[H"
+        raw, marks = recording(f" Password {HINT}: ", "|", wipe, f" Password {HINT}: ", "|",
+                               wipe + " Later\n", f" Password {HINT}: ", "|", wipe + " Done\n")
+        answers = [{"when": "Password", "type": item["type"], "typed_at": [marks[i]]}
+                   for i, item in enumerate(scenario["answers"])]
+        self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers),
+                         ["FAIL-SCREEN: not shown at 'Password': '^ *! Not accepted'"])
+
+    def test_a_line_an_answer_never_wants_must_be_off_the_screen_as_it_is_typed(self):
+        # As a list a key was pressed to clear, gone by the next question.
+        scenario = {"answers": [{"when": "Press any key", "type": "x"},
+                                {"when": "Which firmware", "type": "1\r", "never": ["^ *You'll need:"]}],
+                    "expect": {}}
+        for cleared, verdicts in (("\x1b[1F\x1b[2K" * 3, []),
+                                  ("", ["FAIL-SCREEN: shown at 'Which firmware': \"^ *You'll need:\""])):
+            with self.subTest(cleared=bool(cleared)):
+                raw, marks = recording(" You'll need:\n     - This computer\n", f" Press any key {HINT}", "|",
+                                       "\r\x1b[2K", cleared, f" Which firmware would you like {HINT}: ", "|", "1\n")
+                answers = [{"when": item["when"], "type": item["type"], "typed_at": [marks[i]]}
+                           for i, item in enumerate(scenario["answers"])]
+                self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), verdicts)
+
+    def test_the_recorder_is_given_no_judge_s_keys(self):
+        scenario = {"answers": [{"when": "Account", "type": "x\r", "optional": True, "shows": ["Hint"],
+                                 "never": ["Hint"]}]}
+        with tempfile.TemporaryDirectory() as folder:
+            given = json.loads(attended_suite.run_answers(scenario, Path(folder)).read_text(encoding="utf-8"))
+        self.assertEqual(given, [{"when": "Account", "type": "x\r"}])
 
     def test_a_line_the_scenario_never_wants_is_found_at_an_answer_or_at_the_end(self):
         scenario = {"answers": [{"when": "Stage 3", "type": "zq", "anywhere": True}], "expect": {"never": ["zq"]}}
@@ -293,7 +343,9 @@ class ScenarioTests(unittest.TestCase):
             for answer in scenario["answers"] + scenario.get("again", {}).get("answers", []):
                 with self.subTest(scenario=name, when=answer["when"]):
                     self.assertLessEqual(set(answer), {"when", "type", "times", "optional", "anywhere", "power",
-                                                       "signal", "router", "wifi", "after"})
+                                                       "signal", "router", "wifi", "after", "shows", "never"})
+                    for wanted in answer.get("shows", []) + answer.get("never", []):
+                        re.compile(wanted)
                     if "after" in answer:
                         self.assertTrue(answer.get("anywhere"), "after: for an answer typed anywhere")
                     # Each does one thing: types, switches the device or the

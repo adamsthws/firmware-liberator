@@ -11,7 +11,8 @@ in the Espressif emulator) or tools/beken/emulator/attended/ (an S61's):
     {"about": "what it shows",
      "start": "fresh" | a saved device (unattended-test.sh --from),
      "prep": [...], "args": [...], "size": "100x40", "minutes": 30,
-     "answers": [{"when": regex, "type": keys, "times": n, "optional": bool}, ...],
+     "answers": [{"when": regex, "type": keys, "times": n, "optional": bool,
+                  "shows": [regex, ...], "never": [regex, ...]}, ...],
      "expect": {"exit": 0, "result": "Converted", "screen": true, "shows": [regex, ...],
                 "never": [regex, ...]},
      "again": {"answers": [...], "args": [...], "expect": {...}}}
@@ -28,11 +29,14 @@ set); ["locked esphome", "login" | "login and updates"] (this project's
 ESPHome with a web login, admin and "test-login-1", and the made-up API
 encryption key LOCKED_KEY; and with "updates", taking only encrypted
 updates). An answer is typed at its question only (unattended_run.Answer);
-one `optional` need not be asked. In place of `type`, an answer can switch
-the device ("power": "off") or its home Wi-Fi's router ("router": "off", or
-on the Beken emulator "on NEW-PASSWORD", the password changed), move the
-computer onto the device's own network or back ("wifi": "join", "home"), or
-signal the run ("signal": "TERM").
+one `optional` need not be asked. An answer's `shows`: lines on the screen
+each time it is typed, for what leaves the screen before the run ends - why
+the answer before it was not taken, say; its `never`: lines not on it then,
+for what an earlier answer should have taken off. In place of `type`, an
+answer can switch the device ("power": "off") or its home Wi-Fi's router
+("router": "off", or on the Beken emulator "on NEW-PASSWORD", the password
+changed), move the computer onto the device's own network or back ("wifi":
+"join", "home"), or signal the run ("signal": "TERM").
 `command`: "readout" for a readout, not a conversion; `api_enough`: true
 for the API beside the emulator to have enough readouts of the device's
 product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed;
@@ -57,7 +61,9 @@ The verdict, from the recording alone (judge):
                       itself, or a line `expect`'s `shows` wants not on it, or
                       one its `never` wants nowhere: on the screen at any
                       answer, or at the end - a key pressed by accident,
-                      echoed
+                      echoed; or, as an answer was typed, a line its `shows`
+                      wants not on the screen, or one its `never` does not
+                      want on it
     FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-SENT-UNWANTED, FAIL-NOT-STORED,
     FAIL-READOUT, FAIL-KEPT-UNSENT
                       a readout's other side: what the API beside the
@@ -169,14 +175,19 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
         verdicts.append(f"FAIL-RESULT: exit {code}, not {expect.get('exit', 0)}")
     if expect.get("result") and not (result or "").startswith(expect["result"]):
         verdicts.append(f"FAIL-RESULT: Result {result or 'none'!r}, not {expect['result']!r}")
-    # Keyed as the recorder keeps them: an answer that switches the device or
-    # signals the run types nothing.
-    given = {(item["when"], item.get("type", "")): item for item in scenario["answers"]}
-    for answer in answers:
-        if not answer["typed_at"] and not given.get((answer["when"], answer.get("type", "")), {}).get("optional"):
+    # The recorder keeps the answers it was given, in their order: paired by
+    # place, as two can say the same (a password typed again, each judged apart).
+    for answer, item in zip(answers, scenario["answers"], strict=True):
+        if not answer["typed_at"] and not item.get("optional"):
             verdicts.append(f"FAIL-UNUSED: {answer['when']!r}")
         for why in answer.get("failed", []):
             verdicts.append(f"FAIL-ANSWER: {answer['when']!r}: {why}")
+        for at in answer["typed_at"] if item.get("shows") or item.get("never") else []:
+            shown = screen_at(raw, at, size).render(colour=False)
+            verdicts += [f"FAIL-SCREEN: not shown at {answer['when']!r}: {wanted!r}"
+                         for wanted in item.get("shows", []) if not re.search(wanted, shown, re.M)]
+            verdicts += [f"FAIL-SCREEN: shown at {answer['when']!r}: {unwanted!r}"
+                         for unwanted in item.get("never", []) if re.search(unwanted, shown, re.M)]
     wrapped = 0
     # A key typed anywhere (a Ctrl-C as a stage shows) answers no question.
     for at in sorted(at for answer in answers if not answer.get("anywhere") for at in answer["typed_at"]):
@@ -206,9 +217,11 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
 
 
 def run_answers(scenario: dict[str, Any], folder: Path, name: str = "answers-given.json") -> Path:
-    """The scenario's answers as the recorder takes them (no `optional`)."""
+    """The scenario's answers as the recorder takes them (no `optional`,
+    `shows` or `never`: they are for judge)."""
     path = folder / name
-    path.write_text(json.dumps([{key: value for key, value in item.items() if key != "optional"}
+    path.write_text(json.dumps([{key: value for key, value in item.items()
+                                 if key not in ("optional", "shows", "never")}
                                 for item in scenario["answers"]], indent=1), encoding="utf-8")
     return path
 
