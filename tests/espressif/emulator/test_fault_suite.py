@@ -8,10 +8,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import kinds, output, records, readout
+from tools.autoflash import kinds, output, records
 from tools.autoflash.routes import espressif
 from tools.espressif.emulator import fault_suite as fs
-from tools.ewelink.stub_cloud import stub_server
 
 MAC = "12:34:56:ab:cd:ef"
 
@@ -1804,18 +1803,6 @@ class ReadoutAllScenarioTests(unittest.TestCase):
         for sc in every:
             if sc["step"] != "start":
                 self.assertIn(sc["step"], fs.STARTS)
-
-    def test_the_accounts_are_made_up_and_each_what_it_is_named_for(self):
-        def alike(device):
-            return device["productModel"], device["model"], device["fwVersion"]
-        for name, devices in fs.ACCOUNTS.items():
-            with self.subTest(name):
-                self.assertEqual(len({d["deviceid"] for d in devices}), len(devices))
-                # None the tool converts: each only a first stage, as no other is emulated.
-                self.assertFalse(any(readout.reads_out(stub_server.Stub.other_item(d)["itemData"]) for d in devices))
-        self.assertLess(len({alike(d) for d in fs.ACCOUNTS["alike"]}), len(fs.ACCOUNTS["alike"]))
-        self.assertEqual(len({alike(d) for d in fs.ACCOUNTS["many"]}), len(fs.ACCOUNTS["many"]))
-        self.assertGreater(len(fs.ACCOUNTS["many"]), 2)   # more than the API takes in a minute
 
     def test_a_readout_of_every_device_is_run_with_its_account_and_the_api(self):
         with tempfile.TemporaryDirectory() as tmp:

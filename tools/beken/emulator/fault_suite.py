@@ -110,6 +110,7 @@ from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
+from tools.ewelink.stub_cloud import accounts  # noqa: E402
 from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
@@ -213,6 +214,14 @@ READOUT_PHASES = {"read": ("read", "read-done", 400), "back": ("back", "back-don
 READOUT_FAULTS = [("read", "deviceoff", 1, 40), ("read", "outage", 30, 40), ("read", "crash", 1, 40),
                   ("back", "deviceoff", 1, 10), ("back", "outage", 30, 10)]
 READOUT = "readout.tar"
+# A readout of every device in the account (readout --all) the stub lists
+# beside the S61, made up (stub_cloud.accounts), each sent to the API beside the
+# device and judged by what it was asked and kept, as the Espressif suite's
+# are: in each account, and in the mixed one with a fault in the S61's read.
+READOUT_ALL = "sonoff>readout-all"
+# A route's target that is a readout, not a conversion: no conversion's checks after it.
+READOUTS = ("readout", "readout-all")
+READOUT_ALL_FAULTS = [("read", "deviceoff", 1), ("read", "crash", 1)]
 
 
 def sid(route: str, step: str, fault: str, arg, at: int = 40) -> str:
@@ -265,7 +274,9 @@ def readout_scenarios() -> list[dict]:
         return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
     return [one("sonoff>readout", "start", "none", "unattended"),
             *(one("sonoff>readout", step, fault, arg, at) for step, fault, arg, at in READOUT_FAULTS),
-            one("openbeken>readout", "start", "none", "first-stage")]
+            one("openbeken>readout", "start", "none", "first-stage"),
+            *(one(READOUT_ALL, "start", "none", account) | {"account": account} for account in accounts.ACCOUNTS),
+            *(one(READOUT_ALL, step, fault, arg) | {"account": "mixed"} for step, fault, arg in READOUT_ALL_FAULTS)]
 
 
 def route_steps(route: str) -> list[str]:
@@ -312,21 +323,6 @@ def metered(state: dict) -> bool:
     device, the S61, has one."""
     kind = kinds.by_key((state.get("inputs") or {}).get("device_kind"))
     return kind.has_meter if kind else True
-
-
-def clear(folder: Path) -> None:
-    """A folder gone, read-only files in it too (OpenBeken's toolchain unpacks
-    so): a scenario started over what is left would fail for that reason alone."""
-    def writable_then(remove, path, _exc):
-        os.chmod(Path(path).parent, 0o700)
-        remove(path)
-    if not folder.exists():
-        return
-    try:
-        shutil.rmtree(folder, onerror=writable_then)
-    except OSError as exc:
-        raise RuntimeError(f"cannot remove {folder}, so cannot start from a clean device: {exc}. "
-                           "If a container left it owned by root, chown it through one.") from exc
 
 
 def filed_as(log: Path) -> Path:
@@ -376,7 +372,7 @@ class Instance:
     def reset(self, start: str) -> None:
         """The device as `start` (sonoff: the dump, untouched; else saved by prep)."""
         self.stop()
-        clear(self.state)
+        folders.clear(self.state)
         if start != "sonoff":
             shutil.copytree(SAVED / start, self.state)
         (self.state / "work/captures").mkdir(parents=True, exist_ok=True)
@@ -423,6 +419,28 @@ class Instance:
         """Sonoff's firmware in its eWeLink: the time zone it asks once there -
         since the stub's log was `since` bytes long."""
         return b'"TZ":{' in self.stub_said()[since:]
+
+    def account(self, sc: dict, folder: Path) -> None:
+        """The scenario's account, as the stub lists it and the API beside the
+        device holds it - the device alone, unless a readout of every device
+        names one (stub_cloud.accounts), as the Espressif suite's run_tool
+        sets them: its other devices (AUTOFLASH_EMU_STUB_OTHERS, listed in
+        `folder`), in the enough account the products the API has enough of
+        (AUTOFLASH_API_ENOUGH), and in the many account the API taking one
+        readout a minute, so its limit is reached however slowly they come."""
+        for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH", "AUTOFLASH_LOCAL_READOUT_LIMIT"):
+            self.env.pop(setting, None)
+        name = sc.get("account")
+        if not name:
+            return
+        listed = folder / "others.json"
+        listed.write_text(json.dumps(accounts.ACCOUNTS[name], indent=1) + "\n", encoding="utf-8")
+        self.env["AUTOFLASH_EMU_STUB_OTHERS"] = str(listed)
+        if name == "enough":
+            self.env["AUTOFLASH_API_ENOUGH"] = ",".join(
+                [kinds.SONOFF_S61.example_product_model, accounts.ACCOUNTS["enough"][0]["productModel"]])
+        if name == "many":
+            self.env["AUTOFLASH_LOCAL_READOUT_LIMIT"] = "1"
 
     def start(self, firmware: str, wait: float = 300) -> bool:
         self.sh("device", timeout=600, check=True)
@@ -792,6 +810,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     memory = MemoryWatch()
     memory.start()
     instance.reset(start_of(sc["route"]))
+    instance.account(sc, folder)
     if not instance.start(source):
         notes["memory"] = memory.note()
         return dict(result="NOT-READY", notes=notes)
@@ -799,6 +818,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     person.start()
     if target == "readout":
         outcome = readout_scenario(instance, sc, log, notes)
+    elif target == "readout-all":
+        outcome = readout_all_scenario(instance, sc, log, notes)
     elif sc["step"] == "apply":
         outcome = apply_scenario(instance, sc, target, log, notes)
     elif sc["fault"] == "badimage":
@@ -814,7 +835,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = dict(outcome, result="FAIL-UNEXPECTED")
     # Asked while it runs: a route through J2 stops it below, for its flash.
     release = release_of(instance, target) if outcome["result"] == "PASS" and target in LATEST else None
-    if outcome["result"] == "PASS" and target != "readout":
+    if outcome["result"] == "PASS" and target not in READOUTS:
         names = instance.dhcp_names()
         flash = None
         if "J2" in route_steps(sc["route"]):
@@ -1097,6 +1118,81 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=runs)
 
 
+def api_run(instance: Instance, log: Path, number: int, since: int, code: int, sc: dict) -> dict:
+    """One run of a readout of every device, judged by what the API beside the
+    device was asked and kept (fault_verdicts.readout_api_problems): the API
+    goes on as the device does, so its requests.log from `since` bytes, this
+    run's alone, kept beside the scenario's log with what it holds."""
+    api = log.with_name(f"{log.stem}-api-{number}")
+    folders.clear(api)
+    if (instance.state / "api").is_dir():
+        shutil.copytree(instance.state / "api", api)
+        requests = api / "requests.log"
+        if requests.exists():
+            requests.write_bytes(requests.read_bytes()[since:])
+    else:
+        api.mkdir()
+    runs = instance.runs()
+    run = fault_verdicts.last_run(runs[-1].read_text(encoding="utf-8", errors="replace")) if runs else ""
+    kept = sorted(path.name for path in runs[-1].parent.glob("readout*.tar")) if runs else []
+    problems, summary = fault_verdicts.readout_api_problems(
+        run, code == 0, api, len(accounts.ACCOUNTS[sc["account"]]) + 1, kinds.SONOFF_S61.example_product_model,
+        "beken", kept)
+    return {"code": code, "problems": problems, **summary}
+
+
+def readout_all_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> dict:
+    """A readout of every device in the account (readout --all) the stub lists
+    beside the S61 fresh from Sonoff's firmware, each readout sent to the API
+    beside it - with the fault, where there is one, in the S61's read. Then, as
+    a person would, the readout of every device run again until one finishes,
+    switching the device off and on where the run said to, up to RECOVERY_RUNS
+    times. It passes when every run is as the API says it should be, the last
+    finished, and the device works on Sonoff's firmware (FAIL-NOT-SONOFF); in
+    the many account, NOT-FIRED where the API never answered 429."""
+    requests = instance.state / "api/requests.log"
+
+    def sent_so_far() -> int:
+        return requests.stat().st_size if requests.exists() else 0
+
+    judged = []
+    since = sent_so_far()
+    run = instance.tool("readout", log, api=True, more=("--all",))
+    if sc["fault"] != "none":
+        begins, ends, length = READOUT_PHASES[sc["step"]]
+        if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
+            finish(run, instance)
+            return dict(result="NO-STEP", runs=1)
+        time.sleep(length * sc["at"] / 100)
+        if happened(instance, "phase", phase=ends):
+            notes["mistimed"] = True
+        inject(instance, sc["fault"], sc["arg"], notes)
+        if sc["fault"] == "crash":
+            run.wait(timeout=60)
+            time.sleep(sc["arg"])
+    finish(run, instance)
+    judged.append(api_run(instance, log, 1, since, run.returncode, sc))
+    while judged[-1]["code"] != 0 and len(judged) <= RECOVERY_RUNS:
+        recover(instance, "sonoff", notes)
+        since = sent_so_far()
+        again = instance.tool("readout", log, api=True, more=("--all",))
+        finish(again, instance)
+        judged.append(api_run(instance, log, len(judged) + 1, since, again.returncode, sc))
+    notes["runs"] = judged
+    problems = [problem for one in judged for problem in one["problems"]]
+    if notes.get("mistimed"):
+        return dict(result="MISTIMED", runs=len(judged))
+    if sc["fault"] != "none" and not_fired(sc["fault"], notes):
+        return dict(result="NOT-FIRED", runs=len(judged))
+    if problems:
+        return dict(result=problems[0][0], runs=len(judged))
+    if judged[-1]["code"] != 0:
+        return dict(result="FAIL-NOT-FINISHED", runs=len(judged))
+    if sc["account"] == "many" and not any(one["429"] for one in judged):
+        return dict(result="NOT-FIRED", runs=len(judged))   # the API's limit never reached: proves nothing
+    return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=len(judged))
+
+
 def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
     """A readout started on a device on OpenBeken: its first stage alone
     (FAIL-READOUT), ending with no failure (FAIL-EXIT), nothing served to the
@@ -1240,7 +1336,7 @@ def prep() -> None:
 
 def save(instance: Instance, firmware: str) -> None:
     instance.stop()
-    clear(SAVED / firmware)
+    folders.clear(SAVED / firmware)
     shutil.copytree(instance.state, SAVED / firmware, ignore=keep_for_saving)
     print(f"saved the device on {firmware} in {SAVED / firmware}", flush=True)
 
@@ -1251,7 +1347,7 @@ def prep_update() -> None:
     release's own suite makes them, from its tagged files: in its tree, its
     folders are named as that release names them (v2.3.0's after the S61)."""
     tree = folders.LEGACY / EARLIER_RELEASE
-    clear(tree)
+    folders.clear(tree)
     (tree / "captures/emulation").mkdir(parents=True)
     archive = subprocess.run(["git", "-C", str(REPO), "archive", EARLIER_RELEASE], capture_output=True, check=True).stdout
     subprocess.run(["tar", "-x", "-C", str(tree)], input=archive, check=True)
@@ -1260,11 +1356,11 @@ def prep_update() -> None:
         subprocess.run([str(tree / "tools/beken/emulator/fault_suite.py"), "prep"], check=True)
         for firmware in ("openbeken", "esphome"):
             kept = SAVED / f"outdated-{firmware}"
-            clear(kept)
+            folders.clear(kept)
             shutil.copytree(tree / EARLIER_SAVED / firmware, kept)
             print(f"saved the device on {EARLIER_RELEASE}'s {firmware} in {kept}", flush=True)
     finally:
-        clear(tree)
+        folders.clear(tree)
 
 
 # The check: two ways, each a final firmware installed, then that device taken to

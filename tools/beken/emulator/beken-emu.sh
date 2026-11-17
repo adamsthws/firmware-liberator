@@ -78,8 +78,10 @@
 # AUTOFLASH_BEKEN_EMU_IMAGE names the image (default autoflash-beken-emu),
 # AUTOFLASH_BEKEN_EMU_NETWORK the device's network (default autoflash-beken-emu,
 # or autoflash-beken-emu-N), AUTOFLASH_BEKEN_EMU_COMPUTER a name for the
-# computer's container, AUTOFLASH_READOUT_URL where the computer's readouts go
-# in place of the API beside it, AUTOFLASH_BEKEN_EMU_FLASH another whole flash
+# computer's container, AUTOFLASH_EMU_STUB_OTHERS a JSON list of the account's
+# other devices for the stub to list (as emu.sh takes it), AUTOFLASH_READOUT_URL
+# where the computer's readouts go in place of the API beside it,
+# AUTOFLASH_BEKEN_EMU_FLASH another whole flash
 # under this checkout (rebuild_dump.py's) for a new device to start from, and image.sh's
 # own (AUTOFLASH_BEKEN_EMU_PUBLISHED, AUTOFLASH_BEKEN_EMU_NO_PULL,
 # AUTOFLASH_BEKEN_EMU_SOURCE_URL) where to get the image. In the container,
@@ -254,6 +256,17 @@ subnet() {
     echo "${cidr%.*}"
 }
 
+# The account's other devices, which the stub lists beside this one, none of
+# them emulated (cloud_stub.others_in): AUTOFLASH_EMU_STUB_OTHERS names a JSON
+# list of them, as emu.sh takes it. None unless it is set, whatever an earlier
+# start left.
+stub_others() {
+    rm -f "$DEVICE_STATE/stub-others.json"
+    if [ -n "${AUTOFLASH_EMU_STUB_OTHERS:-}" ]; then
+        cp "$AUTOFLASH_EMU_STUB_OTHERS" "$DEVICE_STATE/stub-others.json"
+    fi
+}
+
 case "${1:-}" in
     dump) dump ;;
     python)
@@ -281,6 +294,7 @@ case "${1:-}" in
         fi
         ensure; dump; network
         mkdir -p "$DEVICE_STATE/air"
+        stub_others
         starts_from=$(device_dump)
         # Measured: the device 152 MB and its computer 97, plus 100.
         wait_for_room 350

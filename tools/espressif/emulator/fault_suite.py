@@ -93,6 +93,7 @@ from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
 from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
+from tools.ewelink.stub_cloud.accounts import ACCOUNTS  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
 from tools.espressif.emulator.patch_stock import holds_rsa_ca, trusts  # noqa: E402
@@ -321,19 +322,6 @@ READOUT = "readout.tar"
 READOUT_ALL = "sonoff>readout-all"
 
 
-def other_device(number, product, model=None, version="1.0.0"):
-    """One of the account's other devices, made up (stub_server.Stub.other_item)."""
-    return {"deviceid": f"10000000{number:02x}", "name": f"Test device {number}", "productModel": product,
-            "model": model or f"SN-TEST-{product}-01", "uiid": 1, "fwVersion": version}
-
-
-ACCOUNTS = {
-    "mixed": [other_device(1, "TESTLIGHT"), other_device(2, "TESTSWITCH", version="2.1.0")],
-    "alike": [other_device(1, "TESTLIGHT"), other_device(2, "TESTLIGHT"), other_device(3, "TESTLIGHT"),
-              other_device(4, "TESTSWITCH")],
-    "enough": [other_device(1, "TESTLIGHT"), other_device(2, "TESTSWITCH")],
-    "many": [other_device(n, f"TESTMODEL{n}") for n in range(1, 8)],
-}
 # The faults in the emulated device's read (READOUT_FAULTS), after the other
 # devices' first stages: the run stops there, and is run again.
 READOUT_ALL_FAULTS = [("read", "deviceoff", 1), ("read", "crash", 1)]

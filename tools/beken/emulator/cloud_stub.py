@@ -139,6 +139,14 @@ def remember(stub: ss.Stub, path: Path, model: str = "") -> None:
     stub.heard = heard_and_kept
 
 
+def others_in(state: Path) -> list[dict]:
+    """The account's other devices, none of them emulated, the stub lists beside
+    this one: those AUTOFLASH_EMU_STUB_OTHERS names, copied into `state` by
+    beken-emu.sh device, as the Espressif emulator's stub takes them; [] for none."""
+    listed = state / "stub-others.json"
+    return json.loads(listed.read_text(encoding="utf-8")) if listed.is_file() else []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--state", type=Path, required=True)
@@ -148,7 +156,10 @@ def main(argv: list[str] | None = None) -> int:
     leaf, key = certificates(args.state, args.bind)
     record = device(args.flash, args.state)
     update = offered(args.flash, args.state, record["model"])
-    stub = ss.Handler.stub = ss.Stub(args.bind, 443, HEARTBEAT, record, update)
+    others = others_in(args.state)
+    stub = ss.Handler.stub = ss.Stub(args.bind, 443, HEARTBEAT, record, update, others=others)
+    if others:
+        ss.log(f"the account's other devices: {len(others)}, none emulated")
     ss.log(f"offering {update.version} as the latest firmware" if update else "offering no firmware")
     remember(stub, args.state / "stub-reported.json", record["model"])
     # The S61 parses the port as a string; the tool takes either.

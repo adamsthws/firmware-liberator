@@ -34,6 +34,20 @@ class CloudStubTests(unittest.TestCase):
             self.assertEqual(leaf.read_text(encoding="utf-8"), "198.18.63.1")
 
 
+class OtherDevicesTests(unittest.TestCase):
+    def test_the_accounts_other_devices_are_those_beken_emu_sh_copied_in(self):
+        # As the Espressif emulator's stub lists them (emu.sh): a readout of
+        # every device meets the same account in either family.
+        from tools.ewelink.stub_cloud import accounts
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)}):
+            sys.modules.pop("cloud_stub", None)
+            import cloud_stub
+            self.assertEqual(cloud_stub.others_in(Path(tmp)), [])
+            Path(tmp, "stub-others.json").write_text(json.dumps(accounts.ACCOUNTS["mixed"]), encoding="utf-8")
+            self.assertEqual(cloud_stub.others_in(Path(tmp)), accounts.ACCOUNTS["mixed"])
+            sys.modules.pop("cloud_stub", None)
+
 class StubMemoryTests(unittest.TestCase):
     def test_what_a_device_said_of_itself_is_kept_across_a_restart(self):
         with tempfile.TemporaryDirectory() as tmp, \

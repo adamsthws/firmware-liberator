@@ -105,5 +105,28 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(folders.EMU, folders.ROOT / "captures/emulation")
 
 
+class ClearTests(unittest.TestCase):
+    def test_a_folder_goes_with_the_read_only_files_in_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / "state"
+            locked = folder / "toolchain"
+            locked.mkdir(parents=True)
+            (locked / "gcc").write_text("x", encoding="utf-8")
+            locked.chmod(0o555)
+            folders.clear(folder)
+            self.assertFalse(folder.exists())
+
+    def test_a_folder_not_there_is_no_trouble(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folders.clear(Path(temp) / "never")
+
+    def test_one_that_will_not_go_is_said_plainly(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch.object(folders.shutil, "rmtree", side_effect=PermissionError("denied")):
+                with self.assertRaisesRegex(RuntimeError, f"cannot remove {temp}.*denied"):
+                    folders.clear(Path(temp))
+
+
 if __name__ == "__main__":
     unittest.main()

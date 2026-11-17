@@ -30,7 +30,8 @@ class ScenarioTests(unittest.TestCase):
         found = fault_suite.scenarios()
         ids = [sc["id"] for sc in found]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual({sc["route"] for sc in found}, set(fault_suite.ROUTES) | {"sonoff>readout", "openbeken>readout"})
+        self.assertEqual({sc["route"] for sc in found},
+                         set(fault_suite.ROUTES) | {"sonoff>readout", "openbeken>readout", fault_suite.READOUT_ALL})
 
     def test_the_steps_that_write_are_also_faulted_early_and_late(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
@@ -110,7 +111,8 @@ class EndChecksTests(unittest.TestCase):
             run = Path(tmp, "work/runs/1/run.log")
             write_events(run.parent, ("run", {}), ("began", {"step": "B2"}))
             run.write_text(log, encoding="utf-8")
-            device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=lambda: [run],
+            device = SimpleNamespace(reset=lambda start: None, account=lambda sc, folder: None,
+                                     start=lambda firmware: True, runs=lambda: [run],
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
                                    dhcp_log=lambda: "DHCPACK(br0) 198.18.62.51 12:34:56:ab:cd:ef openbeken-cdef\n",
                                    last_outcome=lambda since: outcome, run_texts=lambda: [said + log],
@@ -419,29 +421,6 @@ class CheckTests(unittest.TestCase):
         for way in fault_suite.CHECK_WAYS:
             for route in way:
                 self.assertTrue(fault_suite.route_steps(route), route)
-
-
-class ClearTests(unittest.TestCase):
-    def test_a_folder_goes_with_the_read_only_files_in_it(self):
-        with tempfile.TemporaryDirectory() as temp:
-            folder = Path(temp) / "state"
-            locked = folder / "toolchain"
-            locked.mkdir(parents=True)
-            (locked / "gcc").write_text("x", encoding="utf-8")
-            locked.chmod(0o555)
-            fault_suite.clear(folder)
-            self.assertFalse(folder.exists())
-
-    def test_a_folder_not_there_is_no_trouble(self):
-        with tempfile.TemporaryDirectory() as temp:
-            fault_suite.clear(Path(temp) / "never")
-
-    def test_one_that_will_not_go_is_said_plainly(self):
-        from unittest import mock
-        with tempfile.TemporaryDirectory() as temp:
-            with mock.patch.object(fault_suite.shutil, "rmtree", side_effect=PermissionError("denied")):
-                with self.assertRaisesRegex(RuntimeError, f"cannot remove {temp}.*denied"):
-                    fault_suite.clear(Path(temp))
 
 
 class BadImageScenarioTests(unittest.TestCase):
@@ -917,6 +896,106 @@ class SavingTests(unittest.TestCase):
                          ["serial.log", "power", "ca.crt"])
         self.assertEqual(fault_suite.keep_for_saving("/x/devices/12-34-56-ab-cd-ef", ["device.json", "sonoff-backup"]),
                          ["sonoff-backup"])
+
+
+class ReadoutAllTests(unittest.TestCase):
+    """A readout of every device in each made-up account, as the Espressif
+    suite's: the same scenarios, the API's side judged, run again until one
+    finishes."""
+
+    def test_the_same_scenarios_as_the_espressif_suites(self):
+        from tools.espressif.emulator import fault_suite as espressif
+        mine = {sc["id"] for sc in fault_suite.scenarios() if sc["route"] == fault_suite.READOUT_ALL}
+        theirs = {sc["id"] for sc in espressif.scenarios() if sc["route"] == espressif.READOUT_ALL}
+        self.assertEqual(mine, theirs)
+        self.assertEqual(fault_suite.READOUT_ALL, espressif.READOUT_ALL)
+
+    def test_one_that_passed_meets_no_conversions_checks(self):
+        # Seen in the suite's first run of them: every one an ERROR, looking up
+        # the steps of a conversion to "readout-all" once it had passed.
+        from types import SimpleNamespace
+        from unittest import mock
+        sc = {"id": "sonoff>readout-all:start:none-mixed", "route": fault_suite.READOUT_ALL, "step": "start",
+              "fault": "none", "arg": "mixed", "at": 40, "account": "mixed"}
+        with tempfile.TemporaryDirectory() as tmp:
+            device = SimpleNamespace(reset=lambda start: None, account=lambda sc, folder: None,
+                                     start=lambda firmware: True, runs=lambda: [], state=Path(tmp),
+                                     run_texts=lambda: [], dhcp_log=lambda: "",
+                                     dhcp_names=mock.Mock(side_effect=AssertionError("a conversion's check")))
+            with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
+                    mock.patch.object(fault_suite, "Person"), \
+                    mock.patch.object(fault_suite, "readout_all_scenario", return_value={"result": "PASS", "runs": 1}):
+                outcome = fault_suite.run_scenario(device, sc)
+        self.assertEqual(outcome["result"], "PASS")
+
+    def test_each_account_reaches_the_stub_and_the_api_and_none_lingers(self):
+        from tools.ewelink.stub_cloud import accounts
+        instance = fault_suite.Instance(3)
+        with tempfile.TemporaryDirectory() as tmp:
+            instance.account({"account": "many"}, Path(tmp))
+            self.assertEqual(json.loads(Path(instance.env["AUTOFLASH_EMU_STUB_OTHERS"]).read_text(encoding="utf-8")),
+                             accounts.ACCOUNTS["many"])
+            self.assertEqual(instance.env["AUTOFLASH_LOCAL_READOUT_LIMIT"], "1")
+            instance.account({"account": "enough"}, Path(tmp))
+            self.assertNotIn("AUTOFLASH_LOCAL_READOUT_LIMIT", instance.env)
+            self.assertIn(accounts.ACCOUNTS["enough"][0]["productModel"], instance.env["AUTOFLASH_API_ENOUGH"])
+            instance.account({}, Path(tmp))
+            self.assertFalse({"AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH"} & set(instance.env))
+
+    WANTED = '2026-11-17T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}'
+
+    def outcome(self, codes, requests, stored=True):
+        """readout_all_scenario with no fault, each run ending with `codes` in
+        turn, the API asked `requests` (lines) by each."""
+        from types import SimpleNamespace
+        from unittest import mock
+        digest = "a" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp, "state")
+            (state / "api").mkdir(parents=True)
+            run = state / "work/runs/1/run.log"
+            run.parent.mkdir(parents=True)
+            run.write_text("[10:00:00] === run started ===\n" + "".join(
+                f"[10:00:0{n}] Reading out 'Device {n}' (X) ({n} of 3)...\n" for n in (1, 2, 3)), encoding="utf-8")
+            if stored:
+                (state / f"api/readouts__2026-11-17__{digest[:24]}.tar").write_bytes(b"tar")
+            pending = list(zip(codes, requests))
+
+            def tool(target, log, **options):
+                code, lines = pending.pop(0)
+                with open(state / "api/requests.log", "a", encoding="utf-8") as out:
+                    out.write("".join(line + "\n" for line in lines))
+                return SimpleNamespace(returncode=code, wait=lambda timeout=None: code)
+            instance = SimpleNamespace(state=state, tool=tool, runs=lambda: [run])
+            sc = {"id": "x", "route": fault_suite.READOUT_ALL, "step": "start", "fault": "none", "arg": "mixed",
+                  "at": 40, "account": "mixed"}
+            with mock.patch.object(fault_suite, "finish"), mock.patch.object(fault_suite, "recover"), \
+                    mock.patch.object(fault_suite, "sonoff_works", return_value=True), \
+                    mock.patch.object(fault_suite.fault_verdicts, "readout_problems", return_value=[]):
+                found = fault_suite.readout_all_scenario(instance, sc, Path(tmp, "tool.log"), notes := {})
+            # Each run's own part of the API's log, kept beside the scenario's.
+            kept = [Path(tmp, f"tool-api-{n}/requests.log").read_text(encoding="utf-8") for n in
+                    range(1, len(notes["runs"]) + 1)]
+        return found, kept
+
+    def taken(self, digest="a" * 64):
+        return f'2026-11-17T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-17-{digest[:12]}"}}'
+
+    def test_every_device_asked_and_the_device_taken_whole_passes(self):
+        held = '2026-11-17T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
+        found, _ = self.outcome([0], [[held, held, self.WANTED, self.taken()]])
+        self.assertEqual(found["result"], "PASS")
+
+    def test_run_again_until_one_finishes_each_judged_by_its_own_requests(self):
+        held = '2026-11-17T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
+        found, kept = self.outcome([1, 0], [[held, held, self.WANTED], [held, held, self.WANTED, self.taken()]])
+        self.assertEqual((found["result"], found["runs"]), ("PASS", 2))
+        self.assertEqual(kept[1].count("/v1/wanted"), 3)   # the second run's alone
+
+    def test_one_the_api_did_not_keep_fails_as_it_says(self):
+        held = '2026-11-17T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
+        found, _ = self.outcome([0], [[held, held, self.WANTED, self.taken()]], stored=False)
+        self.assertEqual(found["result"], "FAIL-NOT-STORED")
 
 
 class InstanceTests(unittest.TestCase):

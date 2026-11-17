@@ -440,6 +440,19 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(self.left, ["captures/emulation", "captures/emulation/beken",
                                      "captures/emulation/beken/state-2", "captures/emulation/beken/state-2/flash.bin"])
 
+    def test_the_accounts_other_devices_are_copied_in_for_the_stub_or_none(self):
+        # As emu.sh copies them for the Espressif emulator's stub.
+        function = re.search(r"^stub_others\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp, "mixed.json")
+            listed.write_text("[1]", encoding="utf-8")
+            Path(tmp, "stub-others.json").write_text("left by an earlier start", encoding="utf-8")
+            for given, kept in ((str(listed), "[1]"), ("", None)):
+                subprocess.run(["bash", "-c", f"set -u\nDEVICE_STATE={tmp}\n{function}\nstub_others"],
+                               env={**os.environ, "AUTOFLASH_EMU_STUB_OTHERS": given}, check=True, timeout=30)
+                found = Path(tmp, "stub-others.json")
+                self.assertEqual(found.read_text(encoding="utf-8") if found.exists() else None, kept)
+
     def test_rebuild_reaches_image_sh(self):
         function = re.search(r"^ensure\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
         with tempfile.TemporaryDirectory() as tmp:

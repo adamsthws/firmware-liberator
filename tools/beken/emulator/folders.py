@@ -33,6 +33,21 @@ EMU = ROOT / "captures/emulation"
 BEKEN = EMU / "beken"
 
 
+def clear(folder: Path) -> None:
+    """A folder gone, read-only files in it too (OpenBeken's toolchain unpacks
+    so): a scenario started over what is left would fail for that reason alone."""
+    def writable_then(remove, path, _exc):
+        os.chmod(Path(path).parent, 0o700)
+        remove(path)
+    if not folder.exists():
+        return
+    try:
+        shutil.rmtree(folder, onerror=writable_then)
+    except OSError as exc:
+        raise RuntimeError(f"cannot remove {folder}, so cannot start from a clean device: {exc}. "
+                           "If a container left it owned by root, chown it through one.") from exc
+
+
 def state(instance: int | None = None) -> Path:
     """A device's state: beken-emu.sh's, or with --instance N its Nth's."""
     return BEKEN / ("state" if instance is None else f"state-{instance}")
