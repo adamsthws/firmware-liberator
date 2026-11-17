@@ -1998,12 +1998,17 @@ class WorkingTests(OutputTestCase):
             output.start(self.log, verbose=False)   # its ticker started; no finish()
         self.test_nothing_is_drawn_where_the_screen_is_not_a_terminal()
 
-    def test_the_report_being_put_together_is_shown_then_taken_away(self):
+    def drawn_by(self, wait):
+        """The screen while a wait outside any stage has lasted `wait`
+        seconds, and once it is over."""
+        clock = [100.0]
+
         def body():
             with mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
                 output.show("Conversion complete!")
                 with output.working("Generating your report..."):
                     output.say("Checking the relay through eWeLink...")   # logged only
+                    clock[0] += wait
                     output._tick()
                     seen.append(rendered(screen.getvalue()))
                 output.tell("")
@@ -2011,11 +2016,23 @@ class WorkingTests(OutputTestCase):
 
         seen = []
         screen = FakeTerminal()
-        with mock.patch.object(output, "_tick_forever"):   # drawn here, not by the ticker
+        with mock.patch.object(output, "_tick_forever"), \
+                mock.patch.object(output.time, "monotonic", side_effect=lambda: clock[0]):   # drawn here, not by the ticker
             text, log = self.run_with(screen, False, body)
-        self.assertEqual(seen[0][-2:], ["", "Generating your report... |"])   # a spinner, a blank row above
-        self.assertEqual(rendered(text), ["Conversion complete!", "", "Please share how it went!"])
+        return seen[0], rendered(text), log
+
+    def test_the_report_being_put_together_is_shown_then_taken_away(self):
+        during, after, log = self.drawn_by(output.WORKING_AFTER)
+        self.assertEqual(during[-2], "")   # a blank row above
+        self.assertRegex(during[-1], r"^Generating your report\.\.\. [|/\\-]$")   # a spinner
+        self.assertEqual(after, ["Conversion complete!", "", "Please share how it went!"])
         self.assertNotIn("Generating", log)
+
+    def test_a_wait_over_at_once_shows_nothing(self):
+        # Seen: a readout's report, made in no time, flashed its line.
+        during, after, _ = self.drawn_by(output.WORKING_AFTER / 2)
+        self.assertEqual(during, ["Conversion complete!"])
+        self.assertEqual(after, ["Conversion complete!", "", "Please share how it went!"])
 
     def test_a_run_ended_just_after_its_clock_was_drawn_leaves_no_gap_above_the_next_ones_first_line(self):
         def ended_after_a_wait():

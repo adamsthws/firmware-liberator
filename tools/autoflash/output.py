@@ -110,6 +110,7 @@ class _State:
     notice_rows = 0                   # rows of it on screen now
     working: str | None = None        # a wait outside any stage, its spinner drawn (working())
     working_started = 0.0
+    working_drawn = False             # drawn yet: not until it has lasted WORKING_AFTER
     paused = False                    # waiting for the keyboard: draw nothing
     held = False                      # between questions that belong together: no clock
     ticker: threading.Thread | None = None
@@ -763,31 +764,33 @@ def hold():
             _s.held = before
 
 
+# A wait outside any stage shorter than this shows nothing (working): its
+# line would only flash.
+WORKING_AFTER = 0.5
+
+
 @contextlib.contextmanager
 def working(text: str):
     """A wait outside any stage - the report being put together after the
     last one, a readout's - shown as `text` and the stages' spinner on a row
-    of its own, below a blank one, and taken away once it is over.  On a
-    terminal in concise mode only: elsewhere, or within a stage, whose own
-    spinner turns, `text` is said as a line, as any other."""
+    of its own, below a blank one, once it has lasted WORKING_AFTER, and
+    taken away once it is over.  On a terminal in concise mode only:
+    elsewhere, or within a stage, whose own spinner turns, `text` is said as
+    a line, as any other."""
     with _lock:
         shown = _s.concise and _s.ticker is not None and _s.stage is None
     if not shown:
         say(text)
     with _lock:
         if shown:
-            _break()
-            if not _s.after_blank:
-                _print("")
-            _s.working, _s.working_started = text, time.monotonic()
-            _draw_working()
+            _s.working, _s.working_started, _s.working_drawn = text, time.monotonic(), False
     try:
         yield
     finally:
         with _lock:
             if shown:
                 _s.working = None
-                if _s.live and not _s.live_is_stage:
+                if _s.working_drawn and _s.live and not _s.live_is_stage:
                     sys.stdout.write("\r" + " " * _s.live + "\r")
                     sys.stdout.flush()
                     _s.live = 0
@@ -1219,6 +1222,13 @@ def _draw_stage() -> None:
 
 
 def _draw_working() -> None:
+    if time.monotonic() - _s.working_started < WORKING_AFTER:
+        return
+    if not _s.working_drawn:
+        _break()
+        if not _s.after_blank:
+            _print("")
+        _s.working_drawn = True
     frames = spinner_frames()
     spinner = frames[int((time.monotonic() - _s.working_started) / SPIN_EVERY) % len(frames)]
     line = _clip(f"{MARGIN}{_s.working} {spinner} ")

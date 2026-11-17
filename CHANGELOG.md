@@ -40,6 +40,8 @@ check.
   spinner while the readout is sent, which can take a minute or two; before, it
   stood still and looked stuck. The report at the end is made under
   "Generating your report...", as a conversion's is.
+- A wait between stages, such as "Generating your report...", is shown only
+  once it has lasted a moment: one over at once no longer flashes its line.
 - A readout that could not be sent says why in plain words ("this computer
   could not reach the website. Check its internet connection", not
   "<urlopen error [Errno 113] No route to host>"), then its report; where it
