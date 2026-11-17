@@ -1,5 +1,9 @@
 {
  "about": "A readout of an S61 still on Sonoff's firmware, q typed at its go-ahead: stopped as asked, not failed, nothing sent to it",
+ "covers": [
+  "from-sonoff",
+  "declined-at-go-ahead"
+ ],
  "start": "fresh",
  "command": "readout",
  "minutes": 40,

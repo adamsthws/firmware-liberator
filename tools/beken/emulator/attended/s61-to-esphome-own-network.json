@@ -1,5 +1,10 @@
 {
  "about": "An S61 from Sonoff's firmware to ESPHome, the home Wi-Fi's password changed as ESPHome starts, so it cannot join with the details it found: it raises its own network, the computer joins it as the run asks, the new details are typed and sent through it, and ESPHome joins the home Wi-Fi with them: each of those answers is needed, as the step's notes are gone from the final screen",
+ "covers": [
+  "from-sonoff",
+  "home-wifi-changed",
+  "own-network"
+ ],
  "start": "fresh",
  "minutes": 60,
  "answers": [

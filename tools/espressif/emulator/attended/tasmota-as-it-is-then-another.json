@@ -1,5 +1,9 @@
 {
  "about": "Tasmota kept as it is (its meter checked), then \"What next\": another device, quit at its first question",
+ "covers": [
+  "kept-as-it-is",
+  "what-next-another"
+ ],
  "start": "stub-suite-tasmota",
  "answers": [
   {

@@ -1,5 +1,8 @@
 {
  "about": "An S61: the window closed (SIGHUP) as the firmware question waits, its notes above it: the run stops, the question and its notes taken off, nothing left under the stage's line",
+ "covers": [
+  "stopped-at-question-closed"
+ ],
  "start": "fresh",
  "minutes": 30,
  "answers": [

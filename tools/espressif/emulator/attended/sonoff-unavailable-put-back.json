@@ -1,5 +1,9 @@
 {
  "about": "Back to Sonoff with no backup, its firmware not to be had (simulated): put back on Tasmota, not left part way",
+ "covers": [
+  "back-to-sonoff",
+  "back-to-sonoff-put-back"
+ ],
  "start": "stub-suite-tasmota-nobackup",
  "args": [
   "--simulate-no-sonoff-firmware"

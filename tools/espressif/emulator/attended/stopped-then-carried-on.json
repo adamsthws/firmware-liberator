@@ -1,5 +1,9 @@
 {
  "about": "Ctrl-C as Tasmota is left for ESPHome, q at the countdown: stopped after that stage; run again, \"did not finish\" offers it back, and it carries on to the end",
+ "covers": [
+  "from-converted",
+  "stopped-then-run-again"
+ ],
  "start": "stub-suite-tasmota",
  "answers": [
   {

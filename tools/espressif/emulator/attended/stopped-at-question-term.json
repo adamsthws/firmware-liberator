@@ -1,5 +1,8 @@
 {
  "about": "The run stopped by the computer (SIGTERM) as the firmware question waits: the question and its notes taken off, the stage stopped",
+ "covers": [
+  "stopped-at-question-term"
+ ],
  "start": "stub-suite-tasmota",
  "minutes": 15,
  "answers": [

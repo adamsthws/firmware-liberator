@@ -1,5 +1,9 @@
 {
  "about": "Back to Sonoff from ESPHome with no backup, no Sonoff identity kept and none in the account (simulated): found only part way, so put back on ESPHome, not left part way",
+ "covers": [
+  "back-to-sonoff",
+  "back-to-sonoff-put-back"
+ ],
  "start": "stub-suite-tasmota-nobackup",
  "prep": [
   [

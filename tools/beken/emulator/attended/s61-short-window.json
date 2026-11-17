@@ -1,5 +1,8 @@
 {
  "about": "An S61, in a window 24 rows tall: asked to be made taller, gone on with a key, then quit at the first question",
+ "covers": [
+  "short-window"
+ ],
  "start": "fresh",
  "size": "100x24",
  "minutes": 20,

@@ -1,5 +1,10 @@
 {
  "about": "An S61 from Sonoff's firmware to ESPHome, its bootloader refusing the ESPHome image (simulated) each of the six times it is sent in a run: the run fails, then What next tries the device again, which carries on from where it stopped and converts it",
+ "covers": [
+  "from-sonoff",
+  "image-refused",
+  "failed-then-tried-again"
+ ],
  "start": "fresh",
  "minutes": 90,
  "args": [

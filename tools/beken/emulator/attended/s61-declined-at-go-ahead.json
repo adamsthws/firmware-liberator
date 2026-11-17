@@ -1,5 +1,10 @@
 {
  "about": "An S61 from Sonoff's firmware, the account first typed as a phone number without its country code (hinted at), then q typed at the go-ahead before the first write: stopped as asked, not failed, nothing written",
+ "covers": [
+  "from-sonoff",
+  "declined-at-go-ahead",
+  "answer-retyped"
+ ],
  "start": "fresh",
  "minutes": 40,
  "answers": [

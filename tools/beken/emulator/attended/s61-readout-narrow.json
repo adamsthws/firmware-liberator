@@ -1,5 +1,10 @@
 {
  "about": "A readout of an S61 on Sonoff's firmware in a window 80 wide, the eWeLink sign-in typed",
+ "covers": [
+  "from-sonoff",
+  "accepted",
+  "narrow-window"
+ ],
  "start": "fresh",
  "command": "readout",
  "size": "80x40",

@@ -1,5 +1,9 @@
 {
  "about": "An S61 from Sonoff's firmware to OpenBeken, Ctrl-C as the new firmware is sent, q at the countdown: stopped after that stage, before the go-ahead, which an S61 is asked later; run again, \"did not finish\" offers it back, and it carries on to the end",
+ "covers": [
+  "from-sonoff",
+  "stopped-then-run-again"
+ ],
  "start": "fresh",
  "answers": [
   {

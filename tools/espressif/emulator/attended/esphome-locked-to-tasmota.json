@@ -1,5 +1,10 @@
 {
  "about": "From an ESPHome with a web login and only encrypted updates to Tasmota: the login and the API encryption key each typed wrongly first",
+ "covers": [
+  "from-converted",
+  "device-password",
+  "answer-retyped"
+ ],
  "start": "stub-suite-esphome",
  "prep": [
   [

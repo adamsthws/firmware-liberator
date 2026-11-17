@@ -1,5 +1,8 @@
 {
  "about": "An earlier release of this project's ESPHome, updated: its option says so",
+ "covers": [
+  "update"
+ ],
  "start": "stub-suite-esphome-earlier",
  "answers": [
   {

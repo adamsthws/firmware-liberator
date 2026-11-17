@@ -1,5 +1,8 @@
 {
  "about": "Ctrl-C typed at the firmware question: the question and its notes taken off, the stage stopped, how to carry on said",
+ "covers": [
+  "stopped-at-question-ctrl-c"
+ ],
  "start": "stub-suite-tasmota",
  "minutes": 15,
  "answers": [

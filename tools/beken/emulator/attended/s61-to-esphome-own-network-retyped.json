@@ -1,5 +1,11 @@
 {
  "about": "An S61 from Sonoff's firmware to ESPHome, the home Wi-Fi's password changed as ESPHome starts; through its own network the password is typed wrong first, so it does not join, the run says so and asks again, and the right one is sent through it: the second try",
+ "covers": [
+  "from-sonoff",
+  "home-wifi-changed",
+  "own-network",
+  "answer-retyped"
+ ],
  "start": "fresh",
  "minutes": 75,
  "answers": [

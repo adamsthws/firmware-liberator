@@ -1,0 +1,92 @@
+{
+ "about": "An S61 from Sonoff's firmware to OpenBeken, its bootloader refusing the OpenBeken sent to it each of the three times a run sends it (simulated: an S61's run sends a refused image again, after the device is switched off and on, up to runner.GO_BACK_LIMIT times): the run fails, then What next tries the device again, which carries on from where it stopped and converts it",
+ "covers": [
+  "from-sonoff",
+  "image-refused",
+  "failed-then-tried-again"
+ ],
+ "start": "fresh",
+ "minutes": 60,
+ "args": [
+  "--simulate-bad-image",
+  "B2:3"
+ ],
+ "answers": [
+  {
+   "when": "Which firmware should the device have",
+   "type": "1\r"
+  },
+  {
+   "when": "Once it is back on, choose",
+   "type": "2\r",
+   "times": 6,
+   "optional": true
+  },
+  {
+   "when": "What next",
+   "type": "1\r"
+  },
+  {
+   "when": "What next",
+   "type": "q\r"
+  },
+  {
+   "when": "Which device should be read out",
+   "type": "1\r",
+   "optional": true
+  },
+  {
+   "when": "Press any key",
+   "type": "x",
+   "times": 3,
+   "optional": true
+  },
+  {
+   "when": "Which device is this run for",
+   "type": "1\r",
+   "optional": true
+  },
+  {
+   "when": "This computer's password \\(for sudo\\)",
+   "type": "autoflash\r",
+   "times": 6,
+   "optional": true
+  },
+  {
+   "when": "Type .+ to go ahead",
+   "type": "PROCEED\r",
+   "times": 3,
+   "optional": true
+  },
+  {
+   "when": "Which eWeLink account is this device in",
+   "type": "2\r",
+   "optional": true
+  },
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r",
+   "optional": true
+  },
+  {
+   "when": "eWeLink password for",
+   "type": "made-up-password\r",
+   "optional": true
+  },
+  {
+   "when": "\\[[Yy]/n\\]",
+   "type": "n\r",
+   "optional": true
+  },
+  {
+   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
+   "type": "y\r",
+   "times": 3,
+   "optional": true
+  }
+ ],
+ "expect": {
+  "exit": 0,
+  "result": "Converted"
+ }
+}

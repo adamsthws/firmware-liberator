@@ -1,5 +1,10 @@
 {
  "about": "From Sonoff's firmware to Tasmota in a window 80 wide, the installer refusing the Tasmota sent to it (simulated): the run fails, its report then the way to open an issue, the report on the clipboard",
+ "covers": [
+  "from-sonoff",
+  "narrow-window",
+  "image-refused"
+ ],
  "start": "fresh",
  "size": "80x40",
  "minutes": 40,

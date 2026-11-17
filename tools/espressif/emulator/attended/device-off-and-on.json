@@ -1,5 +1,10 @@
 {
  "about": "From Sonoff's firmware to Tasmota in a window 80 wide, the device switched off as its interim firmware goes on, and on again once the run says to: it carries on to the end, what it said while waiting taken off",
+ "covers": [
+  "from-sonoff",
+  "narrow-window",
+  "device-switched-off"
+ ],
  "start": "fresh",
  "size": "80x40",
  "minutes": 40,

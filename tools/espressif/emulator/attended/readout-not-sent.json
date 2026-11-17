@@ -1,5 +1,9 @@
 {
  "about": "A readout of a device on Sonoff's firmware that cannot be sent, nothing answering where it goes: kept, to send later",
+ "covers": [
+  "from-sonoff",
+  "not-sent"
+ ],
  "start": "fresh",
  "command": "readout",
  "api_down": true,

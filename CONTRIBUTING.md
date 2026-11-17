@@ -144,7 +144,11 @@ eWeLink accounts and devices' identities.
   applies to, in the same way: the same sources tried in the same order, the
   same questions asked, the same things checked, logged and reported, with
   parallel code named and laid out alike. Where a family cannot do the same,
-  say why in a comment beside the difference.
+  say why in a comment beside the difference. An attended scenario is tried
+  in every cell, a conversion and a readout on each family, through the
+  situation it names (`covers`), or `NOT_EVERYWHERE` says which cells it is
+  for and why; the unit tests fail on a cell left out
+  ([more](docs/testing.md#attended-runs)).
 - Docs, comments and commit messages match the existing ones: plain,
   compact sentences saying what something does and why.
 

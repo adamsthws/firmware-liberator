@@ -1,5 +1,10 @@
 {
  "about": "A readout of a device on Sonoff's firmware, accepted by the API beside the emulator; then read out again with the API holding enough of its product: not needed",
+ "covers": [
+  "from-sonoff",
+  "accepted",
+  "not-needed"
+ ],
  "start": "fresh",
  "command": "readout",
  "minutes": 40,

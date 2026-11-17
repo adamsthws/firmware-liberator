@@ -1,5 +1,11 @@
 {
  "about": "From Sonoff's firmware to ESPHome, the Wi-Fi typed (--wifi), its password mistyped once; sudo remembering nothing, so this computer's password is asked again at the end",
+ "covers": [
+  "from-sonoff",
+  "wifi-typed",
+  "answer-retyped",
+  "sudo-asked-again"
+ ],
  "start": "fresh",
  "prep": [
   "sudo forgets"

@@ -1,5 +1,9 @@
 {
  "about": "Told the device is still on Sonoff's firmware when it runs Tasmota: not found, so its address typed - not an address, then one nothing answers at, then one that is not the device - then quit",
+ "covers": [
+  "address-typed",
+  "answer-retyped"
+ ],
  "start": "stub-suite-tasmota",
  "minutes": 20,
  "answers": [

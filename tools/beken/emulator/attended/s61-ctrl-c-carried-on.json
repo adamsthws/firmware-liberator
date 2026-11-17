@@ -1,5 +1,9 @@
 {
  "about": "An S61 from Sonoff's firmware to OpenBeken, Ctrl-C as the new firmware is sent, then Enter at the countdown: the run carries on",
+ "covers": [
+  "from-sonoff",
+  "ctrl-c-carried-on"
+ ],
  "start": "fresh",
  "answers": [
   {

@@ -1,5 +1,8 @@
 {
  "about": "An S61 from Sonoff's firmware to OpenBeken, the eWeLink sign-in typed",
+ "covers": [
+  "from-sonoff"
+ ],
  "start": "fresh",
  "minutes": 60,
  "answers": [

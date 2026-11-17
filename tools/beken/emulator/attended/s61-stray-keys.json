@@ -1,5 +1,10 @@
 {
  "about": "An S61 from Sonoff's firmware to OpenBeken in a window 80 wide, keys pressed by accident throughout - letters, the arrows, function keys, Enter - as stages run, as the report is put together, and before each answer: none shows, moves the cursor or answers a question",
+ "covers": [
+  "from-sonoff",
+  "narrow-window",
+  "stray-keys"
+ ],
  "start": "fresh",
  "size": "80x40",
  "minutes": 60,

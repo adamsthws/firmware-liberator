@@ -1,5 +1,9 @@
 {
  "about": "A readout of an S61 still on Sonoff's firmware, the eWeLink sign-in typed",
+ "covers": [
+  "from-sonoff",
+  "accepted"
+ ],
  "start": "fresh",
  "command": "readout",
  "minutes": 60,

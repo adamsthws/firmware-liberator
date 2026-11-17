@@ -1,5 +1,8 @@
 {
  "about": "A window 24 rows tall: asked to be made taller, gone on with a key, then quit",
+ "covers": [
+  "short-window"
+ ],
  "start": "stub-suite-tasmota",
  "size": "100x24",
  "minutes": 10,

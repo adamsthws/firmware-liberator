@@ -199,6 +199,17 @@ class JudgeTests(unittest.TestCase):
 
 
 class RunTests(unittest.TestCase):
+    def test_a_beken_device_from_a_saved_state_is_waited_for_until_it_is_up(self):
+        import tempfile
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            leases = iter(["", "", "1 2 198.18.61.50 openbeken-cdef *"])
+            with mock.patch.object(attended_suite, "docker", side_effect=lambda *a: SimpleNamespace(
+                    stdout=next(leases, "1 2 198.18.61.50 x *"))), mock.patch.object(attended_suite.time, "sleep"):
+                self.assertFalse(attended_suite.beken_ready(61, Path(tmp), wait=0.05))   # no CA yet
+                Path(tmp, "ca.crt").write_text("ca", encoding="utf-8")
+                self.assertTrue(attended_suite.beken_ready(61, Path(tmp)))
+
     def test_a_readout_scenario_runs_a_readout(self):
         command = attended_suite.wrapper(61, {"command": "readout"}, "--", "--new", mac="12:34:56:ab:cd:ef")
         self.assertIn("--readout", command[:command.index("--")])
@@ -207,23 +218,37 @@ class RunTests(unittest.TestCase):
     def test_the_api_has_enough_of_the_devices_product_where_the_scenario_says(self):
         from unittest import mock
         with mock.patch("tools.autoflash.records.read_device", return_value={"product_model": "s60tpg"}):
-            environment = attended_suite.run_environment({"api_enough": True}, "12:34:56:ab:cd:ef")
+            environment = attended_suite.run_environment({"api_enough": True}, "espressif", "12:34:56:ab:cd:ef")
             self.assertEqual(environment["AUTOFLASH_API_ENOUGH"], "S60TPG")
             with mock.patch.dict("os.environ", {}, clear=False):
                 import os
                 os.environ.pop("AUTOFLASH_API_ENOUGH", None)
-                self.assertNotIn("AUTOFLASH_API_ENOUGH", attended_suite.run_environment({}, "12:34:56:ab:cd:ef"))
+                self.assertNotIn("AUTOFLASH_API_ENOUGH", attended_suite.run_environment({}, "espressif", "12:34:56:ab:cd:ef"))
 
     def test_a_readout_where_the_api_is_down_goes_where_nothing_answers_with_no_api_started(self):
         from unittest import mock
         scenario = {"command": "readout", "api_down": True}
         with mock.patch("tools.autoflash.records.read_device", return_value={}):
-            self.assertEqual(attended_suite.run_environment(scenario, "12:34:56:ab:cd:ef")["AUTOFLASH_READOUT_URL"],
+            self.assertEqual(attended_suite.run_environment(scenario, "espressif", "12:34:56:ab:cd:ef")["AUTOFLASH_READOUT_URL"],
                              attended_suite.API_DOWN)
         command = attended_suite.wrapper(61, scenario, "--", "--new", mac="12:34:56:ab:cd:ef")
         self.assertIn("--no-api", command[:command.index("--")])
         self.assertEqual(attended_suite.api_environment({"command": "readout"}), {})
         self.assertNotIn("--no-api", attended_suite.wrapper(61, {"command": "readout"}, mac="12:34:56:ab:cd:ef"))
+
+    def test_an_accounts_other_devices_reach_either_familys_stub(self):
+        import json
+        import tempfile
+        from tools.ewelink.stub_cloud import accounts
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(attended_suite, "RESULTS", Path(tmp)), \
+                mock.patch("tools.autoflash.records.read_device", return_value={}):
+            for family in attended_suite.SCENARIOS:
+                with self.subTest(family=family):
+                    environment = attended_suite.run_environment({"account": "mixed"}, family, None)
+                    listed = Path(environment["AUTOFLASH_EMU_STUB_OTHERS"])
+                    self.assertEqual(json.loads(listed.read_text(encoding="utf-8")), accounts.ACCOUNTS["mixed"])
+                    with mock.patch.dict("os.environ", {"AUTOFLASH_EMU_STUB_OTHERS": str(listed)}):
+                        self.assertNotIn("AUTOFLASH_EMU_STUB_OTHERS", attended_suite.run_environment({}, family, None))
 
     def test_the_stub_lists_the_device_under_its_product_on_a_checkout_with_no_runs(self):
         # Seen on a fresh checkout: the stub listed no product, and the readout
@@ -233,7 +258,7 @@ class RunTests(unittest.TestCase):
                 mock.patch.dict("os.environ", {}, clear=False):
             import os
             os.environ.pop("AUTOFLASH_EMU_STUB_PRODUCT_MODEL", None)
-            environment = attended_suite.run_environment({}, "12:34:56:ab:cd:ef")
+            environment = attended_suite.run_environment({}, "espressif", "12:34:56:ab:cd:ef")
         self.assertEqual(environment["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], "S60TPG")
 
 
@@ -297,7 +322,13 @@ class ReadoutVerdictTests(unittest.TestCase):
             run = state / "work/captures/devices/12-34-56-ab-cd-ef/runs/1/run.log"
             run.parent.mkdir(parents=True)
             folder.mkdir()
-            run.write_text("=== run started ===\n[10:00:00] --- Stage 7 - Saving the readout\n", encoding="utf-8")
+            run.write_text("=== run started ===\n[10:00:00] --- Stage 1 - Querying eWeLink for devices\n"
+                           "[10:00:09] --- Stage 7 - Saving the readout\n", encoding="utf-8")
+            # A conversion prep made first, not a readout of the sitting.
+            converted = state / "work/captures/devices/12-34-56-ab-cd-ef/runs/0/run.log"
+            converted.parent.mkdir(parents=True)
+            converted.write_text("=== run started ===\n[09:00:00] --- Stage 1 - Confirming prerequisites\n",
+                                 encoding="utf-8")
             if kept:
                 (run.parent / "readout.tar").write_bytes(b"tar")
             (state / "api").mkdir()
@@ -335,6 +366,43 @@ class ReadoutVerdictTests(unittest.TestCase):
         self.assertEqual(self.verdicts(down, kept=True, code=1), [])
         self.assertEqual(self.verdicts(down, code=1), ["FAIL-READOUT"])
         self.assertEqual(self.verdicts(down, kept=True, whole=["no flash.bin.xz"], code=1), ["FAIL-READOUT"])
+
+    def test_a_device_converted_first_or_saved_so_is_read_out_its_first_stage_alone(self):
+        self.assertEqual(attended_suite.firmware_at_start({"prep": [["convert", "tasmota"]]}), "tasmota")
+        self.assertEqual(attended_suite.firmware_at_start({"start": "openbeken"}), "openbeken")
+        self.assertEqual(attended_suite.firmware_at_start({"start": "stub-suite-esphome"}), "esphome")
+        self.assertIsNone(attended_suite.firmware_at_start({"start": "fresh", "prep": ["sudo forgets"]}))
+
+    def test_a_scenarios_first_run_is_judged_from_its_apis_start_its_second_from_where_the_first_left_it(self):
+        # Seen: an S61's readout judged from where an earlier scenario's API log
+        # had ended - cut off its own first requests - as the device's state,
+        # API and all, is made anew for each scenario.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp, "state")
+            (state / "api").mkdir(parents=True)
+            (state / "api/requests.log").write_text("x" * 500, encoding="utf-8")   # an earlier scenario's
+            scenario = {"command": "readout", "answers": [], "expect": {}, "again": {"answers": [], "expect": {}}}
+            asked = []
+
+            def first(*_args, **_kwargs):
+                (state / "api/requests.log").write_text("y" * 120, encoding="utf-8")   # its API anew
+                return 0, Path(tmp)
+
+            def again(*_args, **_kwargs):
+                with open(state / "api/requests.log", "a", encoding="utf-8") as log:
+                    log.write("z" * 80)
+                return 0, Path(tmp)
+            with mock.patch.object(attended_suite, "state_of", return_value=state), \
+                    mock.patch.object(attended_suite, "run_beken", side_effect=first), \
+                    mock.patch.object(attended_suite, "run_again_beken", side_effect=again), \
+                    mock.patch.object(attended_suite, "judged", return_value=[]), \
+                    mock.patch.object(attended_suite, "readout_verdicts",
+                                      side_effect=lambda *a, **k: asked.append(k.get("asked", a[8] if len(a) > 8 else 0))
+                                      or []), \
+                    mock.patch.object(attended_suite.emulator_stats, "attended_run"):
+                attended_suite.run_one(61, "x", "beken", scenario, Path(tmp, "results"), None)
+        self.assertEqual(asked, [0, 120])
 
     def test_a_conversion_has_no_readout_to_judge(self):
         self.assertEqual(self.verdicts({}), [])
@@ -420,14 +488,47 @@ class ScenarioTests(unittest.TestCase):
                                     or answer.get("anywhere") and shows_as_a_stage(pattern, texts),
                                     f"{name}: nothing the tool shows says {answer['when']!r}")
 
+    def test_every_situation_is_covered_in_every_cell_it_is_for(self):
+        # A conversion and a readout, in each chip family: a situation tried in
+        # one is tried in each, or attended_suite.NOT_EVERYWHERE says why not.
+        self.assertEqual(attended_suite.coverage_gaps(attended_suite.scenarios()), [])
+        covered = {situation for _, scenario in attended_suite.scenarios().values()
+                   for situation in scenario.get("covers", [])}
+        self.assertLessEqual(set(attended_suite.NOT_EVERYWHERE), covered, "a reason for a situation no scenario has")
+        for situation, (within, why) in attended_suite.NOT_EVERYWHERE.items():
+            self.assertTrue(why and within, situation)
+            self.assertLessEqual(set(within), {"conversion", "readout", *attended_suite.SCENARIOS}, situation)
+
+    def test_a_key_one_family_alone_takes_is_said_by_that_familys_scenarios_alone(self):
+        for name, (family, scenario) in attended_suite.scenarios().items():
+            for key in scenario:
+                if key in attended_suite.ONE_FAMILY_KEYS:
+                    with self.subTest(scenario=name, key=key):
+                        self.assertEqual(family, attended_suite.ONE_FAMILY_KEYS[key][0])
+
+    def test_both_families_runners_take_a_scenarios_settings_from_one_place(self):
+        # So a setting - api_enough, api_down, again, start - reaches both.
+        import ast
+        tree = ast.parse(Path(attended_suite.__file__).read_text(encoding="utf-8"))
+        calls = {node.name: {call.func.id for call in ast.walk(node)
+                             if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)}
+                 for node in tree.body if isinstance(node, ast.FunctionDef)}
+        self.assertIn("api_options", calls["wrapper"])
+        self.assertIn("api_options", calls["beken_computer"])
+        for runner, shared in (("run_espressif", {"run_environment", "wrapper"}),
+                               ("run_again", {"run_environment", "wrapper"}),
+                               ("run_beken", {"run_environment", "beken_computer"}),
+                               ("run_again_beken", {"run_environment", "beken_computer"})):
+            with self.subTest(runner=runner):
+                self.assertLessEqual(shared, calls[runner])
+
     def test_every_scenario_says_what_it_shows_and_how_it_ends(self):
         for name, (_, scenario) in attended_suite.scenarios().items():
             with self.subTest(scenario=name):
                 self.assertTrue(scenario.get("about"))
                 self.assertIn("expect", scenario)
-                self.assertLessEqual(set(scenario), {"about", "start", "prep", "args", "size", "minutes",
-                                                     "answers", "expect", "command", "again", "api_enough",
-                                                     "api_down"})
+                self.assertLessEqual(set(scenario), set(attended_suite.KEYS))
+                self.assertTrue(scenario.get("covers"), "say which situations it covers (attended_suite.NOT_EVERYWHERE)")
                 for expect in (scenario["expect"], scenario.get("again", {}).get("expect", {})):
                     self.assertLessEqual(set(expect), {"exit", "result", "screen", "shows", "never"})
                     for wanted in expect.get("shows", []) + expect.get("never", []):

@@ -1,5 +1,9 @@
 {
  "about": "Ctrl-C part way through leaving Tasmota for ESPHome, then Enter at the countdown: the run carries on",
+ "covers": [
+  "from-converted",
+  "ctrl-c-carried-on"
+ ],
  "start": "stub-suite-tasmota",
  "answers": [
   {

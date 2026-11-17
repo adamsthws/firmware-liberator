@@ -1,5 +1,8 @@
 {
  "about": "An S61: the run stopped by the computer (SIGTERM) as the firmware question waits: the question and its notes taken off, the stage stopped",
+ "covers": [
+  "stopped-at-question-term"
+ ],
  "start": "fresh",
  "minutes": 30,
  "answers": [

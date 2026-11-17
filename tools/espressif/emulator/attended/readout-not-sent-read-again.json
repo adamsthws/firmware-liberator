@@ -1,5 +1,10 @@
 {
  "about": "A readout that cannot be sent, nothing answering where it goes, then read out again from What next: the same device, not asked which, and kept again",
+ "covers": [
+  "from-sonoff",
+  "not-sent",
+  "failed-then-tried-again"
+ ],
  "start": "fresh",
  "command": "readout",
  "api_down": true,

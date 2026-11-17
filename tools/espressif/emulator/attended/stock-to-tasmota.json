@@ -1,5 +1,9 @@
 {
  "about": "From Sonoff's firmware to Tasmota: this computer's password and PROCEED each answered wrongly first",
+ "covers": [
+  "from-sonoff",
+  "answer-retyped"
+ ],
  "start": "fresh",
  "answers": [
   {

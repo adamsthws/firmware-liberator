@@ -907,6 +907,15 @@ for a Beken device, found by its hardware address as every device is.
   and judged by what the API was asked and kept, as the Espressif suite's is
   (FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-NOT-STORED, FAIL-READOUT,
   FAIL-KEPT-UNSENT), copied beside the scenario's log (`...-api/`).
+- **A readout of every device** (`sonoff>readout-all`), the same scenarios as
+  the Espressif suite's - each made-up account of
+  `tools/ewelink/stub_cloud/accounts.py`, listed by the S61's stub beside it,
+  and the mixed one with the device switched off or the computer crashing in
+  the S61's read, run again until a run finishes - each run judged as that
+  suite judges one, by the part of the API's `requests.log` it made (the API
+  goes on beside the device between runs), copied beside the scenario's log
+  (`...-api-N/`). `tests/beken/emulator/test_fault_suite.py` holds the two
+  suites' lists of them to one another.
 - A readout of a device on OpenBeken must keep its first stage alone, as the
   Espressif suite's of a device on Tasmota (FAIL-READOUT, FAIL-EXIT), serving
   the device nothing (FAIL-SENT), which must still answer on OpenBeken
@@ -1032,7 +1041,24 @@ question; a scenario can be a readout (`"command": "readout"`), and have the
 API beside the emulator hold enough of the device's product already
 (`"api_enough": true`), so its readout is not needed, or have nothing
 answering where its readout goes (`"api_down": true`), so it cannot be sent
-and is kept. A run is made to fail
+and is kept, or be a readout of every device (`"args": ["--all"]`) in a
+made-up account the stub lists beside the device (`"account"`, one of
+`tools/ewelink/stub_cloud/accounts.py`'s). An S61's starts fresh from the dump
+or from a device the Beken fault suite's `prep` saved (`"start"`).
+
+**Tried alike everywhere.** Each scenario names the situations it tries
+(`"covers"`): a window too short, a question stopped at with Ctrl-C, the
+device switched off part way, a readout not sent, and so on. Each one is
+to be tried in every cell - a conversion and a readout, on an S60 and on an
+S61 - and `tests/espressif/emulator/test_attended_suite.py` fails on a cell
+without it, unless `NOT_EVERYWHERE` in `attended_suite.py` names the cells it
+is for and says why (an update is a conversion's alone; only the Beken
+emulator's router can change the Wi-Fi's password). A situation added in
+one cell so asks to be added in the others. Every scenario key is taken by
+both families' runners, through one `run_environment`, but those
+`ONE_FAMILY_KEYS` names with why (`prep`, the S60's alone).
+
+A run is made to fail
 as a refused image fails it, for its failed ending to be seen, with the
 run's option `--simulate-bad-image STEP[:N]`: the image step STEP sends,
 spoilt the first N times - an S61's at B2, J2 or O1, refused by its
