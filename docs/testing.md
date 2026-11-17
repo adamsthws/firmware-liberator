@@ -16,8 +16,10 @@ python3 tests/run.py
 ```
 
 This runs the tests side by side, in about 11 seconds on six cores, where one
-after another (`python3 -m unittest discover -s tests`) they take a minute,
-mostly waiting. Only what fails is shown, with what the test printed.
+after another (`python3 -m unittest discover -b -s tests`) they take a minute,
+mostly waiting. Only what fails is shown, with what the test printed: `-b`
+does the same for unittest, whose tests otherwise print the tool's own lines
+among its dots.
 `python3 tests/run.py autoflash.test_output` runs one module (or a class, or
 a test), `python3 tests/run.py espressif` one directory's tests, and
 `--shuffle` all of them in a random order, to find a test that passes only
@@ -120,7 +122,7 @@ tested there.
 into its summary by file; on your computer, with what each file misses:
 
 ```sh
-.venv/bin/python -m coverage run --branch --source=tools -m unittest discover -s tests
+.venv/bin/python -m coverage run --branch --source=tools -m unittest discover -b -s tests
 .venv/bin/python -m coverage report --sort=cover -m
 ```
 

@@ -212,7 +212,7 @@ jobs:
         id: unit
         continue-on-error: true
         run: |
-          PYTHONUNBUFFERED=1 .venv/bin/python -m unittest discover -s tests > unit.txt 2>&1
+          PYTHONUNBUFFERED=1 .venv/bin/python -m unittest discover -b -s tests > unit.txt 2>&1
       - name: OpenBeken's six scenarios on the S61 in the Beken emulator
         if: steps.branch.outputs.made != 'yes' && steps.update.outputs.changed == 'yes' && env.OPENBEKEN != ''
         id: openbeken

@@ -19,7 +19,7 @@ computing, so each test runs on its own in a pool of more processes than
 there are cores, the longest first - as long as each took the last time, kept
 in captures/.test-times.json. What a passing test prints is not
 shown, as with unittest's --buffer; a failing one's is, with its traceback.
-The workflows still run `python -m unittest discover -s tests`, under coverage.
+The workflows still run `python -m unittest discover -b -s tests`, under coverage.
 
 The longest test takes about 10 s, so one still running after --timeout is
 stuck: it is stopped, with where each of its threads was, reported as an

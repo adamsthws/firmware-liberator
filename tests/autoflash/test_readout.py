@@ -207,9 +207,10 @@ class ProofTests(unittest.TestCase):
 
 class SendTests(unittest.TestCase):
     def setUp(self):
-        patch = mock.patch.object(readout, "PROOF_BITS", 8)  # the real work takes seconds
-        patch.start()
-        self.addCleanup(patch.stop)
+        # The real work takes seconds; what it says while it goes is the log's.
+        for patch in (mock.patch.object(readout, "PROOF_BITS", 8), mock.patch.object(output, "say")):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def test_posted_as_a_tar_and_its_reference_returned(self):
         got = {}
