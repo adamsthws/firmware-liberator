@@ -299,7 +299,9 @@ def device_at(macs: set[str]) -> Callable[[str], list[str]]:
         if mac:
             return [f"{address} is another device: its hardware address is not one eWeLink has for "
                     "this account's supported devices."]
-        return [f"Nothing answered at {address}: check the device is switched on, and the address."]
+        # It answered a ping (prompts.ask_ipv4), so something is there.
+        return [f"{address} answered, but its hardware address could not be read to tell it is your "
+                "device: check the address."]
     return check
 
 

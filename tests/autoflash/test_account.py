@@ -141,8 +141,12 @@ class TypedAddressTests(unittest.TestCase):
         problem = self.check("192.0.2.1", "aa:bb:cc:00:00:01")
         self.assertIn("192.0.2.1 is another device", problem[0])
 
-    def test_nothing_answering_is_said(self):
-        self.assertIn("Nothing answered at 192.0.2.99", self.check("192.0.2.99", None)[0])
+    def test_one_whose_hardware_address_cannot_be_read_is_not_taken_nor_said_silent(self):
+        # Seen in an attended run: the router, which had answered the ping
+        # just before, was said to be "Nothing answered".
+        problem = self.check("192.0.2.1", None)[0]
+        self.assertIn("192.0.2.1 answered, but its hardware address could not be read", problem)
+        self.assertNotIn("Nothing answered", problem)
 
 
 class AccountRecordTests(unittest.TestCase):

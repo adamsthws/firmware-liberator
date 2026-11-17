@@ -34,6 +34,9 @@ check.
 - Why an answer was not taken is a yellow warning marked `!`, as other
   warnings are. The note that a phone number needs its country code is shown
   only after a number typed without one.
+- An address you type for the device that answers, but whose hardware address
+  cannot be read to tell it is your device, is said to be so. Before, the tool
+  said nothing answered there.
 - A readout lists only the stages your device needs, numbered in turn: one
   read only in the first stage no longer shows "Reading the device's memory"
   and "Restoring Sonoff's firmware" as skipped. "Saving the readout" turns its
