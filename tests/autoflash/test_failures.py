@@ -123,6 +123,7 @@ class ClassifyTests(unittest.TestCase):
 
     def test_the_runners_own_words(self) -> None:
         self.assertEqual(failures.classify(runner.connection_lost(ConnectionResetError("reset"))), "device-lost")
+        self.assertEqual(failures.classify(runner.connection_lost(TimeoutError("timed out"))), "device-lost")
         self.assertEqual(failures.classify(runner.unexpected(KeyError("x"))), "crash")
         full = OSError(errno.ENOSPC, "No space left on device")
         self.assertEqual(failures.classify(runner.unexpected(full)), "no-room")
@@ -140,6 +141,9 @@ class ClassifyTests(unittest.TestCase):
                 "computer-network",
             "eWeLink could not be reached, and a device on Sonoff's firmware is found and converted through it. "
             "Nothing was written: check this computer's internet connection": "ewelink-unreachable",
+            # As errors.plainly says it, which would otherwise be the computer's network.
+            "this computer could not reach eWeLink. Check its internet connection": "ewelink-unreachable",
+            "eWeLink did not answer in time. Try again later": "ewelink-unreachable",
             "nothing answers at 192.0.2.50: check the device is switched on and on your Wi-Fi": "device-not-found",
             "the device at 192.0.2.50 did not answer within 30s": "device-no-answer",
             "the public dump fetched is not the one this tool knows (its hash differs): refusing it": "integrity",

@@ -384,9 +384,14 @@ def tell_how_to_carry_on() -> None:
 
 
 def connection_lost(exc: BaseException) -> str:
-    """A request the network or the device dropped: in full in the log, in a line on screen."""
+    """A request the network or the device dropped: in full in the log, in a
+    line on screen, in words someone can act on where there are any
+    (errors.plainly)."""
     output.log_only(traceback.format_exc().rstrip())
-    return f"the connection to the device was lost ({type(exc).__name__}: {exc})"
+    said = errors.plainly(exc, "the device", errors.CHECK_DEVICE)
+    if said == str(exc):
+        return f"the connection to the device was lost ({type(exc).__name__}: {exc})"
+    return f"the connection to the device was lost: {said}"
 
 
 def crash_site(exc: BaseException) -> str | None:

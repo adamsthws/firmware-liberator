@@ -309,6 +309,20 @@ class ReadWholeFlashTests(unittest.TestCase):
         self.assertLess(logged.index(("phase", {"phase": start})), logged.index(("phase", {"phase": end})))
         self.assertIn("Reading the device's memory...", logged)
 
+    def test_a_read_cut_off_says_why_plainly(self):
+        # As the Espressif readout says it (test_readout_espressif).
+        import contextlib
+        from tools.autoflash import errors, failures, output
+        with mock.patch.object(output, "working", side_effect=lambda text: contextlib.nullcontext()), \
+                mock.patch.object(output, "log_only"), mock.patch.object(output, "event"), \
+                mock.patch.object(output, "progress_clear"), \
+                mock.patch.object(rb.openbeken, "read_flash", side_effect=TimeoutError("timed out")), \
+                self.assertRaises(errors.Abort) as stopped:
+            rb.read_whole_flash(a_ctx(), "192.0.2.60")
+        self.assertIn("as its memory was read: the device did not answer in time. Try again later.",
+                      str(stopped.exception))
+        self.assertEqual(failures.classify(str(stopped.exception)), "device-lost")
+
 
 if __name__ == "__main__":
     unittest.main()

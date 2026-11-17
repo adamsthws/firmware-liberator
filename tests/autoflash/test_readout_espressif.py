@@ -203,6 +203,21 @@ class FirmwareOfTests(unittest.TestCase):
     def test_a_flash_with_no_table_has_none(self):
         self.assertEqual(readout_espressif.firmware_of(b"\xff" * 0x10000), {})
 
+    def test_a_read_that_does_not_come_through_says_why_plainly(self):
+        # As the Beken readout says it (test_readout_beken).
+        import contextlib
+        from types import SimpleNamespace
+        from tools.autoflash import errors, output
+        ctx = SimpleNamespace(state=mock.Mock())
+        with mock.patch.object(output, "working", side_effect=lambda text: contextlib.nullcontext()), \
+                mock.patch.object(output, "log_only"), mock.patch.object(output, "event"), \
+                mock.patch.object(output, "say") as said, \
+                mock.patch.object(readout_espressif.dump_stock_flash, "read_dump", side_effect=TimeoutError("timed out")), \
+                self.assertRaises(errors.Abort) as stopped:
+            readout_espressif.read_through(ctx, "192.0.2.60")
+        self.assertIn("could not be read: the device did not answer in time. Try again later.", str(stopped.exception))
+        said.assert_any_call("    The read did not come through: the device did not answer in time. Try again later")
+
 
 if __name__ == "__main__":
     unittest.main()

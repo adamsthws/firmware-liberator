@@ -1008,6 +1008,13 @@ class UnexpectedErrorTests(unittest.TestCase):
             self.assertNotIn("unexpected", message)
             self.assertRegex(message, errors.TRANSIENT_RE)
 
+    def test_the_device_not_reached_is_said_plainly(self):
+        import urllib.error
+        no_route = urllib.error.URLError(OSError(113, "No route to host"))
+        _, _, _, _, told = self.run_step("H1", no_route)
+        self.assertEqual(told.call_args.args[0], "FAILED: the connection to the device was lost: this computer could "
+                         "not reach the device. Check it is switched on, and on the same network as this computer")
+
     def test_a_step_that_writes_stays_attempted(self):
         # Whether the commit got as far as writing is for the next run to find
         # out from the device - so it must not be recorded as failed.

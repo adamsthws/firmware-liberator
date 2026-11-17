@@ -615,6 +615,10 @@ class ScenarioTests(unittest.TestCase):
         offline = ("no report (stopped at stage 2, Discovering the device: eWeLink is unreachable (eWeLink "
                    "connection failed: [Errno -2] Name or service not known): listing every device that answers.)")
         self.assertEqual(fs.no_internet("NOT-FIRED", ["no report", offline]), "NO-INTERNET")
+        # As the tool says it now (errors.plainly).
+        said_now = ("no report (stopped at stage 2, Discovering the device: This computer could not reach eWeLink. "
+                    "Check its internet connection.)")
+        self.assertEqual(fs.no_internet("NOT-FIRED", [said_now]), "NO-INTERNET")
         self.assertEqual(fs.no_internet("FAIL", [offline]), "FAIL")              # pcoff: cut off on purpose
         self.assertEqual(fs.no_internet("NOT-FIRED", ["no report (stopped at stage 3, Discovering the device: "
                                                       "eWeLink shows it offline)"]), "NOT-FIRED")

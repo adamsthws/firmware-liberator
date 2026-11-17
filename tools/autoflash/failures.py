@@ -70,7 +70,8 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
                   r"|refusing to send it|rt_ota"),
     ("download", r"could not be fetched|no public dump of|no \S+ image is published|image is missing"
                  r"|public dump holds no|the download was cut off"),
-    ("ewelink-unreachable", r"eWeLink could not be reached|has not reached eWeLink|but not in eWeLink"),
+    ("ewelink-unreachable", r"eWeLink could not be reached|could not reach eWeLink|eWeLink did not answer in time"
+                            r"|eWeLink did not take the connection|has not reached eWeLink|but not in eWeLink"),
     ("ewelink-refused", r"official update file for the .* was refused|firmware was not sent:"
                         r"|readout firmware was not sent"),
     ("bad-option", r"--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to"

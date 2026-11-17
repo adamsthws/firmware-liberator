@@ -45,7 +45,7 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import (
     pin_wifi,
     recovery_image,
 )
-from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkError, account_name, get_devices,
+from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkError, EwelinkUnreachable, account_name, get_devices,
                                           is_email, login_session, phone_number, session_env)
 
 # Digits written as a phone number is (spaces, dashes, dots, brackets, a +):
@@ -318,6 +318,9 @@ class Context:
         in memory and is never logged."""
         try:
             devices = self.ewelink.use(lambda region, session: get_devices(region, session["at"]))
+        except EwelinkUnreachable as exc:   # this computer's way to it: what to do
+            output.tell(f"    {str(exc)[:1].upper()}{str(exc)[1:]}.")
+            return None
         except EwelinkError as exc:
             output.tell(f"    eWeLink is unreachable ({exc}).")
             return None

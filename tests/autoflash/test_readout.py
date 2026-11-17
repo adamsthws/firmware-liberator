@@ -1472,8 +1472,7 @@ class WebsiteProblemTests(unittest.TestCase):
                 (TimeoutError("The read operation timed out"), "the website did not answer in time"),
                 (urllib.error.URLError(ConnectionRefusedError(111, "Connection refused")),
                  "the website did not take the connection. Try again later"),
-                (ConnectionResetError(104, "Connection reset by peer"),
-                 "the website did not take the connection. Try again later"),
+                (ConnectionResetError(104, "Connection reset by peer"), "the website cut the connection off"),
                 (urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed")),
                  "no secure connection to the website could be made"),
                 (OSError("the website answered 503"), "the website answered 503")):

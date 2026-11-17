@@ -22,15 +22,12 @@ enough readouts of.
 
 from __future__ import annotations
 
-import errno
 import io
 import json
 import lzma
 import os
 import re
 import secrets
-import socket
-import ssl
 import tarfile
 import time
 import urllib.error
@@ -40,7 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
-from tools.autoflash import failures, openbeken, proof_of_work, readout_beken, readout_espressif, report, report_upload, signup
+from tools.autoflash import errors, failures, openbeken, proof_of_work, readout_beken, readout_espressif, report, report_upload, signup
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 # How a device's readout ended (Became.outcome): its report's result, sent as
 # each readout ends (report_upload.send_readout), and on the screen's at the end.
@@ -158,29 +155,11 @@ class Unsent(Abort):
         self.why, self.path = why, path
 
 
-# What an OSError's errno says when this computer has no way to the website:
-# no network, or none out of it. Windows' sockets give their own numbers.
-NO_WAY_THERE = {errno.EHOSTUNREACH, errno.ENETUNREACH, errno.ENETDOWN,
-                *(getattr(errno, name) for name in ("WSAEHOSTUNREACH", "WSAENETUNREACH", "WSAENETDOWN")
-                  if hasattr(errno, name))}
-
-
 def website_problem(exc: BaseException) -> str:
-    """Why the website could not be reached, said so someone can act on it:
-    "<urlopen error [Errno 113] No route to host>" means nothing to most.
-    The error itself goes to the log."""
+    """Why the website could not be reached, said so someone can act on it
+    (errors.plainly); the error itself goes to the log."""
     output.log_only(f"    The website could not be reached: {type(exc).__name__}: {exc}")
-    reason = exc.reason if isinstance(exc, urllib.error.URLError) and not isinstance(
-        exc, urllib.error.HTTPError) else exc
-    if isinstance(reason, socket.gaierror) or (isinstance(reason, OSError) and reason.errno in NO_WAY_THERE):
-        return "this computer could not reach the website. Check its internet connection"
-    if isinstance(reason, TimeoutError):
-        return "the website did not answer in time. Check this computer's internet connection, or try again later"
-    if isinstance(reason, ssl.SSLError):
-        return "no secure connection to the website could be made: something on this network may be in the way"
-    if isinstance(reason, ConnectionError):
-        return "the website did not take the connection. Try again later"
-    return str(exc)
+    return errors.plainly(exc, "the website")
 
 
 def tell_failed(ctx: Context, exc: BaseException) -> None:

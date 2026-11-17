@@ -236,6 +236,14 @@ class OneSignInTests(unittest.TestCase):
         self.assertEqual(env["EWELINK_PASSWORD"], "pw")
         self.assertEqual(json.loads(env[context.SESSION_ENV])["at"], "t")
 
+    def test_eWeLink_not_reached_says_what_to_check(self):
+        ctx = self.ctx(mock.Mock(return_value=("us", {"at": "t"})))
+        unreachable = context.EwelinkUnreachable("this computer could not reach eWeLink. Check its internet connection")
+        with mock.patch.object(context, "get_devices", side_effect=unreachable), \
+                mock.patch.object(context.output, "tell") as told:
+            self.assertIsNone(context.Context.account_devices(ctx))
+        told.assert_called_once_with("    This computer could not reach eWeLink. Check its internet connection.")
+
     def test_another_account_is_signed_in_to_afresh(self):
         sign_in = mock.Mock(side_effect=[("eu", {"at": "a"}), ("eu", {"at": "b"})])
         ctx = self.ctx(sign_in)

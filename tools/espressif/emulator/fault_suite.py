@@ -2821,7 +2821,9 @@ def key(scenario_id):
 
 # This computer, not its device, cut off from eWeLink: the name not found, the
 # network down. Seen on a test machine once in 75 scenarios, before the fault.
-COMPUTER_OFFLINE = re.compile(r"eWeLink is unreachable \(eWeLink connection failed: [^)]*?"
+# As the tool says it (errors.plainly), and as releases before 3.1.0 did.
+COMPUTER_OFFLINE = re.compile(r"This computer could not reach eWeLink|"
+                              r"eWeLink is unreachable \(eWeLink connection failed: [^)]*?"
                               r"(?:Name or service not known|Temporary failure in name resolution|"
                               r"Network is unreachable)")
 

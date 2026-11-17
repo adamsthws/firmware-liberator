@@ -160,6 +160,24 @@ class DeviceKeyTests(unittest.TestCase):
                 get_device_key.api_json("https://eu-apia.coolkit.cc/v2/user/login")
         self.assertIn("inspects encrypted connections", str(caught.exception))
 
+    def test_eWeLink_not_reached_says_what_to_check(self):
+        # Seen: "eWeLink is unreachable (eWeLink connection failed: [Errno -2]
+        # Name or service not known)".
+        import socket
+        import urllib.error
+        from unittest import mock
+
+        from tools.ewelink import get_device_key
+        for failure, said in ((urllib.error.URLError(socket.gaierror(-2, "Name or service not known")),
+                               "this computer could not reach eWeLink. Check its internet connection"),
+                              (TimeoutError("The read operation timed out"),   # connected, then no answer
+                               "eWeLink did not answer in time. Try again later")):
+            with self.subTest(failure=failure), \
+                    mock.patch.object(get_device_key.urllib.request, "urlopen", side_effect=failure), \
+                    self.assertRaises(get_device_key.EwelinkUnreachable) as caught:
+                get_device_key.api_json("https://eu-apia.coolkit.cc/v2/user/login")
+            self.assertEqual(str(caught.exception), said)
+
     def test_secret_file_permissions(self):
         device = {"deviceid": "abc", "devicekey": "secret", "name": "test", "extra": {"uiid": 5}}
         with tempfile.TemporaryDirectory() as directory:

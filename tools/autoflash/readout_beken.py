@@ -29,7 +29,7 @@ import json
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
+from tools.autoflash import errors, firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes import arrival
 from tools.autoflash.routes.beken import images, onward
@@ -173,7 +173,9 @@ def read_whole_flash(ctx: Context, host: str) -> bytes:
         with output.working("Reading the device's memory - a few minutes..."):
             flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
     except OSError as exc:
-        raise Abort(f"the connection to the device was lost as its memory was read: {exc}. {again}",
+        output.log_only(f"    The read: {type(exc).__name__}: {exc}")
+        said = errors.plainly(exc, "the device", errors.CHECK_DEVICE)
+        raise Abort(f"the connection to the device was lost as its memory was read: {said}. {again}",
                     failure="device-lost") from exc
     finally:
         output.progress_clear()

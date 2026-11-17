@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import errno
 import http.client
 import re
+import socket
+import ssl
 import urllib.error
 
 
@@ -57,6 +60,7 @@ class GoBack(Exception):
 # - the device's checks, a password, the wrong model - would only say it again.
 TRANSIENT_RE = re.compile(
     r"HTTP -1|timed out|timeout|sent nothing|did not answer|not answering|unreachable|"
+    r"could not reach|did not take the connection|cut the connection off|"   # as plainly() says them
     r"connection (refused|reset|aborted)|ConnectionError|IncompleteRead|URLError|"
     r"No route|stopped the \w+ without|did not complete within|Wi-Fi went down|"
     r"closed the connection|Broken pipe|connection to the (plug|device) was lost",
@@ -68,3 +72,38 @@ TRANSIENT_RE = re.compile(
 # code did not catch them: a connection refused, reset or cut off, its reply
 # cut short or garbled, or no reply in time.
 NETWORK_ERRORS = (ConnectionError, TimeoutError, urllib.error.URLError, http.client.HTTPException)
+
+# What an OSError's errno says when this computer has no way to a server on
+# the internet: no network, or none out of it. Windows' sockets give their own
+# numbers.
+NO_WAY_THERE = {errno.EHOSTUNREACH, errno.ENETUNREACH, errno.ENETDOWN,
+                *(getattr(errno, name) for name in ("WSAEHOSTUNREACH", "WSAENETUNREACH", "WSAENETDOWN")
+                  if hasattr(errno, name))}
+
+
+# What to check where this computer does not reach a server on the internet,
+# or the device on its network (plainly): "its" and "it", after "this computer
+# could not reach ...".
+CHECK_INTERNET = "Check its internet connection"
+CHECK_DEVICE = "Check it is switched on, and on the same network as this computer"
+
+
+def plainly(exc: BaseException, what: str, check: str = CHECK_INTERNET) -> str:
+    """Why `what` - "the website", "eWeLink", "the device" - could not be
+    reached, said so someone can act on it, with what to `check`: "<urlopen
+    error [Errno 113] No route to host>" means nothing to most. The error
+    itself is for the log. Anything else, a server's own answer among it, is
+    said as it is."""
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) and not isinstance(
+        exc, urllib.error.HTTPError) else exc
+    if isinstance(reason, socket.gaierror) or (isinstance(reason, OSError) and reason.errno in NO_WAY_THERE):
+        return f"this computer could not reach {what}. {check}"
+    if isinstance(reason, TimeoutError):
+        return f"{what} did not answer in time. Try again later"
+    if isinstance(reason, ssl.SSLError):
+        return f"no secure connection to {what} could be made: something on this network may be in the way"
+    if isinstance(reason, ConnectionRefusedError):
+        return f"{what} did not take the connection. Try again later"
+    if isinstance(reason, ConnectionError):
+        return f"{what} cut the connection off. Try again later"
+    return str(exc)

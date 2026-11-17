@@ -43,7 +43,9 @@ check.
 - A readout that could not be sent says why in plain words ("this computer
   could not reach the website. Check its internet connection", not
   "<urlopen error [Errno 113] No route to host>"), then its report; where it
-  is kept to send later is in the run's log. One chosen when the run found no
+  is kept to send later is in the run's log. So does eWeLink not being
+  reached, and a device lost part way, a readout's read among them: what to
+  check, not urllib's error, which the log keeps. One chosen when the run found no
   supported device ends as a readout too: its own report, not a conversion's,
   and no "Fix the cause, then run the same command again".
 - If the email sign-up cannot be sent, its question is taken off the screen,

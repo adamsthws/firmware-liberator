@@ -26,7 +26,7 @@ import json
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import firewall, hostsys, names, output, records, prompts, readout, runs, safety_locks
+from tools.autoflash import errors, firewall, hostsys, names, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash import setup_network
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import installer
@@ -156,12 +156,13 @@ def read_through(ctx: Context, host: str) -> tuple[bytes, bytes, bytes | None, d
                 flash, efuse, report = dump_stock_flash.read_dump(host)
                 break
             except OSError as exc:
-                problem = str(exc)
+                output.log_only(f"    The read: {type(exc).__name__}: {exc}")
+                problem = errors.plainly(exc, "the device", errors.CHECK_DEVICE)
                 output.say(f"    The read did not come through: {problem}")
         else:
             flash = None
     if flash is None:
-        raise Abort(f"the device's memory could not be read ({problem}). Switch it off and on: it starts "
+        raise Abort(f"the device's memory could not be read: {problem}. Switch it off and on: it starts "
                     "its Sonoff firmware again")
     for line in dump_stock_flash.summary(report):
         output.log_only(f"    {line}")

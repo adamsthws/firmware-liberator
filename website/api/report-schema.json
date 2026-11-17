@@ -60,7 +60,7 @@
     ],
     [
       "ewelink-unreachable",
-      "eWeLink could not be reached|has not reached eWeLink|but not in eWeLink"
+      "eWeLink could not be reached|could not reach eWeLink|eWeLink did not answer in time|eWeLink did not take the connection|has not reached eWeLink|but not in eWeLink"
     ],
     [
       "ewelink-refused",

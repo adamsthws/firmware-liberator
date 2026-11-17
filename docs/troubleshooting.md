@@ -172,7 +172,7 @@ The device is in a different eWeLink account, or is one the tool does not
 convert. The message lists what the account does have; choose *Use a different
 eWeLink account*, or have the tool read your device out.
 
-**"eWeLink is unreachable"**
+**"This computer could not reach eWeLink"** (or "eWeLink is unreachable")
 
 The tool could not sign in. A device on Sonoff's firmware is found and
 converted through eWeLink, so the run stops with nothing written: check your

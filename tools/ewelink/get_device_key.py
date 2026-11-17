@@ -20,9 +20,11 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 try:
+    from tools.autoflash.errors import plainly
     from tools.autoflash.hostsys import urlopen
     from tools.autoflash.prompts import ask_secret
 except ModuleNotFoundError:  # running from inside tools/
+    from autoflash.errors import plainly
     from autoflash.hostsys import urlopen
     from autoflash.prompts import ask_secret
 
@@ -72,6 +74,11 @@ INSPECTED = ("{what} certificate was not trusted - security software, or a work 
 
 class EwelinkError(RuntimeError):
     pass
+
+
+class EwelinkUnreachable(EwelinkError):
+    """eWeLink not reached at all: this computer's way to it, not eWeLink's
+    answer. Its words say what to do (errors.plainly)."""
 
 
 class SessionEnded(EwelinkError):
@@ -170,7 +177,9 @@ def api_json(url: str, *, body: bytes | None = None, headers: dict[str, str] | N
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, ssl.SSLCertVerificationError):
             raise EwelinkError(INSPECTED.format(what="eWeLink's")) from None
-        raise EwelinkError(f"eWeLink connection failed: {exc.reason}") from None
+        raise EwelinkUnreachable(plainly(exc, "eWeLink")) from exc
+    except (TimeoutError, ConnectionError) as exc:   # once connected: no answer, or cut off
+        raise EwelinkUnreachable(plainly(exc, "eWeLink")) from exc
     except json.JSONDecodeError:
         raise EwelinkError("eWeLink returned a non-JSON response") from None
 
