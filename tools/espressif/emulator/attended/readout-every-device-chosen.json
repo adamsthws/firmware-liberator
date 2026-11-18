@@ -1,0 +1,48 @@
+{
+ "about": "A readout chosen from the menu of an account holding an S60 on Sonoff's firmware and two made-up devices the stub lists beside it (stub_cloud.accounts' mixed): a number out of range, then not a number, each refused with why and taken off the screen again, then the first option, every device in the account, read out in turn",
+ "covers": [
+  "from-sonoff",
+  "accepted",
+  "chosen-from-the-account",
+  "every-device",
+  "answer-retyped"
+ ],
+ "start": "fresh",
+ "command": "readout",
+ "account": "mixed",
+ "minutes": 60,
+ "answers": [
+  {
+   "when": "Which device should be read out",
+   "type": "0\r",
+   "shows": [
+    "^ *1\\. Every device in the account \\(3\\)$",
+    "^ *4\\. 'Test device 2' \\(TESTSWITCH\\)$"
+   ]
+  },
+  {
+   "when": "Which device should be read out",
+   "type": "x\r",
+   "shows": [
+    "Choose a number between 1 and 4\\."
+   ]
+  },
+  {
+   "when": "Which device should be read out",
+   "type": "1\r",
+   "shows": [
+    "Type the number of one of the options above\\."
+   ],
+   "never": [
+    "Choose a number between 1 and 4\\."
+   ]
+  }
+ ],
+ "expect": {
+  "exit": 0,
+  "shows": [
+   "^ *Readout complete!$",
+   "Devices: +3$"
+  ]
+ }
+}

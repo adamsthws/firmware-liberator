@@ -374,6 +374,23 @@ class ReadoutVerdictTests(unittest.TestCase):
                                                family=family), [])
                 self.assertTrue(self.copied)
 
+    def test_one_device_chosen_of_the_accounts_is_judged_as_one_readout(self):
+        # Seen: a scenario choosing one of the account's devices judged as a
+        # readout of all three, FAIL-NOT-ASKED, as any with an account was.
+        chosen = {"command": "readout", "account": "mixed",
+                  "answers": attended_suite.with_shared([{"when": attended_suite.CHOOSE_READOUT, "type": "2\r"}])}
+        self.assertEqual(self.verdicts(chosen, requests=[self.WANTED, self.taken()], stored=True), [])
+
+    def test_every_device_is_read_out_with_all_or_its_first_option_chosen(self):
+        def scenario(*answers, **more):
+            return {"account": "mixed", "answers": attended_suite.with_shared(
+                [{"when": attended_suite.CHOOSE_READOUT, "type": typed} for typed in answers]), **more}
+        self.assertTrue(attended_suite.reads_every_device(scenario(args=["--all"])))
+        self.assertTrue(attended_suite.reads_every_device(scenario()))   # the shared answer: 1
+        self.assertTrue(attended_suite.reads_every_device(scenario("9\r", "1\r")))
+        self.assertFalse(attended_suite.reads_every_device(scenario("1\r", "2\r")))
+        self.assertFalse(attended_suite.reads_every_device({"answers": attended_suite.with_shared([])}))
+
     def test_a_readout_the_api_did_not_get_or_keep_whole_is_found(self):
         readout = {"command": "readout"}
         self.assertEqual(self.verdicts(readout), ["FAIL-NOT-ASKED"])

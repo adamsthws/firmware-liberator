@@ -1,0 +1,32 @@
+{
+ "about": "A readout chosen from the menu of an account holding an S60 on Sonoff's firmware and two made-up devices the stub lists beside it (stub_cloud.accounts' mixed): the device itself chosen, and it alone read out - none of the others",
+ "covers": [
+  "from-sonoff",
+  "accepted",
+  "chosen-from-the-account"
+ ],
+ "start": "fresh",
+ "command": "readout",
+ "account": "mixed",
+ "minutes": 40,
+ "answers": [
+  {
+   "when": "Which device should be read out",
+   "type": "2\r",
+   "shows": [
+    "^ *1\\. Every device in the account \\(3\\)$",
+    "^ *2\\. '(?!Test device)"
+   ]
+  }
+ ],
+ "expect": {
+  "exit": 0,
+  "shows": [
+   "^ *Readout complete!$",
+   "Devices: +1$"
+  ],
+  "never": [
+   "^ *Reading out .+ \\(\\d+ of \\d+\\)\\.\\.\\.$"
+  ]
+ }
+}

@@ -1152,9 +1152,11 @@ API beside the emulator hold enough of the device's product already
 answering where its readout goes (`"api_down": true`), so it cannot be sent
 and is kept, or have that API take offers' links in place of their files
 (`"api_links": true`), so the offer the run sends beside it goes ahead of
-the person's own readout of the device, or be a readout of every device
-(`"args": ["--all"]`) in a made-up account the stub lists beside the device (`"account"`, one of
-`tools/ewelink/stub_cloud/accounts.py`'s). An S61's starts fresh from the dump
+the person's own readout of the device, or be a readout in a made-up
+account the stub lists beside the device (`"account"`, one of
+`tools/ewelink/stub_cloud/accounts.py`'s): of every device (`"args":
+["--all"]`), or of the one chosen at the menu of the account's devices
+(`attended_suite.reads_every_device` tells which). An S61's starts fresh from the dump
 or from a device the Beken fault suite's `prep` saved (`"start"`).
 
 **Tried alike everywhere.** Each scenario names the situations it tries

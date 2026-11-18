@@ -56,7 +56,7 @@ so the offer the run sends beside it goes to /v1/offers, its file fetched
 from the stub on first sight, before the person's own readout of the device;
 `account`: one of stub_cloud.accounts' made-up accounts, its other devices
 listed by the stub beside the emulated one, for a readout of every device
-(args ["--all"]).
+(args ["--all"]) or of one chosen at the menu of them (reads_every_device).
 
 The verdict, from the recording alone (judge):
     PASS              ended as expected, every answer typed, nothing wrong
@@ -202,6 +202,10 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
     "own-network": (("conversion", "beken"), "ESPHome raises its own network when the home Wi-Fi's password has "
                                              "changed, which only the Beken emulator's router can do"),
     "own-network-joined-early": (("conversion", "beken"), "as own-network"),
+    "chosen-from-the-account": (("readout",), "a readout offers the account's devices to choose from "
+                                              "(readout.choose); a conversion offers those found on the network "
+                                              "(routes/source.py), asked in every scenario of a device on another "
+                                              "firmware"),
     "every-device": (("readout",), "a conversion is of one device; a readout alone goes through every device in "
                                    "the account (readout --all)"),
     "own-offer-first": (("readout",), "a readout of the device after the offer the run sent of it beside it: a "
@@ -232,6 +236,11 @@ def coverage_gaps(found: dict[str, tuple[str, dict[str, Any]]]) -> list[str]:
     return gaps
 
 
+# The readout's question when the account holds several devices: its first
+# option is every device.
+CHOOSE_READOUT = readout.CHOOSE
+
+
 # What a person answers in every run alike, of either family, a conversion or
 # a readout: the device chosen, the computer's password, the go-ahead word,
 # the sign-in, the questions as it ends. Each scenario has them after its own
@@ -241,7 +250,7 @@ def coverage_gaps(found: dict[str, tuple[str, dict[str, Any]]]) -> list[str]:
 # run need not ask them. A question reworded is changed here, once.
 SHARED_ANSWERS: tuple[dict[str, Any], ...] = (
     {"when": "Which device is this run for", "type": "1\r", "optional": True},
-    {"when": "Which device should be read out", "type": "1\r", "optional": True},
+    {"when": CHOOSE_READOUT, "type": "1\r", "optional": True},
     {"when": "This computer's password \\(for sudo\\)", "type": "autoflash\r", "times": 6, "optional": True},
     {"when": "Press any key", "type": "x", "times": 3, "optional": True},
     {"when": "Type .+ to go ahead", "type": "PROCEED\r", "times": 3, "optional": True},
@@ -714,6 +723,19 @@ def requests_made(state: Path) -> int:
     return requests.stat().st_size if requests.exists() else 0
 
 
+def reads_every_device(scenario: dict[str, Any]) -> bool:
+    """Whether a readout scenario reads out every device in its `account`:
+    asked so with --all, or by the last answer to the device question
+    choosing its first option - else it reads out the one device chosen."""
+    if not scenario.get("account"):
+        return False
+    if "--all" in scenario.get("args", []):
+        return True
+    chosen = [answer["type"].strip() for answer in scenario.get("answers", [])
+              if answer.get("when") == CHOOSE_READOUT and "type" in answer]
+    return bool(chosen) and chosen[-1] == "1"
+
+
 def readout_verdicts(scenario: dict[str, Any], family: str, state: Path, since: float, code: int,
                      folder: Path, product: str, prefix: str = "", asked: int = 0) -> list[str]:
     """A readout's other side, after its run (begun at `since`): what the API
@@ -754,7 +776,7 @@ def readout_verdicts(scenario: dict[str, Any], family: str, state: Path, since: 
         requests.write_bytes(requests.read_bytes()[asked:])
     # A readout of every device: the account's, and the device; else each of
     # the sitting's readouts of the device alone.
-    readouts = len(accounts.ACCOUNTS[scenario["account"]]) + 1 if scenario.get("account") else len(logs)
+    readouts = len(accounts.ACCOUNTS[scenario["account"]]) + 1 if reads_every_device(scenario) else len(logs)
     runs = firmware_at_start(scenario)
     problems, _ = fault_verdicts.readout_api_problems(run, code == 0, api, readouts, product, family,
                                                       [path.name for path in kept], runs)

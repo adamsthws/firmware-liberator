@@ -1242,6 +1242,11 @@ def send_kept(url: str) -> None:
         output.log_only(f"Kept readouts: {path} sent" + ("" if reference == ENOUGH else f", reference {reference}") + ".")
 
 
+# The question when the account holds several devices; its first option is
+# every device. The attended suite answers it by this name.
+CHOOSE = "Which device should be read out"
+
+
 def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The device to read out, or None for every device in the account
     (run_all), offered first where there are two or more: those the tool
@@ -1251,7 +1256,7 @@ def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None
         return devices[0]
     every = [f"Every device in the account ({len(devices)})"]
     output.transient_begin()
-    index = prompts.ask_choice("Which device should be read out",
+    index = prompts.ask_choice(CHOOSE,
                                [*every, *(describe(device) for device in devices)])
     output.transient_end()
     return None if index < len(every) else devices[index - len(every)]
