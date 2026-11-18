@@ -263,6 +263,12 @@ class UpdateScenarioTests(unittest.TestCase):
 
 
 class BatchResultTests(unittest.TestCase):
+    def setUp(self):
+        # No other run's emulators here, whatever this computer runs.
+        patcher = mock.patch.object(fault_suite.emulator_instances, "running", return_value=set())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_batch_has_passed_only_when_every_scenario_has(self):
         from unittest import mock
         with tempfile.TemporaryDirectory() as temp:
@@ -313,6 +319,31 @@ class BatchResultTests(unittest.TestCase):
         self.assertEqual(ran, ["b", "c", "a"])
         self.assertEqual(took.call_args.args, (Path("here"), Path("kept")))
 
+    def test_a_batch_numbers_its_emulators_from_the_first_instance_given(self):
+        from unittest import mock
+        rows = [{"id": i, "route": "sonoff>openbeken", "step": "B2", "fault": "deviceoff", "arg": 1} for i in "abc"]
+        with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance") as instance, mock.patch.object(fault_suite, "record"), \
+                mock.patch.object(fault_suite, "run_scenario", return_value={"result": "PASS"}), \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "2"}), \
+                mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
+                mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
+                mock.patch("builtins.print"):
+            fault_suite.batch(first=81)
+        self.assertEqual(sorted(call.args[0] for call in instance.call_args_list), [81, 82])
+
+    def test_a_batch_refuses_instances_another_run_has(self):
+        with mock.patch.object(fault_suite.emulator_instances, "running", return_value={2}), \
+                mock.patch.object(fault_suite, "scenarios", return_value=[]), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance") as instance, \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "2"}):
+            with self.assertRaises(SystemExit) as refused:
+                fault_suite.batch()
+        self.assertIn("--first-instance 3", str(refused.exception))
+        instance.assert_not_called()
+
     def test_a_scenario_waits_for_room_before_it_starts(self):
         from unittest import mock
         events = []
@@ -355,6 +386,12 @@ class StepTimingTests(unittest.TestCase):
 
 
 class CheckTests(unittest.TestCase):
+    def setUp(self):
+        # No other run's emulators here, whatever this computer runs.
+        patcher = mock.patch.object(fault_suite.emulator_instances, "running", return_value=set())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_each_final_firmware_is_installed_then_the_device_taken_to_the_other(self):
         for way in fault_suite.CHECK_WAYS:
             self.assertEqual(way[0].split(">")[0], "sonoff")

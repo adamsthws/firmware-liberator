@@ -4,7 +4,8 @@ on the device, every fault - on emulated Beken devices side by side (beken-emu.s
 device, from the public S61s dump), as tools/espressif/emulator/fault_suite.py
 does for the Espressif devices.
 
-    fault_suite.py prep                 the starting devices: one on the interim firmware,
+    fault_suite.py prep [--first-instance N]
+                                        the starting devices: one on the interim firmware,
                                         one on OpenBeken, one on ESPHome, converted by
                                         the tool from the dump
     fault_suite.py prep-update          the update scenarios' starting devices: on OpenBeken
@@ -18,7 +19,8 @@ does for the Espressif devices.
     fault_suite.py list quick           those of a routine run (QUICK_OUTAGES)
     fault_suite.py list openbeken       those a new OpenBeken build is checked with
                                         (docs/updating-firmware.md)
-    fault_suite.py batch [FILE]         the scenarios in FILE (one id a line; every
+    fault_suite.py batch [FILE] [--first-instance N]
+                                        the scenarios in FILE (one id a line; every
                                         scenario without), skipping those passed
     fault_suite.py report               the latest result of each
     fault_suite.py found                what each fault and length has found, in the
@@ -75,7 +77,11 @@ is on it, the interim's settings are erased from its flash (interim_problems).
 
 Each emulator is a device of its own (beken-emu.sh --instance N: autoflash-beken-emu-N),
 AUTOFLASH_BEKEN_EMU_WORKERS of them at once (default 2: each takes a core, and the
-tool's runs share what is left). Sonoff's firmware restarts by itself once
+tool's runs share what is left), numbered from --first-instance (default 1), as
+the Espressif suite's and the attended suite's are, so a batch keeps clear of
+another one's emulators on the same computer: one asked to start on an instance
+already running refuses (tools/repo/emulator_instances.py), as starting it
+afresh would stop the other run's device. Sonoff's firmware restarts by itself once
 it has an update, in the emulator as on a real device
 (tools/beken/emulator/README.md).
 
@@ -112,7 +118,7 @@ from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -1219,7 +1225,7 @@ def record(sc: dict, outcome: dict) -> None:
         results.write(json.dumps({"id": sc["id"], "at": time.strftime("%Y-%m-%dT%H:%M:%S"), **outcome}) + "\n")
 
 
-def batch(ids_file: str | None = None) -> None:
+def batch(ids_file: str | None = None, first: int = 1) -> None:
     every = {sc["id"]: sc for sc in scenarios()}
     wanted = (Path(ids_file).read_text(encoding="utf-8").split() if ids_file else list(every))
     earlier = fault_verdicts.latest(RESULTS)   # those run here before: a re-run's pass rate is apart (emulator_stats)
@@ -1230,6 +1236,7 @@ def batch(ids_file: str | None = None) -> None:
                                            scenario_times.times(*suite_roots())):
         todo.put(sc)
     workers = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
+    emulator_instances.refuse_taken("beken", range(first, first + workers))
     lock = threading.Lock()
 
     def work(n: int) -> None:
@@ -1267,7 +1274,7 @@ def batch(ids_file: str | None = None) -> None:
     emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="fault", device=STATS_DEVICE.key, total=len(every),
                          planned=todo.qsize(), cloud="stub", workers=workers,
                          tier=emulator_stats.tier(wanted, every, (sc["id"] for sc in scenarios(quick=True))))
-    threads = [threading.Thread(target=work, args=(n,)) for n in range(1, workers + 1)]
+    threads = [threading.Thread(target=work, args=(n,)) for n in range(first, first + workers)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -1275,11 +1282,13 @@ def batch(ids_file: str | None = None) -> None:
     print(emulator_stats.send(OUT), flush=True)
 
 
-def prep() -> None:
-    """The starting devices, converted by the tool from the dump: on the interim
-    firmware (a run to ESPHome stopped once that has started), on OpenBeken,
-    then on ESPHome, each saved with the captures its runs left."""
-    instance = Instance(1)
+def prep(first: int = 1) -> None:
+    """The starting devices, converted by the tool from the dump on instance
+    `first`: on the interim firmware (a run to ESPHome stopped once that has
+    started), on OpenBeken, then on ESPHome, each saved with the captures its
+    runs left."""
+    emulator_instances.refuse_taken("beken", [first])
+    instance = Instance(first)
     try:
         instance.reset("sonoff")
         if not instance.start("sonoff"):
@@ -1390,6 +1399,7 @@ def check(instances: tuple[int, ...] = (1, 2)) -> int:
     """The final firmware of every way, side by side, each on its emulator of
     `instances`: no faults, no account. A way passes only by getting to its
     end: one whose thread raised has failed."""
+    emulator_instances.refuse_taken("beken", instances)
     failed = [1] * len(CHECK_WAYS)
     emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="check", device=STATS_DEVICE.key,
                          total=sum(map(len, CHECK_WAYS)), planned=sum(map(len, CHECK_WAYS)), cloud="stub", workers=2)
@@ -1436,8 +1446,19 @@ def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
     for line in folders.migrate():
         print(line, file=sys.stderr)
-    if command == "prep":
-        prep()
+    if command in ("prep", "batch"):
+        import argparse
+        parser = argparse.ArgumentParser(prog=f"fault_suite.py {command}")
+        if command == "batch":
+            parser.add_argument("file", nargs="?")
+        parser.add_argument("--first-instance", type=int, default=1, metavar="N",
+                            help="the first emulator instance used, one more for each worker")
+        args = parser.parse_args(argv[1:])
+        if command == "prep":
+            prep(args.first_instance)
+        else:
+            batch(args.file, args.first_instance)
+            return 0 if all_passed(args.file) else 1
     elif command == "prep-update":
         prep_update()
     elif command == "check":
@@ -1455,9 +1476,6 @@ def main(argv: list[str]) -> int:
         for i in (OPENBEKEN_CHECK if argv[1:] == ["openbeken"] else
                   [sc["id"] for sc in scenarios(quick=argv[1:] == ["quick"])]):
             print(i)
-    elif command == "batch":
-        batch(argv[1] if len(argv) > 1 else None)
-        return 0 if all_passed(argv[1] if len(argv) > 1 else None) else 1
     elif command == "report":
         report()
     elif command == "found":

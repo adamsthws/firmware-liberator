@@ -92,7 +92,8 @@ Its results, and each run's recording, go to captures/emulation/attended/<time>/
 Run on a computer with the emulators (docs/emulator.md); each scenario runs
 on an emulator of its own, --workers at once - the S61's after, one at a
 time - numbered from --first-instance (61) to one per worker, each started
-afresh: a run uses no more instance numbers than it has workers.
+afresh: a run uses no more instance numbers than it has workers, and refuses
+to start on one already running (tools/repo/emulator_instances.py).
 """
 
 from __future__ import annotations
@@ -119,7 +120,7 @@ sys.path.insert(0, str(ROOT))
 from tools.autoflash import kinds, readout, records  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import emulator_stats, fault_verdicts, unattended_run  # noqa: E402
+from tools.repo import emulator_instances, emulator_stats, fault_verdicts, unattended_run  # noqa: E402
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
              "beken": ROOT / "tools/beken/emulator/attended"}
@@ -842,7 +843,11 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
     lines = []
     # The S61's on their own, after the S60's: its emulator is slow, and run
     # beside three S60s a readout's device was not found in time.
-    for family, at_once in (("espressif", max(1, workers)), ("beken", 1)):
+    ways = (("espressif", max(1, workers)), ("beken", 1))
+    for family, at_once in ways:
+        if any(found[name][0] == family for name in chosen):
+            emulator_instances.refuse_taken(family, range(first, first + at_once))
+    for family, at_once in ways:
         planned = [name for name in chosen if found[name][0] == family]
         if planned:
             emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,

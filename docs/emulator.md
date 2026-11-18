@@ -223,6 +223,12 @@ backup.
   connection per id, and the upgrade at C2 is sent through it, so it can reach
   another instance's device. With the real cloud, run the stages up to C2 one
   instance at a time; after C2 nothing uses the cloud.
+- **A suite is given its instances with `--first-instance N`**, from N on,
+  one per emulator: each family's fault suite (`prep` and `batch`) and the
+  attended suite alike. One asked to start on an instance already running
+  refuses, naming a first instance that is free
+  (`tools/repo/emulator_instances.py`), so suites sharing a computer keep
+  clear of each other's.
 - **Run no more at once than your computer has cores**, or runs fail that
   would otherwise pass. Sampled with `docker stats` every 2 seconds through
   whole conversions, an S60's emulator, its computer included, took about 0.6

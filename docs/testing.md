@@ -620,6 +620,9 @@ AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --device=MA
 AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --device=MAC --stub-cloud batch all.txt
 ```
 
+`--first-instance N` numbers the emulators from N, to keep clear of another
+run on the same computer ([several at once](emulator.md#several-at-once)).
+
 A stub device's Sonoff firmware, on it and in its backup, trusts the stub's
 CA as it was when `prep` made it. `batch` refuses one that does not trust the
 CA the stub serves it now (`captures/emulation/stub-cloud*/`, made again only
@@ -978,6 +981,10 @@ tools/beken/emulator/fault_suite.py list > beken.txt
 AUTOFLASH_BEKEN_EMU_WORKERS=2 tools/beken/emulator/fault_suite.py batch beken.txt   # what has not passed yet
 tools/beken/emulator/fault_suite.py report
 ```
+
+`--first-instance N` on `prep` and `batch` numbers the emulators from N, as
+on the Espressif suite, to keep clear of another run on the same computer
+([several at once](emulator.md#several-at-once)).
 
 `prep-update` makes the update scenarios' devices through the earlier
 release's own suite. `list openbeken` gives the six scenarios a new OpenBeken

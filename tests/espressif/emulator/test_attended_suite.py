@@ -456,11 +456,23 @@ class InstanceTests(unittest.TestCase):
                 busy.discard(n)
             return f"PASS {name}"
 
-        with mock.patch.object(attended_suite, "run_one", run_one), redirect_stdout(io.StringIO()):
+        with mock.patch.object(attended_suite, "run_one", run_one), redirect_stdout(io.StringIO()), \
+                mock.patch.object(attended_suite.emulator_instances, "running", return_value=set()):
             lines = attended_suite.run_all(list(found), found, Path("results"), None, workers=3, first=81)
         self.assertEqual(len(lines), 10)
         self.assertEqual({n for family, n in used if family == "espressif"}, {81, 82, 83})
         self.assertEqual({n for family, n in used if family == "beken"}, {81})
+
+
+    def test_a_run_refuses_instances_another_run_has_before_any_starts(self):
+        found = {"s60-a": ("espressif", {}), "s61-a": ("beken", {})}
+        running = {"espressif": set(), "beken": {61}}
+        with mock.patch.object(attended_suite, "run_one") as run_one, \
+                mock.patch.object(attended_suite.emulator_instances, "running", side_effect=running.get):
+            with self.assertRaises(SystemExit) as refused:
+                attended_suite.run_all(list(found), found, Path("results"), None, workers=2, first=61)
+        self.assertIn("beken emulator instance 61", str(refused.exception))
+        run_one.assert_not_called()
 
 
 class SharedAnswerTests(unittest.TestCase):

@@ -217,6 +217,12 @@ class CloudTurnTests(unittest.TestCase):
 
 
 class SavedDeviceTests(unittest.TestCase):
+    def setUp(self):
+        # No other run's emulators here, whatever this computer runs.
+        patcher = mock.patch.object(fs.emulator_instances, "running", return_value=set())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def stale(self, made, todo):
         # A saved device's name from its route; its firmware as prep recorded it.
         with tempfile.TemporaryDirectory() as emu:
@@ -413,6 +419,38 @@ class SavedDeviceTests(unittest.TestCase):
             fs.batch()
         self.assertEqual(ran, ["b", "c", "a"])
         self.assertEqual(took.call_args.args, (Path("here"), Path("kept")))
+
+    def numbered(self, first, stub, running=frozenset()):
+        """The instances a batch's workers are given, each with whether it is a cloud one."""
+        rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "ab"]
+        given = []
+
+        def worker(n, todo, lock, cloud, *rest):
+            given.append((n, cloud))
+        with mock.patch.object(fs, "scenarios", return_value=rows), \
+                mock.patch.object(fs.fault_verdicts, "latest", return_value={}), \
+                mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
+                mock.patch.object(fs, "untrusting_starts", return_value=[]), \
+                mock.patch.object(fs, "STUB_CLOUD", stub), mock.patch.object(fs, "FIRST", first), \
+                mock.patch.object(fs, "worker", worker), mock.patch.object(fs, "cloud_workers", return_value=1), \
+                mock.patch.object(fs.TUNER, "most", 2), mock.patch.object(fs, "log_connections"), \
+                mock.patch.object(fs.emulator_instances, "running", return_value=set(running)), \
+                mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_STUB_WORKERS": "2", "AUTOFLASH_EMU_ANY_WORKERS": "2"}), \
+                mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
+                mock.patch.object(fs.scenario_times, "times", return_value={}), \
+                mock.patch("builtins.print"):
+            fs.batch()
+        return sorted(given)
+
+    def test_a_batch_numbers_its_emulators_from_the_first_instance_given(self):
+        self.assertEqual(self.numbered(81, stub=True), [(81, False), (82, False)])
+        # The real cloud's turns first, as many as the tuner may allow, the others after them.
+        self.assertEqual(self.numbered(81, stub=False), [(81, True), (82, True), (83, False), (84, False)])
+
+    def test_a_batch_refuses_instances_another_run_has(self):
+        with self.assertRaises(SystemExit) as refused:
+            self.numbered(1, stub=True, running={2})
+        self.assertIn("--first-instance 3", str(refused.exception))
 
     def test_runs_that_start_from_no_converted_device_ask_nothing_of_it(self):
         self.assertEqual(self.stale('{"version": "1"}', [{"route": "sonoff>esphome", "fault": "crash"},
@@ -1334,11 +1372,11 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn('"--no-api"', inspect.getsource(fs.make_start))
 
     def test_prep_refuses_an_instance_in_use_and_leaves_the_saved_devices(self):
-        with mock.patch.object(fs, "sh", return_value=mock.Mock(stdout="abc123\n")), \
+        with mock.patch.object(fs.emulator_instances, "running", return_value={1}), \
                 mock.patch.object(fs.shutil, "rmtree") as removed, mock.patch.object(fs.subprocess, "call") as call:
             with self.assertRaises(SystemExit) as refused:
                 fs.prep()
-        self.assertIn("AUTOFLASH_EMU_PREP_INSTANCE", str(refused.exception))
+        self.assertIn("--first-instance 2", str(refused.exception))
         removed.assert_not_called()
         call.assert_not_called()
 

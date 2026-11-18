@@ -470,7 +470,7 @@ What the values are:
 - **`fault_suite.py --stub-cloud`** (or `AUTOFLASH_EMU_STUB_CLOUD=1`) drops
   the lock that makes emulators take turns at the cloud (`CloudQueue`), and
   runs every scenario on `AUTOFLASH_EMU_STUB_WORKERS` emulators from
-  `AUTOFLASH_EMU_FIRST_INSTANCE` (default 1). Its starting devices
+  `--first-instance` (default 1). Its starting devices
   (`stub-suite-*`) and results (`captures/emulation/suite-stub/`) are kept
   apart from the real cloud's: a pass on the stub is not a pass against
   eWeLink ([testing.md](testing.md#the-espressif-fault-suite)).

@@ -15,9 +15,11 @@ device, every fault - on emulators side by side, on one machine or several
 
 Add --stub-cloud to prep/batch to run against a local eWeLink stub per emulator
 (emu.sh --stub-cloud): fully offline, no cloud lock, every scenario in parallel
-on AUTOFLASH_EMU_STUB_WORKERS emulators (from AUTOFLASH_EMU_FIRST_INSTANCE,
-default 1). Without it the real cloud is used and the cloud scenarios take
-turns, as below.
+on AUTOFLASH_EMU_STUB_WORKERS emulators. Without it the real cloud is used and
+the cloud scenarios take turns, as below. --first-instance N (default 1) numbers
+a batch's emulators from N, and prep's from N too, as the attended suite's and
+the Beken suite's: one asked to start on an instance already running refuses
+(tools/repo/emulator_instances.py).
 
 Each scenario: a conversion from a saved device; when the step under test has
 been going for a share of its usual time (40%, or 10% and 90% at the riskiest
@@ -94,7 +96,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, output, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.ewelink.stub_cloud.accounts import ACCOUNTS  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
@@ -126,6 +128,8 @@ def cloud_workers():
 # devices never share a cloud, so nothing is serialised and every scenario can run
 # in parallel. Set by --stub-cloud; see docs/cloud-stub.md.
 STUB_CLOUD = os.environ.get("AUTOFLASH_EMU_STUB_CLOUD") == "1"
+# The first emulator instance this run uses (--first-instance).
+FIRST = 1
 
 
 def saved(name):
@@ -2947,7 +2951,7 @@ def worker(n, todo, lock, cloud=False, room=None):
     while True:
         # A cloud worker beyond how many the tuner allows now waits its turn,
         # and one beyond OUT/workers until it is raised or nothing is left.
-        while cloud and n > TUNER.workers:
+        while cloud and n - FIRST >= TUNER.workers:
             time.sleep(10)
         while room and not room(n) and not todo.empty():
             time.sleep(10)
@@ -3042,19 +3046,20 @@ def batch(ids_file=None):
     if STUB_CLOUD:
         nc = 0
         na = int(os.environ.get("AUTOFLASH_EMU_STUB_WORKERS", os.environ.get("AUTOFLASH_EMU_ANY_WORKERS", "3")))
-        first = int(os.environ.get("AUTOFLASH_EMU_FIRST_INSTANCE", "1"))
+        cloud_slots = 0
     else:
         nc = cloud_workers()
         na = int(os.environ.get("AUTOFLASH_EMU_ANY_WORKERS", "0"))
-        first = int(os.environ.get("AUTOFLASH_EMU_FIRST_INSTANCE", nc + 1))  # clear of another batch's emulators
+        cloud_slots = max(nc, TUNER.most)
+    first = FIRST + cloud_slots   # the others after the cloud's
     print(f"batch: {cloud.qsize()} cloud on {nc}, {anywhere.qsize()} others on {na}", flush=True)
     if stub_only:
         print(f"batch: {stub_only} left to the stub (--stub-cloud batch): their fault comes after eWeLink",
               flush=True)
     lock = threading.Lock()
-    threads = [] if STUB_CLOUD else [threading.Thread(target=worker, args=(n, cloud, lock, True))
-                                     for n in range(1, max(nc, TUNER.most) + 1)]
+    threads = [threading.Thread(target=worker, args=(n, cloud, lock, True)) for n in range(FIRST, first)]
     most = max(na, int(os.environ.get("AUTOFLASH_EMU_MOST_WORKERS", na)))
+    emulator_instances.refuse_taken("espressif", range(FIRST, first + most))
     threads += [threading.Thread(target=worker, args=(n, anywhere, lock, False, lambda n: n - first < allowed(na)))
                 for n in range(first, first + most)]
     stop_log = threading.Event()
@@ -3154,11 +3159,10 @@ def prepared(said, stop_after, stopped):
 def make_start(save, args, stop_after=None):
     """One starting device, saved as `save`: a run with `args`, stopped once
     `stop_after` is done, or else converted."""
-    n = int(os.environ.get("AUTOFLASH_EMU_PREP_INSTANCE", "1"))
+    n = FIRST
     # A run that could not start would count as one that failed, and take the
     # device saved before it away.
-    if sh("docker", "ps", "-q", "--filter", f"name=^{name(n)}$").stdout.strip():
-        raise SystemExit(f"{name(n)} is running: stop it, or choose another with AUTOFLASH_EMU_PREP_INSTANCE")
+    emulator_instances.refuse_taken("espressif", [n])
     unattended = str(REPO / "tools/espressif/emulator/unattended-test.sh")
 
     def stopped_after(step, sc, since, stopped):
@@ -3289,7 +3293,7 @@ def report():
 
 def main():
     import argparse
-    global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS
+    global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS, FIRST
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--device", help="the backed-up device's MAC, as emu.sh --device takes it")
     parser.add_argument("--stub-cloud", action="store_true",
@@ -3300,9 +3304,12 @@ def main():
                         "share out; list: quick, for a routine run's")
     parser.add_argument("workers", nargs="*", type=int,
                         help="share: how many emulators each machine runs, one number a machine")
+    parser.add_argument("--first-instance", type=int, default=1, metavar="N",
+                        help="prep, batch: the first emulator instance used, one more for each emulator")
     parser.add_argument("--times-from", action="append", default=[], type=Path, metavar="DIR",
                         help="share: another machine's suite folders, copied here, for how long its scenarios took")
     args = parser.parse_args()
+    FIRST = args.first_instance
     if args.command == "share":
         if not args.file or not args.workers:
             parser.error("share needs the ids file and each machine's emulators: share all.txt 4 4 6")
