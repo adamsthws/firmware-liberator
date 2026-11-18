@@ -1058,6 +1058,14 @@ one cell so asks to be added in the others. Every scenario key is taken by
 both families' runners, through one `run_environment`, but those
 `ONE_FAMILY_KEYS` names with why (`prep`, the S60's alone).
 
+**Answers every run gives.** The device chosen, the computer's password, the
+go-ahead word, the eWeLink sign-in and the questions as a run ends are
+answered in every scenario alike, by `SHARED_ANSWERS` in `attended_suite.py`,
+so a scenario holds only the answers that make it what it is. A question
+reworded is changed there once. A scenario that answers one of those
+questions itself, by the same `"when"`, is answered its own way alone: the
+shared answer is left out, so its own count or checks hold.
+
 A run is made to fail
 as a refused image fails it, for its failed ending to be seen, with the
 run's option `--simulate-bad-image STEP[:N]`: the image step STEP sends,

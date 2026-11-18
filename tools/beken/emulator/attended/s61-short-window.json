@@ -14,11 +14,6 @@
   {
    "when": "Press any key",
    "type": "q"
-  },
-  {
-   "when": "\\[[Yy]/n\\]",
-   "type": "n\r",
-   "optional": true
   }
  ],
  "expect": {

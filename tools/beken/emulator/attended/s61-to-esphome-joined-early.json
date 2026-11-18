@@ -65,39 +65,12 @@
    "optional": true
   },
   {
-   "when": "Which device is this run for",
-   "type": "1\r",
-   "optional": true
-  },
-  {
-   "when": "Type .+ to go ahead",
-   "type": "PROCEED\r",
-   "times": 3,
-   "optional": true
-  },
-  {
    "when": "eWeLink account email or phone number",
    "type": "someone@example.invalid\r"
   },
   {
    "when": "eWeLink password for",
    "type": "made-up-password\r"
-  },
-  {
-   "when": "What next",
-   "type": "q\r",
-   "optional": true
-  },
-  {
-   "when": "\\[[Yy]/n\\]",
-   "type": "n\r",
-   "optional": true
-  },
-  {
-   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
-   "type": "y\r",
-   "times": 3,
-   "optional": true
   }
  ],
  "expect": {

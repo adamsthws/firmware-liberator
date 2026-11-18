@@ -14,11 +14,6 @@
   {
    "when": "Which device is this run for",
    "type": "q\r"
-  },
-  {
-   "when": "\\[[Yy]/n\\]",
-   "type": "n\r",
-   "optional": true
   }
  ],
  "expect": {

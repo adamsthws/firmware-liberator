@@ -463,6 +463,52 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual({n for family, n in used if family == "beken"}, {81})
 
 
+class SharedAnswerTests(unittest.TestCase):
+    def test_each_answers_a_question_the_tool_asks_and_need_not_be_asked(self):
+        # Optional, so the check on every answer passes them by: a question
+        # reworded must still fail here, not leave every run to hang at it.
+        texts = question_texts()
+        # A yes-or-no hint ("Y/n") is put in its brackets as the question is
+        # asked (prompts.ask_yes_no, signup.ask_on_exit).
+        texts += [f"{opening}{text}{closing}" for text in texts if re.fullmatch("[Yy]/[Nn]", text)
+                  for opening, closing in ("()", "[]")]
+        for answer in attended_suite.SHARED_ANSWERS:
+            with self.subTest(when=answer["when"]):
+                self.assertTrue(answer.get("optional"))
+                self.assertTrue(any(re.search(answer["when"], text) for text in texts),
+                                f"nothing the tool shows says {answer['when']!r}")
+
+    def test_a_scenarios_own_answer_to_a_question_replaces_the_shared_one(self):
+        # Its count and checks hold: one "What next" answered once, a second
+        # is unanswered, not quit by the shared one.
+        own = [{"when": "What next", "type": "1\r"}]
+        answers = attended_suite.with_shared(own)
+        self.assertEqual(answers[0], own[0])
+        self.assertEqual([answer for answer in answers if answer["when"] == "What next"], own)
+        self.assertEqual(answers[1:], [answer for answer in attended_suite.SHARED_ANSWERS
+                                       if answer["when"] != "What next"])
+
+    def test_every_run_of_a_scenario_has_them(self):
+        for name, (_, scenario) in attended_suite.scenarios().items():
+            for run in (scenario, *([scenario["again"]] if "again" in scenario else [])):
+                with self.subTest(scenario=name):
+                    asked = {answer["when"] for answer in run["answers"]}
+                    self.assertLessEqual({answer["when"] for answer in attended_suite.SHARED_ANSWERS}, asked)
+
+    def test_no_scenario_file_copies_one(self):
+        # A copy would hold the old words when a question is reworded.
+        for folder in attended_suite.SCENARIOS.values():
+            for path in sorted(folder.glob("*.json")):
+                scenario = json.loads(path.read_text(encoding="utf-8"))
+                for run in (scenario, *([scenario["again"]] if "again" in scenario else [])):
+                    own = run.get("answers", [])
+                    for answer in own:
+                        with self.subTest(scenario=path.stem, when=answer["when"]):
+                            alone = [other for other in own if other["when"] == answer["when"]] == [answer]
+                            self.assertFalse(alone and answer in attended_suite.SHARED_ANSWERS,
+                                             "attended_suite.SHARED_ANSWERS answers it already")
+
+
 class ScenarioTests(unittest.TestCase):
     def test_every_answer_still_answers_a_question_the_tool_asks(self):
         # A question reworded fails here, in a second, not as FAIL-UNANSWERED

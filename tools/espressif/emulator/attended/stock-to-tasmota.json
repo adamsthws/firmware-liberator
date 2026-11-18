@@ -64,17 +64,6 @@
   {
    "when": "eWeLink password for",
    "type": "made-up-password\r"
-  },
-  {
-   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
-   "type": "y\r",
-   "times": 3,
-   "optional": true
-  },
-  {
-   "when": "\\[[Yy]/n\\]",
-   "type": "n\r",
-   "optional": true
   }
  ],
  "expect": {

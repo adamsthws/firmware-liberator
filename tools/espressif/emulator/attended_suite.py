@@ -23,6 +23,9 @@ conversion and a readout, in each chip family - or NOT_EVERYWHERE says why
 not (coverage_gaps). Every key is taken by both families' runners alike, but
 those ONE_FAMILY_KEYS names, with why.
 
+`answers`: the scenario's own, before SHARED_ANSWERS - what every run is
+answered alike - for each question it does not answer itself (with_shared).
+
 `again`: the tool run once more on the device as the first run left it, with
 no --new - a run stopped part way, offered back ("did not finish") - judged
 as the first is.
@@ -213,12 +216,45 @@ def coverage_gaps(found: dict[str, tuple[str, dict[str, Any]]]) -> list[str]:
     return gaps
 
 
+# What a person answers in every run alike, of either family, a conversion or
+# a readout: the device chosen, the computer's password, the go-ahead word,
+# the sign-in, the questions as it ends. Each scenario has them after its own
+# answers (with_shared) for every question it does not answer itself by the
+# same `when`: one it does is answered its way alone - its count, its checks,
+# a signal in place of typing - and the shared one left out. All optional: a
+# run need not ask them. A question reworded is changed here, once.
+SHARED_ANSWERS: tuple[dict[str, Any], ...] = (
+    {"when": "Which device is this run for", "type": "1\r", "optional": True},
+    {"when": "Which device should be read out", "type": "1\r", "optional": True},
+    {"when": "This computer's password \\(for sudo\\)", "type": "autoflash\r", "times": 6, "optional": True},
+    {"when": "Press any key", "type": "x", "times": 3, "optional": True},
+    {"when": "Type .+ to go ahead", "type": "PROCEED\r", "times": 3, "optional": True},
+    {"when": "Which eWeLink account is this device in", "type": "2\r", "optional": True},
+    {"when": "eWeLink account email or phone number", "type": "someone@example.invalid\r", "optional": True},
+    {"when": "eWeLink password for", "type": "made-up-password\r", "optional": True},
+    {"when": "What next", "type": "q\r", "optional": True},
+    {"when": "\\[[Yy]/n\\]", "type": "n\r", "optional": True},
+    {"when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)", "type": "y\r", "times": 3, "optional": True},
+)
+
+
+def with_shared(answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A run's answers: its own, then the shared ones for the questions it
+    does not answer itself (SHARED_ANSWERS)."""
+    own = {answer["when"] for answer in answers}
+    return [*answers, *(dict(answer) for answer in SHARED_ANSWERS if answer["when"] not in own)]
+
+
 def scenarios() -> dict[str, tuple[str, dict[str, Any]]]:
-    """Every scenario, by name: its family's, and what its file says."""
+    """Every scenario, by name: its family's, and what its file says, each
+    run's answers with the shared ones (with_shared)."""
     found = {}
     for family, folder in SCENARIOS.items():
         for path in sorted(folder.glob("*.json")):
-            found[path.stem] = (family, json.loads(path.read_text(encoding="utf-8")))
+            scenario = json.loads(path.read_text(encoding="utf-8"))
+            for run in (scenario, *([scenario["again"]] if "again" in scenario else [])):
+                run["answers"] = with_shared(run.get("answers", []))
+            found[path.stem] = (family, scenario)
     return found
 
 

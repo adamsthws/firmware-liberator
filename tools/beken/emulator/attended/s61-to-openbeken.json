@@ -43,23 +43,6 @@
   {
    "when": "What next",
    "type": "q\r"
-  },
-  {
-   "when": "This computer's password \\(for sudo\\)",
-   "type": "autoflash\r",
-   "times": 6,
-   "optional": true
-  },
-  {
-   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
-   "type": "y\r",
-   "times": 3,
-   "optional": true
-  },
-  {
-   "when": "\\[[Yy]/n\\]",
-   "type": "n\r",
-   "optional": true
   }
  ],
  "expect": {
