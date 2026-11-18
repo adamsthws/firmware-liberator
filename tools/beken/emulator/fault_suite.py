@@ -123,7 +123,7 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from tools.autoflash import output  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
-from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
+from tools.autoflash import esphome, esphome_ota, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
@@ -237,6 +237,13 @@ BAD_IMAGE_STEPS = {"B2", "J2", "O1"}
 # switching it off and on would - and sends it afresh (badimage-restart).
 RESTART_IMAGE_STEPS = {"J2", "O1"}
 SPOILT_PAST_LIMIT = 3
+# ESPHome in safe mode (safemode-ten), as the Espressif suite has it: a device
+# on ESPHome switched off within a minute of starting until it takes that for
+# a boot loop - ten starts in a row - and starts its update service alone, on
+# LibreTiny's port; then the tool to each other firmware.
+SAFE_MODE_ROUTES = ("esphome>openbeken", "esphome>sonoff")
+SAFE_MODE_CUTS = 12          # cuts before the scenario gives up on safe mode
+SAFE_MODE_ANSWERS = 55.0     # seconds its update service has to answer after a start
 # The interim firmware's settings, which it erases before the firmware it
 # fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.
@@ -336,6 +343,9 @@ def scenarios(quick: bool = False) -> list[dict]:
         for at in (10, 50, 90) if set(steps) & beken.DESTRUCTIVE_STEPS else ():
             found.append(dict(id=sid(route, "apply", "deviceoff", 1, at), route=route, step="apply",
                               fault="deviceoff", arg=1, at=at))
+        if route in SAFE_MODE_ROUTES:
+            found.append(dict(id=sid(route, "start", "safemode", "ten"), route=route, step="start",
+                              fault="safemode", arg="ten", at=40))
     return found + readout_scenarios()
 
 
@@ -1098,6 +1108,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = apply_scenario(instance, sc, target, log, notes)
     elif sc["fault"] == "badimage":
         outcome = bad_image_scenario(instance, sc, target, log, notes)
+    elif sc["fault"] == "safemode":
+        outcome = safe_mode_scenario(instance, sc, target, log, notes)
     else:
         outcome = step_scenario(instance, sc, target, log, notes)
     # The route the runs went: another firmware's, where the person switched to
@@ -1218,6 +1230,65 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
         notes["restarted"] = any(item.get("restarted") for item in again)
         ok = ok and notes["restarted"] and runs == 1
     return dict(result="PASS" if ok else "FAIL", runs=runs)
+
+
+def ports_open(host: str | None, *ports: int) -> set[int]:
+    """Those of `ports` the device at `host` takes a connection on."""
+    found = set()
+    for port in ports if host else ():
+        try:
+            with socket.create_connection((host, port), timeout=1.5):
+                found.add(port)
+        except OSError:
+            pass
+    return found
+
+
+def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
+    """safemode-ten: the device on ESPHome switched off and on as soon as its
+    update service answers after each start, before its page is up, until
+    ESPHome takes the starts for a boot loop and starts in safe mode - its
+    update service alone, on LibreTiny's port, and no page
+    (docs/beken-research.md#esphome-in-safe-mode); then the tool, as a person
+    would run it, until the device is converted. That must have known it for
+    ESPHome in safe mode and waited it out (routes/source.esphome_safe_mode),
+    never taken it for a device on Sonoff's firmware (FAIL-TAKEN-FOR-SONOFF).
+    Safe mode ends about a minute on in the emulator, its clock ahead of the
+    wall's: a run that found ESPHome itself again came too late (MISTIMED)."""
+    service = esphome_ota.LIBRETINY_PORT
+    for cuts in range(1, SAFE_MODE_CUTS + 1):
+        instance.power("cycle")
+        deadline = time.monotonic() + SAFE_MODE_ANSWERS
+        while service not in ports_open(instance.lease(), service):
+            if time.monotonic() > deadline:
+                notes["safemode_cuts"] = cuts
+                return dict(result="NOT-FIRED", runs=0)   # its update service never came up
+            time.sleep(0.5)
+        time.sleep(3)   # a normal start has its page up by now (seen: 3 s after)
+        if 80 in ports_open(instance.lease(), 80):
+            continue
+        # Soon: the emulator's safe mode lasts about a minute, not five.
+        time.sleep(5)
+        if 80 not in ports_open(instance.lease(), 80):
+            break
+    else:
+        notes["safemode_cuts"] = SAFE_MODE_CUTS
+        return dict(result="NOT-FIRED", runs=0)
+    notes["safemode_cuts"] = cuts
+    finish(instance.tool(target, log, new=True), instance)
+    runs = 1
+    while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS:
+        recover(instance, target, notes)
+        finish(instance.tool(target, log), instance)
+        runs += 1
+    texts = instance.run_texts()
+    notes["waited_out"] = any("ESPHome in safe mode" in text for text in texts)
+    if not converted(instance.last_state(), sc["route"]):
+        return dict(result="FAIL", runs=runs)
+    if notes["waited_out"]:
+        return dict(result="PASS", runs=runs)
+    found_itself = texts and re.search(r"This run is for the device at \S+.*, running ESPHome", texts[0])
+    return dict(result="MISTIMED" if found_itself else "FAIL-TAKEN-FOR-SONOFF", runs=runs)
 
 
 def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes: dict) -> bool:

@@ -508,6 +508,50 @@ class BadImageScenarioTests(unittest.TestCase):
                                       ("again", {"step": "B2", "restarted": True})), "PASS")
 
 
+class SafeModeScenarioTests(unittest.TestCase):
+    """safemode-ten: ESPHome cut at each start until it is in safe mode, then
+    the tool - which must find it so and wait it out, as on an S60."""
+
+    def test_each_route_from_esphome_has_one_as_the_espressif_suites(self):
+        found = {sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "safemode"}
+        self.assertEqual(found, {"esphome>openbeken:start:safemode-ten", "esphome>sonoff:start:safemode-ten"})
+
+    def outcome(self, starts, said, converted=True):
+        """`starts`: the ports open at each start's looks; `said`: the first run's words."""
+        looks = iter(starts)
+        cycled = []
+        instance = SimpleNamespace(power=cycled.append, lease=lambda: "192.0.2.60", tool=lambda *a, **k: None,
+                                   last_state=dict, run_texts=lambda: [said])
+        with mock.patch.object(fault_suite, "ports_open", side_effect=lambda host, *ports: next(looks) & set(ports)), \
+                mock.patch.object(fault_suite.time, "sleep"), mock.patch.object(fault_suite, "finish"), \
+                mock.patch.object(fault_suite, "recover"), \
+                mock.patch.object(fault_suite, "converted", return_value=converted):
+            notes = {}
+            result = fault_suite.safe_mode_scenario(
+                instance, {"id": "x", "route": "esphome>openbeken", "step": "start", "fault": "safemode",
+                           "arg": "ten", "at": 40}, "openbeken", Path("tool.log"), notes)["result"]
+        return result, len(cycled), notes
+
+    # Each start: its update service answers, then a look for its page.
+    NORMAL = [{8892}, {80, 8892}]
+    SAFE = [{8892}, {8892}, {8892}]
+
+    def test_safe_mode_seen_and_waited_out_passes(self):
+        result, cuts, notes = self.outcome(self.NORMAL * 2 + self.SAFE, "ESPHome in safe mode, after starting")
+        self.assertEqual((result, cuts, notes["safemode_cuts"]), ("PASS", 3, 3))
+
+    def test_a_run_that_took_it_for_sonoffs_firmware_fails(self):
+        self.assertEqual(self.outcome(self.SAFE, "on Sonoff's firmware: asking eWeLink")[0], "FAIL-TAKEN-FOR-SONOFF")
+
+    def test_a_run_that_found_esphome_itself_again_came_too_late(self):
+        # The emulator's safe mode lasts about a minute: its clock runs ahead.
+        said = "This run is for the device at 192.0.2.60 (esphome-7a1ec8), running ESPHome."
+        self.assertEqual(self.outcome(self.SAFE, said)[0], "MISTIMED")
+
+    def test_never_in_safe_mode_is_not_fired(self):
+        self.assertEqual(self.outcome(self.NORMAL * fault_suite.SAFE_MODE_CUTS, "")[0], "NOT-FIRED")
+
+
 class DoubleCutTests(unittest.TestCase):
     """A double's second cut as the run under way sends its command again."""
 

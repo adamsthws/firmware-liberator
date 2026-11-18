@@ -964,6 +964,17 @@ is also spoilt once more than the run sends it again (`badimage-restart`),
 and the run must then restart the device, as a person switching it off and
 on would, and send it afresh.
 
+**In ESPHome's safe mode** (`safemode-ten`, to OpenBeken and to Sonoff's
+firmware), as the Espressif suite's: the saved ESPHome is switched off as
+soon as its update service answers after each start, until it starts in safe
+mode, that service alone on LibreTiny's port 8892 and no page. The tool, run
+then, must know it for ESPHome in safe mode and wait for it to start as
+itself, never take it for a device on Sonoff's firmware
+(FAIL-TAKEN-FOR-SONOFF). Safe mode ends about a minute on in the emulator,
+whose clock runs ahead while the firmware idles, against five minutes on a
+device ([docs/beken-research.md](beken-research.md#esphome-in-safe-mode)): a run
+that found ESPHome started as itself again came too late (MISTIMED).
+
 **The interim firmware.** A device converted through it passes only if, by
 the names it asked its router's DHCP for, it was `autoflash-recovery-CDEF`
 there from its first request and never OpenBeken's own name, and if, once

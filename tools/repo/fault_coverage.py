@@ -75,7 +75,6 @@ NOT_IN: dict[str, dict[Cell, str]] = {
 # off; finding it cannot be moves it to NOT_EVERYWHERE, with why.
 NOT_YET: dict[str, tuple[Cell, ...]] = {
     "legacy": (("conversion", "beken"),),
-    "safemode-ten": (("conversion", "beken"),),
 }
 
 
