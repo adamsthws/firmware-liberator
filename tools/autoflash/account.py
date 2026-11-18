@@ -347,21 +347,23 @@ def already_converting(device_ip: str) -> None:
         return
     if setup_network.is_bridge_page(body):
         raise Abort(
-            f"the device at {device_ip} is on this tool's installer from an earlier run: run this "
-            "again and continue it, or switch the device off and on to go back to Sonoff"
+            f"the device at {device_ip} is on this tool's installer from an earlier run: carry that "
+            "conversion on - Convert another device, or the tool started again, offers it - or switch the "
+            "device off and on to go back to Sonoff"
         )
     if "tasmota" in body.lower():
         raise NotOnSonoff(
             "tasmota",
             f"{device_ip} is running Tasmota, not Sonoff's firmware: if it is part way through "
-            "a conversion, run this again and continue it"
+            "a conversion, carry that one on - Convert another device, or the tool started again, offers it"
         )
     for firmware, answers in (("esphome", esphome.is_esphome), ("openbeken", openbeken.is_openbeken)):
         if answers(device_ip, 3.0):
             raise NotOnSonoff(
                 firmware,
                 f"{device_ip} is running {detect.NAMES[firmware]}, not Sonoff's firmware: it is "
-                "converted already. Run this again, and the tool finds it on your network as a converted device")
+                "converted already. Convert it as another device, and the tool finds it on your network as a "
+                "converted device")
 
 
 def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid: str, product: str, model: str) -> str:

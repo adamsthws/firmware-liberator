@@ -472,6 +472,7 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     ends as stopped, with what it showed left under it - or skipped, for one
     device of several passed by."""
     ctx.readout = this = Became.of(device)
+    ctx.readout_device_id = str(device.get("deviceid") or "")   # to read it out again (cli.what_next)
     readouts(ctx).append(this)
     _numbered.clear()   # its stages numbered on from the account's
     # Its own report, sent as it ends however it ends: one a readout.

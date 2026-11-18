@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
@@ -197,9 +198,18 @@ class AnotherDeviceTests(unittest.TestCase):
     sitting: a new run, found afresh, the eWeLink sign-in kept.  Not after
     one that stopped, nor in an unattended one."""
 
-    def main(self, *, codes, answers, command="run", more=(), became_readouts=()):
+    def main(self, *, codes, answers, command="run", more=(), became_readouts=(), unfinished=None):
+        """`unfinished`: the run "Convert another device" carries on, offered
+        back and chosen (resolve_run_name); else it starts a new one."""
         from types import SimpleNamespace
         made, names = [], iter(f"run-{number}" for number in range(2, 9))
+        self.left_out = []
+
+        def resolved(requested, force_new, device_ip, ask=False, leave_out=None):
+            if leave_out is None:
+                return "run-1"   # as the tool starts
+            self.left_out.append((leave_out, ask))
+            return unfinished or next(names)
 
         def context(args):
             ctx = SimpleNamespace(args=args, run=args.run, device_ip=args.device_ip, dir=Path("unused"),
@@ -213,6 +223,8 @@ class AnotherDeviceTests(unittest.TestCase):
                 commands.append(ctx.args.command)
                 if len(self.ran) in became_readouts:
                     ctx.readouts = []   # a conversion that became a readout at A1 (readout.from_run)
+                if kind == "read_out":
+                    ctx.readouts, ctx.readout_device_id = ["one device"], "1000abcdef"
                 self.ran.append(kind)
                 return next(codes)
             return ran
@@ -238,7 +250,7 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", top),
                     mock.patch.object(records, "take_over_earlier_names"),
                     mock.patch.object(prompts, "wait_for_taller_window"),
-                    mock.patch.object(cli, "resolve_run_name", return_value="run-1"),
+                    mock.patch.object(cli, "resolve_run_name", side_effect=resolved),
                     mock.patch.object(cli, "start_new_run", side_effect=lambda _: next(names)),
                     mock.patch.object(cli, "Context", side_effect=context),
                     mock.patch.object(routes, "apply_target", self.applied),
@@ -334,14 +346,44 @@ class AnotherDeviceTests(unittest.TestCase):
         # A readout is never tried again by itself: another is read out.
         self.assertEqual(asked.call_args_list[1].args[1], ["Convert a device", "Read out another device"])
 
-    def test_after_a_readout_that_failed_or_was_not_confirmed(self):
-        # Seen: a readout that did not go ahead ended the sitting at the email
-        # question, with no way to read out or convert another device.
-        code, made, asked, _ = self.main(codes=[1, 0], answers=[self.READ_OUT, prompts.QuitRun("q")],
+    def test_after_a_readout_that_failed(self):
+        # Seen: a readout that failed ended the sitting at the email question,
+        # with no way to read out or convert another device.
+        code, made, asked, _ = self.main(codes=[1, 0], answers=[self.AGAIN + 2, prompts.QuitRun("q")],
                                          command="readout")
         self.assertEqual((code, self.ran), (0, ["read_out", "read_out"]))
-        self.assertEqual(asked.call_args.args, ("What next", ["Convert a device", "Read out another device"]))
+        self.assertEqual(asked.call_args_list[0].args,
+                         ("What next", ["Read out this device again", "Convert a device", "Read out another device"]))
+        self.assertIsNone(made[1].read_out_again)   # another device: chosen afresh
         made[1].keep_sign_in.assert_called_once_with(made[0])
+
+    def test_a_readout_that_failed_can_be_read_out_again(self):
+        # As a conversion that failed can be tried again: the same device, by
+        # its eWeLink id, in a new readout of its own.
+        code, made, asked, _ = self.main(codes=[1, 0], answers=[self.AGAIN, prompts.QuitRun("q")], command="readout")
+        self.assertEqual((code, self.commands), (0, ["readout", "readout"]))
+        self.assertEqual(made[1].read_out_again, "1000abcdef")
+        self.assertEqual([ctx.run for ctx in made], ["run-2", "run-3"])
+        # Read out then: nothing to read out again.
+        self.assertEqual(asked.call_args_list[1].args[1], ["Convert a device", "Read out another device"])
+
+    def test_a_readout_of_every_device_is_not_offered_again(self):
+        # Which device to read again is no one's to guess.
+        with mock.patch.object(cli.readout, "readouts", side_effect=lambda ctx: ctx.readouts):
+            self.assertTrue(cli.offers_again("readout", 1, SimpleNamespace(readouts=["one"], readout_device_id="x")))
+            self.assertFalse(cli.offers_again("readout", 1, SimpleNamespace(readouts=["one", "two"],
+                                                                           readout_device_id="x")))
+            self.assertFalse(cli.offers_again("readout", 0, SimpleNamespace(readouts=["one"], readout_device_id="x")))
+
+    def test_convert_another_device_offers_an_unfinished_run_back_but_the_one_just_offered(self):
+        # As the tool's start does: one left part way is carried on, not passed
+        # by for a new run - but not the one that failed, offered just above.
+        _, made, _, _ = self.main(codes=[1, 0], answers=[self.AGAIN + 1, prompts.QuitRun("q")], unfinished="run-0")
+        self.assertEqual([ctx.run for ctx in made], ["run-1", "run-0"])
+        self.assertEqual(self.left_out, [("run-1", True)])
+        # A readout's run is always new.
+        _, made, _, _ = self.main(codes=[0, 0], answers=[self.READ_OUT, prompts.QuitRun("q")], unfinished="run-0")
+        self.assertEqual(([ctx.run for ctx in made], self.left_out), (["run-1", "run-2"], []))
 
     def test_after_a_conversion_that_became_a_readout_it_is_a_readout_s_what_next(self):
         # It converted nothing: no "Try this device again", which would only
@@ -712,6 +754,15 @@ class RunChoiceTests(unittest.TestCase):
         self.assertEqual(len(menu.call_args.args[1]), 3)
         self.assertIn("carries on at stage 7", menu.call_args.args[1][0])
 
+    def test_the_run_left_out_is_not_offered(self):
+        # What next offered the conversion that failed already (cli.next_device).
+        from unittest import mock
+        self.device_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
+        with mock.patch.object(prompts, "ask_choice") as menu:
+            name = cli.resolve_run_name(None, False, None, ask=True, leave_out="1-stale")
+        menu.assert_not_called()
+        self.assertNotEqual(name, "1-stale")
+
     def test_not_asked_for_one_device_only_its_run_is_carried_on(self):
         from unittest import mock
         self.run_dir("half", ["A0"])
@@ -1008,6 +1059,24 @@ class ReadoutCommandTests(unittest.TestCase):
         every, chosen, devices = self.read(all=True)
         self.assertEqual(every.call_args.args[1], devices)
         chosen.assert_not_called()
+
+    def test_read_out_again_it_reads_that_device_unasked(self):
+        # Chosen at What next after it failed (cli.what_next): by its eWeLink
+        # id, not asked which, nor found by an address it may have lost.
+        from tools.autoflash import readout
+        devices = [{"deviceid": "1000abcdef"}, {"deviceid": "1000fedcba"}]
+        ctx = SimpleNamespace(args=SimpleNamespace(device_ip=None, all=False), account_devices=lambda: devices,
+                              read_out_again="1000fedcba")
+        with mock.patch.object(cli.output, "say"), mock.patch.object(cli.output, "stage_begin"), \
+                mock.patch.object(cli.output, "stage_end"), mock.patch.object(readout, "end"), \
+                mock.patch.object(readout, "read_out_chosen") as chosen, \
+                mock.patch.object(readout, "run", return_value="") as ran:
+            self.assertEqual(cli.cmd_readout(ctx, None), 0)
+            ran.assert_called_once_with(ctx, devices[1])
+            chosen.assert_not_called()
+            ctx.read_out_again = "1000999999"   # gone from the account since
+            with self.assertRaisesRegex(cli.Abort, "no longer in this eWeLink account"):
+                cli.cmd_readout(ctx, None)
 
     def test_without_it_the_owner_chooses(self):
         every, chosen, _ = self.read()

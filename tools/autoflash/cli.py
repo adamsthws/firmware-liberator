@@ -187,7 +187,8 @@ def log_run_choice() -> None:
 
 
 def resolve_run_name(
-    requested: str | None, force_new: bool, device_ip: str | None, ask: bool = False
+    requested: str | None, force_new: bool, device_ip: str | None, ask: bool = False,
+    leave_out: str | None = None,
 ) -> str:
     """Work out which conversion this is, without asking for an identifier.
 
@@ -195,6 +196,9 @@ def resolve_run_name(
     `run` - an unfinished conversion is offered back rather than resumed
     silently, so starting the next device is never mistaken for finishing the
     last.  Nothing opaque is ever typed by the operator.
+
+    `leave_out`: a run not to offer back - one that failed, just offered
+    again by What next.
     """
     if requested:
         runs.remember_current(requested)
@@ -203,7 +207,8 @@ def resolve_run_name(
         return start_new_run(device_ip)
 
     directories = runs.run_directories()
-    unfinished = [d for d in directories if not run_is_complete(d) and not superseded(d, directories)]
+    unfinished = [d for d in directories if not run_is_complete(d) and not superseded(d, directories)
+                  and runs.run_name(d) != leave_out]
     if device_ip and not ask:
         # Not asked, for one device: only a run of that device is carried on.
         unfinished = [d for d in unfinished if RunState.open(d).input("device_ip") == device_ip]
@@ -358,7 +363,13 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
         raise
     output.stage_end("complete")
     given = ctx.args.device_ip
-    if given:
+    again = getattr(ctx, "read_out_again", None)   # chosen at What next, by its eWeLink id
+    if again:
+        device = next((device for device in devices if str(device.get("deviceid") or "") == again), None)
+        if device is None:
+            raise Abort("the device read out before is no longer in this eWeLink account; add it again in the app")
+        said = readout.run(ctx, device)
+    elif given:
         said = readout.run(ctx, readout.device_at(given, devices), given)
     elif getattr(ctx.args, "all", False):
         said = readout.run_all(ctx, devices)
@@ -662,11 +673,18 @@ def _main() -> int:
     code = read_out(ctx) if args.command == "readout" else convert(ctx, given)
     # Whatever it ended in, but q or Ctrl-C (130): those were the way out.
     while code != 130 and not args.send:
-        command = what_next(ended_as(args.command, ctx), failed=code != 0)
+        last = ended_as(args.command, ctx)
+        command = what_next(last, again=offers_again(last, code, ctx))
         if command is None:
             break
-        ctx = same_device(args, ctx) if command == AGAIN else next_device(args, ctx)
-        args.command = "run" if command == AGAIN else command
+        if command == AGAIN and last == "run":
+            args.command, ctx = "run", same_device(args, ctx)
+        else:
+            # A readout tried again reads the same device, in a run of its own.
+            again = getattr(ctx, "readout_device_id", None) if command == AGAIN else None
+            args.command = "readout" if command == AGAIN else command
+            ctx = next_device(args, ctx)
+            ctx.read_out_again = again
         # Either at the top of the window: a readout under the last device's
         # left its "Readout saved in" above the next one's.
         output.start_at_top()
@@ -675,7 +693,7 @@ def _main() -> int:
     return code
 
 
-AGAIN = "again"   # what_next's answer for the conversion that failed, tried again
+AGAIN = "again"   # what_next's answer for the device that failed, tried again
 
 
 def ended_as(command: str, ctx: Context) -> str:
@@ -685,19 +703,32 @@ def ended_as(command: str, ctx: Context) -> str:
     return "readout" if getattr(ctx, "readouts", None) is not None else command
 
 
-def what_next(last: str, failed: bool = False) -> str | None:
+def offers_again(last: str, code: int, ctx: Context) -> bool:
+    """Whether what next offers the device that failed again (AGAIN): a
+    conversion that failed, or a readout of one device that did - not one of
+    every device in the account, which device being no one's to guess."""
+    if code == 0:
+        return False
+    if last == "run":
+        return True
+    return len(readout.readouts(ctx)) == 1 and bool(getattr(ctx, "readout_device_id", ""))
+
+
+def what_next(last: str, again: bool = False) -> str | None:
     """After a conversion or a readout, however it ended, what is next, in the
     same sitting: another device converted, or one read out - "run" or
-    "readout" - with no command to type again; after a conversion that
-    `failed`, first that device tried again (AGAIN), from where it stopped.
-    None for nothing: q, or Ctrl-C.  Asked only of someone at the keyboard."""
+    "readout" - with no command to type again; with `again`, first the device
+    that failed tried again (AGAIN): a conversion carried on from where it
+    stopped, a readout read afresh.  None for nothing: q, or Ctrl-C.  Asked
+    only of someone at the keyboard."""
     if prompts.UNATTENDED:
         return None
     output.tell("")
     if last != "run":
-        choices = [("Convert a device", "run"), ("Read out another device", "readout")]
+        choices = [*([("Read out this device again", AGAIN)] if again else []),
+                   ("Convert a device", "run"), ("Read out another device", "readout")]
     else:
-        choices = [*([("Try this device again", AGAIN)] if failed else []),
+        choices = [*([("Try this device again", AGAIN)] if again else []),
                    ("Convert another device", "run"), ("Read out a device", "readout")]
     try:
         return choices[prompts.ask_choice("What next", [label for label, _ in choices])][1]
@@ -720,9 +751,14 @@ def same_device(args: argparse.Namespace, previous: Context) -> Context:
 
 
 def next_device(args: argparse.Namespace, previous: Context) -> Context:
-    """The next device's run: a new one, found afresh - not the address the
-    last was given - with the eWeLink account the last one signed in to."""
-    args.run, args.device_ip, args.new = start_new_run(None), None, True
+    """The next device's run (`args.command`'s), found afresh - not the
+    address the last was given - with the eWeLink account the last one signed
+    in to: for a conversion, an unfinished one offered back first, as at the
+    tool's start (resolve_run_name), but for the one just offered again; a
+    readout's always new."""
+    args.device_ip, args.new = None, True
+    args.run = (resolve_run_name(None, False, None, ask=True, leave_out=previous.run) if args.command == "run"
+                else start_new_run(None))
     ctx = Context(args)
     ctx.keep_sign_in(previous)
     routes.apply_target(routes.recorded_firmware(ctx.state), routes.route_source(ctx.state),
