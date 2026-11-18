@@ -41,6 +41,11 @@ check.
   give a new firmware one, if nobody reserved its address - is found there by
   its hardware address, as an S61 always was, and the run says "The device is
   now at ...". Before, it waited five minutes at the old address and stopped.
+- An S61 in ESPHome's safe mode - started ten times in a row, each cut within
+  a minute - is waited out until ESPHome starts as itself, as an S60's is, then
+  converted. Before, nothing on it was recognised, as its ESPHome serves
+  updates on another port than an S60's, and the run took it for a device on
+  Sonoff's firmware. An S61's ESPHome with a web login is found too.
 - Ctrl-C twice, or the window closed, while an S61 is sent its firmware
   through eWeLink stops the run as asked, and the next run says why it
   stopped. Before, it ended as a delivery that failed part way, with a switch

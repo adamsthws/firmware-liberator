@@ -40,6 +40,9 @@ NAMES = {
     # The readout OpenBeken (readout_beken), left by a readout stopped part way.
     "readout": "the readout firmware, left by a readout stopped part way",
     "midway": "a firmware part way through a conversion",
+    # A Beken device's ESPHome answering only its update service, its page not
+    # up: in safe mode, which routes/source.esphome_safe_mode waits out.
+    "esphome-update": "ESPHome's update service alone, its page not up",
     "untemplated": "Tasmota without the device's template",
     "outdated": "an earlier release of the firmware this tool installs",
     "installer": "this tool's installer, part way from Sonoff's firmware",
@@ -214,7 +217,7 @@ def _esphome(host: str, timeout: float, login: tuple[str, str] | None) -> str | 
     """
     found = esphome.page(host, timeout)
     if found == "login":
-        if esphome_ota.probe(host, timeout=timeout) is None:
+        if not esphome_update_service(host, timeout):
             return None
         if login is None:
             return "esphome-login"
@@ -272,10 +275,21 @@ def tasmota(host: str, *, timeout: float = 3.0,
     return _tasmota(host, timeout, password)
 
 
+def esphome_update_service(host: str, timeout: float = 3.0) -> int | None:
+    """The port ESPHome's update service answers on at `host` - an Espressif
+    device's (esphome_ota.PORT) or a Beken device's, on LibreTiny
+    (esphome_ota.LIBRETINY_PORT) - or None where it answers on neither."""
+    for port in (esphome_ota.PORT, esphome_ota.LIBRETINY_PORT):
+        if esphome_ota.probe(host, port=port, timeout=timeout) is not None:
+            return port
+    return None
+
+
 def identify(host: str, *, timeout: float = 3.0, password: str | None = None,
              esphome_login: tuple[str, str] | None = None) -> str | None:
     """sonoff, tasmota, esphome, openbeken; interim, the interim firmware
-    part way to ESPHome; mover, startup or hub midway; locked, a
+    part way to ESPHome; mover, startup or hub midway; esphome-update, a
+    Beken device's ESPHome answering only its update service; locked, a
     Tasmota whose web password `password` is not; esphome-login, an ESPHome
     whose web login `esphome_login` is not - or None if nothing known
     answers."""
@@ -298,8 +312,12 @@ def identify(host: str, *, timeout: float = 3.0, password: str | None = None,
             return "locked"
         if found:
             return found[0]
-    if esphome_ota.probe(host, timeout=timeout) is not None:
-        return "mover"
+    # Only ESPHome's update service: on an Espressif device the mover's, or
+    # its ESPHome in safe mode; on a Beken device, which has no mover, its
+    # ESPHome's - in safe mode, or still starting.
+    service = esphome_update_service(host, timeout)
+    if service is not None:
+        return "mover" if service == esphome_ota.PORT else "esphome-update"
     if _port_open(host, SONOFF_LAN_PORT, timeout):
         return "sonoff"
     return None
@@ -360,11 +378,14 @@ def _ask_neighbours(seen: dict[str, str], known_macs: set[str], timeout: float, 
         host, mac = item
         if not _port_open(host, 80, timeout):
             # A mover before 1.2.0 has no web server, only ESPHome's update
-            # service - as has any ESPHome built without one: only a device this
-            # computer knows.
-            if (hostsys.normalise_mac(mac) in known_macs
-                    and esphome_ota.probe(host, timeout=timeout) is not None):
+            # service - as has any ESPHome built without one, or in safe mode:
+            # only a device this computer knows. On a Beken device's port, its
+            # ESPHome (identify).
+            service = esphome_update_service(host, timeout) if hostsys.normalise_mac(mac) in known_macs else None
+            if service == esphome_ota.PORT:
                 return Found(host, "midway", mac, "the mover")
+            if service == esphome_ota.LIBRETINY_PORT:
+                return Found(host, "esphome-update", mac)
             return None
         found = _esphome(host, timeout, esphome_login)
         if found:

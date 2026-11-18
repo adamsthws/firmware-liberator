@@ -970,6 +970,35 @@ rests on these:
   busy delay between), and raising every enabled channel on every tick ran that
   feed back to back and starved OpenBeken just after `Main_Init_Before_Delay`.
 
+### ESPHome in safe mode
+
+ESPHome's `safe_mode`, which the S61's ESPHome has with its defaults (ten
+attempts, a start good after 60 s, safe mode for 300 s), behaves on LibreTiny
+as on an Espressif device. Tried in the emulator from the Beken fault suite's
+saved ESPHome, switched off and on (`beken-emu.sh power cycle`) as soon as its
+update service answered after each start:
+
+- **Each start answers its update service on port 8892 about 23 s after power
+  on, and its page on port 80 3 s later.** Cut then, each start counts as
+  unsuccessful: the serial log says `Unsuccessful boot attempts: N` and `Last
+  reset too quick; invoke in N restarts`, so the count is kept in flash
+  (FlashDB preferences, at `0x3ee000`) through every power cut.
+- **The tenth start in a row is safe mode:** `Boot loop detected`, `SAFE MODE IS
+  ACTIVE`, Wi-Fi and the update service alone, on 8892 about 15 s after power on
+  and no page on port 80, nor any other service. Nothing on the network says it
+  is ESPHome but that service, so the tool finds it by the port and by this
+  computer's record of the device it left on ESPHome
+  (`routes/source.esphome_safe_mode`), as it finds an S60's on 3232.
+- **When its time is up it restarts as itself** (`Timeout, restarting`), its
+  count cleared, and its page is back.
+- **In the emulator that time passes about five times faster than on the
+  wall:** the 300 s ended 62 s after safe mode began, while a start, busy, keeps
+  near the wall's time (no start cut at 25 s reached its 60 s). The firmware's
+  clock runs ahead while it idles, as it does waiting for ESPHome's own network
+  ([the emulator's README](../tools/beken/emulator/README.md)). A real S61 is in
+  safe mode for the full five minutes; the fault suite's `safemode-ten` starts
+  the tool as soon as it sees safe mode, to find it there.
+
 ## What a backup logs
 
 The backup is taken at B4, through OpenBeken, once the first conversion has put it

@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Collection, TYPE_CHECKING
 
 from tools.autoflash import kinds, output, records
 from tools.autoflash.errors import Abort
-from tools.autoflash.state import RunState
+from tools.autoflash.state import FAILED, PENDING, RunState
 
 if TYPE_CHECKING:
     from tools.autoflash.account import AccountDevice
@@ -132,6 +132,16 @@ def device_runs_tasmota(state: RunState) -> bool:
     if source == "tasmota" and not state.is_done("L1"):
         return True
     return state.is_done("X2") and not state.is_done("I1") and not state.is_done("R1")
+
+
+def wrote_nothing(state: RunState, destructive: Collection[str]) -> bool:
+    """Whether a run wrote nothing to the device: none of `destructive` - its
+    family's steps that write (routes/<family>/evidence.DESTRUCTIVE_STEPS) -
+    done or part way, and each that failed stopped before writing."""
+    steps = state.data.get("steps", {})
+    return all(state.status(step) == PENDING
+               or (state.status(step) == FAILED and steps.get(step, {}).get("nothing_written"))
+               for step in destructive)
 
 
 def run_firmware(state: RunState) -> str:

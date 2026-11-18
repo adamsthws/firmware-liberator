@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import esphome, firewall, handover, join, kinds, openbeken, output, runs
+from tools.autoflash import esphome, esphome_ota, firewall, handover, join, kinds, openbeken, output, runs
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes.beken import images
 from tools.beken import uf2
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 # ESPHome's OTA listens here on LibreTiny (3232 on an Espressif device).
-ESPHOME_OTA_PORT = 8892
+ESPHOME_OTA_PORT = esphome_ota.LIBRETINY_PORT
 # OpenBeken fetches an image in a minute or two; it then restarts by itself.
 FETCH_WAIT = 240.0
 # A device that has asked for nothing this long after being told to fetch is

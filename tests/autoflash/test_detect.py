@@ -215,6 +215,22 @@ class TasmotaTests(unittest.TestCase):
             found = detect.converted_devices("192.0.2.1", known_macs={"12:34:56:ab:cd:ef"})
         self.assertEqual([(f.host, f.name) for f in found], [("192.0.2.137", "the mover")])
 
+    def test_a_beken_esphome_answering_its_update_service_alone_is_found_by_it(self):
+        # An S61's ESPHome in safe mode: no page, its update service on
+        # LibreTiny's port - taken for a device on Sonoff's firmware before.
+        def offered(host, port=detect.esphome_ota.PORT, timeout=None):
+            return object() if port == detect.esphome_ota.LIBRETINY_PORT else None
+        neighbours = {"192.0.2.137": "12:34:56:ab:cd:ef", "192.0.2.99": "aa:bb:cc:dd:ee:ff"}
+        with mock.patch.object(detect.hostsys, "sweep"), \
+                mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
+                mock.patch.object(detect, "_port_open", return_value=False), \
+                mock.patch.object(detect.esphome, "page", return_value=None), \
+                mock.patch.object(detect.esphome_ota, "probe", side_effect=offered):
+            found = detect.converted_devices("192.0.2.1", known_macs={"12:34:56:ab:cd:ef"})
+            self.assertEqual(detect.identify("192.0.2.137"), "esphome-update")
+        self.assertEqual([(f.host, f.firmware) for f in found], [("192.0.2.137", "esphome-update")])
+        self.assertIn("update service alone", found[0].describe())
+
     def test_a_converted_tasmota_is_found_with_its_kind(self):
         fake = FakeTasmota(version="15.6.0(release-tasmota32)", table=TASMOTA_TABLE)
         with mock.patch.object(detect, "Device", fake), \
@@ -440,6 +456,16 @@ class EsphomeLoginTests(unittest.TestCase):
             found = detect.converted_devices("192.0.2.1")
         self.assertEqual([(f.host, f.firmware) for f in found], [("192.0.2.42", "esphome-login")])
         self.assertIn("web login", found[0].describe())
+
+    def test_a_beken_esphomes_login_is_asked_once_its_own_update_service_answers(self):
+        # LibreTiny's port, not 3232: an S61's ESPHome behind a web login was
+        # found by no update service, so not as an ESPHome at all.
+        def offered(host, port=detect.esphome_ota.PORT, timeout=None):
+            return object() if port == detect.esphome_ota.LIBRETINY_PORT else None
+        with mock.patch.object(detect.esphome, "page", return_value="login"), \
+                mock.patch.object(detect.esphome_ota, "probe", side_effect=offered), \
+                mock.patch.object(detect, "_port_open", return_value=True):
+            self.assertEqual(detect.identify("192.0.2.42"), "esphome-login")
 
     def test_before_this_it_was_taken_for_the_mover(self):
         # Its page shut, its update service open: what the mover looks like but

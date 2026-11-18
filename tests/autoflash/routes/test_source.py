@@ -9,11 +9,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import detect, device, errors, esphome, hostsys, output, records, prompts, routes, runs
+from tools.autoflash import detect, device, errors, esphome, hostsys, kinds, output, records, prompts, routes, runs
 from tools.autoflash import unlock
 from tools.autoflash.routes import source
 from tools.autoflash.routes.espressif import source as espressif_source
 from tools.autoflash.state import RunState
+
+S61 = kinds.SONOFF_S61.key
 
 
 class KindLeftPartWayTests(unittest.TestCase):
@@ -539,7 +541,7 @@ class FoundOnTheNetworkTests(FirmwareSearchCase):
         asked = mock.Mock(return_value=choice)
         with mock.patch.object(detect, "converted_devices", return_value=list(found)), \
                 mock.patch.object(prompts, "ask_choice", asked), \
-                mock.patch.object(espressif_source, "esphome_safe_mode", side_effect=lambda ctx, running: "esphome") \
+                mock.patch.object(source, "esphome_safe_mode", side_effect=lambda ctx, running: "esphome") \
                 as self.safe_mode, \
                 mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
             return source.find_current_firmware(self.ctx()), asked.call_args
@@ -561,6 +563,12 @@ class FoundOnTheNetworkTests(FirmwareSearchCase):
         hub = detect.Found("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef", "the mover")
         self.assertEqual(self.search(hub, choice=0)[0], "tasmota")
         self.safe_mode.assert_not_called()
+
+    def test_a_beken_esphome_found_by_its_update_service_alone_is_checked_too(self):
+        # An S61's ESPHome in safe mode: LibreTiny's port, no page (detect).
+        update_only = detect.Found("192.0.2.137", "esphome-update", "12:34:56:ab:cd:ef")
+        self.assertEqual(self.search(update_only, choice=0)[0], "esphome")
+        self.safe_mode.assert_called_once()
 
     def test_an_installer_no_conversion_left_goes_on_from_sonoffs_firmware(self):
         from tools.autoflash.routes.espressif import installer
@@ -660,6 +668,94 @@ class InstallerFoundTests(FirmwareSearchCase):
                         mock.patch.object(RunState, "is_done", side_effect=lambda step: step == "H1"):
                     self.assertIsNone(source.last_run(here, "aa:bb:cc:dd:ee:ff"))   # finished
                 self.assertIsNone(source.last_run(here, "99:99:99:99:99:99"))
+
+
+class EsphomeSafeModeTests(unittest.TestCase):
+    """A device answering only ESPHome's update service that a run left on
+    ESPHome is ESPHome in safe mode, on either family: waited out - an
+    Espressif one, answering as the mover does, never sent the startup
+    firmware; a Beken one, on LibreTiny's port, never taken for one on
+    Sonoff's firmware."""
+
+    def running(self, earlier, answers=("mover", "esphome"), by_address=False, other_device=(), kind=None):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        kept = []
+        for index, (firmware, done) in enumerate(earlier):
+            run = root / f"run{index}"
+            run.mkdir()
+            state = RunState.open(run)
+            state.set_input("firmware", firmware)
+            if kind:
+                state.set_input("device_kind", kind)
+            for step in done:
+                state.mark(step, "done")
+            kept.append(run)
+        now = root / "now"
+        now.mkdir()
+        inputs = {"device_ip": "192.0.2.137", "device_mac": "12:34:56:ab:cd:ef"}
+        ctx = SimpleNamespace(dir=now, state=SimpleNamespace(input=inputs.get),
+                              web_password=None, esphome_login=None)
+        answers = iter(answers)
+        clock = iter(range(80000, 90000, 5))  # as time.monotonic() is: seconds since some moment
+        macs = {run: "12:34:56:ab:cd:01" if index in other_device else "12:34:56:ab:cd:ef"
+                for index, run in enumerate(kept)}
+        self.slept = []
+        with mock.patch.object(runs, "run_directories", return_value=kept), \
+                mock.patch.object(records, "mac_of_run", side_effect=macs.get), \
+                mock.patch.object(detect, "identify", side_effect=lambda *a, **k: next(answers)), \
+                mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
+                mock.patch.object(time, "sleep", side_effect=self.slept.append), \
+                mock.patch.object(output, "say"):
+            if by_address:
+                with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
+                        mock.patch.object(source, "adopt_device"), \
+                        mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
+                    return source.find_current_firmware(ctx)
+            return source.esphome_safe_mode(ctx, "esphome-update" if kind == S61 else "midway")
+
+    def test_left_on_esphome_it_is_waited_out(self):
+        converted = [("esphome", ["D5", "I1", "I2"])]
+        self.assertEqual(self.running(converted, answers=("mover", "mover", "esphome")), "esphome")
+        self.assertEqual(self.slept, [5, 5], "a pause between asks")
+        # Run again at its address, as the network search finds it.
+        self.assertEqual(self.running(converted, answers=("mover", "esphome"), by_address=True), "esphome")
+
+    def test_otherwise_it_is_the_mover(self):
+        self.assertEqual(self.running([]), "midway")
+        # Stopped before ESPHome had confirmed itself: back on the mover, part way.
+        self.assertEqual(self.running([("esphome", ["D5", "I1"])]), "midway")
+        # Its last run took it on from ESPHome.
+        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"]), ("tasmota", ["X1", "X2"])]), "midway")
+
+    def test_a_run_that_wrote_nothing_does_not_hide_it(self):
+        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"]), ("tasmota", [])]), "esphome")
+
+    def test_only_this_devices_runs_count(self):
+        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"])], other_device=(0,)), "midway")
+
+    def test_one_that_never_comes_back_stops_the_run(self):
+        with self.assertRaises(errors.Abort):
+            self.running([("esphome", ["D5", "I1", "I2"])], answers=["mover"] * 1000)
+
+
+    def test_a_beken_device_left_on_esphome_is_waited_out_too(self):
+        # Its ESPHome answers on LibreTiny's port alone (detect.identify), and
+        # its route ends at K2, not I2.
+        converted = [("esphome", ["B4", "J2", "K2"])]
+        self.assertEqual(self.running(converted, answers=("esphome-update", "esphome-update", "esphome"),
+                                      kind=S61), "esphome")
+        self.assertEqual(self.slept, [5, 5])
+        self.assertEqual(self.running(converted, answers=("esphome-update", "esphome"), by_address=True, kind=S61),
+                         "esphome")
+
+    def test_a_beken_device_not_left_on_esphome_is_never_taken_for_sonoffs(self):
+        # It was: nothing on port 80 or 3232, so a device on Sonoff's firmware.
+        for earlier in ([], [("esphome", ["B4", "J2"])], [("openbeken", ["B2", "K1", "B4"])]):
+            with self.subTest(earlier=earlier), self.assertRaises(errors.Abort) as stopped:
+                self.running(earlier, answers=("esphome-update",), by_address=True, kind=S61)
+            self.assertIn("only ESPHome's update service", str(stopped.exception))
 
 
 if __name__ == "__main__":

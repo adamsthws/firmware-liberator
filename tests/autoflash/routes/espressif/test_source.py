@@ -1,18 +1,17 @@
 """Where an Espressif device was left, when a run starts
-(tools/autoflash/routes/espressif/source.py): past the commit or not,
-ESPHome in safe mode, and a device on Tasmota with ESPHome's bootloader
-already leaving it for ESPHome without the hub."""
+(tools/autoflash/routes/espressif/source.py): past the commit or not, and a
+device on Tasmota with ESPHome's bootloader already leaving it for ESPHome
+without the hub."""
 import hashlib
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tools.autoflash import detect, errors, handover, hostsys, join, output, records, routes, runs, unlock
+from tools.autoflash import errors, handover, join, output, records, routes, runs, unlock
 from tools.autoflash.device import DeviceError
-from tools.autoflash.routes import espressif, source, update
+from tools.autoflash.routes import espressif, update
 from tools.autoflash.routes.espressif import images, mover, source as espressif_source
 from tools.autoflash.state import ATTEMPTED, DONE, RunState
 from tools.espressif import chips
@@ -81,73 +80,6 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
         for running in ("safeboot", "committed", "untemplated"):
             self.assertIn("D5", [step for step, _, _ in espressif.steps_for("esphome", running)], running)
         self.assertIn("D5", [step for step, _, _ in espressif.steps_for("sonoff", "tasmota")])
-
-
-class EsphomeSafeModeTests(unittest.TestCase):
-    """A device answering as the mover that a run left on ESPHome is ESPHome in
-    safe mode: waited out, never sent the startup firmware."""
-
-    def running(self, earlier, answers=("mover", "esphome"), by_address=False, other_device=()):
-        from types import SimpleNamespace
-
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        root = Path(directory.name)
-        kept = []
-        for index, (firmware, done) in enumerate(earlier):
-            run = root / f"run{index}"
-            run.mkdir()
-            state = RunState.open(run)
-            state.set_input("firmware", firmware)
-            for step in done:
-                state.mark(step, "done")
-            kept.append(run)
-        now = root / "now"
-        now.mkdir()
-        inputs = {"device_ip": "192.0.2.137", "device_mac": "12:34:56:ab:cd:ef"}
-        ctx = SimpleNamespace(dir=now, state=SimpleNamespace(input=inputs.get),
-                              web_password=None, esphome_login=None)
-        answers = iter(answers)
-        clock = iter(range(80000, 90000, 5))  # as time.monotonic() is: seconds since some moment
-        macs = {run: "12:34:56:ab:cd:01" if index in other_device else "12:34:56:ab:cd:ef"
-                for index, run in enumerate(kept)}
-        self.slept = []
-        with mock.patch.object(runs, "run_directories", return_value=kept), \
-                mock.patch.object(records, "mac_of_run", side_effect=macs.get), \
-                mock.patch.object(detect, "identify", side_effect=lambda *a, **k: next(answers)), \
-                mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
-                mock.patch.object(time, "sleep", side_effect=self.slept.append), \
-                mock.patch.object(output, "say"):
-            if by_address:
-                with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
-                        mock.patch.object(source, "adopt_device"), \
-                        mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
-                    return source.find_current_firmware(ctx)
-            return espressif_source.esphome_safe_mode(ctx, "midway")
-
-    def test_left_on_esphome_it_is_waited_out(self):
-        converted = [("esphome", ["D5", "I1", "I2"])]
-        self.assertEqual(self.running(converted, answers=("mover", "mover", "esphome")), "esphome")
-        self.assertEqual(self.slept, [5, 5], "a pause between asks")
-        # Run again at its address, as the network search finds it.
-        self.assertEqual(self.running(converted, answers=("mover", "esphome"), by_address=True), "esphome")
-
-    def test_otherwise_it_is_the_mover(self):
-        self.assertEqual(self.running([]), "midway")
-        # Stopped before ESPHome had confirmed itself: back on the mover, part way.
-        self.assertEqual(self.running([("esphome", ["D5", "I1"])]), "midway")
-        # Its last run took it on from ESPHome.
-        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"]), ("tasmota", ["X1", "X2"])]), "midway")
-
-    def test_a_run_that_wrote_nothing_does_not_hide_it(self):
-        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"]), ("tasmota", [])]), "esphome")
-
-    def test_only_this_devices_runs_count(self):
-        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"])], other_device=(0,)), "midway")
-
-    def test_one_that_never_comes_back_stops_the_run(self):
-        with self.assertRaises(errors.Abort):
-            self.running([("esphome", ["D5", "I1", "I2"])], answers=["mover"] * 1000)
 
 
 class PastTheCommitTests(unittest.TestCase):

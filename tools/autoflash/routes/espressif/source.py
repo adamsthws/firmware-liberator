@@ -1,6 +1,7 @@
 """What an Espressif device runs when a run starts, where what it answers as
 does not say: part way, past the commit or not, as this computer's runs
-left it; ESPHome in safe mode; Tasmota's own safeboot.  And whether one on
+left it; Tasmota's own safeboot (ESPHome in safe mode, either family's, is
+routes/source.py's).  And whether one on
 Tasmota leaves it for ESPHome without the hub.  The device is found, whatever
 its family, by routes/source.py.
 """
@@ -11,14 +12,12 @@ import hashlib
 import json
 import re
 import shutil
-import time
 from typing import TYPE_CHECKING
 
-from tools.autoflash import kinds, output, records, runs, unlock
+from tools.autoflash import kinds, output, records, runs
 from tools.autoflash.device import DeviceError
-from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import evidence
-from tools.autoflash.state import ATTEMPTED, FAILED, PENDING, RunState
+from tools.autoflash.state import ATTEMPTED, RunState
 from tools.autoflash.routes.espressif import images
 
 if TYPE_CHECKING:
@@ -54,7 +53,7 @@ def past_the_commit(ctx: Context, running: str) -> str:
         # starts only once the new layout is in place - as E3's own check says.
         finished_alone = (not committed and state.status("E3") == ATTEMPTED
                           and evidence.table_fetched(directory / "live") and ctx.device.is_safeboot())
-        if not (committed or finished_alone) and wrote_nothing(state):
+        if not (committed or finished_alone) and runs.wrote_nothing(state, evidence.DESTRUCTIVE_STEPS):
             # Stopped before it wrote anything - X1 sent to a Tasmota, finding
             # no update service: seen hiding the run before it.
             continue
@@ -101,65 +100,6 @@ def leaves_tasmota_direct(ctx: Context) -> bool:
     output.say("    Its bootloader is not this tool's, so it goes by way of the firmware that")
     output.say("    installs one, as every device this tool converts ends with the same.")
     return False
-
-
-# ESPHome started ten times in a row, each stopped within a minute, takes that
-# for a boot loop and starts in safe mode: Wi-Fi and its update service, no
-# page and no relay, as the mover has. Five minutes on, it restarts as itself.
-ESPHOME_SAFE_MODE_WAIT = 400.0
-
-
-def left_on_esphome(ctx: Context) -> bool:
-    """Whether this computer's latest run of the device that wrote to it left
-    it on ESPHome, checked (I2): one past that, the mover is gone for good."""
-    mac = ctx.state.input("device_mac")
-    for directory in reversed(runs.run_directories()):
-        if directory.resolve() == ctx.dir.resolve() or records.mac_of_run(directory) != mac:
-            continue
-        try:
-            state = RunState.open(directory)
-        except (OSError, ValueError):
-            continue
-        if wrote_nothing(state):
-            continue
-        return runs.run_firmware(state) == "esphome" and state.is_done("I2")
-    return False
-
-
-def esphome_safe_mode(ctx: Context, running: str) -> str:
-    """What a device that answers as the mover runs: ESPHome in safe mode, if
-    a run left it on ESPHome, waited out until it restarts as itself - taken
-    for part way, it was sent the startup firmware, even to stay on ESPHome."""
-    if not left_on_esphome(ctx):
-        return running
-    host = ctx.state.input("device_ip")
-    output.say("    It answers only ESPHome's update service, though this computer left it on")
-    output.say("    ESPHome: ESPHome in safe mode, after starting ten times in a row, each")
-    output.say("    stopped within a minute. It restarts as itself within five minutes.")
-    output.say("    Waiting for it - leave it switched on...")
-    started = time.monotonic()
-    while time.monotonic() - started < ESPHOME_SAFE_MODE_WAIT:
-        found = unlock.identify(ctx, host)
-        if found == "esphome-login":
-            unlock.ask_esphome_login(ctx, host)
-            found = unlock.identify(ctx, host)
-        if found == "esphome":
-            output.say(f"    ESPHome answered after {time.monotonic() - started:.0f}s.")
-            return "esphome"
-        time.sleep(5)
-    raise Abort(
-        "the device answers only ESPHome's update service, and has not started ESPHome "
-        f"in {ESPHOME_SAFE_MODE_WAIT / 60:.0f} minutes. Leave it switched on for ten "
-        "minutes, then try again")
-
-
-def wrote_nothing(state: RunState) -> bool:
-    """Whether a run wrote nothing to the device: no step that writes done or
-    part way, and each that failed stopped before writing."""
-    steps = state.data.get("steps", {})
-    return all(state.status(step) == PENDING
-               or (state.status(step) == FAILED and steps.get(step, {}).get("nothing_written"))
-               for step in evidence.DESTRUCTIVE_STEPS)
 
 
 # Tasmota's own safeboot, as a build of Tasmota's own says it is - "15.6.0

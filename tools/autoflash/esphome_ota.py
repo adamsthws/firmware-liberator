@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from . import noise
 
 PORT = 3232
+# Where ESPHome serves it on LibreTiny - a Beken device's ESPHome, the S61's.
+LIBRETINY_PORT = 8892
 
 APP = 0x00
 PARTITION_TABLE = 0x01

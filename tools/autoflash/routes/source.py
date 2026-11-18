@@ -72,10 +72,10 @@ def find_current_firmware(ctx: Context) -> str:
             # but is on the network, so is still asked of eWeLink.
             raise Abort(f"nothing answers at {given}: check the device is switched on and on your Wi-Fi, "
                         "then try again")
-        if running in ("tasmota", "esphome", "midway", "installer", "untemplated"):
+        if running in ("tasmota", "esphome", "midway", "installer", "untemplated", "esphome-update"):
             adopt_device(ctx, detect.Found(given, running, mac))
-            if mover:
-                running = espressif_source.esphome_safe_mode(ctx, running)
+            if mover or running == "esphome-update":
+                running = esphome_safe_mode(ctx, running)
             return espressif_source.past_the_commit(ctx, running)
         return "sonoff"
     known = known_macs()
@@ -147,9 +147,71 @@ def find_current_firmware(ctx: Context) -> str:
         if left_by:
             return installer_back(ctx, chosen.host, left_by)
     adopt_device(ctx, chosen)
-    if chosen.firmware == "midway" and chosen.name == "the mover":
-        return espressif_source.past_the_commit(ctx, espressif_source.esphome_safe_mode(ctx, chosen.firmware))
+    if (chosen.firmware == "midway" and chosen.name == "the mover") or chosen.firmware == "esphome-update":
+        return espressif_source.past_the_commit(ctx, esphome_safe_mode(ctx, chosen.firmware))
     return espressif_source.past_the_commit(ctx, chosen.firmware)
+
+
+# ESPHome started ten times in a row, each stopped within a minute, takes that
+# for a boot loop and starts in safe mode: Wi-Fi and its update service, no
+# page and no relay - on an Espressif device, all the mover has. Five minutes
+# on, it restarts as itself. Alike on a Beken device, its ESPHome on LibreTiny
+# (docs/beken-research.md#esphome-in-safe-mode).
+ESPHOME_SAFE_MODE_WAIT = 400.0
+
+
+def left_on_esphome(ctx: Context) -> bool:
+    """Whether this computer's latest run of the device that wrote to it left
+    it on ESPHome, checked: its route to ESPHome done to its last step (I2 on
+    an Espressif device, K2 on a Beken one). One past that, the mover is gone
+    for good, and a Beken device has none."""
+    from tools.autoflash import routes  # the families' routes, which import this module
+    mac = ctx.state.input("device_mac")
+    for directory in reversed(runs.run_directories()):
+        if directory.resolve() == ctx.dir.resolve() or records.mac_of_run(directory) != mac:
+            continue
+        try:
+            state = RunState.open(directory)
+        except (OSError, ValueError):
+            continue
+        if runs.wrote_nothing(state, routes.family_of(state).DESTRUCTIVE_STEPS):
+            continue
+        steps = routes.steps_of(state)
+        return runs.run_firmware(state) == "esphome" and bool(steps) and state.is_done(steps[-1][0])
+    return False
+
+
+def esphome_safe_mode(ctx: Context, running: str) -> str:
+    """What a device answering only ESPHome's update service runs - "midway",
+    an Espressif device's, as the mover does; "esphome-update", a Beken
+    device's: ESPHome in safe mode, if a run left it on ESPHome, waited out
+    until it restarts as itself. Taken for part way, an Espressif one was sent
+    the startup firmware, even to stay on ESPHome; a Beken one, found by
+    nothing else, was taken for one on Sonoff's firmware."""
+    if not left_on_esphome(ctx):
+        if running == "esphome-update":
+            raise Abort("the device answers only ESPHome's update service, and has not started ESPHome "
+                        "as itself - in safe mode, say. Leave it switched on for ten minutes, then try again")
+        return running
+    host = ctx.state.input("device_ip")
+    output.say("    It answers only ESPHome's update service, though this computer left it on")
+    output.say("    ESPHome: ESPHome in safe mode, after starting ten times in a row, each")
+    output.say("    stopped within a minute. It restarts as itself within five minutes.")
+    output.say("    Waiting for it - leave it switched on...")
+    started = time.monotonic()
+    while time.monotonic() - started < ESPHOME_SAFE_MODE_WAIT:
+        found = unlock.identify(ctx, host)
+        if found == "esphome-login":
+            unlock.ask_esphome_login(ctx, host)
+            found = unlock.identify(ctx, host)
+        if found == "esphome":
+            output.say(f"    ESPHome answered after {time.monotonic() - started:.0f}s.")
+            return "esphome"
+        time.sleep(5)
+    raise Abort(
+        "the device answers only ESPHome's update service, and has not started ESPHome "
+        f"in {ESPHOME_SAFE_MODE_WAIT / 60:.0f} minutes. Leave it switched on for ten "
+        "minutes, then try again")
 
 
 def identify_once_restarted(ctx: Context, host: str) -> str | None:
@@ -284,7 +346,8 @@ def adopt_device(ctx: Context, found: "detect.Found") -> None:
         # run must never take the S60's way.
         named = kinds.for_esphome(*esphome.title(found.host))
         kind = named.key if named else None
-    if kind is None and found.firmware in ("midway", "installer", "untemplated") and ctx.state.input("device_mac"):
+    if kind is None and found.firmware in ("midway", "installer", "untemplated", "esphome-update") \
+            and ctx.state.input("device_mac"):
         kind = kind_left_part_way(ctx)
     if kind:
         ctx.state.set_input("device_kind", kind)
