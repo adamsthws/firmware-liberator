@@ -66,8 +66,11 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
         output.event("phase", phase="serving")
         output.say(f"Serving {what} to {device_ip} at {url}")
         if unstick and getattr(ctx, "running_step", None) in getattr(ctx, "redoing_interrupted", ()):
-            output.say("    The fetch the last run began may still be under way in OpenBeken: restarting it first.")
-            if unstick():
+            # Explained under the stage's line while it lasts (output.working), as
+            # the wait for a busy Tasmota is (join.wait_while_device_busy).
+            with output.working("Restarting the device: the last run's fetch may still be under way..."):
+                restarted = unstick()
+            if restarted:
                 unstick = None
         try:
             fetch(url)
@@ -75,8 +78,10 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
             # OpenBeken that refuses a fetch while one is under way says so.
             if not unstick or refused.unknown:
                 raise
-            output.say(f"    OpenBeken would not start the fetch ({refused}): restarting it, then asking again.")
-            if not unstick():
+            output.log_only(f"    OpenBeken would not start the fetch ({refused}).")
+            with output.working("Restarting the device, then asking it again..."):
+                restarted = unstick()
+            if not restarted:
                 raise NothingWritten(f"OpenBeken would not fetch {what}, and did not answer again after being "
                                      "restarted: switch it off and on, then try again",
                                      failure="device-no-answer") from refused
@@ -89,8 +94,9 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
                 break
             if not served and unstick and time.monotonic() - asked > FIRST_BYTE_WAIT:
                 output.progress_clear()
-                output.say(f"    The device has not asked for {what} yet - restarting it, then asking again.")
-                if not unstick():
+                with output.working("Nothing asked for yet - restarting the device, then asking again..."):
+                    restarted = unstick()
+                if not restarted:
                     raise NothingWritten(f"the device asked for nothing of {what}, and did not answer again "
                                          "after being restarted: switch it off and on, then try again",
                                          failure="device-no-answer")

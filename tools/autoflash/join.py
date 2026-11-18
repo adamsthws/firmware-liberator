@@ -543,14 +543,12 @@ def wait_while_device_busy(ctx: Context) -> None:
     device = ctx.device
     if device.answers(timeout=3.0) or not hostsys.ping_ok(host):
         return  # answering, or not on the network at all: the steps say which
-    output.tell("    The device is still finishing the step that was stopped (a minute or two).")
+    # A wait explained as OpenBeken's restart before a fetch sent again is
+    # (routes/beken/onward.py): nothing on the screen once it is over.
     started = time.monotonic()
-    while time.monotonic() - started < BUSY_DEVICE_WAIT:
-        output.progress(f"waiting for the device to finish... {time.monotonic() - started:.0f}s")
-        if device.answers(timeout=3.0):
-            output.progress_clear()
-            output.tell("    It is answering again.")
-            return
-        time.sleep(3.0)
-    output.progress_clear()
+    with output.working("Waiting for the device to finish the stopped step - a minute or two..."):
+        while time.monotonic() - started < BUSY_DEVICE_WAIT:
+            if device.answers(timeout=3.0):
+                return
+            time.sleep(3.0)
     output.tell("    Still no answer. If a step fails, switch it off and on, then try again.")

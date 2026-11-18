@@ -152,8 +152,7 @@ class BusyDeviceTests(unittest.TestCase):
              mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
              mock.patch.object(time, "sleep") as self.slept, \
              mock.patch.object(output, "tell") as told, \
-             mock.patch.object(output, "progress"), \
-             mock.patch.object(output, "progress_clear"):
+             mock.patch.object(output, "working") as self.working:
             join.wait_while_device_busy(ctx)
         return told
 
@@ -165,8 +164,15 @@ class BusyDeviceTests(unittest.TestCase):
         ctx, pings = self.ctx(answers=[False, False, False, True])
         told = self.wait(ctx, pings)
         self.assertEqual(ctx.device.answers.call_count, 4)
-        self.assertIn("answering again", told.call_args.args[0])
+        # Said as a wait while it lasts, and nothing left on the screen after.
+        self.assertIn("finish the stopped step", self.working.call_args.args[0])
+        told.assert_not_called()
         self.assertEqual(self.slept.call_count, 2)  # a pause between each two asks
+
+    def test_a_device_that_never_answers_is_said_to_need_switching_off_and_on(self):
+        ctx, pings = self.ctx(answers=[False] * 100)
+        told = self.wait(ctx, pings)
+        self.assertIn("switch it off and on", told.call_args.args[0])
 
     def test_a_device_off_the_network_is_left_to_the_steps(self):
         ctx, _ = self.ctx(answers=[False])

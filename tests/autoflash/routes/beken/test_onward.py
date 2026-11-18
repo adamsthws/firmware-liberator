@@ -232,6 +232,7 @@ class ServeToDeviceTests(unittest.TestCase):
                 mock.patch.object(onward.firewall, "ensure_firewall") as self.opened, \
                 mock.patch.object(onward.output, "say"), mock.patch.object(onward.output, "progress"), \
                 mock.patch.object(onward.output, "progress_clear"), \
+                mock.patch.object(onward.output, "working", wraps=onward.output.working) as self.working, \
                 mock.patch.object(onward.time, "monotonic", side_effect=monotonic), \
                 mock.patch.object(onward.time, "sleep", side_effect=sleep):
             ctx = a_context(tmp, device_ip="192.0.2.50", firmware="esphome", source="openbeken")
@@ -250,6 +251,8 @@ class ServeToDeviceTests(unittest.TestCase):
         self.serve([5], redoing=True)
         self.unstick.assert_called_once()
         self.assertEqual(len(self.fetches), 1)
+        # Explained under the stage's line while it lasts, as a busy Tasmota's wait is.
+        self.assertIn("the last run's fetch", self.working.call_args.args[0])
 
     def test_a_fetch_openbeken_would_not_start_restarts_it_and_asks_again(self):
         self.serve([5], refusals=1)
