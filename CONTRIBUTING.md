@@ -148,7 +148,9 @@ eWeLink accounts and devices' identities.
   in every cell, a conversion and a readout on each family, through the
   situation it names (`covers`), or `NOT_EVERYWHERE` says which cells it is
   for and why; the unit tests fail on a cell left out
-  ([more](docs/testing.md#attended-runs)).
+  ([more](docs/testing.md#attended-runs)). So is a fault the fault suites
+  try, or `tools/repo/fault_coverage.py` lists the cell as not yet tried
+  ([more](docs/testing.md#the-fault-suites)).
 - Docs, comments and commit messages match the existing ones: plain,
   compact sentences saying what something does and why.
 

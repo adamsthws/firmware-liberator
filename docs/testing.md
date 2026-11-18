@@ -256,6 +256,21 @@ then run again as a person would, switching the device off and on or joining
 its own network where the run says to, until the device is converted or four
 runs have failed. A fault that never happened is NOT-FIRED, never a pass.
 
+**Tried alike everywhere.** Each kind of fault, and each way a readout ends
+without reading the device whole, is to be tried in every cell - a
+conversion and a readout, in each family's suite - as the attended
+scenarios are. `tools/repo/fault_coverage.py` names the cells each is tried
+in. Its `NOT_EVERYWHERE` gives the cells a fault can only be for, and why (a
+Tasmota's settings erased by seven power cuts, on an S60 alone). Its
+`NOT_YET` lists every cell a fault could be tried in and is not yet.
+`tests/repo/test_fault_coverage.py` fails on a cell missing from both, so a
+fault added to one suite asks for the others, and on one tried since, so the
+list only gets shorter:
+
+```sh
+tools/repo/fault_coverage.py
+```
+
 A run is followed by its events, not its words: `events.jsonl` beside its
 `run.log`, a line as each step begins and ends, at points inside a step a
 fault is timed from, and as the person is asked to join a network, go back to
