@@ -1150,8 +1150,10 @@ question; a scenario can be a readout (`"command": "readout"`), and have the
 API beside the emulator hold enough of the device's product already
 (`"api_enough": true`), so its readout is not needed, or have nothing
 answering where its readout goes (`"api_down": true`), so it cannot be sent
-and is kept, or be a readout of every device (`"args": ["--all"]`) in a
-made-up account the stub lists beside the device (`"account"`, one of
+and is kept, or have that API take offers' links in place of their files
+(`"api_links": true`), so the offer the run sends beside it goes ahead of
+the person's own readout of the device, or be a readout of every device
+(`"args": ["--all"]`) in a made-up account the stub lists beside the device (`"account"`, one of
 `tools/ewelink/stub_cloud/accounts.py`'s). An S61's starts fresh from the dump
 or from a device the Beken fault suite's `prep` saved (`"start"`).
 
@@ -1197,6 +1199,8 @@ otherwise it is:
 | FAIL-QUESTION | something was wrong as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice (an earlier try left on the screen) |
 | FAIL-SCREEN | the screen it ended on, as the fault suites' FAIL-SCREEN (`unattended_run.screen_problems`), and what the run put on the clipboard: the report ID and what was copied as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there, or one its `expect.never` wants nowhere (at any answer or at the end: a key pressed by accident, echoed); or, as an answer was typed, a line its `shows` wants not on the screen, or one its `never` does not want on it |
 | FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-SENT-UNWANTED, FAIL-NOT-STORED, FAIL-READOUT, FAIL-KEPT-UNSENT | a readout's other side: what the API beside the emulator was asked and kept, as the fault suites judge a readout sent to it (`fault_verdicts.readout_api_problems`), copied into the scenario's results (`api/`, `again-api/`); an `api_down` scenario's FAIL-READOUT: the readout kept for later is not whole, or none was kept |
+| FAIL-OFFER, FAIL-NOT-WANTED | an `api_links` scenario's offer, as the API beside the emulator answered and kept it (`fault_verdicts.own_offer_problems`): never sent or taken, not in its store, or a file it or the readout names not fetched on first sight and held as the file its SHA-256 names; or the readout, after its sender's own offer, not wanted |
+| NOT-FIRED | an `api_links` scenario's offer sent only after the readout asked `/v1/wanted` (the run outran the sender beside it): the case not tried, so neither a pass nor a failure, as the fault suites' NOT-FIRED, whatever else the run shows |
 | HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 
 Results and recordings go to `captures/emulation/attended/<time>/`.

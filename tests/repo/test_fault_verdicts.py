@@ -1,7 +1,9 @@
 """What both fault suites judge a run by beyond its steps: the report's
 end-of-run checks, and the readout a readout keeps."""
 
+import hashlib
 import io
+import json
 import tarfile
 import tempfile
 import unittest
@@ -183,8 +185,90 @@ class ReadoutTests(unittest.TestCase):
                 out.addfile(member, tar.extractfile(member))
         self.assertEqual(fault_verdicts.readout_problems(buffer.getvalue(), "beken"), ["manifest.json is not first"])
 
+    def test_where_the_api_takes_links_the_offered_firmware_is_named_by_link_or_as_held(self):
+        for entry in ({"file": None, "version": "1.2.0", "sha256": "a" * 64, "link": "/ota/rom/x/user1.bin"},
+                      {"file": None, "version": "1.2.0", "sha256": "a" * 64, "held": True}):
+            with self.subTest(entry=entry):
+                self.assertEqual(fault_verdicts.readout_problems(kept("espressif", updates=(), offered=[entry]),
+                                                                 "espressif"), [])
+        self.assertEqual(fault_verdicts.readout_problems(kept("espressif", updates=(), offered=[
+            {"file": None, "version": "1.2.0", "sha256": "a" * 64}]), "espressif"), ["no offered firmware"])
+        self.assertEqual(fault_verdicts.readout_problems(kept("espressif", offered=[
+            {"file": "offered/user2.bin", "version": "1.2.0", "sha256": "a" * 64}]), "espressif"),
+            ["offered/user2.bin named, not in it"])
+
     def test_something_not_a_readout_says_so(self):
         self.assertTrue(fault_verdicts.readout_problems(b"not a tar", "beken")[0].startswith("not a tar"))
+
+
+class OwnOfferTests(unittest.TestCase):
+    """A readout sent after the offer its run sent of the device, the API
+    taking links (the attended suite's api_links): judged by the API's own
+    answers and store (own_offer_problems)."""
+
+    FILE = b"the stub's offered file"
+    SHA = hashlib.sha256(FILE).hexdigest()
+    ASKED = '2026-11-18T10:00:00.000Z POST /v1/offers 101 -> 200 {"send":"links","offers":[]}'
+    TAKEN = '2026-11-18T10:00:02.000Z POST /v1/offers 455 -> 200 {"send":"links","offers":[{"result":"taken"}]}'
+    HAVE = '2026-11-18T10:00:02.000Z POST /v1/offers 455 -> 200 {"send":"links","offers":[{"result":"have"}]}'
+    WANTED = '2026-11-18T10:00:30.000Z POST /v1/wanted 306 -> 200 {"wanted":true,"held":[],"send":"links"}'
+    HELD = '2026-11-18T10:00:30.000Z POST /v1/wanted 306 -> 200 {"wanted":false,"why":"held","held":[],"send":"links"}'
+    SENT = '2026-11-18T10:01:00.000Z POST /v1/readout 9000 -> 201 {"id":"2026-11-18-0123456789ab"}'
+
+    def problems(self, requests, offer=True, model="S60TPF", held=FILE, readout_sha=None):
+        """own_offer_problems' verdicts, the store holding the offer (`offer`,
+        of `model`), its file as `held` (None for not fetched) and, with
+        `readout_sha`, a whole readout naming that file too."""
+        with tempfile.TemporaryDirectory() as tmp:
+            api = Path(tmp)
+            (api / "requests.log").write_text("".join(line + "\n" for line in requests), encoding="utf-8")
+            if offer:
+                (api / "readouts__2026-11-18__900a1374a6e679bc71fb0396.json").write_text(json.dumps(
+                    {"format": 1, "cloud": "ewelink", "model": model, "read": False, "offered": [
+                        {"name": "user1.bin", "version": "1.2.0", "sha256": self.SHA, "link": "/ota/rom/x/user1.bin"}]}),
+                    encoding="utf-8")
+                (api / "readouts__2026-11-18__900a1374a6e679bc71fb0396.json.meta.json").write_text("{}", encoding="utf-8")
+            if held is not None:
+                (api / f"readouts__firmware__{self.SHA}").write_bytes(held)
+            if readout_sha:
+                (api / "readouts__2026-11-18__0123456789abcdef01234567.tar").write_bytes(kept("espressif", offered=[
+                    {"file": None, "version": "1.2.0", "sha256": readout_sha, "link": "/ota/rom/y/user2.bin"}]))
+            return [verdict for verdict, _ in fault_verdicts.own_offer_problems(api, "S60TPF")]
+
+    def test_the_offer_taken_and_fetched_first_then_the_readout_wanted_passes(self):
+        self.assertEqual(self.problems([self.ASKED, self.TAKEN, self.WANTED, self.SENT]), [])
+        self.assertEqual(self.problems([self.ASKED, self.TAKEN, self.WANTED, self.SENT], model="s60tpf"), [])
+
+    def test_an_offer_not_sent_or_not_taken(self):
+        self.assertEqual(self.problems([self.WANTED, self.SENT], offer=False, held=None), ["FAIL-OFFER"])
+        self.assertEqual(self.problems([self.ASKED, self.HAVE, self.WANTED, self.SENT], offer=False, held=None),
+                         ["FAIL-OFFER"])
+
+    def test_an_offer_sent_after_the_readout_asked_has_not_tried_the_case(self):
+        # Not fired, as a fault that never happened: the offer's own checks left out.
+        self.assertEqual(self.problems([self.ASKED, self.WANTED, self.TAKEN, self.SENT]), ["NOT-FIRED"])
+        self.assertEqual(self.problems([self.ASKED, self.WANTED, self.SENT, self.HAVE], offer=False, held=None),
+                         ["NOT-FIRED"])
+        # The empty question whether to send links, asked first, is no offer.
+        self.assertEqual(self.problems([self.ASKED, self.WANTED, self.SENT]), ["FAIL-OFFER"])
+
+    def test_the_readout_not_wanted_after_its_own_offer(self):
+        # As THEIRS once took the sender's own first stage for a repeat.
+        self.assertEqual(self.problems([self.ASKED, self.TAKEN, self.HELD]), ["FAIL-NOT-WANTED"])
+        failed = '2026-11-18T10:00:30.000Z POST /v1/wanted 306 -> 500 {"error":"x"}'
+        self.assertEqual(self.problems([self.ASKED, self.TAKEN, failed]), ["FAIL-NOT-WANTED"])
+
+    def test_the_offer_not_in_the_store_or_of_another_device(self):
+        self.assertEqual(self.problems([self.ASKED, self.TAKEN, self.WANTED, self.SENT], offer=False), ["FAIL-OFFER"])
+        self.assertEqual(self.problems([self.ASKED, self.TAKEN, self.WANTED, self.SENT], model="S61STPF"),
+                         ["FAIL-OFFER"])
+
+    def test_each_file_the_offer_or_the_readout_names_is_fetched_and_is_that_file(self):
+        requests = [self.ASKED, self.TAKEN, self.WANTED, self.SENT]
+        self.assertEqual(self.problems(requests, held=None), ["FAIL-OFFER"])
+        self.assertEqual(self.problems(requests, held=b"another file"), ["FAIL-OFFER"])
+        self.assertEqual(self.problems(requests, readout_sha=self.SHA), [])
+        self.assertEqual(self.problems(requests, readout_sha="b" * 64), ["FAIL-OFFER"])
 
 
 class ReadoutApiTests(unittest.TestCase):

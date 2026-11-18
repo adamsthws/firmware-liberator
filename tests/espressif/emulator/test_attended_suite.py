@@ -235,6 +235,16 @@ class RunTests(unittest.TestCase):
                 os.environ.pop("AUTOFLASH_API_ENOUGH", None)
                 self.assertNotIn("AUTOFLASH_API_ENOUGH", attended_suite.run_environment({}, "espressif", "12:34:56:ab:cd:ef"))
 
+    def test_the_api_takes_links_where_the_scenario_says_and_files_otherwise_in_either_family(self):
+        with mock.patch("tools.autoflash.records.read_device", return_value={}), \
+                mock.patch.dict("os.environ", {"AUTOFLASH_LOCAL_OFFERED_SEND": "links"}):
+            for family in attended_suite.SCENARIOS:
+                with self.subTest(family=family):
+                    self.assertEqual(attended_suite.run_environment({"api_links": True}, family, None)
+                                     ["AUTOFLASH_LOCAL_OFFERED_SEND"], "links")
+                    self.assertEqual(attended_suite.run_environment({}, family, None)
+                                     ["AUTOFLASH_LOCAL_OFFERED_SEND"], "files")
+
     def test_a_readout_where_the_api_is_down_goes_where_nothing_answers_with_no_api_started(self):
         from unittest import mock
         scenario = {"command": "readout", "api_down": True}
@@ -325,7 +335,8 @@ class ReadoutVerdictTests(unittest.TestCase):
     WANTED = '2026-11-17T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}'
     DIGEST = "a" * 64
 
-    def verdicts(self, scenario, *, requests=(), stored=False, kept=False, whole=(), code=0, family="espressif"):
+    def verdicts(self, scenario, *, requests=(), stored=False, kept=False, whole=(), code=0, family="espressif",
+                 offer=()):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             state, folder = Path(tmp, "state"), Path(tmp, "results")
@@ -345,7 +356,9 @@ class ReadoutVerdictTests(unittest.TestCase):
             (state / "api/requests.log").write_text("".join(f"{line}\n" for line in requests), encoding="utf-8")
             if stored:
                 (state / f"api/readouts__2026-11-17__{self.DIGEST[:24]}.tar").write_bytes(b"tar")
-            with mock.patch.object(attended_suite.fault_verdicts, "readout_problems", return_value=list(whole)):
+            with mock.patch.object(attended_suite.fault_verdicts, "readout_problems", return_value=list(whole)), \
+                    mock.patch.object(attended_suite.fault_verdicts, "own_offer_problems",
+                                      return_value=list(offer)) as self.own_offer:
                 found = attended_suite.readout_verdicts(scenario, family, state, 0, code, folder, "S60TPG")
             self.copied = (folder / "api/requests.log").exists()
         return [verdict.split(":")[0] for verdict in found]
@@ -414,6 +427,25 @@ class ReadoutVerdictTests(unittest.TestCase):
                     mock.patch.object(attended_suite, "stop_beken"):   # never this computer's instance 61
                 attended_suite.run_one(61, "x", "beken", scenario, Path(tmp, "results"), None)
         self.assertEqual(asked, [0, 120])
+
+    def test_a_readout_after_its_own_offer_is_judged_by_that_offer_too(self):
+        links = {"command": "readout", "api_links": True}
+        requests = [self.WANTED, self.taken()]
+        for family in ("espressif", "beken"):
+            with self.subTest(family=family):
+                self.assertEqual(self.verdicts(links, requests=requests, stored=True, family=family), [])
+                self.assertEqual(self.own_offer.call_args.args[1], "S60TPG")
+                self.assertEqual(self.verdicts(links, requests=requests, stored=True, family=family,
+                                               offer=[("FAIL-OFFER", "none taken")]), ["FAIL-OFFER"])
+        self.verdicts({"command": "readout"}, requests=requests, stored=True)
+        self.own_offer.assert_not_called()
+
+    def test_a_case_not_tried_is_not_fired_whatever_else_was_found(self):
+        self.assertEqual(attended_suite.overall([]), "PASS")
+        self.assertEqual(attended_suite.overall(["FAIL-SCREEN: x", "FAIL-OFFER: y"]), "FAIL-SCREEN")
+        self.assertEqual(attended_suite.overall(["FAIL-SCREEN: x", "NOT-FIRED: the offer was sent only after"]),
+                         "NOT-FIRED")
+        self.assertEqual(attended_suite.overall(["NOT-FIRED: again: the offer was sent only after"]), "NOT-FIRED")
 
     def test_a_conversion_has_no_readout_to_judge(self):
         self.assertEqual(self.verdicts({}), [])

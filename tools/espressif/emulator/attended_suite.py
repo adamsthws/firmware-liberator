@@ -50,9 +50,13 @@ changed), move the computer onto the device's own network or back ("wifi":
 for the API beside the emulator to have enough readouts of the device's
 product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed;
 `api_down`: true for the readout to go where nothing answers (API_DOWN), so
-it cannot be sent and is kept; `account`: one of stub_cloud.accounts' made-up
-accounts, its other devices listed by the stub beside the emulated one, for
-a readout of every device (args ["--all"]).
+it cannot be sent and is kept; `api_links`: true for that API to take
+offers' links in place of their files (AUTOFLASH_LOCAL_OFFERED_SEND=links),
+so the offer the run sends beside it goes to /v1/offers, its file fetched
+from the stub on first sight, before the person's own readout of the device;
+`account`: one of stub_cloud.accounts' made-up accounts, its other devices
+listed by the stub beside the emulated one, for a readout of every device
+(args ["--all"]).
 
 The verdict, from the recording alone (judge):
     PASS              ended as expected, every answer typed, nothing wrong
@@ -84,6 +88,15 @@ The verdict, from the recording alone (judge):
                       fault_verdicts.readout_api_problems); of an `api_down`
                       scenario's, FAIL-READOUT where the readout kept is not
                       whole, or none was kept
+    FAIL-OFFER, FAIL-NOT-WANTED
+                      of an `api_links` scenario's, the offer sent beside the
+                      run never sent or taken, not in the API's store, or its
+                      files not fetched and held; or the readout, after that
+                      offer, not wanted (fault_verdicts.own_offer_problems)
+    NOT-FIRED         of an `api_links` scenario's, the offer sent only after
+                      the readout asked /v1/wanted: the case not tried, so
+                      neither a pass nor a failure, as a fault suite's fault
+                      that never happened; it wins over any other verdict
 
     tools/espressif/emulator/attended_suite.py list
     tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] [--first-instance N] --device MAC
@@ -146,7 +159,7 @@ API_DOWN = "http://127.0.0.1:9/v1/readout"
 # alone takes it, and why (tests/espressif/emulator/test_attended_suite.py
 # fails on a scenario of the other family that says it).
 KEYS = ("about", "covers", "start", "prep", "args", "size", "minutes", "answers", "expect", "command", "again",
-        "api_enough", "api_down", "account")
+        "api_enough", "api_down", "api_links", "account")
 ONE_FAMILY_KEYS = {
     "prep": ("espressif", "what it does to the device first - a conversion, a Tasmota web password, a locked "
                           "ESPHome, sudo remembering nothing - is done in the S60's emulator; an S61 starts from "
@@ -191,6 +204,8 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
     "own-network-joined-early": (("conversion", "beken"), "as own-network"),
     "every-device": (("readout",), "a conversion is of one device; a readout alone goes through every device in "
                                    "the account (readout --all)"),
+    "own-offer-first": (("readout",), "a readout of the device after the offer the run sent of it beside it: a "
+                                      "conversion sends that offer too, but no readout after it"),
     "address-typed": (("conversion",), "a readout asks the address only of a device that answers nowhere on the "
                                        "network, which neither emulator can arrange while eWeLink lists it online"),
 }
@@ -433,7 +448,8 @@ def run_environment(scenario: dict[str, Any], family: str, mac: str | None) -> d
     """The environment a scenario's run goes on in, in either chip family -
     both runners take it from here, so a setting cannot reach one alone: the
     API beside the emulator told it has enough of the device's product where
-    the scenario says (`api_enough`), as fault_suite.enough; its readout sent
+    the scenario says (`api_enough`), as fault_suite.enough, and taking
+    offers' links for `api_links`; its readout sent
     where nothing answers for `api_down`; and on the S60's stub the device
     listed under its product. Without that, the stub takes the product from
     this checkout's earlier runs (emu.sh), and on one with none lists no
@@ -443,6 +459,9 @@ def run_environment(scenario: dict[str, Any], family: str, mac: str | None) -> d
     environment.setdefault("AUTOFLASH_EMU_STUB_PRODUCT_MODEL", product)
     if scenario.get("api_enough"):
         environment["AUTOFLASH_API_ENOUGH"] = product
+    # How the API beside it takes offers: as the scenario says, never as this
+    # computer's environment happens to (local.mjs takes files unset).
+    environment["AUTOFLASH_LOCAL_OFFERED_SEND"] = "links" if scenario.get("api_links") else "files"
     if scenario.get("account"):
         # The account's other devices, made up, for the stub to list beside the
         # device (emu.sh, beken-emu.sh device): one of stub_cloud.accounts'.
@@ -701,8 +720,9 @@ def readout_verdicts(scenario: dict[str, Any], family: str, state: Path, since: 
     beside the emulator was asked and kept, judged as the fault suites judge
     it (fault_verdicts.readout_api_problems) and kept in `folder` as
     `prefix`api/, as the next run starts it afresh; or for an `api_down`
-    scenario's, the readout kept for later, whole. [] for nothing wrong, and
-    for a run that is not a readout."""
+    scenario's, the readout kept for later, whole; for an `api_links` one,
+    the offer the run sent before it too (own_offer_problems). [] for nothing
+    wrong, and for a run that is not a readout."""
     if scenario.get("command") != "readout":
         return []
     # A readout's runs alone: not a conversion `prep` made first.
@@ -738,6 +758,8 @@ def readout_verdicts(scenario: dict[str, Any], family: str, state: Path, since: 
     runs = firmware_at_start(scenario)
     problems, _ = fault_verdicts.readout_api_problems(run, code == 0, api, readouts, product, family,
                                                       [path.name for path in kept], runs)
+    if scenario.get("api_links"):
+        problems += fault_verdicts.own_offer_problems(api, product)
     return [f"{verdict}: {why}" for verdict, why in problems]
 
 
@@ -767,6 +789,15 @@ def device_of(family: str, mac: str | None) -> kinds.Kind:
     if family == "beken":
         return kinds.SONOFF_S61
     return kinds.for_account((records.read_device(mac) if mac else {}).get("product_model"), None) or kinds.SONOFF_S60
+
+
+def overall(verdicts: list[str]) -> str:
+    """A scenario's one verdict, from all its runs' (judged, readout_verdicts):
+    PASS for none; NOT-FIRED where the case was not tried, whatever else was
+    found, as in the fault suites; else the first."""
+    if not verdicts:
+        return "PASS"
+    return "NOT-FIRED" if any(verdict.startswith("NOT-FIRED:") for verdict in verdicts) else verdicts[0].split(":")[0]
 
 
 def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: Path, mac: str,
@@ -803,7 +834,7 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
         verdicts = [f"{verdict.split(':')[0]}: again: {verdict.split(': ', 1)[1]}" for verdict in verdicts]
     if family == "beken":
         stop_beken(n)   # left running for an `again` not run: the first run did not pass
-    verdict = "PASS" if not verdicts else verdicts[0].split(":")[0]
+    verdict = overall(verdicts)
     # Kept beside every batch's folder, so one not sent goes with the next.
     emulator_stats.attended_run(RESULTS, family=family, device=device_of(family, mac).key, name=name,
                                 verdict=verdict, seconds=round(time.monotonic() - started), workers=workers)

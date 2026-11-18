@@ -1,0 +1,30 @@
+{
+ "about": "A readout of a device on Sonoff's firmware, the API beside the emulator taking links: the device's offer, sent beside the run, taken and its file fetched on first sight; then the person's own whole readout of it wanted and accepted",
+ "covers": [
+  "from-sonoff",
+  "accepted",
+  "own-offer-first"
+ ],
+ "start": "fresh",
+ "command": "readout",
+ "api_links": true,
+ "minutes": 40,
+ "answers": [
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r"
+  },
+  {
+   "when": "eWeLink password for",
+   "type": "made-up-password\r"
+  }
+ ],
+ "expect": {
+  "exit": 0,
+  "shows": [
+   "^ *Readout complete!$",
+   "Accepted: +1$",
+   "^ *Accepted: +S60\\S* "
+  ]
+ }
+}

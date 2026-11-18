@@ -7,6 +7,7 @@ and say so only there; or leave a stage's failed try on the screen
 (docs/testing.md#the-fault-suites)."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import lzma
@@ -160,12 +161,17 @@ def readout_problems(data: bytes, family: str) -> list[str]:
     problems = [f"no {name}" for name in READOUT_FILES[family] if name not in files]
     if list(files)[:1] != ["manifest.json"]:
         problems.append("manifest.json is not first")
-    if not any(name.startswith("offered/") for name in files):
-        problems.append("no offered firmware")
     try:
         manifest = json.loads(files.get("manifest.json") or b"")
     except ValueError:
         return problems + ["manifest.json is not JSON"]
+    # The firmware eWeLink offers: each file under offered/, or where the API
+    # asked for links, named in the manifest by its link, or as held already.
+    named = [item for item in manifest.get("offered") or [] if isinstance(item, dict)]
+    if not any(name.startswith("offered/") for name in files) \
+            and not any(item.get("link") or item.get("held") for item in named):
+        problems.append("no offered firmware")
+    problems += [f"{item['file']} named, not in it" for item in named if item.get("file") and item["file"] not in files]
     if manifest.get("read") is not True:
         problems.append("the manifest says the memory was not read")
     if "contact" in manifest:
@@ -280,6 +286,87 @@ def readout_api_problems(run: str, finished: bool, api: Path, account: int, devi
                "taken": sum(1 for ask in asks if ask[2] and ask[2][-1][0] == 201),
                "429": sum(1 for ask in asks for status, _ in ask[2] if status == 429), "device_whole": whole}
     return problems, summary
+
+
+def own_offer_problems(api: Path, product: str) -> list[tuple[str, str]]:
+    """What the API beside the emulator (`api`, its folder) made of a readout
+    of the `product` device sent after the offer of it the run sent beside it,
+    the API taking links (the attended suite's `api_links`), from its own
+    answers and store: an offer sent and taken, and in the store; each file
+    it and the readout name fetched on first sight, with no approval or night
+    between, and held as the file its SHA-256 names (FAIL-OFFER); and the
+    readout, after its sender's own offer, wanted (FAIL-NOT-WANTED), as the
+    API's THEIRS once refused it. An offer sent only after the readout asked
+    /v1/wanted - the run outran the sender beside it - has not tried the case:
+    NOT-FIRED, as a fault suite's fault that never happened, the offer's own
+    checks left out. That the readout was then taken whole is
+    readout_api_problems'. [] for nothing wrong."""
+    requests = api / "requests.log"
+    asked = [found.groups() for line in (requests.read_text(encoding="utf-8", errors="replace")
+                                         if requests.exists() else "").splitlines()
+             if (found := API_REQUEST.match(line))]
+
+    def answer_of(body: str) -> dict:
+        try:
+            said = json.loads(body)
+        except ValueError:
+            return {}
+        return said if isinstance(said, dict) else {}
+    offered = [(at, answer_of(body)) for at, (_, path, _, body) in enumerate(asked) if path == "/v1/offers"]
+    # The question whether to send links is an /offers with none in it, answered with none.
+    sent = [(at, said) for at, said in offered if said.get("offers")]
+    taken = [at for at, said in sent
+             if any(isinstance(item, dict) and item.get("result") == "taken" for item in said["offers"])]
+    wanted = [(at, status, body) for at, (_, path, status, body) in enumerate(asked) if path == "/v1/wanted"]
+    problems = []
+    # The offer that counts: the first taken, else the first sent.
+    first = taken[0] if taken else sent[0][0] if sent else None
+    fired = not (wanted and first is not None and first > wanted[0][0])
+    if not sent:
+        problems.append(("FAIL-OFFER", "none sent to /v1/offers"))
+    elif not fired:
+        problems.append(("NOT-FIRED", "the offer was sent only after the readout asked /v1/wanted: "
+                                      "the case is not tried"))
+    elif not taken:
+        problems.append(("FAIL-OFFER", f"none taken: /v1/offers answered {json.dumps(sent[-1][1])[:120]}"))
+    if wanted:
+        _, status, body = wanted[0]
+        if status != "200" or answer_of(body).get("wanted") is not True:
+            problems.append(("FAIL-NOT-WANTED", f"after its own offer, /v1/wanted answered {status} {body[:120]}"))
+    # Each offer kept as a first stage's manifest alone, beside what the store says of it (.meta.json).
+    stored = sorted(path for path in api.glob("readouts__*.json") if not path.name.endswith(".meta.json"))
+    offers = [manifest for manifest in (answer_of(path.read_text(encoding="utf-8", errors="replace"))
+                                        for path in stored)
+              if fired and manifest.get("read") is False
+              and str(manifest.get("model") or "").upper() == product.upper()]
+    if fired and taken and not offers:
+        problems.append(("FAIL-OFFER", f"taken, but no offer of {product} in the API's store"))
+    shas = {str(item.get("sha256")) for manifest in offers for item in manifest.get("offered") or []
+            if isinstance(item, dict)}
+    if offers and not shas:
+        problems.append(("FAIL-OFFER", "the offer named no file: the stub offered the device nothing"))
+    for path in sorted(api.glob("readouts__*.tar")) if api.is_dir() else []:
+        shas |= {str(item.get("sha256")) for item in readout_manifest(path.read_bytes()).get("offered") or []
+                 if isinstance(item, dict)}
+    for sha in sorted(shas):
+        held = api / f"readouts__firmware__{sha}"
+        if not held.is_file():
+            problems.append(("FAIL-OFFER", f"{sha[:12]}... not fetched: not held in the API's store"))
+        elif hashlib.sha256(held.read_bytes()).hexdigest() != sha:
+            problems.append(("FAIL-OFFER", f"{sha[:12]}... held, but not the file its SHA-256 names"))
+    return problems
+
+
+def readout_manifest(data: bytes) -> dict:
+    """A readout.tar's manifest.json, {} where it has none to read."""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            member = tar.extractfile("manifest.json")
+            manifest = json.loads(member.read()) if member else {}
+    except (tarfile.TarError, OSError, KeyError, ValueError):
+        return {}
+    return manifest if isinstance(manifest, dict) else {}
+
 
 def first_stage_problems(data: bytes, runs: str) -> list[str]:
     """What a readout.tar lacks of the first stage alone of a device that runs
