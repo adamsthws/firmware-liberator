@@ -1376,7 +1376,8 @@ def _windows_open(device_ip: str, ports: Sequence[int]) -> FirewallRule:
     add, _ = firewall_commands("windows", device_ip, ports, program)
     # In the checkout, not %TEMP%: the Microsoft Store's Python keeps what it
     # writes under %LOCALAPPDATA% in a private copy the elevated script cannot see.
-    scratch = Path(__file__).resolve().parents[2] / "captures"
+    from tools.autoflash import records
+    scratch = records.CAPTURES
     scratch.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".firewall-", dir=scratch) as directory:
         result = Path(directory) / "result.json"

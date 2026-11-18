@@ -11,8 +11,7 @@ from __future__ import annotations
 import hashlib
 import urllib.parse
 
-from tools.autoflash import hostsys, kinds, output
-from tools.autoflash.runs import ROOT
+from tools.autoflash import hostsys, kinds, output, records
 from tools.ewelink import firmware_name
 
 AT = f"https://raw.githubusercontent.com/openshwprojects/FlashDumps/{firmware_name.PUBLIC_COMMIT}/IoT/zOTAz/eWeLink/"
@@ -45,7 +44,7 @@ COPIES: dict[str, tuple[str, str]] = {
         "f149baf000eb226c27babd1ea2a4bef6bcc3ca2973d9c57063106730112f4e6b")),
 }
 # Where a copy fetched is kept, under its own name: fetched once.
-KEPT = ROOT / "captures" / "public-copies"
+KEPT = records.CAPTURES / "public-copies"
 # What the run says it took Sonoff's firmware from, when from here.
 SOURCE = "the public copy of Sonoff's update file (FlashDumps)"
 TIMEOUT = 120.0

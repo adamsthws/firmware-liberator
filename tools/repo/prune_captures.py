@@ -23,7 +23,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CAPTURES = ROOT / "captures"
+sys.path.insert(0, str(ROOT))
+from tools.autoflash.records import CAPTURES  # noqa: E402
+
 # What may go, by its path in captures/, and what it is.
 PRUNABLE = {
     "emulation/state": "an Espressif emulator's device and its computer's copy of the checkout",

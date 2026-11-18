@@ -87,6 +87,13 @@ When you write a test, keep it safe to run this way:
   code under test keeps for a process's life. A bundle's recovery image left
   in memory, or a question left unanswered for the next test's
   `output.start()`, each broke a test that ran after.
+- **Write nothing in captures/.** Each process's tests have a folder of their
+  own in its place, `AUTOFLASH_CAPTURES`, which `records.CAPTURES` and every
+  path into it are made from, so a test never touches your devices' records.
+  A test that leaves anything there fails with LEFT IN CAPTURES, naming it:
+  write in a temporary directory of the test's own, or remove what it makes.
+  `tests/repo/test_captures_root.py` fails on a path into captures/ made any
+  other way.
 - **Keep a port** you picked as free. A server given one is started again on
   another if it cannot bind it, and a check that nobody answers keeps the
   socket bound but not listening, so a connection is refused at once and no

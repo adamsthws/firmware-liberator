@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import hostsys, output, prompts, runs, safety_locks, state
+from tools.autoflash import hostsys, output, prompts, safety_locks, state
 from tools.autoflash.routes.espressif import bundle
 from tools.autoflash.state import RunState
 from tools.espressif.safeboot import prepare_imprinted_bundle
@@ -30,9 +30,9 @@ class StartChoiceTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        return SimpleNamespace(state=RunState.open(root), evidence=root / "live",
-                               manifest_path=(runs.ROOT / bundle.DEFAULT_MANIFEST).resolve(),
-                               wifi=lambda: ("Home-2G", "password"))
+        ctx = SimpleNamespace(state=RunState.open(root), evidence=root / "live", wifi=lambda: ("Home-2G", "password"))
+        ctx.manifest_path = bundle.default_manifest(ctx)   # as with no --manifest
+        return ctx
 
     def test_a5_asks_nothing_about_wifi(self):
         # The details are read off the device at E1, so A5 has nothing to ask.

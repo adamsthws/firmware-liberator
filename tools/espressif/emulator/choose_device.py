@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 from tools.autoflash import records  # noqa: E402
 from tools.autoflash.prompts import QuitRun, ask_choice  # noqa: E402
 
-LEGACY = ROOT / "captures" / "emulation"
+LEGACY = records.CAPTURES / "emulation"
 
 
 @dataclass(frozen=True)

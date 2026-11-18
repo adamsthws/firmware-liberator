@@ -278,7 +278,7 @@ def save_dump(host: str, label: str, version: str | None = None) -> int:
     except IncompleteDump as exc:
         print(f"Incomplete: {exc}. Nothing kept.", file=sys.stderr)
         return 1
-    out = ROOT / "captures" / "flash-readout" / f"{label}-{time.strftime('%Y%m%d-%H%M%S')}"
+    out = records.CAPTURES / "flash-readout" / f"{label}-{time.strftime('%Y%m%d-%H%M%S')}"
     write_dump(out, flash, efuse, report)
 
     print(f"Saved to {out.relative_to(ROOT)} (private: it holds the Wi-Fi password).")

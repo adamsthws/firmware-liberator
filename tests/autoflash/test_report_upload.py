@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import hostsys, proof_of_work, report_upload as upload
+from tools.autoflash import hostsys, proof_of_work, records, report_upload as upload
 
 TODAY = dt.date(2026, 11, 10)
 
@@ -107,7 +107,7 @@ class DocumentedTests(unittest.TestCase):
 
     def test_the_page_says_how_to_stop_it_and_where_unsent_ones_wait_as_the_tool_does(self):
         text = (upload.ROOT / "docs" / "what-the-tool-sends.md").read_text(encoding="utf-8")
-        for said in ("--no-report", "AUTOFLASH_NO_REPORT=1", f"{upload.QUEUE.relative_to(upload.ROOT)}/",
+        for said in ("--no-report", "AUTOFLASH_NO_REPORT=1", f"captures/{upload.QUEUE.relative_to(records.CAPTURES).as_posix()}/",
                      f"{upload.KEEP_DAYS} days", "https://firmwareliberator.com/stats", "CC BY 4.0"):
             self.assertIn(said, text)
 

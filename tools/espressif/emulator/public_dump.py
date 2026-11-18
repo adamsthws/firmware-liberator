@@ -39,7 +39,7 @@ from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 COMMIT = "4d3556605da2ce101382a01b6fb7d84e68c3df2a"
 FLASH_DUMPS = f"https://raw.githubusercontent.com/openshwprojects/FlashDumps/{COMMIT}/IoT/ESP32"
 OTA_FIRMWARE = f"https://raw.githubusercontent.com/openshwprojects/FlashDumps/{COMMIT}/IoT/zOTAz/eWeLink"
-CACHE = ROOT / "captures" / "emulation" / "public-dumps"
+CACHE = records.CAPTURES / "emulation" / "public-dumps"
 FLASH_SIZE = 0x400000
 
 

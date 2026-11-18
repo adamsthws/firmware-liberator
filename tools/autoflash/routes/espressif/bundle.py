@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import hostsys, kinds, output, prompts, safety_locks
+from tools.autoflash import hostsys, kinds, output, prompts, records, safety_locks
 from tools.espressif import chips
 from tools.autoflash.errors import Abort
 from tools.autoflash.runs import ROOT
@@ -24,7 +24,7 @@ DEFAULT_MANIFEST = Path("captures/safeboot-recovery-migration/manifest.json")
 
 def default_manifest(ctx: Context) -> Path:
     """Where the bundle for this run's device's chip goes, unless --manifest said."""
-    return (ROOT / "captures" / chips.of(kinds.of_run(ctx.state).chip).bundle / "manifest.json").resolve()
+    return (records.CAPTURES / chips.of(kinds.of_run(ctx.state).chip).bundle / "manifest.json").resolve()
 
 
 def step_check(ctx: Context) -> dict[str, Any]:

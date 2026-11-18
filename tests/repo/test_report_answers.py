@@ -93,7 +93,7 @@ class ReportAnswerTests(unittest.TestCase):
                         self.assertEqual([answer.strip() for answer in found], [dict(fields)[label]], log)
 
     def test_the_harness_says_the_result_the_log_has(self):
-        with tempfile.TemporaryDirectory() as root, mock.patch.object(unattended_run, "ROOT", Path(root)):
+        with tempfile.TemporaryDirectory() as root, mock.patch.object(records, "CAPTURES", Path(root, "captures")):
             run = Path(root, "captures/devices/123456abcdef/runs/1/run.log")
             run.parent.mkdir(parents=True)
             _, log = shown(FIELDS, 100, stopped=dict(FIELDS)["Result"])

@@ -34,7 +34,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, hostsys, interrupt, output, proof_of_work, report_data
+from tools.autoflash import __version__, hostsys, interrupt, output, proof_of_work, records, report_data
 from tools.autoflash.runs import ROOT
 
 if TYPE_CHECKING:
@@ -48,7 +48,7 @@ UPLOAD_URL = "https://api.firmwareliberator.com/v1/reports"
 REPORT_ID_BYTES = 8
 # The work the Worker asks of each report (reports.js's REPORT_PROOF_BITS).
 PROOF_BITS = 24
-QUEUE = ROOT / "captures" / "reports"
+QUEUE = records.CAPTURES / "reports"
 NOTICE = QUEUE / "notice-shown"
 KEEP = 99
 KEEP_DAYS = 30

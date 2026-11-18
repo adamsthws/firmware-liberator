@@ -72,7 +72,7 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import imprint, kinds, tasmota_settings  # noqa: E402
+from tools.autoflash import imprint, kinds, records, tasmota_settings  # noqa: E402
 from tools.autoflash.routes.espressif import images  # noqa: E402
 from tools.espressif import build_vendor_ota, chips, layouts  # noqa: E402
 from tools.beken import rbl, uf2  # noqa: E402
@@ -136,7 +136,7 @@ ESPHOME_BUILDS = {
 BOOTLOADER_FILE = chip_file(chips.ESP32C3, "bootloader")
 # Downloads ESPHome's builds need (ESP-IDF and its tools, a gigabyte or so),
 # kept between builds. captures/ is never committed.
-BUILD_CACHE = ROOT / "captures" / "esphome-build"
+BUILD_CACHE = records.CAPTURES / "esphome-build"
 # The Beken devices' firmware: each ends on OpenBeken or on ESPHome built on
 # LibreTiny, both rt_ota images the stock bootloader applies from the download
 # slot (devices/sonoff-s61/). OpenBeken is built from upstream at a pinned
@@ -158,7 +158,7 @@ OPENBEKEN_PATCHES = {
 # The driver's source and its header, the first the one with its start-up and commands.
 OPENBEKEN_DRIVER = ("drv_autoflash.c", "drv_autoflash.h")
 OPENBEKEN_BUILDER = "autoflash-openbeken-build"
-OPENBEKEN_BUILD_CACHE = ROOT / "captures" / "openbeken-build"
+OPENBEKEN_BUILD_CACHE = records.CAPTURES / "openbeken-build"
 READOUT_BUILD = "readout"
 BEKEN_BUILDS = {
     "sonoff-s61": {
@@ -1102,7 +1102,7 @@ ESP32_INTERIM_TAG = "v15.6.0"  # the release the settings template's layout is c
 ESP32_INTERIM = chips.ESP32.interim_name  # small enough for the smallest stock slot, a TH Elite's
 BRIDGE_SOURCE = ROOT / "archive" / "bridge"
 FIRMWARE_BUILDER = "autoflash-firmware-build"
-FIRMWARE_BUILD_CACHE = ROOT / "captures" / "firmware-build"
+FIRMWARE_BUILD_CACHE = records.CAPTURES / "firmware-build"
 SAFEBOOT_ENV = "tasmota32-safeboot"
 
 

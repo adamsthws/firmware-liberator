@@ -24,6 +24,11 @@ The workflows still run `python -m unittest discover -b -s tests`, under coverag
 The longest test takes about 10 s, so one still running after --timeout is
 stuck: it is stopped, with where each of its threads was, reported as an
 error, and the run ends there rather than waiting for ever.
+
+No test writes in your captures/: each process's tests have a folder of their
+own in its place (AUTOFLASH_CAPTURES, records.CAPTURES), and a test that
+leaves anything there fails, LEFT IN CAPTURES, saying what - as it would have
+been left in yours, beside your devices' records.
 """
 
 from __future__ import annotations
@@ -55,15 +60,22 @@ TOGETHER = {
 
 DUMPS: Path | None = None   # where a worker writes what it runs, and where a stuck test was
 TIMEOUT = 60.0
+CAPTURES: Path | None = None   # this worker's tests' captures/ (AUTOFLASH_CAPTURES)
 
 
-def setup_path(dumps: str | None = None, timeout: float = TIMEOUT) -> None:
+def setup_path(dumps: str | None = None, timeout: float = TIMEOUT, captures: str | None = None) -> None:
     # As `python -m unittest discover -s tests` from the root: both importable.
     for path in (str(ROOT), str(TESTS)):
         if path not in sys.path:
             sys.path.insert(0, path)
-    global DUMPS, TIMEOUT
+    global DUMPS, TIMEOUT, CAPTURES
     DUMPS, TIMEOUT = (Path(dumps) if dumps else None), timeout
+    if captures:
+        # Before the tool is imported: records.CAPTURES, and every path made
+        # from it, is read as its module loads.
+        CAPTURES = Path(captures) / str(os.getpid())
+        CAPTURES.mkdir()
+        os.environ["AUTOFLASH_CAPTURES"] = str(CAPTURES)
 
 
 def flatten(suite: unittest.TestSuite):
@@ -126,6 +138,10 @@ def run_one(test_id: str) -> tuple[str, int, list[tuple[str, str]], int, float]:
     problems = [("FAIL", text) for _, text in result.failures] + \
                [("ERROR", text) for _, text in result.errors] + \
                [("UNEXPECTED SUCCESS", "") for _ in result.unexpectedSuccesses]
+    if left := left_in_captures():
+        problems.append(("LEFT IN CAPTURES", f"{test_id} left {', '.join(left)} where the tool keeps what it records "
+                         "- in your captures/, but for tests/run.py: write in a folder of the test's own "
+                         "(tempfile), or remove what it makes"))
     if left := left_behind():
         problems.append(("LEFT BEHIND", f"{test_id} left the tool's screen state set: {left} - the next test "
                          "in this process draws otherwise (put it back: mock.patch.multiple(output._s, ...))"))
@@ -147,6 +163,16 @@ def left_behind() -> list[str]:
     for name in left:
         setattr(output._s, name, False)
     return left
+
+
+def left_in_captures() -> list[str]:
+    """What a test left in its worker's captures/, emptied for the next test."""
+    if CAPTURES is None:
+        return []
+    left = sorted(path.relative_to(CAPTURES).as_posix() for path in CAPTURES.rglob("*") if not path.is_dir())
+    for path in CAPTURES.iterdir():
+        shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
+    return left[:5] + [f"and {len(left) - 5} more"] * (len(left) > 5)
 
 
 def load_times() -> dict[str, float]:
@@ -192,9 +218,13 @@ def main(argv: list[str] | None = None) -> int:
     ran = skipped = 0
     problems: list[tuple[str, str, str]] = [("ERROR", f"{name} (would not load)", why) for name, why in broken]
     dumps = tempfile.mkdtemp(prefix="autoflash-tests-")
+    captures = tempfile.mkdtemp(prefix="autoflash-tests-captures-")
     waiting = list(tasks)
     try:
-        with multiprocessing.Pool(args.jobs, initializer=setup_path, initargs=(dumps, args.timeout)) as pool:
+        # Each worker started afresh, not forked from this process, which has
+        # imported the tool already - with your captures/ as records.CAPTURES.
+        with multiprocessing.get_context("spawn").Pool(args.jobs, initializer=setup_path,
+                                                       initargs=(dumps, args.timeout, captures)) as pool:
             results = pool.imap_unordered(run_one, tasks)
             for _ in tasks:
                 try:
@@ -213,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("." if not found else "F", end="", flush=True)
     finally:
         shutil.rmtree(dumps, ignore_errors=True)
+        shutil.rmtree(captures, ignore_errors=True)
     print()
     try:
         TIMES.parent.mkdir(exist_ok=True)

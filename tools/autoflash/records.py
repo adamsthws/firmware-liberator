@@ -30,7 +30,11 @@ from tools.espressif import flashmap
 from . import kinds, oslock
 
 ROOT = Path(__file__).resolve().parents[2]
-CAPTURES = ROOT / "captures"
+# Where the tool keeps what it records: the checkout's captures/, private and
+# Git-ignored. AUTOFLASH_CAPTURES names another folder - the unit tests' own,
+# one a worker (tests/run.py), so a test never writes in yours. Every path into
+# it is made from this (tests/repo/test_captures_root.py).
+CAPTURES = Path(os.environ.get("AUTOFLASH_CAPTURES") or ROOT / "captures")
 DEVICES = CAPTURES / "devices"
 # What releases before 3.0.0 called the folder and each device's file, from
 # when the tool converted only smart plugs: take_over_earlier_names() renames them.

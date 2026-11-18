@@ -30,7 +30,7 @@ from typing import Callable
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import hostsys, kinds, output, safety_locks  # noqa: E402
+from tools.autoflash import hostsys, kinds, output, records, safety_locks  # noqa: E402
 from tools.autoflash.output import PROBLEM_RE  # noqa: E402
 from tools.autoflash.prompts import (  # noqa: E402
     QuitRun,
@@ -303,7 +303,7 @@ def run(args: argparse.Namespace) -> int:
     stage(3, "Asking the device what it is running")
     email = account_email(args.email)
     env = {**os.environ, "EWELINK_PASSWORD": ask_secret(f"eWeLink password for {email}: ")}
-    work = ROOT / "captures" / "flash-readout" / f"run-{time.strftime('%Y%m%d-%H%M%S')}"
+    work = records.CAPTURES / "flash-readout" / f"run-{time.strftime('%Y%m%d-%H%M%S')}"
     work.mkdir(parents=True, exist_ok=True)
     version, kind = query_device(device_ip, email, env, work)
     print(f"{kind.name} at {device_ip}{f' ({mac})' if mac else ''}, running Sonoff {version}.")

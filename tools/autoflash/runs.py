@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 ROOT = Path(__file__).resolve().parents[2]
-SETTINGS_PATH = ROOT / "captures" / "settings.json"
+SETTINGS_PATH = records.CAPTURES / "settings.json"
 
 
 def run_name(directory: Path) -> str:
@@ -41,7 +41,7 @@ def run_directories() -> list[Path]:
     )
 
 
-CURRENT_POINTER = ROOT / "captures" / ".autoflash-current"
+CURRENT_POINTER = records.CAPTURES / ".autoflash-current"
 
 
 def remember_current(name: str) -> None:

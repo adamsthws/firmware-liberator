@@ -50,7 +50,8 @@ class Chip:
 
     def bundle_file(self, name: str) -> Path:
         """Where a run's firmware bundle keeps one of its files."""
-        return ROOT / "captures" / self.bundle / name
+        from tools.autoflash import records
+        return records.CAPTURES / self.bundle / name
 
     def bridge_app(self) -> bytes:
         """The bridge's app, as firmware.json pins it: published wrapped for the

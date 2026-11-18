@@ -52,6 +52,7 @@ TOOL = ROOT / "tools" / "autoflash" / "cli.py"
 # Run as a script, this reads the tool's own words (end_problems): from its checkout.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from tools.autoflash import records  # noqa: E402
 
 # A control sequence (CSI), an operating-system command (OSC: links, titles),
 # any other escape, a control character, or a run of ordinary text.
@@ -828,7 +829,7 @@ LOGGED_RESULT = re.compile(r"^\[[\d:]+\] +Result: +(\S.*?) *$", re.M)
 def logged_result(since: float) -> str | None:
     """How the run that wrote a run log since `since` ended, by its report's
     Result in that log, the newest such; None for a run that made no report."""
-    logs = [path for folder in ("devices", "plugs") for path in (ROOT / "captures" / folder).glob("*/runs/*/run.log")
+    logs = [path for folder in ("devices", "plugs") for path in (records.CAPTURES / folder).glob("*/runs/*/run.log")
             if path.stat().st_mtime >= since]
     if not logs:
         return None
@@ -868,7 +869,7 @@ def main() -> int:
     # Python 3.10 gives 0 for a side a terminal does not report; 3.11 the fallback.
     size = args.size or (tuple(n or d for n, d in zip(shutil.get_terminal_size(), (80, 24)))
                          if live else (100, 40))
-    save = args.save or ROOT / "captures" / "unattended" / time.strftime("%Y%m%d-%H%M%S")
+    save = args.save or records.CAPTURES / "unattended" / time.strftime("%Y%m%d-%H%M%S")
     command = tool_command(args.command, extra, attended=args.attended)
     answers = Answer.load(args.answers) if args.answers else []
 
