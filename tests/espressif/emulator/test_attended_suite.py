@@ -410,7 +410,8 @@ class ReadoutVerdictTests(unittest.TestCase):
                     mock.patch.object(attended_suite, "readout_verdicts",
                                       side_effect=lambda *a, **k: asked.append(k.get("asked", a[8] if len(a) > 8 else 0))
                                       or []), \
-                    mock.patch.object(attended_suite.emulator_stats, "attended_run"):
+                    mock.patch.object(attended_suite.emulator_stats, "attended_run"), \
+                    mock.patch.object(attended_suite, "stop_beken"):   # never this computer's instance 61
                 attended_suite.run_one(61, "x", "beken", scenario, Path(tmp, "results"), None)
         self.assertEqual(asked, [0, 120])
 
