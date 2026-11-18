@@ -253,6 +253,7 @@ class ServeToDeviceTests(unittest.TestCase):
         self.assertEqual(len(self.fetches), 1)
         # Explained under the stage's line while it lasts, as a busy Tasmota's wait is.
         self.assertIn("the last run's fetch", self.working.call_args.args[0])
+        self.assertEqual(self.working.call_args.kwargs, {"wait": "fetch-under-way"})
 
     def test_a_fetch_openbeken_would_not_start_restarts_it_and_asks_again(self):
         self.serve([5], refusals=1)

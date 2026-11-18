@@ -362,6 +362,15 @@ class RecordsTests(unittest.TestCase):
             self.assertEqual(fault_verdicts.filed_as(log), Path("12-34-56-ab-cd-ef/runs/20261118-120000/run.log"))
 
 
+class WaitsTests(unittest.TestCase):
+    def test_each_explained_wait_since_the_scenario_began_is_named_once(self):
+        events = [{"at": 5, "event": "wait", "wait": "stopped-step"},
+                  {"at": 20, "event": "wait", "wait": "fetch-refused"}, {"at": 21, "event": "began", "step": "J2"},
+                  {"at": 30, "event": "wait", "wait": "fetch-refused"}, {"at": 31, "event": "wait", "wait": "nothing-asked"}]
+        self.assertEqual(fault_verdicts.waits(events, since=10), ["fetch-refused", "nothing-asked"])
+        self.assertEqual(fault_verdicts.waits([], since=0), [])
+
+
 class ResultsTests(unittest.TestCase):
     def test_each_scenarios_newest_row_is_read(self):
         with tempfile.TemporaryDirectory() as tmp:

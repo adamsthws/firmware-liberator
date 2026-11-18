@@ -546,7 +546,8 @@ def wait_while_device_busy(ctx: Context) -> None:
     # A wait explained as OpenBeken's restart before a fetch sent again is
     # (routes/beken/onward.py): nothing on the screen once it is over.
     started = time.monotonic()
-    with output.working("Waiting for the device to finish the stopped step - a minute or two..."):
+    with output.working("Waiting for the device to finish the stopped step - a minute or two...",
+                        wait="stopped-step"):
         while time.monotonic() - started < BUSY_DEVICE_WAIT:
             if device.answers(timeout=3.0):
                 return

@@ -68,7 +68,8 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
         if unstick and getattr(ctx, "running_step", None) in getattr(ctx, "redoing_interrupted", ()):
             # Explained under the stage's line while it lasts (output.working), as
             # the wait for a busy Tasmota is (join.wait_while_device_busy).
-            with output.working("Restarting the device: the last run's fetch may still be under way..."):
+            with output.working("Restarting the device: the last run's fetch may still be under way...",
+                                wait="fetch-under-way"):
                 restarted = unstick()
             if restarted:
                 unstick = None
@@ -79,7 +80,7 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
             if not unstick or refused.unknown:
                 raise
             output.log_only(f"    OpenBeken would not start the fetch ({refused}).")
-            with output.working("Restarting the device, then asking it again..."):
+            with output.working("Restarting the device, then asking it again...", wait="fetch-refused"):
                 restarted = unstick()
             if not restarted:
                 raise NothingWritten(f"OpenBeken would not fetch {what}, and did not answer again after being "
@@ -94,7 +95,8 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
                 break
             if not served and unstick and time.monotonic() - asked > FIRST_BYTE_WAIT:
                 output.progress_clear()
-                with output.working("Nothing asked for yet - restarting the device, then asking again..."):
+                with output.working("Nothing asked for yet - restarting the device, then asking again...",
+                                    wait="nothing-asked"):
                     restarted = unstick()
                 if not restarted:
                     raise NothingWritten(f"the device asked for nothing of {what}, and did not answer again "

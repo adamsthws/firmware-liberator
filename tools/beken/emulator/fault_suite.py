@@ -874,6 +874,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     if outcome["result"] != "PASS":
         fault_verdicts.keep_evidence(instance.records(), folder)
     notes["memory"] = memory.note()
+    notes["waits"] = fault_verdicts.waits(instance.all_events(), began)
     return dict(**outcome, notes=notes, seconds=round(time.monotonic() - started))
 
 

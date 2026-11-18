@@ -2812,6 +2812,10 @@ class Scenario:
         """The scenario's row, written to the results, and its runs' logs and
         what a failure leaves kept in its folder; its emulator stopped."""
         sc = self.sc
+        since = getattr(self, "started", self.created)
+        runs = [log for mtime, log, _ in run_logs(self.state) if mtime >= since]
+        self.notes["waits"] = fault_verdicts.waits((item for log in runs for item in output.events(log.parent)),
+                                                   since)
         row = {**sc, "instance": self.n, "verdict": verdict, "runs": len(results),
                "results": [r for _, r in results], "codes": [c for c, _ in results],
                "notes": self.notes, "leftovers": left, "log": str(self.log),
@@ -2823,8 +2827,7 @@ class Scenario:
         # output, whatever the verdict, laid out as the Beken suite's: gone
         # from the emulator when its next scenario begins.
         folder = Path(self.log).parent
-        since = getattr(self, "started", self.created)
-        fault_verdicts.keep_runs([log for mtime, log, _ in run_logs(self.state) if mtime >= since], folder,
+        fault_verdicts.keep_runs(runs, folder,
                                  lambda path: self.carried.get(fault_verdicts.filed_as(path), 0))
         fault_verdicts.keep_recordings(Path(self.log).read_text(encoding="utf-8", errors="replace"),
                                        self.state / "work", folder)

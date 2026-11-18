@@ -58,6 +58,8 @@ CTRL_C_LOGGED = "Ctrl-C pressed"
 #            firmware (attempt; tools/ewelink/ota_push.py)
 #   join     the person was asked to join a device's network (network); joined:
 #            this computer has; home: asked to go back to their own Wi-Fi
+#   wait     a wait the run explained on screen began (wait: what for, as working()
+#            is told: "stopped-step", "fetch-under-way", ...)
 #   switch   the person was asked to switch the device off and on: now, while the
 #            run waits (now: true, asking_to_switch_now; key: true where it waits
 #            for a key once it is done), or once it has stopped (any other line it
@@ -776,7 +778,7 @@ HINT_AFTER = 3.0
 
 
 @contextlib.contextmanager
-def working(text: str):
+def working(text: str, wait: str | None = None):
     """A wait outside any stage - the report being put together after the
     last one, a readout's - shown as `text` and the stages' spinner on a row
     of its own, below a blank one, once it has lasted WORKING_AFTER, and
@@ -786,7 +788,11 @@ def working(text: str):
     takes a minute or two, and a spinner alone looks stuck.  After a run -
     the email sign-up, as the tool exits - its line is drawn at once, with no
     spinner, as no ticker turns one, and taken away likewise.  On a terminal
-    in concise mode only: elsewhere `text` is said as a line, as any other."""
+    in concise mode only: elsewhere `text` is said as a line, as any other.
+    A `wait` named is a "wait" event too, for the fault suites to see which
+    explained waits a run went through."""
+    if wait is not None:
+        event("wait", wait=wait)
     with _lock:
         shown = _s.concise and _s.ticker is not None and _s.stage is None
         hinted = _s.concise and _s.ticker is not None and _s.stage is not None

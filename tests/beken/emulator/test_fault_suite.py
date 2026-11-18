@@ -94,7 +94,8 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None, said="", kept=None):
+    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None, said="", kept=None,
+               events=()):
         """The scenario's outcome; `kept`, a list given, gets what its folder kept."""
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2",
@@ -109,10 +110,11 @@ class EndChecksTests(unittest.TestCase):
             return {"result": "PASS", "runs": 1}
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp, "work/runs/1/run.log")
-            write_events(run.parent, ("run", {}), ("began", {"step": "B2"}))
+            write_events(run.parent, ("run", {}), ("began", {"step": "B2"}), *events)
             run.write_text(log, encoding="utf-8")
             device = SimpleNamespace(reset=lambda start: None, account=lambda sc, folder: None,
                                      start=lambda firmware: True, runs=lambda: [run],
+                                     all_events=lambda: output.events(run.parent),
                                      records=lambda: run.parents[2],
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
                                    dhcp_log=lambda: "DHCPACK(br0) 198.18.62.51 12:34:56:ab:cd:ef openbeken-cdef\n",
@@ -137,6 +139,11 @@ class EndChecksTests(unittest.TestCase):
         self.assertEqual([name for name, _ in kept], ["dhcp.log", "run-1.events.jsonl", "run-1.log"])
         self.assertIn("DHCPACK", kept[0][1])
         self.assertIn('"began"', kept[1][1])
+
+    def test_the_explained_waits_its_runs_went_through_are_noted(self):
+        # One the starting device's own run waited, before the scenario began, is not.
+        waits = [("wait", {"wait": "nothing-asked"}), ("wait", {"wait": "fetch-refused", "at": time.time() + 60})]
+        self.assertEqual(self.result("True", events=waits)["notes"]["waits"], ["fetch-refused"])
 
     def test_a_failure_keeps_its_run_records_whole_as_the_espressif_suites_does(self):
         kept = []
@@ -961,7 +968,7 @@ class ReadoutAllTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             device = SimpleNamespace(reset=lambda start: None, account=lambda sc, folder: None,
                                      start=lambda firmware: True, runs=lambda: [], state=Path(tmp),
-                                     run_texts=lambda: [], dhcp_log=lambda: "",
+                                     all_events=list, run_texts=lambda: [], dhcp_log=lambda: "",
                                      dhcp_names=mock.Mock(side_effect=AssertionError("a conversion's check")))
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
                     mock.patch.object(fault_suite, "Person"), \

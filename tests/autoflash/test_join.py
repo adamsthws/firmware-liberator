@@ -166,6 +166,7 @@ class BusyDeviceTests(unittest.TestCase):
         self.assertEqual(ctx.device.answers.call_count, 4)
         # Said as a wait while it lasts, and nothing left on the screen after.
         self.assertIn("finish the stopped step", self.working.call_args.args[0])
+        self.assertEqual(self.working.call_args.kwargs, {"wait": "stopped-step"})
         told.assert_not_called()
         self.assertEqual(self.slept.call_count, 2)  # a pause between each two asks
 

@@ -2328,6 +2328,15 @@ class EventTests(OutputTestCase):
                                          {"event": "done", "step": "B2"}, {"event": "ended"}])
         self.assertTrue(all(isinstance(e["at"], float) for e in output.events(self.log.parent)))
 
+    def test_a_named_wait_is_an_event_and_another_is_not(self):
+        def body():
+            with output.working("Waiting for the device to finish the stopped step...", wait="stopped-step"):
+                pass
+            with output.working("Generating your report..."):
+                pass
+        self.run_with(io.StringIO(), True, body)
+        self.assertEqual([e for e in self.events() if e["event"] == "wait"], [{"event": "wait", "wait": "stopped-step"}])
+
     def test_no_events_outside_a_run(self):
         output.event("began", step="B2")
         self.assertIsNone(output.events_path())

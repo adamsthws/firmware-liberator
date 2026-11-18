@@ -79,6 +79,14 @@ def advised_to_switch(events: list[dict]) -> bool:
     return any(item["event"] == "switch" and not item.get("now") for item in events[began + 1:])
 
 
+def waits(events: Iterable[dict], since: float) -> list[str]:
+    """The explained waits (output.working's "wait" events) runs went through
+    from `since` (seconds since the epoch) on, each once: which a scenario
+    reached, kept in its notes, as a wait seldom met shows which do."""
+    return sorted({str(item.get("wait")) for item in events
+                   if item["event"] == "wait" and item.get("at", 0) >= since})
+
+
 # What a run says of an error the tool did not see coming (runner.unexpected).
 UNEXPECTED = "something unexpected went wrong"
 

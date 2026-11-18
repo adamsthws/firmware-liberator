@@ -337,6 +337,10 @@ Both suites run a batch the same way:
 - A result's notes say how short of memory the computer was, and a failure
   while it was starved, when connections can fail with nothing wrong, is
   marked "memory-starved".
+- A result's notes name the explained waits its runs went through (`waits`:
+  the "wait" events `output.working` writes), such as `stopped-step`, a
+  device still busy with a step a stopped run left: which scenarios reach a
+  wait seldom met.
 
 ### The Espressif fault suite
 

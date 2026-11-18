@@ -1479,7 +1479,9 @@ class KeptLogsTests(unittest.TestCase):
     EARLIER = "[09:00:00] === run started, tool version 3.0.0 ===\n[09:00:09] === run ended ===\n"
     OURS = "[10:00:00] === run started, tool version 3.0.0 ===\n[10:00:03] === run ended ===\n"
 
-    def finished(self, checks="True"):
+    SAVED_EVENTS = '{"saved": 1}\n'
+
+    def finished(self, checks="True", events='{"ours": 1}\n', started=0):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         tmp = Path(directory.name)
@@ -1489,7 +1491,7 @@ class KeptLogsTests(unittest.TestCase):
         run.write_text(self.EARLIER + self.OURS.replace("[10:00:03]", f"[10:00:01]     Relay: Switches (through "
                                                         f"eWeLink)\n[10:00:02]     Checks passed: {checks}\n"
                                                         "[10:00:03]"), encoding="utf-8")
-        (run.parent / "events.jsonl").write_text('{"saved": 1}\n{"ours": 1}\n', encoding="utf-8")
+        (run.parent / "events.jsonl").write_text(self.SAVED_EVENTS + events, encoding="utf-8")
         (tmp / "state/logs").mkdir(parents=True)
         (tmp / "state/logs/uart.log").write_bytes(b"the last scenario's\nthis one's\n")
         folder = fs.fault_verdicts.scenario_folder(tmp / "logs", "esphome>sonoff:R1:deviceoff-1")
@@ -1497,9 +1499,9 @@ class KeptLogsTests(unittest.TestCase):
         (folder / "tool.log").write_text("--- a run\n    Result:   Converted\n", encoding="utf-8")
         sc = fs.Scenario(24, {"id": "esphome>sonoff:R1:deviceoff-1", "route": "esphome>sonoff", "step": "R1",
                               "fault": "deviceoff", "arg": 1, "at": 40}, folder / "tool.log")
-        sc.state, sc.target, sc.started = tmp / "state", "sonoff", 0
+        sc.state, sc.target, sc.started = tmp / "state", "sonoff", started
         sc.uart_from = len(b"the last scenario's\n")
-        sc.carried = {fs.fault_verdicts.filed_as(run): len(self.EARLIER), fs.fault_verdicts.filed_as(run.parent / "events.jsonl"): len('{"saved": 1}\n')}
+        sc.carried = {fs.fault_verdicts.filed_as(run): len(self.EARLIER), fs.fault_verdicts.filed_as(run.parent / "events.jsonl"): len(self.SAVED_EVENTS)}
         sc.memory = mock.Mock(note=mock.Mock(return_value={}))
         with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
                 mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
@@ -1508,6 +1510,12 @@ class KeptLogsTests(unittest.TestCase):
                 mock.patch.object(sc, "release_of", return_value=None):
             row = sc.finish([(0, "Converted")], None)
         return row, folder
+
+    def test_the_explained_waits_its_runs_went_through_are_noted(self):
+        # The saved device's own conversion waited too, before the scenario began.
+        self.SAVED_EVENTS = '{"at": 10, "event": "wait", "wait": "fetch-refused"}\n'
+        row, _ = self.finished(events='{"at": 2000, "event": "wait", "wait": "stopped-step"}\n', started=1000)
+        self.assertEqual(row["notes"]["waits"], ["stopped-step"])
 
     def test_a_pass_keeps_what_its_runs_wrote_and_the_devices_serial_output(self):
         row, folder = self.finished()
