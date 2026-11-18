@@ -38,7 +38,7 @@ import { hex, sha256 } from "./proof-of-work.js";
 //   checked (docs/espressif-research.md, "Learning the firmware name").
 export const CLOUDS = {
   ewelink: {
-    link: /^\/ota\/rom\/[A-Za-z0-9]{32}\/[A-Za-z0-9._-]{1,64}$/,
+    link: /^\/ota\/rom\/[A-Za-z0-9]{32,64}\/[A-Za-z0-9._-]{1,64}$/,
     key: "",
     base: "http://eu-otadl.coolkit.cc:8088",
     query: "deviceid=0&ts=1&sign=0",

@@ -141,6 +141,11 @@ test("an offer of a device eWeLink names no product model of is taken as \"-\"",
   assert.deepEqual(await send(env(), [{ ...OFFER, model: "-" }]), { status: 200, send: "links", offers: [{ result: "taken" }] });
 });
 
+test("a link whose token is 64 hex, as an NSPanel's, is taken", async () => {
+  const path = `/ota/rom/${"0123456789abcdef".repeat(4)}/user1.1024.new.2.bin`;
+  assert.deepEqual((await send(env(), [{ ...OFFER, files: [{ ...FILE, path }] }])).offers, [{ result: "taken" }]);
+});
+
 test("an offer sent as links is held as a first stage of its device is, its manifest and links kept", async () => {
   const bindings = env();
   assert.deepEqual(await send(bindings, [OFFER], { fetcher: cloud({}) }),
@@ -370,6 +375,7 @@ test("each offer not as the tool sends one is refused, and the rest taken, answe
     { ...OFFER, files: [{ ...FILE, name: "" }] },
     { ...OFFER, files: [{ ...FILE, path: `http://192.0.2.1:8088${PATH}` }] },
     { ...OFFER, files: [{ ...FILE, path: "/ota/rom/short/user1.bin" }] },
+    { ...OFFER, files: [{ ...FILE, path: `/ota/rom/${"a".repeat(65)}/user1.bin` }] },
     { ...OFFER, files: [{ ...FILE, path: `${PATH}?deviceid=1` }] },
     { ...OFFER, files: [{ ...FILE, path: `/ota/rom/${TOKEN}/../../admin` }] },
     { ...OFFER, files: [FILE, { ...FILE, name: "again.bin" }] },

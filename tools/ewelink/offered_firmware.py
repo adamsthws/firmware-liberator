@@ -32,7 +32,9 @@ ATTEMPTS = 3
 RETRY_PAUSE = 2.0
 # The only shape of link passed on (links): eWeLink's path to a release's
 # file, a token and the file's name, so nothing odd ever reaches the website.
-LINK_PATH = re.compile(r"/ota/rom/[A-Za-z0-9]{32}/[A-Za-z0-9._-]{1,64}")
+# The token is 32 letters and digits on most devices, 64 hex on an NSPanel's
+# (docs/espressif-research.md); any other is sent as a file instead.
+LINK_PATH = re.compile(r"/ota/rom/[A-Za-z0-9]{32,64}/[A-Za-z0-9._-]{1,64}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 

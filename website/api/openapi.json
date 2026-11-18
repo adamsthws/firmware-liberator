@@ -1170,7 +1170,7 @@
           },
           "path": {
             "type": "string",
-            "pattern": "^/ota/rom/[A-Za-z0-9]{32}/[A-Za-z0-9._-]{1,64}$",
+            "pattern": "^/ota/rom/[A-Za-z0-9]{32,64}/[A-Za-z0-9._-]{1,64}$",
             "description": "The path of the link eWeLink gives the file, its server and query left out: of this shape for the cloud \"ewelink\""
           }
         }

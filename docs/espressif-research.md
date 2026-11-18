@@ -457,6 +457,13 @@ other people posted that link's token. Links last: one published in
 from a signed-in query naming a real device's id; a link names no device, so
 passing one on gives away no more than the file does.
 
+Not every token is 32 characters: an NSPanel's link posted in 2024
+([forum.ewelink.cc](https://forum.ewelink.cc/t/nspanel-v1-3-1-stuck-on-upgrading-in-app/9207))
+carries 64 hex, and the same server gives its file the same way.
+`offered_firmware.LINK_PATH` takes either. An NSPanel Pro, an Android panel,
+updates from another tree (`global-otadl2bsy.coolkit.cc/<channel>/rom/<n>/`),
+with no token; such a link is sent as a file, never as a link.
+
 A link names its server by address (`http://<address>:8088/ota/rom/...`), and
 a Cloudflare Worker cannot fetch it as given: Cloudflare refuses a request to
 a bare address (`error code: 1003`). By name it can, port 8088 included. Every

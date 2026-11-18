@@ -581,6 +581,13 @@ the update straight away. With it wrong, the updater reports
 `{"ota":"fail","ota_fail_reason":1}` and returns without restarting, and the
 device converts only when it is next switched on.
 
+**Its link's shape is not known.** No Beken device's eWeLink link has been
+seen: none is posted publicly, and none was kept from the S61 asked. Its offer
+names its files `user1.bin` and `user2.bin`, as an Espressif device's does
+(`tools/autoflash/routes/beken/images.py`), but not the path they come from. A link not of the
+shape `offered_firmware.LINK_PATH` takes is sent as a file instead
+([docs/readouts.md](readouts.md)), so a different one costs only the upload.
+
 ### The RBL format
 
 The bootloader applies `rt_ota` RBL containers.
