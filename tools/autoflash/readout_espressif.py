@@ -224,7 +224,7 @@ def back_on_sonoff(ctx: Context) -> bool:
             time.sleep(3.0)
     if not answered:
         output.progress_clear()
-        output.tell("    If the eWeLink app doesn't show it yet, switch it off and on once more.")
+        output.tell(f"    {readout.NOT_ONLINE_YET}")
         return False
     output.progress_clear()
     ctx.state.set_input(readout.STATE_KEY, "read")

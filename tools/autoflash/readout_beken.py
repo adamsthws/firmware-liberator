@@ -227,7 +227,7 @@ def wait_for_sonoff(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> 
         output.say(f"    eWeLink shows the device online again after {round(time.monotonic() - started)}s.")
         return True
     output.progress_clear()
-    output.tell("    If the eWeLink app doesn't show it yet, switch it off and on once more.")
+    output.tell(f"    {readout.NOT_ONLINE_YET}")
     return False
 
 

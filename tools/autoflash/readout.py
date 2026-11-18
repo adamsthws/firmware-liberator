@@ -212,6 +212,9 @@ class Batch:
 
 # What a device not back on its Sonoff firmware still needs, said as the run ends.
 SWITCH_OFF_AND_ON = "Switch the device off and on once more: it then starts its Sonoff firmware again."
+# Said by either family's readout when eWeLink has not shown the device online
+# again in the time waited.
+NOT_ONLINE_YET = "If the eWeLink app doesn't show it yet, switch it off and on once more."
 
 @dataclass
 class Became:
