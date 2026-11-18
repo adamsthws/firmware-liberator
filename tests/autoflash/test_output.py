@@ -2096,6 +2096,21 @@ class WorkingTests(OutputTestCase):
         during, _ = self.hinted(output.HINT_AFTER, note=True)
         self.assertFalse([row for row in during if "Preparing" in row], during)
 
+    def test_after_a_run_it_is_shown_while_it_lasts_and_leaves_nothing(self):
+        # The email sign-up as the tool exits, its run's output finished.
+        terminal, seen = FakeTerminal(), []
+        with mock.patch("sys.stdout", terminal), mock.patch.object(output, "colour_ok", return_value=True), \
+                mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            output.start(self.log, verbose=False)
+            output.finish()
+            output.tell("Get an email as more devices are supported? [Y/n]: y")
+            with output.working("Sending your email sign-up..."):
+                seen.append(rendered(terminal.getvalue()))
+            output.tell("    Check your inbox to confirm.")
+        self.assertEqual(seen[0][-1], "Sending your email sign-up...")
+        self.assertEqual(rendered(terminal.getvalue())[-2:],
+                         ["Get an email as more devices are supported? [Y/n]: y", "Check your inbox to confirm."])
+
     def test_in_verbose_mode_or_within_a_stage_it_is_a_line_as_any_other(self):
         def body():
             with output.working("Reading the device's memory - about a minute..."):

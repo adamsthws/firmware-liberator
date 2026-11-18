@@ -32,7 +32,7 @@ import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, TypeVar
 
 from . import interrupt, output
 
@@ -226,16 +226,53 @@ def urlopen(request: urllib.request.Request, timeout: float):
 # minutes in all. GitHub's release downloads answered 504 for minutes at a time
 # on 2026-11-08, with good answers between, and a run stopped at the first.
 DOWNLOAD_WAITS = (5, 10, 20, 40, 60)
+# The waits between the tries of what is sent to the project's website - a
+# readout, a report, the email sign-up, the question whether a readout is
+# wanted (seconds): a blip on the way, not an outage, which what kept it
+# unsent makes up at a later sitting. Short, as someone may be waiting on it.
+SEND_WAITS = (3, 10)
+
+
+# A server that says to try again later than this (Retry-After, seconds) means
+# another day, or hour - the website's daily limit says a day - not a moment.
+RETRY_AFTER_MOST = 60
 
 
 def passing(exc: Exception) -> bool:
-    """Whether a failed download may work if tried again: a server turned it
-    away for now (5xx, or too many asked of it), or it was cut off on the way.
-    Not one refused for good (4xx), nor from a site whose certificate is not
-    trusted, which would only fail the same way."""
+    """Whether a failed request may work if tried again soon: a server turned
+    it away for now (5xx, or too many asked of it), or it was cut off on the
+    way. Not one refused for good (4xx), nor one the server says to try again
+    much later (Retry-After over RETRY_AFTER_MOST), nor from a site whose
+    certificate is not trusted, which would only fail the same way."""
     if isinstance(exc, urllib.error.HTTPError):
+        later = str((exc.headers or {}).get("Retry-After") or "")
+        if later.isdigit() and int(later) > RETRY_AFTER_MOST:
+            return False
         return exc.code >= 500 or exc.code == 429
     return not isinstance(getattr(exc, "reason", None), ssl.SSLCertVerificationError)
+
+
+T = TypeVar("T")
+
+
+def again_after_passing(attempt: Callable[[], T], waits: Sequence[float], what: str,
+                        say: Callable[[str], Any] | None = None,
+                        passes: Callable[[Exception], bool] = passing) -> T:
+    """attempt(), tried again after each of `waits` while it fails in a way
+    that may pass (`passes`), each said through `say` as `what` failing.
+    What would only fail again, or fails once the waits are used up, is
+    raised as it is."""
+    left = iter(waits)
+    while True:
+        try:
+            return attempt()
+        except (OSError, http.client.HTTPException) as exc:
+            wait = next(left, None) if passes(exc) else None
+            if wait is None:
+                raise
+            if say:
+                say(f"{what} failed ({exc}); trying again in {wait}s.")
+            time.sleep(wait)
 
 
 def download(request: urllib.request.Request | str, timeout: float = 60.0,
@@ -246,20 +283,14 @@ def download(request: urllib.request.Request | str, timeout: float = 60.0,
     the callers expect of any failed one."""
     if isinstance(request, str):
         request = urllib.request.Request(request, headers={"User-Agent": "autoflash"})
-    waits = iter(DOWNLOAD_WAITS)
-    while True:
-        try:
-            with urlopen(request, timeout) as response:
-                return response.read()
-        except (OSError, http.client.HTTPException) as exc:
-            wait = next(waits, None) if passing(exc) else None
-            if wait is None:
-                if isinstance(exc, OSError):
-                    raise
-                raise OSError(f"the download was cut off: {exc!r}") from exc
-            if say:
-                say(f"The download of {request.full_url} failed ({exc}); trying again in {wait}s.")
-            time.sleep(wait)
+
+    def attempt() -> bytes:
+        with urlopen(request, timeout) as response:
+            return response.read()
+    try:
+        return again_after_passing(attempt, DOWNLOAD_WAITS, f"The download of {request.full_url}", say)
+    except http.client.HTTPException as exc:
+        raise OSError(f"the download was cut off: {exc!r}") from exc
 
 
 def normalise_mac(text: str) -> str:

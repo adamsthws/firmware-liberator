@@ -756,6 +756,12 @@ def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
 # Devices, and readouts, one sign-up may name, as the website takes them
 # (MAX_DEVICES, MAX_READOUTS).
 NOTIFY_MOST = 20
+# The email sign-up is sent as the tool exits, someone waiting on it: one
+# quick try again (seconds), each try given less time than a question asked
+# within a stage - one not sent goes at the next sitting's end
+# (signup.PENDING), so a long wait now buys little.
+NOTIFY_WAITS = (2,)
+NOTIFY_TIMEOUT = 8.0
 
 
 def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None = None,
@@ -848,21 +854,28 @@ def offered_digests(offers: list[dict[str, Any]], versions: bool = False) -> lis
     return found if versions else [digest for digest, _ in found][:8]
 
 
-def light_post(path: str, value: dict[str, Any], timeout: float = 15.0) -> dict[str, Any]:
+def light_post(path: str, value: dict[str, Any], timeout: float = 15.0,
+               waits: tuple[float, ...] = hostsys.SEND_WAITS) -> dict[str, Any]:
     """POST `value` to the website's `path` beside where readouts go, with the
-    lighter work /wanted and /notify ask; its JSON answer. OSError or ValueError
-    when it cannot say."""
+    lighter work /wanted and /notify ask, tried again through a blip after
+    each of `waits`; its JSON answer. OSError or ValueError when it cannot
+    say."""
     url = upload_url()
     if url is None:
         raise OSError("not from a test run")
-    # A random field of its own: two alike questions asked within one second
-    # would otherwise carry the same proof, which the website takes once.
-    body = json.dumps({**value, "nonce": secrets.token_hex(8)}).encode()
-    request = urllib.request.Request(url.rsplit("/", 1)[0] + path, data=body, method="POST", headers={
-        "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}",
-        "X-Proof": proof(body, bits=LIGHT_PROOF_BITS)})
-    with hostsys.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+
+    def attempt() -> dict[str, Any]:
+        # A random field of its own: two alike questions asked within one
+        # second - or this one again, its first try having reached the
+        # website before it was cut off - would otherwise carry the same
+        # proof, which the website takes once.
+        body = json.dumps({**value, "nonce": secrets.token_hex(8)}).encode()
+        request = urllib.request.Request(url.rsplit("/", 1)[0] + path, data=body, method="POST", headers={
+            "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}",
+            "X-Proof": proof(body, bits=LIGHT_PROOF_BITS)})
+        with hostsys.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    return hostsys.again_after_passing(attempt, waits, f"Asking the website ({path})", output.log_only)
 
 
 def ask_wanted(product: str, model: str, version: str, stage: str, firmware: list[str],
@@ -898,8 +911,10 @@ def notify(email: str, devices: Iterable[tuple[str, str]], readouts: Iterable[st
     if upload_url() is None:
         return False
     try:
-        light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:NOTIFY_MOST],
-                               "readouts": list(dict.fromkeys(readouts))[:NOTIFY_MOST], "update": update})
+        with output.working("Updating your email sign-up..." if update else "Sending your email sign-up..."):
+            light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:NOTIFY_MOST],
+                                   "readouts": list(dict.fromkeys(readouts))[:NOTIFY_MOST], "update": update},
+                       timeout=NOTIFY_TIMEOUT, waits=NOTIFY_WAITS)
     except (OSError, ValueError) as exc:
         output.log_only(f"    Asking to be emailed: not taken ({exc}).")
         return False
@@ -932,16 +947,29 @@ def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
         _own_sending.clear()
 
 
+def busy_for_now(exc: Exception) -> bool:
+    """A passing trouble (hostsys.passing) but too many at once (429), which
+    whoever sends the readout waits out its own way: send() for a minute and
+    a half, send_kept() until a later run."""
+    return hostsys.passing(exc) and getattr(exc, "code", None) != 429
+
+
 def post(data: bytes, url: str, work: str, timeout: float = 120.0) -> str:
-    """POST a readout with its work, once: the reference the store gave it, or
-    ENOUGH. The website turning it away is an HTTPError, as urllib raises it."""
+    """POST a readout with its work, tried again through a blip on the way
+    (hostsys.SEND_WAITS): the reference the store gave it, or ENOUGH. The
+    website turning it away is an HTTPError, as urllib raises it; the same
+    work goes each time, as the website takes it again within 15 minutes."""
     global _posted
     request = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/x-tar", "User-Agent": f"Autoflash/{__version__}",
         "X-Proof": work})
-    try:
+
+    def attempt() -> dict[str, Any]:
         with hostsys.urlopen(request, timeout=timeout) as response:
-            answer = json.loads(response.read().decode("utf-8"))
+            return json.loads(response.read().decode("utf-8"))
+    try:
+        answer = hostsys.again_after_passing(attempt, hostsys.SEND_WAITS, "Sending the readout", output.log_only,
+                                             passes=busy_for_now)
     finally:
         _posted = time.monotonic()
     if answer.get("enough"):

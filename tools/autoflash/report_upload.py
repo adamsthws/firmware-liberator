@@ -157,12 +157,17 @@ def prune(today: dt.date) -> list[dict[str, Any]]:
 
 
 def post(reports: list[dict[str, Any]], url: str | None = None) -> dict[str, Any]:
-    """Send reports, as the API takes them: its answer."""
+    """Send reports, as the API takes them, tried again through a blip on the
+    way (hostsys.SEND_WAITS; one sent twice is a duplicate it says so of): its
+    answer."""
     body = json.dumps({"reports": reports}).encode()
     request = urllib.request.Request(url or upload_url(), data=body, method="POST", headers={
         "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}"})
-    with hostsys.urlopen(request, timeout=SEND_TIMEOUT) as response:
-        return json.loads(response.read().decode("utf-8"))
+
+    def attempt() -> dict[str, Any]:
+        with hostsys.urlopen(request, timeout=SEND_TIMEOUT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    return hostsys.again_after_passing(attempt, hostsys.SEND_WAITS, "Sending reports", output.log_only)
 
 
 # One sending at a time: the start's, of those kept before, and the end's.

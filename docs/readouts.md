@@ -151,9 +151,10 @@ The tool sends the readout as soon as it is made, without asking: this page
 says what it holds. Before it sends, your computer works out a small puzzle, which lets the
 server turn away floods without a password. It usually takes 10 to 30
 seconds, sometimes a minute or two, by luck and your computer's speed, while
-the tool shows it is still working. If the website is busy
-with another readout from you, the tool tries again every 15 seconds, for up
-to a minute and a half.
+the tool shows it is still working. If the connection drops on the way, the
+tool sends it again a few seconds later; if the website is busy with another
+readout from you, it tries again every 15 seconds, for up to a minute and a
+half.
 
 Once it is sent, the tool gives you the readout's reference to quote if you
 post about the device.

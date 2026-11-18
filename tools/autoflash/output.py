@@ -783,12 +783,28 @@ def working(text: str):
     taken away once it is over.  Within a stage, whose own spinner turns,
     `text` is logged, and shown under the stage's line once the wait has
     lasted HINT_AFTER, while nothing else is under it - sending a readout
-    takes a minute or two, and a spinner alone looks stuck.  On a terminal
+    takes a minute or two, and a spinner alone looks stuck.  After a run -
+    the email sign-up, as the tool exits - its line is drawn at once, with no
+    spinner, as no ticker turns one, and taken away likewise.  On a terminal
     in concise mode only: elsewhere `text` is said as a line, as any other."""
     with _lock:
         shown = _s.concise and _s.ticker is not None and _s.stage is None
         hinted = _s.concise and _s.ticker is not None and _s.stage is not None
+        alone = _s.log is None and _s.ticker is None and sys.stdout.isatty() and colour_ok()
         before = _s.stage_hint, _s.stage_hint_started
+    if alone:
+        with _lock:
+            _break()
+            line = _clip(f"{MARGIN}{text}")
+            sys.stdout.write("\r" + line)
+            sys.stdout.flush()
+        try:
+            yield
+        finally:
+            with _lock:
+                sys.stdout.write("\r\x1b[K")
+                sys.stdout.flush()
+        return
     if not shown:
         say(text)
     with _lock:

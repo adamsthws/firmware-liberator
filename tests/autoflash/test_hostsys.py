@@ -655,6 +655,55 @@ class AdminPasswordTests(unittest.TestCase):
         self.assertEqual(shown.call_count, 2)  # "try again" twice, not after the last
 
 
+class AgainAfterPassingTests(unittest.TestCase):
+    """What may work if tried again soon is, a few times; nothing else is."""
+
+    def tried(self, *outcomes, passes=hostsys.passing):
+        results, said = iter(outcomes), []
+
+        def attempt():
+            result = next(results)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        with mock.patch.object(hostsys.time, "sleep") as slept:
+            try:
+                found = hostsys.again_after_passing(attempt, (3, 10), "Sending it", said.append, passes)
+            except Exception as exc:   # noqa: BLE001 - what it raised is what is looked at
+                found = exc
+        return found, [call.args[0] for call in slept.call_args_list], said
+
+    def test_a_passing_trouble_is_tried_again_after_each_wait(self):
+        found, waited, said = self.tried(TimeoutError("timed out"), ConnectionResetError(104, "reset"), "done")
+        self.assertEqual((found, waited), ("done", [3, 10]))
+        self.assertEqual(said[0], "Sending it failed (timed out); trying again in 3s.")
+
+    def test_it_gives_up_once_the_waits_are_used_up_raising_what_failed(self):
+        last = TimeoutError("still")
+        found, waited, _ = self.tried(TimeoutError("timed out"), TimeoutError("again"), last)
+        self.assertIs(found, last)
+        self.assertEqual(waited, [3, 10])
+
+    def test_what_would_fail_the_same_way_is_raised_at_once(self):
+        refused = urllib.error.HTTPError("https://example.invalid/", 400, "Bad request", None, None)
+        found, waited, _ = self.tried(refused)
+        self.assertIs(found, refused)
+        self.assertEqual(waited, [])
+        # Nor what the caller waits out its own way.
+        busy = urllib.error.HTTPError("https://example.invalid/", 429, "Too many", None, None)
+        self.assertIs(self.tried(busy, passes=lambda exc: getattr(exc, "code", None) != 429)[0], busy)
+
+    def test_a_server_that_says_to_come_back_another_day_is_not_tried_again_now(self):
+        import email.message
+        later = email.message.Message()
+        later["Retry-After"] = "86400"
+        soon = email.message.Message()
+        soon["Retry-After"] = "30"
+        self.assertFalse(hostsys.passing(urllib.error.HTTPError("https://example.invalid/", 503, "Today", later, None)))
+        self.assertTrue(hostsys.passing(urllib.error.HTTPError("https://example.invalid/", 503, "Busy", soon, None)))
+        self.assertTrue(hostsys.passing(urllib.error.HTTPError("https://example.invalid/", 503, "Busy", None, None)))
+
+
 class DownloadTests(unittest.TestCase):
     """Seen in the fault suite: one TLS handshake timing out stopped a run, and on
     2026-11-08 GitHub's release downloads answered 504 for minutes at a time."""

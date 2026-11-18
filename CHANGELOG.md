@@ -61,6 +61,14 @@ check.
   check, not urllib's error, which the log keeps. One chosen when the run found no
   supported device ends as a readout too: its own report, not a conversion's,
   and no "Fix the cause, then run the same command again".
+- What the tool sends the website - a readout, a report, the email sign-up,
+  whether a readout is wanted - is sent again a few seconds later where the
+  connection dropped or the server stumbled on the way, as downloads already
+  were, rather than kept for a later sitting at the first blip. The email
+  sign-up, which you wait on as the tool exits, is tried again once, each try
+  given less time, with "Sending your email sign-up..." on screen while it
+  waits. A server that says to come back much later (the website's daily
+  limit) is not asked again at once, a download included.
 - If the email sign-up cannot be sent, its question is taken off the screen,
   and it is sent as you next use the tool, which then does not ask again; the
   sign-up page is linked on a line of its own, clickable, as other links are,

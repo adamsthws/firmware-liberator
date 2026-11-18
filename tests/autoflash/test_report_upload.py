@@ -364,6 +364,15 @@ class SendingTests(Case):
         self.assertEqual(request.get_header("Content-type"), "application/json")
         self.assertEqual(json.loads(request.data), {"reports": [{"id": "f" * 32}]})
 
+    def test_a_blip_on_the_way_is_sent_again_at_once(self):
+        # A sitting's reports are otherwise not sent until the next sitting.
+        answered = io.BytesIO(json.dumps({"accepted": ["f" * 32]}).encode())
+        with mock.patch.object(upload.hostsys, "urlopen",
+                               side_effect=[TimeoutError("timed out"), contextlib.nullcontext(answered)]), \
+                mock.patch.object(upload.hostsys.time, "sleep") as slept, mock.patch.object(upload.output, "log_only"):
+            self.assertEqual(upload.post([{"id": "f" * 32}], "http://127.0.0.1:9/reports"), {"accepted": ["f" * 32]})
+        slept.assert_called_once_with(hostsys.SEND_WAITS[0])
+
 
 class WorkTests(Case):
     def test_its_work_is_done_at_the_lowest_priority_and_is_the_reports(self):

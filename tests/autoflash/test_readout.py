@@ -275,7 +275,8 @@ class StillWantedTests(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         given = f"http://127.0.0.1:{server.server_address[1]}/readout" if url == "set" else url
         try:
-            with mock.patch.object(readout, "upload_url", return_value=given), mock.patch.object(output, "log_only"):
+            with mock.patch.object(readout, "upload_url", return_value=given), mock.patch.object(output, "log_only"), \
+                    mock.patch.object(readout.hostsys.time, "sleep"):   # asked again after a blip (SEND_WAITS)
                 wanted = readout.ask_wanted("BASICR4", "SN-BASICR4-01", "1.1.0", "whole", ["a" * 64, "b" * 64],
                                               report_data.device_hash("12:34:56:ab:cd:ef"))
         finally:
@@ -300,10 +301,39 @@ class StillWantedTests(unittest.TestCase):
         self.assertLess(readout.LIGHT_PROOF_BITS, readout.PROOF_BITS)
 
     def test_wanted_when_the_website_says_so_or_cannot_say(self):
+        cheap = mock.patch.object(readout, "LIGHT_PROOF_BITS", 8)   # asked again after a blip: work each time
+        cheap.start()
+        self.addCleanup(cheap.stop)
         self.assertTrue(self.ask(answer={"wanted": True})[0].wanted)
         self.assertTrue(self.ask(status=404, answer={"error": "an earlier website"})[0].wanted)
         self.assertTrue(self.ask(status=429, answer={"error": "too many"})[0].wanted)
         self.assertTrue(self.ask(url="http://127.0.0.1:9/readout")[0].wanted)   # nothing there
+
+    def test_a_blip_on_the_way_is_asked_again_with_work_of_its_own(self):
+        # The website takes a question's work once, and a first try cut off
+        # on the way back may have reached it.
+        sent = []
+
+        class Answer(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        def urlopen(request, timeout):
+            sent.append((request.data, request.headers["X-proof"]))
+            if len(sent) == 1:
+                raise ConnectionResetError(104, "Connection reset by peer")
+            return Answer(json.dumps({"wanted": True}).encode())
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "LIGHT_PROOF_BITS", 8), \
+                mock.patch.object(readout.hostsys, "urlopen", side_effect=urlopen), \
+                mock.patch.object(readout.hostsys.time, "sleep") as slept, mock.patch.object(output, "log_only"):
+            self.assertTrue(readout.light_post("/wanted", {"model": "BASICR4"})["wanted"])
+        self.assertEqual(len(sent), 2)
+        self.assertNotEqual(sent[0], sent[1])   # a body and a proof of its own
+        slept.assert_called_once_with(readout.hostsys.SEND_WAITS[0])
 
     def test_never_asked_from_a_test_run(self):
         wanted, got = self.ask(url=None)
@@ -322,9 +352,11 @@ class RateLimitTests(unittest.TestCase):
             def do_POST(self):  # noqa: N802 - http.server's name
                 self.rfile.read(int(self.headers["Content-Length"]))
                 got.append(self.headers["X-Proof"])
-                status, body = answers[len(got) - 1]
+                status, body, *headers = answers[len(got) - 1]
                 body = json.dumps(body).encode()
                 self.send_response(status)
+                for name, value in (headers[0] if headers else {}).items():
+                    self.send_header(name, value)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -358,10 +390,24 @@ class RateLimitTests(unittest.TestCase):
         self.assertIn("429", str(said))
         self.assertEqual((len(proofs), waits), (7, [15.0] * 6))
 
-    def test_anything_else_turned_away_is_not_sent_again(self):
-        said, proofs, waits = self.post([(503, {"error": "enough for today"})])
+    def test_one_turned_away_until_another_day_is_not_sent_again(self):
+        # The website's daily limit says to come back in a day.
+        said, proofs, waits = self.post([(503, {"error": "enough for today"}, {"Retry-After": "86400"})])
         self.assertIsInstance(said, OSError)
         self.assertEqual((len(proofs), waits), (1, []))
+
+    def test_a_blip_on_the_way_is_sent_again_at_once_with_the_same_work(self):
+        # Seen: a readout kept unsent for want of a second try, its owner
+        # never running the tool again.
+        said, proofs, waits = self.post([(502, {"error": "bad gateway"}), (201, {"id": "r-1"})])
+        self.assertEqual(said, "r-1")
+        self.assertEqual(len(set(proofs)), 1)
+        self.assertEqual(waits, [hostsys.SEND_WAITS[0]])
+
+    def test_a_blip_that_lasts_gives_up_after_its_tries(self):
+        said, proofs, waits = self.post([(502, {"error": "bad gateway"})] * (len(hostsys.SEND_WAITS) + 1))
+        self.assertIsInstance(said, OSError)
+        self.assertEqual((len(proofs), waits), (len(hostsys.SEND_WAITS) + 1, list(hostsys.SEND_WAITS)))
 
 
 class LocateTests(unittest.TestCase):
@@ -939,6 +985,27 @@ class NotifyTests(unittest.TestCase):
         self.assertEqual(value["readouts"], ["2026-11-07-0123456789ab"])
         self.assertIs(value["update"], False)   # a sign-up: confirmed by email if it is not yet
         self.assertIs(posted.call_args.args[1]["update"], True)
+
+    def test_sent_as_the_tool_exits_with_a_short_wait_shown(self):
+        # Seen: a sign-up the website did not answer kept its owner at the
+        # exit for close to a minute - three tries, each waiting out its
+        # time - with nothing on the screen. One not sent goes next sitting.
+        shown = []
+
+        @contextlib.contextmanager
+        def working(text):
+            shown.append(text)
+            yield
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(output, "working", working), \
+                mock.patch.object(readout, "light_post", return_value={}) as posted:
+            readout.notify("me@example.com", [])
+            readout.notify("me@example.com", [], update=True)
+        self.assertEqual(shown, ["Sending your email sign-up...", "Updating your email sign-up..."])
+        waits, timeout = posted.call_args.kwargs["waits"], posted.call_args.kwargs["timeout"]
+        self.assertEqual((waits, timeout), (readout.NOTIFY_WAITS, readout.NOTIFY_TIMEOUT))
+        self.assertGreaterEqual(len(waits), 1)   # a blip is still tried again
+        self.assertLessEqual((len(waits) + 1) * timeout + sum(waits), 20)   # the longest it can keep someone
 
     def test_with_no_device_seen_it_still_asks(self):
         with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \

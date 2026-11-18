@@ -143,8 +143,9 @@ this page. A dry run (`--dry-run`) and a run in the
 
 ## A report that could not be sent
 
-If the report cannot be sent when a run ends (your computer offline, or the
-server silent), it waits in `captures/reports/` in the tool's folder
+If the report cannot be sent when a run ends, tried again a few seconds
+later (your computer offline, or the server silent), it waits in
+`captures/reports/` in the tool's folder
 and is sent the next time you run the tool. It is deleted after 30 days if
 still unsent, and only the newest 99 are kept. To delete one before it is
 sent, delete its file there.
