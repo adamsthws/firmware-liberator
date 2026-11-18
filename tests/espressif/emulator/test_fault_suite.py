@@ -2319,5 +2319,35 @@ class DeviceRoutesTests(unittest.TestCase):
                              [fs.saved("suite-tasmota-nobackup")])
 
 
+class ReaddressTests(unittest.TestCase):
+    """The router giving the device another address once a step is done, as
+    the Beken suite's readdress: tried at the riskiest steps and in a
+    readout's read, and judged on the device having moved."""
+
+    def test_tried_where_a_power_cut_twice_is_and_in_a_readouts_read(self):
+        ids = {sc["id"] for sc in fs.scenarios()}
+        for route, (_, _, steps) in fs.ROUTES.items():
+            for step in set(steps) & fs.CRITICAL:
+                with self.subTest(route=route, step=step):
+                    readdressed = fs.sid(route, step, "readdress", "new") in ids
+                    self.assertEqual(readdressed, step not in fs.READDRESS_NOT_AT)
+        self.assertIn(fs.sid("sonoff>readout", "read", "readdress", "new"), ids)
+
+    def test_the_devices_address_is_its_lease(self):
+        mac = "12:34:56:AB:CD:EF"
+        leases = "1 12:34:56:00:00:01 192.168.60.120 laptop *\n2 12:34:56:ab:cd:ef 192.168.60.55 sonoff *\n"
+        self.assertEqual(fs.lease_of(leases, mac), "192.168.60.55")
+        self.assertIsNone(fs.lease_of("", mac))
+
+    def test_it_fired_only_once_the_device_moved(self):
+        sc = {"fault": "readdress", "arg": "new"}
+        moved = {"moved_from": "192.168.60.50", "moved_to": "192.168.60.55"}
+        self.assertFalse(fs.not_fired(sc, moved, True))
+        # Never asked again, so still where it was; or the router never told.
+        self.assertTrue(fs.not_fired(sc, {**moved, "moved_to": "192.168.60.50"}, True))
+        self.assertTrue(fs.not_fired(sc, {"moved_from": "192.168.60.50"}, True))
+        self.assertTrue(fs.not_fired(sc, {**moved, "not_applied": ["wifi-root"]}, True))
+
+
 if __name__ == "__main__":
     unittest.main()

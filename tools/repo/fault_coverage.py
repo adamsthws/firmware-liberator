@@ -75,11 +75,6 @@ NOT_IN: dict[str, dict[Cell, str]] = {
 # off; finding it cannot be moves it to NOT_EVERYWHERE, with why.
 NOT_YET: dict[str, tuple[Cell, ...]] = {
     "legacy": (("conversion", "beken"),),
-    # An S60's: its emulator's router gives the device one address alone, and
-    # passes the ARP for no other to it (container/bin/wifi-root's dhcp-host,
-    # entrypoint.sh's filter), both in the image; and the suite watches the
-    # device at that address throughout.
-    "readdress-new": (("conversion", "espressif"), ("readout", "espressif")),
     "safemode-ten": (("conversion", "beken"),),
 }
 

@@ -148,7 +148,8 @@ def saved(name):
 
 
 MAC = None  # --device: the backed-up device the emulators run copies of
-DEVICE_IP = "192.168.60.50"
+NET = "192.168.60"   # the emulator's home Wi-Fi (container/bin/wifi-root)
+DEVICE_IP = f"{NET}.50"   # the device's address there, unless a readdress moves it
 DEVICE_URL = f"http://{DEVICE_IP}"
 # An MQTT host for a device set up by its owner (notemplate): nobody's (RFC 5737).
 NOTEMPLATE_MQTT_HOST = "192.0.2.10"
@@ -318,7 +319,10 @@ READOUT_MORE_FAULTS = [("read", "cancel", "continue"), ("read", "cancel", "new")
                        ("read", "second", "run"), ("read", "sleep", 120), ("read", "pcoff", 30),
                        ("read", "weak", 60), ("read", "corrupt", "once"), ("read", "diskfull", "once"),
                        ("read", "double", "deviceoff-1"), ("read", "double", "outage-30"),
-                       ("read", "fallback", 150), ("read", "token", "login")]
+                       ("read", "fallback", 150), ("read", "token", "login"),
+                       # The router giving the device another address once the read is
+                       # done: it takes it as it restarts into Sonoff's firmware.
+                       ("read", "readdress", "new")]
 # A readout cut off mid-read, the bridge still running, and the tool run again
 # before the device is switched off and on: to Sonoff's firmware, or the readout;
 # and (elsewhere) to Sonoff's firmware with this computer's records of the
@@ -401,6 +405,16 @@ OWN_HANDLING = [("second", "run"), ("ctrlc", "countdown"), ("ctrlc", "apart")]
 OWN_HANDLING_STEPS = CRITICAL | {"C2", "L1", "X1"}
 TIMING_FAULTS = [("deviceoff", 1), ("outage", 30), ("crash", 1)]
 DOUBLE_FAULTS = [("double", "deviceoff-1"), ("double", "outage-30")]
+# And at those, the router giving the device another address once the step is
+# done, as a home router may (wifi-root readdress; the Beken suite's
+# readdress): the device takes it when it next starts, in a later step, and
+# the tool must find it there by its MAC.
+AFTER_STEP_FAULTS = [("readdress", "new")]
+# Not where nothing after the step starts the device again, so it never asks
+# for its new address (NOT-FIRED, always), and why.
+READDRESS_NOT_AT = {"U5": "U6 after it only asks Tasmota its version",
+                    "F4": "G1 after it writes Safeboot into the other slot and H1 reads the regions back, "
+                          "Tasmota running on - seen, the device asked its router nothing after F4"}
 
 
 def fault_wait(arg):
@@ -441,7 +455,7 @@ def scenarios(quick=False):
                     for fault, arg in TIMING_FAULTS:
                         yield dict(id=sid(route, step, fault, arg, at), route=route, step=step,
                                    fault=fault, arg=arg, at=at)
-                for fault, arg in DOUBLE_FAULTS:
+                for fault, arg in DOUBLE_FAULTS + (AFTER_STEP_FAULTS if step not in READDRESS_NOT_AT else []):
                     yield dict(id=sid(route, step, fault, arg), route=route, step=step, fault=fault, arg=arg, at=40)
             if step == "C3":
                 yield dict(id=sid(route, step, "diskfull", "once"), route=route, step=step,
@@ -1244,12 +1258,24 @@ FIRED_NOTE = {("ownnet", "cut"): "cut_after_upload", ("ownnet", "dropupload"): "
               ("seven", "times"): "seven_times", ("seven", "advised"): "seven_times"}
 
 
+def lease_of(leases, mac):
+    """The address dnsmasq's lease file gives the device with `mac`: None for
+    none, or with no MAC (no --device)."""
+    found = [line.split()[2] for line in leases.splitlines()
+             if mac and len(line.split()) > 2 and line.split()[1].lower() == mac.lower()]
+    return found[-1] if found else None
+
+
 def not_fired(sc, notes, converted):
     """A device converted though its fault never happened proves nothing. A failure
     stands whatever happened: it may be a real one, or a brick."""
     if not converted:
         return False
     note = FIRED_NOTE.get((sc["fault"], sc["arg"]))
+    if sc["fault"] == "readdress":
+        # Moved only once the device asked again and was given the new address.
+        return bool(notes.get("not_applied") or not notes.get("moved_to")
+                    or notes.get("moved_to") == notes.get("moved_from"))
     if sc["fault"] in ("cancel", "ctrlc"):
         note = "ctrl_c_logged"
     return bool(notes.get("not_applied") or (note and not notes.get(note)))
@@ -1431,11 +1457,21 @@ class Scenario:
         at = step or self.sc["step"]
         if not self.wait_for_step(since, headers, stop, at):
             return
+        if fault == "readdress":
+            # Once the step is done, as the Beken suite's: the device takes its
+            # new address when it next asks - as it starts again in a later step.
+            done = STEP_OF.get(at, at)
+            while not self.reached(since, headers, ENDS_AT.get(at, ("done", done)), ENDS.get(at, rf"\] {done} done")):
+                if stop.is_set():
+                    return
+                time.sleep(0.5)
+            delay = 0
         time.sleep(delay)
         if stop.is_set():
             return
         step = STEP_OF.get(at, at)
-        if self.reached(since, headers, ENDS_AT.get(at, ("done", step)), ENDS.get(at, rf"\] {step} done")):
+        if fault != "readdress" and self.reached(since, headers, ENDS_AT.get(at, ("done", step)),
+                                                 ENDS.get(at, rf"\] {step} done")):
             self.notes["mistimed"] = True  # the step was over before the fault
         if first:
             self.fired = time.time()
@@ -1476,6 +1512,13 @@ class Scenario:
         p = DEVICE_CMD
         if fault == "outage":
             self.router("off"); time.sleep(arg); self.router("on")
+        elif fault == "readdress":
+            # The router forgets the device's address and gives it another when
+            # it next asks (wifi-root readdress): .55, or .50 from there.
+            address = self.address()
+            moved = f"{NET}.{55 if int(address.rsplit('.', 1)[1]) < 55 else 50}"
+            self.must("/opt/autoflash-emu/bin/wifi-root", "readdress", moved)
+            self.notes["moved_from"] = address
         elif fault == "deviceoff":
             self.must(p, "off"); time.sleep(arg); self.must(p, "on")
         elif fault == "crash":
@@ -2036,10 +2079,18 @@ class Scenario:
         results[-1] = (results[-1][0], "on Tasmota's safeboot, Tasmota missing")
         return self.again(results, self.target, [])
 
+    def address(self):
+        """The device's address on the home network, as its router gave it:
+        DEVICE_IP, unless a readdress moved it (wifi-root readdress) and the
+        device has asked again since."""
+        leases = self.ex("cat", "/run/autoflash-emu/leases").stdout
+        return lease_of(leases, MAC) or DEVICE_IP
+
     def tasmota(self, command):
         """What the device's Tasmota answers to `command`, as JSON - or None."""
-        out = self.ex("curl", "-s", "-m", "10", "-G", "-e", f"{DEVICE_URL}/",
-                      "--data-urlencode", f"cmnd={command}", f"{DEVICE_URL}/cm").stdout
+        url = f"http://{self.address()}"
+        out = self.ex("curl", "-s", "-m", "10", "-G", "-e", f"{url}/",
+                      "--data-urlencode", f"cmnd={command}", f"{url}/cm").stdout
         try:
             return json.loads(out)
         except ValueError:
@@ -2057,7 +2108,7 @@ class Scenario:
         only.  None if it does not answer as this project's.  A few tries: it may be
         starting."""
         code = ("import json, sys; sys.path.insert(0, '/work'); from tools.autoflash import esphome; "
-                f"print(json.dumps(esphome.api_device_info({DEVICE_IP!r})))")
+                f"print(json.dumps(esphome.api_device_info({self.address()!r})))")
         for _ in range(3):
             said = self.ex("python3", "-c", code, as_tool=True).stdout.strip().splitlines()
             try:
@@ -2154,13 +2205,13 @@ class Scenario:
     def ports_open(self, *ports):
         """Which of `ports` the device takes a connection on now."""
         probe = ("import socket, sys\n"
-                 "for port in sys.argv[1:]:\n"
+                 "for port in sys.argv[2:]:\n"
                  "    try:\n"
-                 "        socket.create_connection(('192.168.60.50', int(port)), timeout=2).close()\n"
+                 "        socket.create_connection((sys.argv[1], int(port)), timeout=2).close()\n"
                  "        print(port)\n"
                  "    except OSError:\n"
                  "        pass\n")
-        out = self.ex("python3", "-I", "-c", probe, *map(str, ports)).stdout
+        out = self.ex("python3", "-I", "-c", probe, self.address(), *map(str, ports)).stdout
         return {int(port) for port in out.split()}
 
     def go_safemode(self):
@@ -2466,11 +2517,12 @@ class Scenario:
     def firmware_now(self, wait=0):
         """What the device answers as, as the tool tells (detect.identify), looked
         at until it is Sonoff's firmware or `wait` seconds are up."""
-        probe = (f"import sys; sys.path.insert(0, '/work'); from tools.autoflash import detect; "
-                 f"print(detect.identify({DEVICE_IP!r}))")
+        probe = ("import sys; sys.path.insert(0, '/work'); from tools.autoflash import detect; "
+                 "print(detect.identify(sys.argv[1]))")
         deadline = time.time() + wait
         while True:
-            found = self.ex("/opt/venv/bin/python", "-c", probe, timeout=60, as_tool=True).stdout.strip()
+            found = self.ex("/opt/venv/bin/python", "-c", probe, self.address(), timeout=60,
+                            as_tool=True).stdout.strip()
             if found == "sonoff" or time.time() >= deadline:
                 return found
             time.sleep(5)
@@ -2495,6 +2547,8 @@ class Scenario:
             self.notes["readout"] = problems if problems is not None else ["none kept"]
             self.notes["firmware"] = self.firmware_now()
         self.notes["ctrl_c_logged"] = self.ctrl_c_lines() > self.ctrl_c_before
+        if self.sc["fault"] == "readdress":
+            self.notes["moved_to"] = self.address()
         if not special:
             if self.notes.get("mistimed"):
                 special = "MISTIMED"
@@ -2523,8 +2577,8 @@ class Scenario:
         """Whether the device's page `path` says `words`, in any case, within `limit` seconds."""
         deadline = time.time() + limit
         while time.time() < deadline:
-            page = self.ex("curl", "-s", "-m", "5", "-e", "http://192.168.60.50/",
-                           f"http://192.168.60.50{path}").stdout
+            url = f"http://{self.address()}"
+            page = self.ex("curl", "-s", "-m", "5", "-e", f"{url}/", f"{url}{path}").stdout
             if words.lower() in page.lower():
                 return True
             time.sleep(3)
@@ -2616,8 +2670,9 @@ class Scenario:
     def names_seen(self):
         """The names the device went by on the home network (DHCP, in order,
         repeats folded) and the networks it put out (its serial log)."""
+        # By its MAC: a readdress gives it another address part way.
         dhcp = self.ex("sh", "-c", "grep DHCPACK /run/autoflash-emu/dnsmasq.log 2>/dev/null"
-                                   " | grep ' 192.168.60.50 '").stdout
+                                   f" | grep -i ' {MAC} '").stdout
         names, networks = [], []
         for line in dhcp.splitlines():
             name = line.split()[-1]
@@ -2679,6 +2734,8 @@ class Scenario:
         ours = re.sub(r"\s+", " ", "".join(self.ours(p, t) for m, p, t in run_logs(self.state)
                                            if m >= self.started))
         self.notes["ctrl_c_logged"] = self.ctrl_c_lines() > self.ctrl_c_before
+        if fault == "readdress":
+            self.notes["moved_to"] = self.address()
         if not_fired(sc, self.notes, converted) and not special:
             special = "NOT-FIRED"
         converted_from_untemplated = "Converting the device from Tasmota without the device's template" in ours
