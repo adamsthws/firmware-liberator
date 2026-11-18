@@ -684,6 +684,37 @@ the same image is staged byte for byte and applied on the restart
 ([`cloud_push.py`](../tools/beken/emulator/cloud_push.py)). None of it has been
 done on a real device, where the step cannot be undone by running it again.
 
+### A power cut while it updates
+
+A device switched off part way through an update comes back on the firmware
+it had or the one it was getting, at whatever point the power went - so the
+tool's asking you to switch it off and on, where a device has not come back
+after an update (`routes/arrival.until_back`), is safe whenever it asks. The
+update stays whole in the download partition while the bootloader installs
+it, and the bootloader writes only the `app` partition, so a boot after any
+interruption finds one of two things, both of them safe:
+
+- **The download cut short** (Sonoff's firmware or OpenBeken still receiving
+  it): its CRC-32 fails (`rt_ota_part_fw_verify: Verify firmware CRC32 ...
+  failed on partition 'download'`), nothing is installed, and the firmware
+  the device had starts as before.
+- **The install cut short** (the bootloader erasing or writing `app`): the
+  next boot finds `app` older than the download, or without its header
+  (`Get 'app' partition firmware header failed! This partition will be
+  forced to upgrade`), and installs the download again from the start; the
+  new firmware then starts. The header is written last: cut once the write
+  had finished, the next boot started the new firmware at once.
+
+Seen in the emulator with the real bootloader and the flash writes modelled
+([how](../tools/beken/emulator/README.md#the-emulator-performs-the-whole-ota-apply)),
+`stage_apply.py`'s `SECS` cutting the power: the S61's OpenBeken update cut
+in its erase and at 26 %, 76 % and 100 % of its write; its ESPHome update at
+53 %; and downloads of 2 %, 50 % and 99 % of the OpenBeken update. Each came
+back as above. The bootloader (`0x0`) and the settings and identity regions
+are not written by either step. Untried on a real device; hardware cut part
+way through programming a page leaves that page half written, which the
+checks above find and the next install writes over.
+
 ### OpenBeken on the 4 MB table
 
 OpenBeken's BK7238 build hard-wires `CFG_FLASH_SELECTION_TYPE =
