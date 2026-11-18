@@ -173,6 +173,11 @@ def step_push(ctx: Context) -> dict[str, Any]:
                 listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
                 wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False,
                 event=output.event)
+        if delivered.interrupted:
+            # Ctrl-C twice, or the window closed, part way: the run stops as
+            # asked (cli), the window's closing remembered - not a delivery
+            # that failed, with a switch off and on to do.
+            raise KeyboardInterrupt
         if not delivered.sent:
             raise Abort(f"the firmware was not sent: {delivered.error or 'eWeLink did not take the command'}. "
                         f"{ota_push.NOT_SENT}")

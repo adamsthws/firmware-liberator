@@ -34,6 +34,10 @@ check.
   start does.
   Before, a run that failed ended at the email question. A conversion that
   became a readout, the device not being supported, asks as a readout does.
+- Ctrl-C twice, or the window closed, while an S61 is sent its firmware
+  through eWeLink stops the run as asked, and the next run says why it
+  stopped. Before, it ended as a delivery that failed part way, with a switch
+  off and on to do.
 - Typing `q` where the tool asks you to type PROCEED stops the run as `q` at any
   question does: "Stopped as asked.", with nothing written to the device. It no
   longer says FAILED, nor asks for a report or an issue, for a readout or a

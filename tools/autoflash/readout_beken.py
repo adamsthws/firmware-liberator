@@ -107,6 +107,8 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
                 names=("user1.bin",), wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False,
                 event=output.event)
         safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
+        if delivered.interrupted:
+            raise KeyboardInterrupt   # stopped as asked, as a conversion's B2 (stock.py)
         if not delivered.sent:
             raise NothingWritten(f"the readout firmware was not sent: {delivered.error or 'eWeLink did not take it'}. "
                                  f"{ota_push.NOT_SENT}")

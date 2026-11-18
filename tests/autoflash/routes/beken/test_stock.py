@@ -281,6 +281,15 @@ class FromStockTests(unittest.TestCase):
                 # part way in the fault suite), and the step left attempted.
                 with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 100 of .*switch it off and on"):
                     stock.step_push(ctx)
+            # Ctrl-C twice, or the window closed, as it sends: the run stops as
+            # asked, not a delivery that failed (seen in the fault suite's hangup:
+            # the next run never said the window had been closed).
+            with mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(ota_push, "deliver", return_value=ota_push.Delivery(
+                        sent=True, complete=False, bytes_served=100, interrupted=True,
+                        error="interrupted before the firmware was fully delivered")):
+                with self.assertRaises(KeyboardInterrupt):
+                    stock.step_push(ctx)
             # Turned down while an update cut off part way holds the device's
             # updater (seen in the fault suite): switching it off and on frees it.
             refused = ota_push.Delivery(sent=True, complete=False,

@@ -276,7 +276,7 @@ class ReadWholeFlashTests(unittest.TestCase):
     def test_a_delivery_cut_part_way_is_a_stop_to_act_on_not_a_crash(self):
         from types import SimpleNamespace
         from tools.autoflash import errors, failures
-        cut = SimpleNamespace(sent=True, complete=False, bytes_served=1024, error=None)
+        cut = SimpleNamespace(sent=True, complete=False, bytes_served=1024, error=None, interrupted=False)
         ctx = a_ctx()
         ctx.state.set_input("device_ip", "192.0.2.60")
         ctx.listen_ip = lambda: "192.0.2.10"
@@ -289,6 +289,16 @@ class ReadWholeFlashTests(unittest.TestCase):
             with self.assertRaises(errors.StoppedPartWay) as stopped:
                 rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
         self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
+        # Stopped as asked - Ctrl-C twice, the window closed - it stops so.
+        with mock.patch.object(rb, "readout_image", return_value=b"image"), \
+                mock.patch.object(rb.fota_wrap, "wrap", return_value=b"wrapped"), \
+                mock.patch.object(rb.firewall, "choose_port", return_value=8088), \
+                mock.patch.object(rb.firewall, "ensure_firewall"), mock.patch.object(rb.output, "say"), \
+                mock.patch.object(rb.safety_locks, "say_lock_back"), \
+                mock.patch.object(rb.ota_push, "deliver", return_value=SimpleNamespace(
+                    sent=True, complete=False, bytes_served=1024, error="interrupted", interrupted=True)):
+            with self.assertRaises(KeyboardInterrupt):
+                rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
 
     def test_the_reads_start_and_end_are_events_and_its_start_is_in_the_runs_log(self):
         # The Beken fault suite times a fault in the read from its events
