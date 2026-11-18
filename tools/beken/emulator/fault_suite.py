@@ -326,12 +326,6 @@ def metered(state: dict) -> bool:
     return kind.has_meter if kind else True
 
 
-def filed_as(log: Path) -> Path:
-    """A run's log by its device and run (<mac>/runs/<when>/run.log): the same
-    before and after the records' folder is renamed around it."""
-    return log.relative_to(log.parents[3])
-
-
 class Instance:
     """One emulated device, its Wi-Fi and its computer."""
 
@@ -378,7 +372,7 @@ class Instance:
             shutil.copytree(SAVED / start, self.state)
         (self.state / "work/captures").mkdir(parents=True, exist_ok=True)
         (self.state / "work/captures/tool.env").write_text(ACCOUNT, encoding="utf-8")
-        self.before = {filed_as(path) for path in self.all_runs()}
+        self.before = {fault_verdicts.filed_as(path) for path in self.all_runs()}
 
     def dhcp_log(self) -> str:
         return subprocess.run(["docker", "exec", self.device, "cat", "/run/autoflash-beken-emu/dnsmasq.log"],
@@ -479,12 +473,8 @@ class Instance:
                                 stdin=subprocess.DEVNULL)
 
     def records(self) -> Path:
-        """The tool's records in the instance: devices/, or plugs/ where a
-        device saved by a release before 3.0.0 keeps them, until this
-        checkout's tool carries it on and renames them."""
-        captures = self.state / "work/captures"
-        earlier = captures / "plugs"
-        return earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
+        """The tool's records in the instance (fault_verdicts.records_under)."""
+        return fault_verdicts.records_under(self.state / "work")
 
     def all_runs(self) -> list[Path]:
         """Every run's log in the instance (records)."""
@@ -498,7 +488,7 @@ class Instance:
 
     def runs(self) -> list[Path]:
         """This scenario's runs, oldest first."""
-        return [path for path in self.all_runs() if filed_as(path) not in self.before]
+        return [path for path in self.all_runs() if fault_verdicts.filed_as(path) not in self.before]
 
     def run_texts(self) -> list[str]:
         """The words of each of this scenario's runs, oldest first."""
@@ -1219,7 +1209,7 @@ def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
 def all_passed(ids_file: str | None = None) -> bool:
     """Whether every scenario of `ids_file` (else every one) has passed last."""
     wanted = Path(ids_file).read_text(encoding="utf-8").split() if ids_file else [sc["id"] for sc in scenarios()]
-    passed = {i for i, entry in latest().items() if entry.get("result") == "PASS"}
+    passed = {i for i, entry in fault_verdicts.latest(RESULTS).items() if entry.get("result") == "PASS"}
     return all(i in passed for i in wanted)
 
 
@@ -1229,26 +1219,10 @@ def record(sc: dict, outcome: dict) -> None:
         results.write(json.dumps({"id": sc["id"], "at": time.strftime("%Y-%m-%dT%H:%M:%S"), **outcome}) + "\n")
 
 
-def latest() -> dict[str, dict]:
-    found: dict[str, dict] = {}
-    try:
-        for line in RESULTS.read_text(encoding="utf-8").splitlines():
-            entry = json.loads(line)
-            found[entry["id"]] = entry
-    except (OSError, ValueError):
-        pass
-    return found
-
-
-def starved_label(outcome: dict) -> str:
-    starved = outcome.get("result") != "PASS" and outcome.get("notes", {}).get("memory", {}).get("starved")
-    return "  (memory-starved)" if starved else ""
-
-
 def batch(ids_file: str | None = None) -> None:
     every = {sc["id"]: sc for sc in scenarios()}
     wanted = (Path(ids_file).read_text(encoding="utf-8").split() if ids_file else list(every))
-    earlier = latest()   # those run here before: a re-run's pass rate is apart (emulator_stats)
+    earlier = fault_verdicts.latest(RESULTS)   # those run here before: a re-run's pass rate is apart (emulator_stats)
     passed = {i for i, entry in earlier.items() if entry.get("result") == "PASS"}
     todo: queue.Queue = queue.Queue()
     # The longest first, so the batch does not end on one started last (scenario_times).
@@ -1276,7 +1250,8 @@ def batch(ids_file: str | None = None) -> None:
                     outcome = dict(result="ERROR", notes={"error": repr(exc), "trace": traceback.format_exc()})
                 with lock:
                     record(sc, outcome)
-                    print(f"{outcome['result']:9} {sc['id']}{starved_label(outcome)}", flush=True)
+                    label = fault_verdicts.starved_label(outcome["result"], outcome.get("notes", {}))
+                    print(f"{outcome['result']:9} {sc['id']}{label}", flush=True)
                 # The device's eWeLink is always the local stub (ACCOUNT).
                 emulator_stats.fault_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, scenario=sc,
                                          verdict=outcome["result"], tries=outcome.get("runs"),
@@ -1383,7 +1358,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
             started = time.time()
             target = route.split(">")[1]
             log = OUT / f"check-{route.replace('>', '-')}.log"
-            instance.before = {filed_as(path) for path in instance.all_runs()}
+            instance.before = {fault_verdicts.filed_as(path) for path in instance.all_runs()}
             for attempt in range(RECOVERY_RUNS):
                 instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
                 if converted(instance.last_state(), route):
@@ -1450,10 +1425,11 @@ def suite_roots() -> list[Path]:
 
 
 def report() -> None:
-    found = latest()
+    found = fault_verdicts.latest(RESULTS)
     for sc in scenarios():
-        entry = found.get(sc["id"])
-        print(f"{(entry or {}).get('result', '-'):9} {sc['id']}{starved_label(entry or {})}")
+        entry = found.get(sc["id"], {})
+        label = fault_verdicts.starved_label(entry.get("result"), entry.get("notes", {}))
+        print(f"{entry.get('result', '-'):9} {sc['id']}{label}")
 
 
 def main(argv: list[str]) -> int:

@@ -318,6 +318,43 @@ def screen_problems(output: str) -> list[str]:
     return problems
 
 
+def latest(results: Path) -> dict[str, dict]:
+    """Each scenario's newest row in a suite's results file (JSON lines), by
+    id; none for a file not there or not whole."""
+    found: dict[str, dict] = {}
+    try:
+        for line in results.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                found[row["id"]] = row
+    except (OSError, ValueError):
+        pass
+    return found
+
+
+def starved_label(verdict: str | None, notes: dict) -> str:
+    """Said beside a scenario's verdict where it failed with the computer short
+    of memory (memory_pressure): a failure that may be the computer's."""
+    starved = verdict != "PASS" and notes.get("memory", {}).get("starved")
+    return "  (memory-starved)" if starved else ""
+
+
+def records_under(work: Path) -> Path:
+    """The tool's records in an emulator's checkout `work` (its captures/):
+    devices/, or plugs/ where a release before 3.0.0 keeps them - a legacy
+    run's until this checkout's tool carries it on and renames them, or a
+    device saved by one."""
+    captures = Path(work) / "captures"
+    earlier = captures / "plugs"
+    return earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
+
+
+def filed_as(log: Path) -> Path:
+    """A run's file by its device and run (<mac>/runs/<when>/run.log): the
+    same before and after the records' folder is renamed around it."""
+    return log.relative_to(log.parents[3])
+
+
 def scenario_folder(logs: Path, scenario_id: str) -> Path:
     """Where either suite keeps a scenario's logs: a folder of its own under
     `logs`, named from its id (sonoff>esphome:J2@10:crash-1 in

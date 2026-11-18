@@ -268,9 +268,9 @@ class BatchResultTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             ids = Path(temp) / "ids"
             ids.write_text("a\nb\n", encoding="utf-8")
-            with mock.patch.object(fault_suite, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "MISTIMED"}}):
+            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "MISTIMED"}}):
                 self.assertFalse(fault_suite.all_passed(str(ids)))
-            with mock.patch.object(fault_suite, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "PASS"}}):
+            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "PASS"}}):
                 self.assertTrue(fault_suite.all_passed(str(ids)))
 
 
@@ -301,7 +301,7 @@ class BatchResultTests(unittest.TestCase):
             ran.append(sc["id"])
             return {"result": "PASS"}
         with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
-                mock.patch.object(fault_suite, "latest", return_value={}), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
                 mock.patch.object(fault_suite, "run_scenario", side_effect=run), \
                 mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
@@ -317,7 +317,7 @@ class BatchResultTests(unittest.TestCase):
         from unittest import mock
         events = []
         with mock.patch.object(fault_suite, "scenarios", return_value=[{"id": "a", "arg": 1}]), \
-                mock.patch.object(fault_suite, "latest", return_value={}), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
                 mock.patch.object(fault_suite, "run_scenario",
                                   side_effect=lambda *a: events.append("run") or {"result": "PASS"}), \
@@ -335,7 +335,7 @@ class BatchResultTests(unittest.TestCase):
         def run(instance, sc):
             raise FileNotFoundError(2, "No such file or directory")
         with mock.patch.object(fault_suite, "scenarios", return_value=[{"id": "a", "arg": 1}]), \
-                mock.patch.object(fault_suite, "latest", return_value={}), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record") as record, \
                 mock.patch.object(fault_suite, "run_scenario", side_effect=run), \
                 mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
@@ -794,13 +794,6 @@ class FaultAppliedTests(unittest.TestCase):
         self.assertEqual(self.step_result(is_converted=True), "NOT-FIRED")
         self.assertEqual(self.step_result(is_converted=False), "FAIL")
 
-    def test_only_a_failure_is_labelled_starved(self):
-        starved = {"notes": {"memory": {"starved": True}}}
-        self.assertIn("memory-starved", fault_suite.starved_label({**starved, "result": "FAIL"}))
-        self.assertEqual(fault_suite.starved_label({**starved, "result": "PASS"}), "")
-        self.assertEqual(fault_suite.starved_label({"result": "ERROR", "notes": {"error": "x"}}), "")
-        self.assertEqual(fault_suite.starved_label({}), "")
-
 
 class RecoverTests(unittest.TestCase):
     def test_the_device_is_switched_off_and_on_only_where_the_run_said_to(self):
@@ -1041,7 +1034,7 @@ class EarlierRecordsTests(unittest.TestCase):
             earlier = instance.state / "work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500"
             earlier.mkdir(parents=True)
             (earlier / "run.log").write_text("converted\n", encoding="utf-8")
-            instance.before = {fault_suite.filed_as(path) for path in instance.all_runs()}
+            instance.before = {fault_suite.fault_verdicts.filed_as(path) for path in instance.all_runs()}
             self.assertEqual(len(instance.before), 1)
             (instance.state / "work/captures/plugs").rename(instance.state / "work/captures/devices")
             self.assertEqual(instance.runs(), [])

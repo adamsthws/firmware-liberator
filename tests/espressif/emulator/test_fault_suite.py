@@ -240,7 +240,7 @@ class SavedDeviceTests(unittest.TestCase):
 
     def test_a_batch_refuses_to_start_from_one(self):
         with mock.patch.object(fs, "scenarios", return_value=[{"id": "a", "route": "esphome>tasmota", "fault": "crash"}]), \
-                mock.patch.object(fs, "latest", return_value={}), mock.patch.object(fs, "LOGS"), \
+                mock.patch.object(fs.fault_verdicts, "latest", return_value={}), mock.patch.object(fs, "LOGS"), \
                 mock.patch.object(fs, "stale_starts", return_value=["suite-esphome"]), \
                 mock.patch.object(fs, "worker", side_effect=AssertionError("a scenario was run")):
             with self.assertRaisesRegex(SystemExit, "suite-esphome.*Run prep"):
@@ -303,7 +303,7 @@ class SavedDeviceTests(unittest.TestCase):
 
     def test_a_stub_batch_refuses_to_start_from_one(self):
         with mock.patch.object(fs, "scenarios", return_value=[{"id": "a", "route": "tasmota>sonoff", "fault": "crash"}]), \
-                mock.patch.object(fs, "latest", return_value={}), mock.patch.object(fs, "LOGS"), \
+                mock.patch.object(fs.fault_verdicts, "latest", return_value={}), mock.patch.object(fs, "LOGS"), \
                 mock.patch.object(fs, "stale_starts", return_value=[]), mock.patch.object(fs, "STUB_CLOUD", True), \
                 mock.patch.object(fs, "untrusting_starts", return_value=["stub-suite-tasmota"]), \
                 mock.patch.object(fs, "worker", side_effect=AssertionError("a scenario was run")):
@@ -343,7 +343,7 @@ class SavedDeviceTests(unittest.TestCase):
         def worker(n, todo, lock, cloud, *rest):
             while not todo.empty():
                 ran.append(todo.get()["id"])
-        with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
+        with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
                 mock.patch.object(fs, "STUB_CLOUD", False), mock.patch.object(fs, "NO_CLOUD", False), \
                 mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_CONNECTION_LOG": "0"}), \
@@ -401,7 +401,7 @@ class SavedDeviceTests(unittest.TestCase):
         def worker(n, todo, lock, cloud, *rest):
             while not todo.empty():
                 ran.append(todo.get()["id"])
-        with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
+        with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
                 mock.patch.object(fs, "untrusting_starts", return_value=[]), \
                 mock.patch.object(fs, "STUB_CLOUD", True), mock.patch.object(fs, "worker", worker), \
@@ -1342,12 +1342,6 @@ class ScenarioTests(unittest.TestCase):
         removed.assert_not_called()
         call.assert_not_called()
 
-    def test_only_a_failure_is_labelled_starved(self):
-        starved = {"notes": {"memory": {"starved": True}}}
-        self.assertIn("memory-starved", fs.starved_label({**starved, "verdict": "FAIL"}))
-        self.assertEqual(fs.starved_label({**starved, "verdict": "PASS"}), "")
-        self.assertEqual(fs.starved_label({"verdict": "HARNESS-ERROR"}), "")
-
     def test_a_legacy_run_is_killed_by_its_own_tools_name(self):
         # 2.0.x's tool is tools/autoflash_cli.py, 1.2.0's tools/s60_autoflash.py.
         import re
@@ -1393,7 +1387,7 @@ class ScenarioTests(unittest.TestCase):
         # its records' folder as it carries the run on, has it now.
         earlier = Path("work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500/run.log")
         log = Path("work/captures/devices/12-34-56-ab-cd-ef/runs/20261013-031500/run.log")
-        sc.earlier_release_wrote = {fs.filed_as(earlier): len(old)}
+        sc.earlier_release_wrote = {fs.fault_verdicts.filed_as(earlier): len(old)}
         self.assertNotIn(fs.fault_verdicts.UNEXPECTED, sc.ours(log, old + "=== run started ===\nConverted\n"))
         self.assertIn(fs.fault_verdicts.UNEXPECTED, sc.ours(log, old + f"FAILED: {fs.fault_verdicts.UNEXPECTED}: KeyError\n"))
         self.assertIn(fs.fault_verdicts.UNEXPECTED, sc.ours(log.parents[1] / "20261013-040000/run.log", old))
@@ -1403,7 +1397,7 @@ class ScenarioTests(unittest.TestCase):
         checkout's tool has renamed it: a legacy run's log is read from there."""
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
-            self.assertEqual(fs.records_under(state / "work"), state / "work/captures/devices")
+            self.assertEqual(fs.fault_verdicts.records_under(state / "work"), state / "work/captures/devices")
             run = state / "work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500"
             run.mkdir(parents=True)
             (run / "run.log").write_text("[C2] sent\n", encoding="utf-8")
@@ -1467,7 +1461,7 @@ class KeptLogsTests(unittest.TestCase):
                               "fault": "deviceoff", "arg": 1, "at": 40}, folder / "tool.log")
         sc.state, sc.target, sc.started = tmp / "state", "sonoff", 0
         sc.uart_from = len(b"the last scenario's\n")
-        sc.carried = {fs.filed_as(run): len(self.EARLIER), fs.filed_as(run.parent / "events.jsonl"): len('{"saved": 1}\n')}
+        sc.carried = {fs.fault_verdicts.filed_as(run): len(self.EARLIER), fs.fault_verdicts.filed_as(run.parent / "events.jsonl"): len('{"saved": 1}\n')}
         sc.memory = mock.Mock(note=mock.Mock(return_value={}))
         with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
                 mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
@@ -1498,8 +1492,8 @@ class KeptLogsTests(unittest.TestCase):
             (runs / "run.log").write_text("saved\n", encoding="utf-8")
             (runs / "events.jsonl").write_text("{}\n", encoding="utf-8")
             (runs / "autoflash-state.json").write_text("{}", encoding="utf-8")
-            self.assertEqual(fs.carried_over(Path(tmp)), {fs.filed_as(runs / "run.log"): 6,
-                                                          fs.filed_as(runs / "events.jsonl"): 3})
+            self.assertEqual(fs.carried_over(Path(tmp)), {fs.fault_verdicts.filed_as(runs / "run.log"): 6,
+                                                          fs.fault_verdicts.filed_as(runs / "events.jsonl"): 3})
 
 
 class EndChecksTests(unittest.TestCase):

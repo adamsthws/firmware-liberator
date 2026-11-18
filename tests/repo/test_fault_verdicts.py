@@ -344,6 +344,40 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(fault_verdicts.screen_problems("Stage 1 - Checking - Stopped\nStage 1 - Checking - Complete\n"), [])
 
 
+class RecordsTests(unittest.TestCase):
+    """Where both families' suites find the tool's records in an emulator."""
+
+    def test_an_earlier_releases_records_are_found_until_renamed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            self.assertEqual(fault_verdicts.records_under(work), work / "captures/devices")
+            (work / "captures/plugs").mkdir(parents=True)
+            self.assertEqual(fault_verdicts.records_under(work), work / "captures/plugs")
+            (work / "captures/plugs").rename(work / "captures/devices")
+            self.assertEqual(fault_verdicts.records_under(work), work / "captures/devices")
+
+    def test_a_run_is_filed_as_alike_under_either_name(self):
+        for records in ("captures/devices", "captures/plugs"):
+            log = Path("/state/work") / records / "12-34-56-ab-cd-ef/runs/20261118-120000/run.log"
+            self.assertEqual(fault_verdicts.filed_as(log), Path("12-34-56-ab-cd-ef/runs/20261118-120000/run.log"))
+
+
+class ResultsTests(unittest.TestCase):
+    def test_each_scenarios_newest_row_is_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.jsonl"
+            self.assertEqual(fault_verdicts.latest(results), {})
+            results.write_text('{"id": "a", "result": "FAIL"}\n\n{"id": "a", "result": "PASS"}\n', encoding="utf-8")
+            self.assertEqual(fault_verdicts.latest(results), {"a": {"id": "a", "result": "PASS"}})
+
+    def test_only_a_failure_is_labelled_starved(self):
+        starved = {"memory": {"starved": True}}
+        self.assertIn("memory-starved", fault_verdicts.starved_label("FAIL", starved))
+        self.assertEqual(fault_verdicts.starved_label("PASS", starved), "")
+        self.assertEqual(fault_verdicts.starved_label("ERROR", {"error": "x"}), "")
+        self.assertEqual(fault_verdicts.starved_label(None, {}), "")
+
+
 class ScenarioFolderTests(unittest.TestCase):
     """Both suites keep a scenario's logs alike: a folder each, its runs in it."""
 

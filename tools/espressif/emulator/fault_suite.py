@@ -128,21 +128,6 @@ def cloud_workers():
 STUB_CLOUD = os.environ.get("AUTOFLASH_EMU_STUB_CLOUD") == "1"
 
 
-def records_under(root):
-    """The tool's records under `root`/captures: devices/, or plugs/ where a
-    release before 3.0.0 keeps them - a legacy run's until this checkout's
-    tool carries it on and renames them, or a device saved by one."""
-    captures = Path(root) / "captures"
-    earlier = captures / "plugs"
-    return earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
-
-
-def filed_as(log):
-    """A run's log by its device and run (<mac>/runs/<when>/run.log): the same
-    before and after the records' folder is renamed around it."""
-    return log.relative_to(log.parents[3])
-
-
 def saved(name):
     """A saved starting device's name. A stub run's are kept apart from the real
     cloud's: their flash is the other kind (emu.sh), so each would be refused,
@@ -151,7 +136,7 @@ def saved(name):
     device - its run records filed under that device's MAC - is that device's, and
     this one's goes beside it, its MAC's last four digits after the name."""
     base = f"stub-{name}" if STUB_CLOUD else name
-    devices_saved = records_under(EMU / "saved" / base)
+    devices_saved = fault_verdicts.records_under(EMU / "saved" / base)
     owners = {d.name for d in devices_saved.iterdir() if d.name != "unidentified"} if devices_saved.is_dir() else set()
     if MAC and owners and MAC.replace(":", "-").lower() not in owners:
         return f"{base}-{MAC.replace(':', '').lower()[-4:]}"
@@ -999,7 +984,7 @@ TURN_FILE = "captures/cloud-turn"
 def device_busy(state, since):
     """Each Berry step's longest busy time, from the runs since `since`."""
     busy = {}
-    for path in records_under(state / "work").glob("*/runs/*/autoflash-state.json"):
+    for path in fault_verdicts.records_under(state / "work").glob("*/runs/*/autoflash-state.json"):
         try:
             if path.stat().st_mtime < since:
                 continue
@@ -1018,15 +1003,15 @@ def carried_over(root):
     `root` holds (by filed_as): a scenario started from it carries its
     conversion on, adding to them."""
     found = {}
-    for path in records_under(root).glob("*/runs/*/*"):
+    for path in fault_verdicts.records_under(root).glob("*/runs/*/*"):
         if path.name in ("run.log", output.EVENTS):
-            found[filed_as(path)] = len(path.read_text(encoding="utf-8", errors="replace"))
+            found[fault_verdicts.filed_as(path)] = len(path.read_text(encoding="utf-8", errors="replace"))
     return found
 
 
 def run_logs(state):
     found = []
-    for log in records_under(state / "work").glob("*/runs/*/run.log"):
+    for log in fault_verdicts.records_under(state / "work").glob("*/runs/*/run.log"):
         try:  # a scenario starting replaces the captures under it
             found.append((log.stat().st_mtime, log, log.read_text(errors="replace")))
         except FileNotFoundError:
@@ -1323,7 +1308,7 @@ class Scenario:
     def ours(self, log, text):
         """What this checkout's runs wrote to a run log: past what an earlier
         release's run (go_legacy), carried on in the same run, wrote first."""
-        return text[self.earlier_release_wrote.get(filed_as(log), 0):]
+        return text[self.earlier_release_wrote.get(fault_verdicts.filed_as(log), 0):]
 
     def say(self, text):
         with open(self.log, "a", encoding="utf-8") as f:
@@ -1983,7 +1968,7 @@ class Scenario:
         results = [(self.run_tool(first, fresh=True, code=old), None)]
         results[-1] = (results[-1][0], self.screen_result())
         stop.set()
-        self.earlier_release_wrote = {filed_as(log): len(text) for _, log, text in run_logs(self.state)}
+        self.earlier_release_wrote = {fault_verdicts.filed_as(log): len(text) for _, log, text in run_logs(self.state)}
         if step == "start":
             if "Converted" not in results[-1][1]:
                 return self.finish(results, "OLD-RUN-FAILED")
@@ -2461,7 +2446,7 @@ class Scenario:
         if self.to_api():
             return self.api_problems()
         kept = sorted((path.stat().st_mtime, path) for path in
-                      records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
+                      fault_verdicts.records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
         kept = [path for written, path in kept if written >= self.started]
         return fault_verdicts.readout_problems(kept[-1].read_bytes(), "espressif") if kept else None
 
@@ -2470,7 +2455,7 @@ class Scenario:
         first stage alone of a device on Tasmota (fault_verdicts.first_stage_problems),
         or None when none kept one."""
         kept = sorted((path.stat().st_mtime, path) for path in
-                      records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
+                      fault_verdicts.records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
         kept = [path for written, path in kept if written >= self.started]
         return fault_verdicts.first_stage_problems(kept[-1].read_bytes(), "tasmota") if kept else None
 
@@ -2646,7 +2631,7 @@ class Scenario:
         return names, networks
 
     def backup_whole(self):
-        backups = list(records_under(self.state / "work").glob("*/sonoff-backup/flash.bin"))
+        backups = list(fault_verdicts.records_under(self.state / "work").glob("*/sonoff-backup/flash.bin"))
         return bool(backups) and all(b.stat().st_size == 4 * 1024 * 1024 for b in backups)
 
     def leftovers(self):
@@ -2836,7 +2821,7 @@ class Scenario:
         folder = Path(self.log).parent
         since = getattr(self, "started", self.created)
         fault_verdicts.keep_runs([log for mtime, log, _ in run_logs(self.state) if mtime >= since], folder,
-                                 lambda path: self.carried.get(filed_as(path), 0))
+                                 lambda path: self.carried.get(fault_verdicts.filed_as(path), 0))
         fault_verdicts.keep_recordings(Path(self.log).read_text(encoding="utf-8", errors="replace"),
                                        self.state / "work", folder)
         uart = self.state / "logs/uart.log"
@@ -2854,7 +2839,7 @@ class Scenario:
                     self.probe()
                 except Exception as exc:  # noqa: BLE001 - a look, never the verdict
                     self.say(f"PROBE: failed: {exc!r}")
-            fault_verdicts.keep_evidence(records_under(self.state / "work"), folder)
+            fault_verdicts.keep_evidence(fault_verdicts.records_under(self.state / "work"), folder)
         sh("docker", "stop", name(self.n), timeout=120)
         return row
 
@@ -2948,16 +2933,6 @@ def why_no_report(screen):
             + (f"; exit {code[-1]}" if code else ""))
 
 
-def latest():
-    rows = {}
-    if RESULTS.exists():
-        for line in RESULTS.read_text().splitlines():
-            if line.strip():
-                row = json.loads(line)
-                rows[row["id"]] = row
-    return rows
-
-
 def allowed(default):
     """How many of a batch's emulators may take a scenario now: the number in
     OUT/workers when it holds one, so a running batch can be scaled to what
@@ -3000,7 +2975,7 @@ def worker(n, todo, lock, cloud=False, room=None):
                 f.write(json.dumps(row) + "\n")
             sh("docker", "stop", name(n), timeout=120)
         with lock:
-            print(f"{time.strftime('%T')} [{n}] {row['verdict']:16} {sc['id']}{starved_label(row)}", flush=True)
+            print(f"{time.strftime('%T')} [{n}] {row['verdict']:16} {sc['id']}{fault_verdicts.starved_label(row['verdict'], row.get('notes', {}))}", flush=True)
         emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc, verdict=row["verdict"],
                                  tries=row.get("runs"), seconds=round(time.time() - started),
                                  cloud=cloud_of(sc), workers=WORKERS, rerun=sc["id"] in EARLIER,
@@ -3036,7 +3011,7 @@ def batch(ids_file=None):
     global WORKERS, EARLIER
     LOGS.mkdir(parents=True, exist_ok=True)
     known = {sc["id"]: sc for sc in scenarios()}
-    earlier = latest()
+    earlier = fault_verdicts.latest(RESULTS)
     EARLIER = set(earlier)
     done = {i for i, row in earlier.items() if row["verdict"] in ("PASS", "NO-TRAFFIC")}
     cloud, anywhere = queue.Queue(), queue.Queue()
@@ -3136,7 +3111,7 @@ def stale_starts(todo):
 def stub_ca():
     """The CA the stub serves this device, as emu.sh chooses it: an RSA one for
     a firmware trusting eWeLink's RSA CA. None while it is not made yet."""
-    source = records_under(REPO) / MAC.replace(":", "-").lower() / "sonoff-backup/flash.bin"
+    source = fault_verdicts.records_under(REPO) / MAC.replace(":", "-").lower() / "sonoff-backup/flash.bin"
     try:
         rsa = holds_rsa_ca(source.read_bytes())
         return (EMU / ("stub-cloud-rsa" if rsa else "stub-cloud") / "ca.crt").read_bytes()
@@ -3157,7 +3132,7 @@ def untrusting_starts():
         name = kept.name.removeprefix("stub-").removesuffix(f"-{last4}")
         if saved(name) != kept.name:
             continue   # another device's
-        for flash in [kept / "flash.bin", *records_under(kept).glob("*/sonoff-backup/flash.bin")]:
+        for flash in [kept / "flash.bin", *fault_verdicts.records_under(kept).glob("*/sonoff-backup/flash.bin")]:
             try:
                 trusted = trusts(flash.read_bytes(), pem)
             except (OSError, ValueError):
@@ -3284,11 +3259,6 @@ def listing(quick=False):
         print(sc["id"], kind_of(sc))
 
 
-def starved_label(row):
-    starved = row["verdict"] != "PASS" and row.get("notes", {}).get("memory", {}).get("starved")
-    return "  (memory-starved)" if starved else ""
-
-
 def suite_roots():
     """This suite's folders here, and those kept from other machines."""
     return [EMU, *scenario_times.kept(EMU)]
@@ -3301,11 +3271,11 @@ def found():
 
 def report():
     from collections import Counter
-    rows = latest()
+    rows = fault_verdicts.latest(RESULTS)
     print(Counter(r["verdict"] for r in rows.values()))
     for r in rows.values():
         if r["verdict"] != "PASS":
-            print(f"  {r['verdict']:16} {r['id']}  runs={r.get('runs')}  {r.get('results', r.get('error'))}{starved_label(r)}")
+            print(f"  {r['verdict']:16} {r['id']}  runs={r.get('runs')}  {r.get('results', r.get('error'))}{fault_verdicts.starved_label(r['verdict'], r.get('notes', {}))}")
     # The device kept busiest by one Berry phase (device_busy): a real S60TPG once
     # stopped answering at 70-90 s, so the longest are worth a look.
     busiest = sorted(((max(busy.values()), r["id"], step) for r in rows.values()
