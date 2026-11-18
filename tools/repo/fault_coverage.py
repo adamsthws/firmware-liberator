@@ -33,10 +33,20 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
     **{f"none-{ending}": (("readout",), "a readout ending without the device read whole: a conversion has none")
        for ending in ("alike", "enough", "many", "mixed", "first-stage", "unattended")},
     "cancel-switch": (("conversion",), "the other firmware chosen after Ctrl-C twice: a readout chooses none"),
+    "ctrlc-countdown": (("conversion",), "Ctrl-C at the countdown a Ctrl-C is asked about at: a readout asks at its "
+                                         "next question, never at a stage's end, and an unattended one - the fault "
+                                         "suites' - asks none; the attended suite tries a readout's "
+                                         "(readout-stopped-at-question-ctrl-c)"),
     "legacy": (("conversion",), "an earlier release's unfinished run taken up: a readout is never offered back to "
                                 "finish (readout.py)"),
-    "blips": (("espressif",), "a Berry phase riding out the network by itself: Berry is Tasmota's, and " + TASMOTA),
-    "lossy-phase": (("espressif",), "as blips"),
+    "blips": (("conversion", "espressif"), "a Berry phase riding out the network by itself: Berry is Tasmota's, "
+                                           f"and {TASMOTA}; an S60's readout reads through the bridge, which runs "
+                                           "none (readout_espressif)"),
+    "lossy-phase": (("conversion", "espressif"), "as blips"),
+    "badimage-restart": (("beken",), "the run restarting the device to send a refused image afresh, past its own "
+                                     "sends (runner.GO_BACK_LIMIT): an S60's refused image ends its run - the "
+                                     "installer's Tasmota at D1, Sonoff's updater's reader in a readout - and the "
+                                     "next sends it again (badimage-once)"),
     "bootloop-fallback": (("conversion", "espressif"), f"Tasmota's boot-loop module: {TASMOTA}; {FIRST_STAGE}"),
     "lostapp-factory": (("conversion", "espressif"), f"Tasmota's own safeboot: {TASMOTA}; {FIRST_STAGE}"),
     "lostapp-switched": (("conversion", "espressif"), "as lostapp-factory"),
@@ -55,30 +65,32 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
 # Each cell a situation could be tried in and is not yet. Filling one takes it
 # off; finding it cannot be moves it to NOT_EVERYWHERE, with why.
 NOT_YET: dict[str, tuple[Cell, ...]] = {
-    "badimage-once": (("conversion", "espressif"), ("readout", "espressif"), ("readout", "beken")),
-    "badimage-restart": (("conversion", "espressif"), ("readout", "espressif"), ("readout", "beken")),
-    "blips": (("readout", "espressif"),),
-    "cancel-continue": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "cancel-new": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
+    "badimage-once": (("readout", "beken"),),
+    "badimage-restart": (("readout", "beken"),),
+    "cancel-continue": (("conversion", "beken"), ("readout", "beken")),
+    "cancel-new": (("conversion", "beken"), ("readout", "beken")),
     "cancel-switch": (("conversion", "beken"),),
-    "corrupt-once": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "ctrlc-apart": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "ctrlc-countdown": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "ctrlc-once": (("readout", "espressif"), ("readout", "beken")),
-    "diskfull-once": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "double-deviceoff": (("readout", "espressif"), ("readout", "beken")),
-    "double-outage": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "fallback": (("readout", "espressif"), ("readout", "beken")),
-    "hangup-continue": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
+    "corrupt-once": (("conversion", "beken"), ("readout", "beken")),
+    "ctrlc-apart": (("conversion", "beken"), ("readout", "beken")),
+    "ctrlc-countdown": (("conversion", "beken"),),
+    "ctrlc-once": (("readout", "beken"),),
+    "diskfull-once": (("conversion", "beken"), ("readout", "beken")),
+    "double-deviceoff": (("readout", "beken"),),
+    "double-outage": (("conversion", "beken"), ("readout", "beken")),
+    "fallback": (("readout", "beken"),),
+    "hangup-continue": (("conversion", "beken"), ("readout", "beken")),
     "legacy": (("conversion", "beken"),),
-    "lossy-phase": (("readout", "espressif"),),
-    "pcoff": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
+    "pcoff": (("conversion", "beken"), ("readout", "beken")),
+    # An S60's: its emulator's router gives the device one address alone, and
+    # passes the ARP for no other to it (container/bin/wifi-root's dhcp-host,
+    # entrypoint.sh's filter), both in the image; and the suite watches the
+    # device at that address throughout.
     "readdress-new": (("conversion", "espressif"), ("readout", "espressif"), ("readout", "beken")),
     "safemode-ten": (("conversion", "beken"),),
-    "second-run": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "sleep": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "token-login": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
-    "weak": (("conversion", "beken"), ("readout", "espressif"), ("readout", "beken")),
+    "second-run": (("conversion", "beken"), ("readout", "beken")),
+    "sleep": (("conversion", "beken"), ("readout", "beken")),
+    "token-login": (("conversion", "beken"), ("readout", "beken")),
+    "weak": (("conversion", "beken"), ("readout", "beken")),
 }
 
 

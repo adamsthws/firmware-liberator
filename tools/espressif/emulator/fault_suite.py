@@ -315,6 +315,21 @@ STARTS_AT.update({"read": ("phase", "read"), "back": ("phase", "back")})
 ENDS_AT = {"read": ("phase", "back"), "back": ("phase", "back-done")}
 READOUT_FAULTS = [("read", "deviceoff", 1), ("read", "outage", 30), ("read", "crash", 1),
                   ("back", "deviceoff", 1), ("back", "outage", 30)]
+# And in the read, as a conversion's step has them (step_faults; the fault
+# suites try each kind in a readout too: tools/repo/fault_coverage.py): the
+# tool's own handling of Ctrl-C (not at its countdown: a readout asks about a
+# Ctrl-C at its next question, and one unattended asks none), a closed window
+# and a second run; the computer asleep or off; a weak network, a changed
+# packet, a full disk, two power cuts or outages running, the device raising
+# its own network, and the eWeLink account signed in to again beside it. The
+# read is where a readout writes to the device's network and this computer's
+# disk most.
+READOUT_MORE_FAULTS = [("read", "cancel", "continue"), ("read", "cancel", "new"), ("read", "ctrlc", "once"),
+                       ("read", "ctrlc", "apart"), ("read", "hangup", "continue"),
+                       ("read", "second", "run"), ("read", "sleep", 120), ("read", "pcoff", 30),
+                       ("read", "weak", 60), ("read", "corrupt", "once"), ("read", "diskfull", "once"),
+                       ("read", "double", "deviceoff-1"), ("read", "double", "outage-30"),
+                       ("read", "fallback", 150), ("read", "token", "login")]
 # A readout cut off mid-read, the bridge still running, and the tool run again
 # before the device is switched off and on: to Sonoff's firmware, or the readout;
 # and (elsewhere) to Sonoff's firmware with this computer's records of the
@@ -382,6 +397,11 @@ NOTHING_TO_CORRUPT = {"R2", "U2"}
 # 1.5 to 2 minutes). There the person joins it before being asked, and the run
 # must carry on by itself through it.
 FALLBACK_STEPS = {"C3", "D1", "L1", "M1", "X1", "I2"}
+# The steps whose image the device checks, and the tool can send spoilt
+# (--simulate-bad-image, routes/espressif/images.py): the Berry Tasmota, which
+# the installer refuses (badimage-once). The run stops there, and the next
+# sends it again; as the Beken suite's, the image is spoilt in the first run.
+BAD_IMAGE_STEPS = {"D1"}
 # Faults at 10% and 90% of the riskiest steps, and two in a row there.
 CRITICAL = {"D4", "E3", "F2", "F4", "R1", "U5", "X2"}
 # The tool's own handling - a second run refused, Ctrl-C twice apart or at its
@@ -440,6 +460,9 @@ def scenarios(quick=False):
             if step in FALLBACK_STEPS:
                 yield dict(id=sid(route, step, "fallback", 150), route=route, step=step,
                            fault="fallback", arg=150, at=40)
+            if step in BAD_IMAGE_STEPS:
+                yield dict(id=sid(route, step, "badimage", "once"), route=route, step=step,
+                           fault="badimage", arg="once", at=40)
     for route in C2_ROUTES:
         for fault, arg in step_faults("C2", quick) + [("cancel", "switch"), ("token", "login")]:
             yield dict(id=sid(route, "C2", fault, arg), route=route, step="C2", fault=fault, arg=arg, at=40)
@@ -552,9 +575,12 @@ def readout_scenarios():
     and one started on a device on Tasmota, which must read its first stage alone."""
     yield dict(id=sid("sonoff>readout", "start", "none", "unattended"), route="sonoff>readout", step="start",
                fault="none", arg="unattended", at=40)
-    for step, fault, arg in READOUT_FAULTS:
+    for step, fault, arg in READOUT_FAULTS + READOUT_MORE_FAULTS:
         yield dict(id=sid("sonoff>readout", step, fault, arg), route="sonoff>readout", step=step,
                    fault=fault, arg=arg, at=40)
+    # The reader sent spoilt, which Sonoff's updater refuses (--simulate-bad-image readout).
+    yield dict(id=sid("sonoff>readout", "start", "badimage", "once"), route="sonoff>readout", step="start",
+               fault="badimage", arg="once", at=40)
     for then in READOUT_THEN:
         yield dict(id=sid("sonoff>readout", "read", "crash", 1) + f"-then-{then}", route="sonoff>readout",
                    step="read", fault="crash", arg=1, at=40, then=then)
@@ -1575,9 +1601,13 @@ class Scenario:
             # A second window, same command, while this one works.
             out = sh("docker", "exec", "-u", f"{os.getuid()}:{os.getgid()}", "-w", "/work",
                      "-e", "HOME=/tmp", "-e", f"AUTOFLASH_EMULATOR_URL=http://localhost:{8080 + self.n}",
-                     "-e", "AUTOFLASH_EMULATOR_SUDO_PASSWORD=autoflash", name(self.n), "timeout", "150",
-                     "/opt/venv/bin/python", TOOL, "run", "--unattended", "--env-file", "/tmp/autoflash-unattended.env",
-                     "--firmware", self.target, timeout=200)
+                     "-e", "AUTOFLASH_EMULATOR_SUDO_PASSWORD=autoflash",
+                     # A readout asks eWeLink for the device before it holds it.
+                     *(arg for key, value in (STUB_ENV.items() if STUB_CLOUD else ()) for arg in ("-e", f"{key}={value}")),
+                     name(self.n), "timeout", "150",
+                     "/opt/venv/bin/python", TOOL, *(["readout"] if is_readout(self.sc["route"]) else ["run"]),
+                     "--unattended", "--env-file", "/tmp/autoflash-unattended.env",
+                     *([] if is_readout(self.sc["route"]) else ["--firmware", self.target]), timeout=200)
             said = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;]*m", "", out.stdout + out.stderr))
             self.notes["second_refused"] = "another run is converting this device" in said
             self.say("SECOND RUN: " + said[-600:])
@@ -1869,6 +1899,8 @@ class Scenario:
             return self.go_bootloop()
         if sc["fault"] == "safemode":
             return self.go_safemode()
+        if sc["fault"] == "badimage":
+            return self.go_badimage()
         if step == "C2":
             source, self.target, steps = None, C2_ROUTES[route], {"C2": 20}
         else:
@@ -1901,6 +1933,24 @@ class Scenario:
         target = OTHER.get(self.target, self.target) if (fault, arg) == ("cancel", "switch") else self.target
         extra = ["--new"] if (fault, arg) == ("cancel", "new") else []
         return self.again(results, target, extra, delay, first_fault)
+
+    def go_badimage(self):
+        """The step's image sent spoilt by the first run (BAD_IMAGE_STEPS), which
+        the device refuses; then the tool run again, as a person would, until
+        the device is converted - the image sent again, whole."""
+        sc = self.sc
+        source, self.target, steps = ROUTES[sc["route"]]
+        self.step_length = steps[sc["step"]]
+        results = [(self.run_tool(self.target, ["--simulate-bad-image", sc["step"]], source=source), None)]
+        results[-1] = (results[-1][0], self.screen_result())
+        if not self.spoilt_sent():
+            return self.finish(results, "NOT-FIRED")
+        return self.again(results, self.target, [])
+
+    def spoilt_sent(self):
+        """Whether a run of this scenario sent its image spoilt, as asked."""
+        return any("The image is spoilt, as asked" in text for made, _, text in run_logs(self.state)
+                   if made >= self.started)
 
     def go_legacy(self):
         """An earlier release's run (sc["arg"]) on a device fresh from Sonoff,
@@ -2176,16 +2226,23 @@ class Scenario:
             return self.go_readout_converted()
         self.target = "sonoff"   # what the device must end on, by name too
         fault, arg = sc["fault"], sc["arg"]
+        first_fault = (arg.split("-")[0], int(arg.split("-")[1])) if fault == "double" else (fault, arg)
         stop = threading.Event()
         injector = None
-        if fault != "none":
+        delay = 0.0
+        if fault not in ("none", "badimage"):
             self.step_length = STARTS[sc["step"]][1]
+            # From the read's start for a changed packet, as at a conversion's step.
+            delay = 0.3 if fault == "corrupt" else sc["at"] / 100 * self.step_length
             injector = threading.Thread(target=self.inject, daemon=True, args=(
-                time.time(), None, sc["at"] / 100 * self.step_length, stop, fault, arg))
+                time.time(), None, delay, stop, *first_fault))
             injector.start()
-        results = [(self.run_tool("readout", fresh=True), None)]
+        spoil = ["--simulate-bad-image", "readout"] if fault == "badimage" else []
+        results = [(self.run_tool("readout", spoil, fresh=True), None)]
         results[-1] = (results[-1][0], self.readout_result())
         stop.set()
+        if fault == "badimage" and not self.spoilt_sent():
+            return self.finish_readout(results, "NOT-FIRED")
         if injector:
             injector.join(fault_wait(arg))
             if self.fired is None:
@@ -2206,6 +2263,7 @@ class Scenario:
             if REPORT_UNFINISHED.search(self.last_said()) or re.search(
                     r"Stage \d+ - (Installing interim firmware|Updating the bootloader|Making room)", self.last_said()):
                 return self.finish_readout(results, "FAIL-TAKEN-FOR-CONVERSION")
+        extra = ["--new"] if (fault, arg) == ("cancel", "new") else []
         while not self.readout_done() and len(results) < MAX_RUNS:
             if self.advised_to_switch():
                 self.say("following the run's advice: the device switched off and on")
@@ -2213,8 +2271,15 @@ class Scenario:
                 time.sleep(5)
                 if self.readout_done():
                     break  # read already: it only had to be put back
-            results.append((self.run_tool("readout"), None))
+            again = threading.Event()
+            if fault == "double" and len(results) == 1:
+                # The same fault again, in the run that recovers from the first.
+                threading.Thread(target=self.inject, daemon=True, args=(
+                    time.time(), None, delay, again, *first_fault, False)).start()
+            results.append((self.run_tool("readout", extra), None))
             results[-1] = (results[-1][0], self.readout_result())
+            again.set()
+            extra = []
         return self.finish_readout(results, None)
 
     def go_readout_converted(self):
@@ -2440,11 +2505,12 @@ class Scenario:
             problems = self.readout_kept()
             self.notes["readout"] = problems if problems is not None else ["none kept"]
             self.notes["firmware"] = self.firmware_now()
+        self.notes["ctrl_c_logged"] = self.ctrl_c_lines() > self.ctrl_c_before
         if not special:
             if self.notes.get("mistimed"):
                 special = "MISTIMED"
-            elif self.notes.get("not_applied"):
-                special = "NOT-FIRED"
+            elif self.notes.get("not_applied") or not_fired(self.sc, self.notes, True):
+                special = "NOT-FIRED"  # a Ctrl-C the run never saw, say
             elif self.unexpected():
                 special = "FAIL-UNEXPECTED"
             elif not converted and self.notes["readout"]:
@@ -2453,6 +2519,8 @@ class Scenario:
                 special = first if self.to_api() and first.startswith("FAIL-") else "FAIL-READOUT"
             elif not converted and self.notes["firmware"] != "sonoff":
                 special = "BRICK" if self.bricked() else "FAIL-NOT-SONOFF"
+            elif not converted and (problem := self.handling_problem(results, True)):
+                special = problem
             elif unknown or final:
                 special = "BAD-NAME"
                 self.notes["bad_names"] = unknown + ([final] if final else [])
@@ -2658,8 +2726,8 @@ class Scenario:
                 # Not an earlier release's, which is out already (1.2.0's
                 # TimeoutError as G1 starts).
                 special = "FAIL-UNEXPECTED"
-            elif fault == "corrupt" and not self.notes.get("corrupted_packets"):
-                special = "NO-TRAFFIC"
+            elif (problem := self.handling_problem(results, converted)) and problem == "NO-TRAFFIC":
+                special = problem
             elif fault == "lostapp" and (arg == "switched") == ("Official Tasmota (app0) uploaded" in "".join(
                     t for m, _, t in run_logs(self.state) if m >= self.started)):  # not the saved device's own
                 # Its own Tasmota, there all along, written over - or none there, not put back.
@@ -2668,21 +2736,8 @@ class Scenario:
                     "That may have been the network - trying again" in t
                     for m, _, t in run_logs(self.state) if m >= self.started)):
                 special = "FAIL-RETRIED"  # the phase did not ride it out by itself
-            elif fault == "ctrlc" and arg in ("once", "apart") and converted and len(results) > 1:
-                special = "FAIL-STOPPED"  # one Ctrl-C (or two, apart) must not stop the run
-            elif fault == "ctrlc" and arg == "countdown" and not self.notes.get("countdown_pressed"):
-                special = "NOT-FIRED"
-            elif fault == "ctrlc" and arg == "countdown" and len(results) == 1:
-                special = "FAIL-NOT-STOPPED"  # Ctrl-C at the question must stop at once
-            elif fault == "hangup" and len(results) == 1:
-                special = "FAIL-NOT-STOPPED"
-            elif fault == "hangup" and "when its window was closed" not in re.sub(
-                    r"\s+", " ", "".join(t for _, _, t in run_logs(self.state))):
-                special = "FAIL-NO-NOTE"  # the next run must say why the last one stopped
-            elif fault == "second" and not self.notes.get("second_refused"):
-                special = "FAIL-NOT-REFUSED"
-            elif fault == "second" and converted and len(results) > 1:
-                special = "FAIL-DISTURBED"  # the refused run must not disturb the first
+            elif problem:
+                special = problem
             elif fault == "diskfull" and not self.backup_whole():
                 special = "FAIL-BAD-BACKUP"  # never on without the whole backup
             elif fault == "nohook" and not NOHOOK_RESET.search(
@@ -2732,6 +2787,31 @@ class Scenario:
                               # where the device really is on it - each is looked at.
                               "NEEDS-JOIN" if self.notes.get("needs_join") else "FAIL")
         return self.keep(results, no_internet(verdict, [r for _, r in results]), left)
+
+    def handling_problem(self, results, done):
+        """What the tool's own handling of the fault got wrong, a conversion's
+        or a readout's alike - `done`, the device converted or a whole
+        readout kept with it back on Sonoff's: the verdict, or None."""
+        fault, arg = self.sc["fault"], self.sc["arg"]
+        if fault == "corrupt" and not self.notes.get("corrupted_packets"):
+            return "NO-TRAFFIC"
+        if fault == "ctrlc" and arg in ("once", "apart") and done and len(results) > 1:
+            return "FAIL-STOPPED"  # one Ctrl-C (or two, apart) must not stop the run
+        if fault == "ctrlc" and arg == "countdown" and not self.notes.get("countdown_pressed"):
+            return "NOT-FIRED"
+        if fault == "ctrlc" and arg == "countdown" and len(results) == 1:
+            return "FAIL-NOT-STOPPED"  # Ctrl-C at the question must stop at once
+        if fault == "hangup" and len(results) == 1:
+            return "FAIL-NOT-STOPPED"
+        # Said as an unfinished conversion is offered back: a readout never is.
+        if fault == "hangup" and not is_readout(self.sc["route"]) and "when its window was closed" not in re.sub(
+                r"\s+", " ", "".join(t for _, _, t in run_logs(self.state))):
+            return "FAIL-NO-NOTE"  # the next run must say why the last one stopped
+        if fault == "second" and not self.notes.get("second_refused"):
+            return "FAIL-NOT-REFUSED"
+        if fault == "second" and done and len(results) > 1:
+            return "FAIL-DISTURBED"  # the refused run must not disturb the first
+        return None
 
     def bricked(self):
         """Whether the device's serial output ends as a device that cannot start does."""

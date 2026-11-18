@@ -1599,6 +1599,31 @@ class EndChecksTests(unittest.TestCase):
         self.assertEqual(self.verdict("Not run", target="tasmota")["verdict"], "FAIL-CHECKS")
 
 
+class BadImageTests(unittest.TestCase):
+    """An image the device refuses (badimage-once): sent spoilt by the first run,
+    then whole by a run after, as the Beken suite has it."""
+
+    def test_tried_at_each_step_whose_image_the_device_checks(self):
+        self.assertEqual([sc["id"] for sc in fs.scenarios() if sc["fault"] == "badimage" and not fs.is_readout(sc["route"])],
+                         ["sonoff>tasmota:D1:badimage-once", "sonoff>esphome:D1:badimage-once"])
+
+    def test_spoilt_by_the_first_run_then_the_device_converted_by_the_next(self):
+        for spoilt in (True, False):
+            sc = fs.Scenario(24, {"id": "sonoff>tasmota:D1:badimage-once", "route": "sonoff>tasmota", "step": "D1",
+                                  "fault": "badimage", "arg": "once", "at": 40}, "/dev/null")
+            with self.subTest(spoilt=spoilt), mock.patch.object(sc, "run_tool", return_value=1) as run, \
+                    mock.patch.object(sc, "screen_result", return_value="Stopped at stage"), \
+                    mock.patch.object(sc, "spoilt_sent", return_value=spoilt), \
+                    mock.patch.object(sc, "again") as again, mock.patch.object(sc, "finish") as finish:
+                sc.go_badimage()
+            self.assertEqual(run.call_args.args, ("tasmota", ["--simulate-bad-image", "D1"]))
+            self.assertEqual(run.call_args.kwargs, {"source": fs.ROUTES["sonoff>tasmota"][0]})
+            if spoilt:
+                self.assertEqual(again.call_args.args[1:], ("tasmota", []))   # whole from here on
+            else:
+                self.assertEqual(finish.call_args.args[1], "NOT-FIRED")
+
+
 class ReadoutScenarioTests(unittest.TestCase):
     """Readouts (cli.py readout): of a stock device, faulted where it matters
     most, and of a converted device, which must read its first stage alone."""
@@ -1614,6 +1639,8 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual([sc["id"] for sc in readouts], [
             "sonoff>readout:start:none-unattended", "sonoff>readout:read:deviceoff-1", "sonoff>readout:read:outage-30",
             "sonoff>readout:read:crash-1", "sonoff>readout:back:deviceoff-1", "sonoff>readout:back:outage-30",
+            *(fs.sid("sonoff>readout", step, fault, arg) for step, fault, arg in fs.READOUT_MORE_FAULTS),
+            "sonoff>readout:start:badimage-once",
             "sonoff>readout:read:crash-1-then-sonoff", "sonoff>readout:read:crash-1-then-readout",
             "sonoff>readout:read:crash-1-then-sonoff-elsewhere",
             "tasmota>readout:start:none-first-stage"])
@@ -1802,6 +1829,96 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(self.verdict(mistimed=True), "MISTIMED")
         self.assertEqual(self.verdict(left=["firewall rule"]), "LEFTOVER")
 
+    def handled(self, fault, arg, runs, ctrl_c=True, said="stopped when its window was closed", **notes):
+        """A whole readout's verdict, after `runs` runs, for the tool's own handling of `fault`."""
+        sc = self.scenario(fault=fault, arg=arg)
+        sc.target, sc.memory = "sonoff", mock.Mock(note=mock.Mock(return_value={}))
+        sc.notes.update(notes)
+        logs = [(1.0, Path("captures/devices/x/runs/1/run.log"), said)]
+        with mock.patch.object(sc, "leftovers", return_value=[]), \
+                mock.patch.object(sc, "names_seen", return_value=([], [])), \
+                mock.patch.object(sc, "readout_kept", return_value=[]), \
+                mock.patch.object(sc, "firmware_now", return_value="sonoff"), \
+                mock.patch.object(sc, "ctrl_c_lines", return_value=1 if ctrl_c else 0), \
+                mock.patch.object(fs, "run_logs", return_value=logs), \
+                mock.patch.object(sc, "keep", side_effect=lambda results, verdict, left: verdict):
+            return sc.finish_readout([(0, "Readout kept, not sent")] * runs, None)
+
+    def test_the_tools_own_handling_is_judged_in_a_readout_as_in_a_conversion(self):
+        # The fault suites try each fault in a readout too (fault_coverage).
+        self.assertEqual(self.handled("ctrlc", "once", 1), "PASS")
+        self.assertEqual(self.handled("ctrlc", "once", 2), "FAIL-STOPPED")   # one Ctrl-C must not stop it
+        self.assertEqual(self.handled("ctrlc", "once", 1, ctrl_c=False), "NOT-FIRED")   # never seen
+        self.assertEqual(self.handled("ctrlc", "countdown", 1, countdown_pressed=True), "FAIL-NOT-STOPPED")
+        self.assertEqual(self.handled("hangup", "continue", 1), "FAIL-NOT-STOPPED")
+        self.assertEqual(self.handled("hangup", "continue", 2), "PASS")
+        # Why it stopped is said as an unfinished conversion is offered back: a readout never is.
+        self.assertEqual(self.handled("hangup", "continue", 2, said="Readout kept"), "PASS")
+        self.assertEqual(self.handled("second", "run", 1), "FAIL-NOT-REFUSED")
+        self.assertEqual(self.handled("second", "run", 1, second_refused=True), "PASS")
+        self.assertEqual(self.handled("second", "run", 2, second_refused=True), "FAIL-DISTURBED")
+        self.assertEqual(self.handled("corrupt", "once", 1), "NO-TRAFFIC")
+        self.assertEqual(self.handled("corrupt", "once", 1, corrupted_packets=3), "PASS")
+
+    def test_a_second_run_beside_a_readout_is_a_readout(self):
+        sc = self.scenario(fault="second", arg="run")
+        sc.target = "sonoff"
+        with mock.patch.object(fs, "sh", return_value=mock.Mock(
+                stdout="another run is converting this device (12:34:56:ab:cd:ef) right now", stderr="")) as sh, \
+                mock.patch.object(fs, "STUB_CLOUD", True):
+            sc.fault("second", "run", 0, None)
+        command = sh.call_args.args
+        self.assertEqual(command[command.index(fs.TOOL) + 1], "readout")
+        self.assertNotIn("--firmware", command)
+        # It asks the stub for the device before it is refused, as a readout holds it only then.
+        for key, value in fs.STUB_ENV.items():
+            self.assertIn(f"{key}={value}", command)
+        self.assertTrue(sc.notes["second_refused"])
+
+    def test_a_sign_in_again_beside_the_run_trusts_the_stub(self):
+        # Seen: without the stub's OpenSSL settings its certificate was not
+        # trusted, and token-login never happened on the stub (NOT-FIRED).
+        sc = self.scenario(fault="token", arg="login")
+        with mock.patch.object(sc, "must", return_value=mock.Mock(stdout="logged in again", stderr="")) as must, \
+                mock.patch.object(fs, "STUB_CLOUD", True):
+            sc.fault("token", "login", 0, None)
+        script = must.call_args.args[2]
+        for key, value in fs.STUB_ENV.items():
+            self.assertIn(f"{key}={value}", script)
+
+    def test_two_faults_running_come_again_in_the_run_after(self):
+        sc = self.scenario(fault="double", arg="outage-30")
+        sc.fired = 1.0
+        with mock.patch.object(fs.threading, "Thread") as thread, mock.patch.object(fs.time, "sleep"), \
+                mock.patch.object(sc, "run_tool", side_effect=[1, 0]), \
+                mock.patch.object(sc, "readout_result", return_value="no readout"), \
+                mock.patch.object(sc, "readout_done", side_effect=[False, True]), \
+                mock.patch.object(sc, "advised_to_switch", return_value=False), \
+                mock.patch.object(sc, "finish_readout"):
+            sc.go_readout()
+        injected = [c.kwargs["args"][-3:] if c.kwargs["args"][-1] is False else c.kwargs["args"][-2:]
+                    for c in thread.call_args_list]
+        self.assertEqual(injected, [("outage", 30), ("outage", 30, False)])
+
+    def test_a_reader_sent_spoilt_is_refused_then_sent_whole(self):
+        # badimage-once: the first run's reader spoilt (Sonoff's updater refuses
+        # it), the runs after send it whole.
+        sc = self.scenario(step="start", fault="badimage", arg="once")
+        for spoilt, verdict in ((True, None), (False, "NOT-FIRED")):
+            with self.subTest(spoilt=spoilt), mock.patch.object(fs.threading, "Thread") as thread, \
+                    mock.patch.object(sc, "run_tool", side_effect=[1, 0]) as runs, \
+                    mock.patch.object(sc, "readout_result", return_value="no readout"), \
+                    mock.patch.object(sc, "spoilt_sent", return_value=spoilt), \
+                    mock.patch.object(sc, "readout_done", side_effect=[False, True]), \
+                    mock.patch.object(sc, "advised_to_switch", return_value=False), \
+                    mock.patch.object(sc, "finish_readout") as finish:
+                sc.go_readout()
+            thread.assert_not_called()   # the tool spoils it: nothing to inject
+            self.assertEqual(runs.call_args_list[0].args[:2], ("readout", ["--simulate-bad-image", "readout"]))
+            if spoilt:
+                self.assertEqual(runs.call_args_list[1].args[:2], ("readout", []))
+            self.assertEqual(finish.call_args.args[1], verdict)
+
     def converted(self, code, sent=False, template=True, kept=()):
         sc = self.scenario(route="tasmota>readout", step="start", fault="none", arg="first-stage")
         logs = [(1.0, Path("run.log"), "$ python tools/espressif/serve_tasmota_ota.py" if sent else "FAILED: no")]
@@ -1822,17 +1939,6 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(self.converted(0, kept=["flash.bin.xz in it"])[0], "FAIL-READOUT")
         self.assertEqual(self.converted(0, sent=True)[0], "FAIL-SENT")
         self.assertEqual(self.converted(0, template=False)[0], "FAIL-DISTURBED")
-
-    def test_a_sign_in_again_beside_the_run_trusts_the_stub(self):
-        # Seen: without the stub's OpenSSL settings its certificate was not
-        # trusted, and token-login never happened on the stub (NOT-FIRED).
-        sc = self.scenario(fault="token", arg="login")
-        with mock.patch.object(sc, "must", return_value=mock.Mock(stdout="logged in again", stderr="")) as must, \
-                mock.patch.object(fs, "STUB_CLOUD", True):
-            sc.fault("token", "login", 0, None)
-        script = must.call_args.args[2]
-        for key, value in fs.STUB_ENV.items():
-            self.assertIn(f"{key}={value}", script)
 
     def test_how_a_readout_ended(self):
         with tempfile.TemporaryDirectory() as tmp:

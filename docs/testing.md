@@ -374,6 +374,7 @@ a unit test.
 | `diskfull` | the disk filling during the backup (C3): the run must never go on without all of it (FAIL-BAD-BACKUP) |
 | `fallback` | the device falls back to its own setup network and the person joins it unasked: the run must find it there and carry on |
 | `token-login` | at C2, the eWeLink account signed in to again beside the run: each login ends the one before |
+| `badimage-once` | at D1, the Berry Tasmota sent spoilt (`--simulate-bad-image D1`), which the installer refuses: the run stops, and the next sends it whole (NOT-FIRED if it was never sent spoilt) |
 
 A device that loses the home network raises its own at C3 and D1 (the
 installer, after 45 s) and at L1, M1, X1 and I2 (the mover and ESPHome,
@@ -500,6 +501,23 @@ the suite reads either.
   firmware, to a readout, or to Sonoff's firmware without this computer's
   records of the device's runs, as on another computer. None may be taken for
   an unfinished conversion (FAIL-TAKEN-FOR-CONVERSION).
+- In the read, each kind of fault a conversion's step has, as the fault
+  suites try every kind in a readout too (`READOUT_MORE_FAULTS`): Ctrl-C once,
+  twice apart, or twice then carried on or started anew; the window closed;
+  a second run beside it, which asks eWeLink for the device before it is
+  refused; the computer asleep for 2
+  minutes or off for 30 s; a weak network, a changed packet, the disk full;
+  two power cuts or outages running; the home network gone long enough for
+  the bridge to raise its own, joined unasked; and the eWeLink account signed
+  in to again. Each is judged as at a conversion's step (FAIL-STOPPED,
+  FAIL-NOT-STOPPED, FAIL-NOT-REFUSED, FAIL-DISTURBED, NO-TRAFFIC), but for
+  why a closed window stopped the last run, which is said as an unfinished
+  conversion is offered back, and a readout never is. Not Ctrl-C at its
+  countdown: a readout asks about a Ctrl-C at its next question, not at a
+  stage's end, and an unattended one asks none.
+- The reader sent spoilt (`start:badimage-once`, the tool's
+  `--simulate-bad-image readout`): Sonoff's updater refuses it, the run
+  stops, and the next sends it whole.
 - After each, the readout is run again as a person would, and **passes** when
   a run kept `readout.tar`, unsent (the suite gives it no API, `--no-api`), holding every file
   [readouts.md](readouts.md#what-is-in-one) lists for an Espressif device,
