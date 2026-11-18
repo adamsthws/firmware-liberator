@@ -63,8 +63,11 @@ How many at once, from the environment:
     AUTOFLASH_EMU_SUITE_DIR         where results go (captures/emulation/suite; with
                                     --stub-cloud, captures/emulation/suite-stub)
 
-Results: results.jsonl, a log per scenario, and what a failure leaves (its
-run records and the device's serial output). A fault that never happened is
+Results: results.jsonl, and a folder per scenario, laid out as the Beken suite's
+(fault_verdicts.scenario_folder): its log, each run's log, events and recording,
+the device's serial output, and what a failure leaves (its run records, in
+evidence/); a scenario run again keeps its earlier attempts' beside them,
+numbered (logs/<scenario>.1 the first). A fault that never happened is
 NOT-FIRED, not a pass; NO-INTERNET when it never happened because this computer
 could not reach eWeLink, which says nothing of the tool or the device, and is run
 again. Each row's notes say how short of memory the computer
@@ -103,6 +106,9 @@ EMU = REPO / "captures/emulation"
 OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
 RESULTS = OUT / "results.jsonl"
 LOGS = OUT / "logs"
+# The most of a scenario's serial output kept beside its logs: an emulator that
+# runs for hours writes megabytes, and a failure is read from its end.
+SERIAL_KEPT = 300_000
 # A machine whose devices never get a turn at the cloud.
 NO_CLOUD = os.environ.get("AUTOFLASH_EMU_NO_CLOUD") == "1"
 
@@ -976,6 +982,17 @@ def device_busy(state, since):
     return busy
 
 
+def carried_over(root):
+    """How much of each run log, and the events beside it, a saved device at
+    `root` holds (by filed_as): a scenario started from it carries its
+    conversion on, adding to them."""
+    found = {}
+    for path in records_under(root).glob("*/runs/*/*"):
+        if path.name in ("run.log", output.EVENTS):
+            found[filed_as(path)] = len(path.read_text(encoding="utf-8", errors="replace"))
+    return found
+
+
 def run_logs(state):
     found = []
     for log in records_under(state / "work").glob("*/runs/*/run.log"):
@@ -1262,6 +1279,7 @@ class Scenario:
         self.notes = {}
         self.step_length = 60  # the step under test's usual length (go_watched)
         self.earlier_release_wrote = {}  # each run log, as far as a legacy run left it
+        self.carried = {}  # each run log and its events, as far as the saved device it started from had it
 
     def unexpected(self):
         """Whether this checkout's runs in the scenario met an error the tool did
@@ -1304,8 +1322,10 @@ class Scenario:
             args.append("--stub-cloud")
         if fresh:
             args.append("--fresh")
+            self.carried = {}
         if source:
             args.append(f"--from={saved(source)}")
+            self.carried = carried_over(EMU / "saved" / saved(source))
         if code:
             args.append(f"--code={code}")
         legacy = code is not None and (Path(code) / LEGACY_TOOL).exists()
@@ -1797,8 +1817,7 @@ class Scenario:
         run("iptables-save", "-c")
         run("ip", "neigh")
         run("ip", "-s", "link", "show", "tap0")
-        LOGS.mkdir(parents=True, exist_ok=True)
-        (LOGS / (key(self.sc["id"]) + "-probe.txt")).write_text("\n".join(out))
+        (Path(self.log).parent / "probe.txt").write_text("\n".join(out))
         self.notes["probed"] = True
         self.say("PROBE: the device not reaching this computer, looked at")
 
@@ -2279,7 +2298,7 @@ class Scenario:
 
     def others_file(self):
         """The account's other devices for the stub (AUTOFLASH_EMU_STUB_OTHERS), beside the scenario's log."""
-        path = Path(self.log).with_name(f"{Path(self.log).stem}-others.json")
+        path = Path(self.log).parent / "others.json"   # as the Beken suite's
         path.write_text(json.dumps(ACCOUNTS[self.sc["account"]], indent=1) + "\n", encoding="utf-8")
         return path
 
@@ -2717,8 +2736,8 @@ class Scenario:
         return "invalid header" in tail or "No bootable app" in tail or "ets_main.c" in tail
 
     def keep(self, results, verdict, left):
-        """The scenario's row, written to the results, and what a failure
-        leaves kept beside them; its emulator stopped."""
+        """The scenario's row, written to the results, and its runs' logs and
+        what a failure leaves kept in its folder; its emulator stopped."""
         sc = self.sc
         row = {**sc, "instance": self.n, "verdict": verdict, "runs": len(results),
                "results": [r for _, r in results], "codes": [c for c, _ in results],
@@ -2727,12 +2746,23 @@ class Scenario:
                "seconds": round(time.time() - self.created)}
         with open(RESULTS, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
-        # Every run's recording, whatever the verdict: what each stage showed
-        # on the way, gone from the emulator when its next scenario begins.
-        screens = LOGS / (key(sc["id"]) + "-screens")
-        keep_earlier(screens)
+        # Every run's log, events and recording, and the device's serial
+        # output, whatever the verdict, laid out as the Beken suite's: gone
+        # from the emulator when its next scenario begins.
+        folder = Path(self.log).parent
+        since = getattr(self, "started", self.created)
+        fault_verdicts.keep_runs([log for mtime, log, _ in run_logs(self.state) if mtime >= since], folder,
+                                 lambda path: self.carried.get(filed_as(path), 0))
         fault_verdicts.keep_recordings(Path(self.log).read_text(encoding="utf-8", errors="replace"),
-                                       self.state / "work", screens)
+                                       self.state / "work", folder)
+        uart = self.state / "logs/uart.log"
+        if uart.exists():
+            with open(uart, "rb") as serial:
+                size = serial.seek(0, os.SEEK_END)
+                start = getattr(self, "uart_from", 0)
+                # This scenario's alone - an emulator started afresh begins it again.
+                serial.seek(max(start if size >= start else 0, size - SERIAL_KEPT))
+                (folder / "serial.log").write_bytes(serial.read())
         if verdict != "PASS":
             # This scenario's own screens: the run's log goes back further.
             if STRANDED.search(re.sub(r"\s+", " ", Path(self.log).read_text(encoding="utf-8", errors="replace"))):
@@ -2740,13 +2770,10 @@ class Scenario:
                     self.probe()
                 except Exception as exc:  # noqa: BLE001 - a look, never the verdict
                     self.say(f"PROBE: failed: {exc!r}")
-            keep = LOGS / (key(sc["id"]) + "-evidence")
-            keep_earlier(keep)
-            shutil.copytree(records_under(self.state / "work"), keep, dirs_exist_ok=True,
+            # Beyond the Beken suite's: the run records whole (state, reports,
+            # live/), which a failure of a conversion carried on is read by.
+            shutil.copytree(records_under(self.state / "work"), folder / "evidence", dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns("*.bin"))
-            uart = self.state / "logs/uart.log"
-            if uart.exists():
-                (keep / "uart-tail.log").write_text(uart.read_text(errors="replace")[-300_000:])
         sh("docker", "stop", name(self.n), timeout=120)
         return row
 
@@ -2801,10 +2828,6 @@ def kept_identity_reported(lines):
     """Whether the last of a report's "Sonoff identity" lines says the device's
     own: the report starts each answer with a capital."""
     return bool(lines) and lines[-1].strip().lower() == SONOFF_IDENTITY["kept"].lower()
-
-
-def key(scenario_id):
-    return scenario_id.replace(">", "-to-").replace(":", "_").replace("@", "_at")
 
 
 # This computer, not its device, cut off from eWeLink: the name not found, the
@@ -2882,8 +2905,10 @@ def worker(n, todo, lock, cloud=False, room=None):
         while memory_now()[0] < LOW_MEMORY_KB:
             time.sleep(10)
         cpu_load.wait_for_room(lambda line: print(line, flush=True))
-        log = LOGS / (key(sc["id"]) + ".log")
-        keep_earlier(log)
+        folder = fault_verdicts.scenario_folder(LOGS, sc["id"])
+        keep_earlier(folder)
+        folder.mkdir(parents=True)
+        log = folder / "tool.log"
         started = time.time()
         try:
             row = Scenario(n, sc, log).go()

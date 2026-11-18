@@ -801,7 +801,7 @@ class Person(threading.Thread):
 
 def run_scenario(instance: Instance, sc: dict) -> dict:
     source, target = sc["route"].split(">")
-    folder = OUT / "logs" / sc["id"].replace(":", "_").replace(">", "-")
+    folder = fault_verdicts.scenario_folder(OUT / "logs", sc["id"])
     keep_earlier(folder)
     folder.mkdir(parents=True)
     log = folder / "tool.log"
@@ -861,10 +861,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if screen:
             outcome = dict(outcome, result="FAIL-SCREEN")
             notes["screen"] = screen
-    for index, path in enumerate(instance.runs()):
-        shutil.copy(path, folder / f"run-{index + 1}.log")
-        if (path.parent / output.EVENTS).exists():
-            shutil.copy(path.parent / output.EVENTS, folder / f"run-{index + 1}.{output.EVENTS}")
+    fault_verdicts.keep_runs(instance.runs(), folder)
     # Every address the router gave the device, and any it gave back (lease).
     (folder / "dhcp.log").write_text(instance.dhcp_log(), encoding="utf-8")
     if log.exists():   # every run's recording: what each stage showed on the way

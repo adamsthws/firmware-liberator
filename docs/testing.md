@@ -685,13 +685,20 @@ eWeLink.
 #### Reading its results (Espressif)
 
 Everything is kept in `captures/emulation/suite/`: the results
-(`results.jsonl`), a log per scenario, what each failure leaves (its run
-records and the device's serial output, in `<scenario>-evidence`), and every
-run's screen recording in `<scenario>-screens/run-N.raw`, all the run drew
-where the log has only its last screen (`cat` it in a terminal, or feed it to
-`unattended_run.Screen`). A scenario run again keeps its earlier attempts,
-numbered in order: `<scenario>.log.1` and `<scenario>-evidence.1` are its
-first.
+(`results.jsonl`), and in `logs/` a folder for each scenario, laid out as the
+Beken suite's (`fault_verdicts.scenario_folder`):
+
+- `tool.log`: what the suite did and each run's last screen;
+- `run-N.log` and `run-N.events.jsonl`: each run's own log and events, of
+  every scenario, passed or not;
+- `run-N.raw`: each run's screen recording, all it drew where `tool.log` has
+  only its last screen (`cat` it in a terminal, or feed it to
+  `unattended_run.Screen`);
+- `serial.log`: the device's serial output, up to `SERIAL_KEPT` of it;
+- `evidence/`: what a failure leaves, its run records whole.
+
+A scenario run again keeps its earlier attempts, numbered in order:
+`<scenario>.1` is its first.
 
 On the real cloud, `connections.log` has every device's connections opening
 and closing, with times, looked at every 2 s (`AUTOFLASH_EMU_CONNECTION_LOG`,
@@ -972,7 +979,9 @@ device, so the tool asks for a switch off and on only after a fault.
 #### Reading its results (Beken)
 
 Results are in `captures/emulation/beken/suite/`
-(`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder). A scenario passes
+(`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder), each scenario's
+folder in `logs/` laid out as the Espressif suite's, with `dhcp.log` beside:
+every address the router gave the device. A scenario passes
 when the run's record has every step of its route done (FAIL otherwise, as
 for the interim firmware, above) and none of these applies:
 

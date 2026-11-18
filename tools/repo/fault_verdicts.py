@@ -13,10 +13,10 @@ import lzma
 import re
 import shutil
 import tarfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from tools.autoflash import report_upload
+from tools.autoflash import output, report_upload
 from tools.repo import unattended_run
 
 
@@ -316,6 +316,29 @@ def screen_problems(output: str) -> list[str]:
         problems += [problem for problem in unattended_run.screen_problems(found["screen"])
                      if problem not in problems]
     return problems
+
+
+def scenario_folder(logs: Path, scenario_id: str) -> Path:
+    """Where either suite keeps a scenario's logs: a folder of its own under
+    `logs`, named from its id (sonoff>esphome:J2@10:crash-1 in
+    sonoff-esphome_J2@10_crash-1)."""
+    return logs / scenario_id.replace(":", "_").replace(">", "-")
+
+
+def keep_runs(runs: Iterable[Path], folder: Path, before: Callable[[Path], int] = lambda path: 0) -> None:
+    """Each of a scenario's run logs (`runs`, oldest first) and the events
+    beside it copied into `folder` as run-1.log and run-1.events.jsonl, ...,
+    whatever the verdict: the emulator's own go when its next scenario
+    begins.  `before(path)`: how much of the file was there before the
+    scenario began - a saved device's conversion it carries on - left out."""
+    for number, log in enumerate(runs, 1):
+        for source, kept in ((log, f"run-{number}.log"), (log.parent / output.EVENTS, f"run-{number}.{output.EVENTS}")):
+            try:
+                text = source.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue   # no events (a release before them), or filed away as it was read
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / kept).write_text(text[before(source):], encoding="utf-8")
 
 
 # As tools/repo/unattended_run.py says where it kept a run's recording.

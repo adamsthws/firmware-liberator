@@ -344,6 +344,32 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(fault_verdicts.screen_problems("Stage 1 - Checking - Stopped\nStage 1 - Checking - Complete\n"), [])
 
 
+class ScenarioFolderTests(unittest.TestCase):
+    """Both suites keep a scenario's logs alike: a folder each, its runs in it."""
+
+    def test_a_scenario_is_named_alike_in_both_suites(self):
+        from pathlib import Path
+        self.assertEqual(fault_verdicts.scenario_folder(Path("logs"), "sonoff>esphome:J2@10:crash-1"),
+                         Path("logs/sonoff-esphome_J2@10_crash-1"))
+
+    def test_each_run_log_and_its_events_are_kept_numbered_from_where_the_scenario_began(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            root, folder = Path(directory), Path(directory) / "logs/s"
+            first, second = root / "runs/1/run.log", root / "runs/2/run.log"
+            for log, text in ((first, "saved\nours\n"), (second, "second\n")):
+                log.parent.mkdir(parents=True)
+                log.write_text(text, encoding="utf-8")
+            (first.parent / "events.jsonl").write_text('{"saved": 1}\n{"ours": 1}\n', encoding="utf-8")
+            before = {first: len("saved\n"), first.parent / "events.jsonl": len('{"saved": 1}\n')}
+            fault_verdicts.keep_runs([first, second], folder, lambda path: before.get(path, 0))
+            self.assertEqual((folder / "run-1.log").read_text(encoding="utf-8"), "ours\n")
+            self.assertEqual((folder / "run-1.events.jsonl").read_text(encoding="utf-8"), '{"ours": 1}\n')
+            self.assertEqual((folder / "run-2.log").read_text(encoding="utf-8"), "second\n")
+            self.assertFalse((folder / "run-2.events.jsonl").exists())   # it wrote none
+
+
 class RecordingTests(unittest.TestCase):
     def test_each_runs_recording_is_kept_beside_the_scenario(self):
         # The emulator's own copies go when its next scenario begins: seen,

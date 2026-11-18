@@ -1439,6 +1439,69 @@ class ScenarioTests(unittest.TestCase):
             self.assertTrue(sc["step"] in steps or sc["step"] in fs.STARTS, sc["id"])
 
 
+class KeptLogsTests(unittest.TestCase):
+    """Every scenario keeps its runs' logs, passed or not, laid out as the
+    Beken suite's: only a failure's were kept, and a pass's were gone when the
+    emulator's next scenario began."""
+
+    EARLIER = "[09:00:00] === run started, tool version 3.0.0 ===\n[09:00:09] === run ended ===\n"
+    OURS = "[10:00:00] === run started, tool version 3.0.0 ===\n[10:00:03] === run ended ===\n"
+
+    def finished(self, checks="True"):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        tmp = Path(directory.name)
+        run = tmp / "state/work/captures/devices" / records.folder_name(MAC) / "runs/1/run.log"
+        run.parent.mkdir(parents=True)
+        # The saved device's own conversion, which the scenario carries on.
+        run.write_text(self.EARLIER + self.OURS.replace("[10:00:03]", f"[10:00:01]     Relay: Switches (through "
+                                                        f"eWeLink)\n[10:00:02]     Checks passed: {checks}\n"
+                                                        "[10:00:03]"), encoding="utf-8")
+        (run.parent / "events.jsonl").write_text('{"saved": 1}\n{"ours": 1}\n', encoding="utf-8")
+        (tmp / "state/logs").mkdir(parents=True)
+        (tmp / "state/logs/uart.log").write_bytes(b"the last scenario's\nthis one's\n")
+        folder = fs.fault_verdicts.scenario_folder(tmp / "logs", "esphome>sonoff:R1:deviceoff-1")
+        folder.mkdir(parents=True)
+        (folder / "tool.log").write_text("--- a run\n    Result:   Converted\n", encoding="utf-8")
+        sc = fs.Scenario(24, {"id": "esphome>sonoff:R1:deviceoff-1", "route": "esphome>sonoff", "step": "R1",
+                              "fault": "deviceoff", "arg": 1, "at": 40}, folder / "tool.log")
+        sc.state, sc.target, sc.started = tmp / "state", "sonoff", 0
+        sc.uart_from = len(b"the last scenario's\n")
+        sc.carried = {fs.filed_as(run): len(self.EARLIER), fs.filed_as(run.parent / "events.jsonl"): len('{"saved": 1}\n')}
+        sc.memory = mock.Mock(note=mock.Mock(return_value={}))
+        with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
+                mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
+                mock.patch.object(sc, "names_seen", return_value=([], [])), \
+                mock.patch.object(sc, "template_ok", return_value=True), \
+                mock.patch.object(sc, "release_of", return_value=None):
+            row = sc.finish([(0, "Converted")], None)
+        return row, folder
+
+    def test_a_pass_keeps_what_its_runs_wrote_and_the_devices_serial_output(self):
+        row, folder = self.finished()
+        self.assertEqual(row["verdict"], "PASS")
+        self.assertTrue((folder / "run-1.log").read_text(encoding="utf-8").startswith("[10:00:00]"))
+        self.assertEqual((folder / "run-1.events.jsonl").read_text(encoding="utf-8"), '{"ours": 1}\n')
+        self.assertEqual((folder / "serial.log").read_bytes(), b"this one's\n")
+        self.assertFalse((folder / "evidence").exists())
+
+    def test_a_failure_keeps_its_run_records_whole_too(self):
+        row, folder = self.finished(checks="False")
+        self.assertEqual(row["verdict"], "FAIL-CHECKS")
+        self.assertTrue((folder / "run-1.log").exists())
+        self.assertTrue(next((folder / "evidence").glob("*/runs/1/run.log")).exists())
+
+    def test_what_a_saved_device_holds_is_what_a_scenario_from_it_carries_on(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp, "captures/devices", records.folder_name(MAC), "runs/1")
+            runs.mkdir(parents=True)
+            (runs / "run.log").write_text("saved\n", encoding="utf-8")
+            (runs / "events.jsonl").write_text("{}\n", encoding="utf-8")
+            (runs / "autoflash-state.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(fs.carried_over(Path(tmp)), {fs.filed_as(runs / "run.log"): 6,
+                                                          fs.filed_as(runs / "events.jsonl"): 3})
+
+
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
