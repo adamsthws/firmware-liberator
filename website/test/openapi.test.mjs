@@ -10,6 +10,7 @@ import { test } from "node:test";
 import worker, * as api from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
 import { work } from "../api/proof-of-work.js";
+import * as offered from "../api/offered.js";
 import * as reports from "../api/reports.js";
 import { incompatible, loadSpec, narrowerProblems, resolve, validate } from "../scripts/openapi.mjs";
 
@@ -161,6 +162,13 @@ test("the limits and names the description gives are the Worker's own", () => {
   const { Proof, LightProof } = spec.components.parameters;
   assert.deepEqual([Proof["x-proof-bits"], Proof["x-proof-age"]], [api.PROOF_BITS, api.PROOF_AGE]);
   assert.deepEqual([LightProof["x-proof-bits"], LightProof["x-proof-age"]], [api.LIGHT_PROOF_BITS, api.LIGHT_PROOF_AGE]);
+  assert.equal(body("/v1/offers")["x-max-bytes"], api.OFFERS_MAX_BYTES);
+  assert.equal(schema("Offers").properties.offers.maxItems, api.OFFERS_PER_REQUEST);
+  assert.deepEqual(schema("OffersTaken").properties.send.enum, api.SENDS);
+  assert.deepEqual(schema("Offers").properties.cloud.enum, Object.keys(offered.CLOUDS));
+  assert.equal(schema("Offer").properties.files.maxItems, api.MAX_FIRMWARE);
+  assert.equal(schema("OfferedLink").properties.path.pattern, offered.CLOUDS.ewelink.link.source.replaceAll("\\/", "/"));
+  assert.deepEqual(schema("Wanted").properties.send.enum, api.SENDS);
   assert.equal(schema("Question").properties.firmware.maxItems, api.MAX_FIRMWARE);
   assert.deepEqual(schema("Question").properties.stage.enum, api.STAGES);
   assert.equal(schema("Question").properties.format.const, api.FORMAT);
@@ -210,6 +218,30 @@ test("/v1/wanted answers as described", async () => {
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED), { "Content-Length": "5000" }), env())).status, 413);
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED), { "Content-Type": "text/plain" }), env())).status, 415);
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED)), env({ INGEST: "off" }))).status, 503);
+});
+
+const OFFERS = { format: 1, tool_version: "3.1.0", cloud: "ewelink", offers: [{ model: "NEWTHING",
+  stock_model: "SN-NEW-01", stock_version: "1.0.0", device: null, files: [{ name: "user1.bin", version: "1.2.0",
+    sha256: sha("an app"), path: "/ota/rom/0123456789abcdef0123456789abcdef/user1.bin" }] }] };
+
+test("/v1/offers answers as described", async () => {
+  // No offer here agrees, so nothing is fetched.
+  const bindings = env({ OFFERED_SEND: "links" });
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS)), bindings)).status, 200);
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS)), env())).status, 200, "files taken, not links");
+  assert.equal((await answered(json("/v1/offers", fresh({ ...OFFERS, offers: [] })), env())).status, 200,
+    "what to send, asked");
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS)), bindings)).status, 200, "the same again");
+  const refused = { ...OFFERS, offers: [{ ...OFFERS.offers[0], model: "a|b" }] };
+  assert.equal((await answered(json("/v1/offers", fresh(refused)), env({ OFFERED_SEND: "links" }))).status, 200,
+    "an offer refused");
+  assert.equal((await answered(json("/v1/offers", fresh({ ...OFFERS, cloud: "tuya" })), env())).status, 400);
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS), { "X-Proof": "1:1" }), env())).status, 403);
+  assert.equal((await answered(new Request(URL_OF("/v1/offers")), env())).status, 405);
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS), { "Content-Length": String(api.OFFERS_MAX_BYTES + 1) }),
+    env())).status, 413);
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS), { "Content-Type": "text/plain" }), env())).status, 415);
+  assert.equal((await answered(json("/v1/offers", fresh(OFFERS)), env({ INGEST: "off" }))).status, 503);
 });
 
 const MANIFEST = { format: 1, model: "NEWTHING", stock_model: "SN-NEW-01", stock_version: "1.0.0", tool: "2.4.0",

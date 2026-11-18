@@ -2,8 +2,9 @@
 // clearing of it (prunePending, called from nightly.js):
 // - Readouts not taken as right - pending, with no three agreeing and no
 //   approval, or rejected - are deleted PENDING_DAYS after they came in, with
-//   the marks of the offered files they held, giving back their bytes and
-//   places, so made-up readouts cannot fill the store or a key's places. But
+//   the marks of the offered files they held and the links they gave
+//   (offered.js), giving back their bytes and places, so made-up readouts
+//   cannot fill the store or a key's places. But
 //   for one disputing readouts taken as right (checked, index.js CHECK_DAYS):
 //   kept until the maintainer settles it, so a dispute never goes unseen. A
 //   key holds MAX_PLACES at most, so these cannot fill the store either.
@@ -42,6 +43,7 @@ export async function prunePending(env, today) {
     await env.READOUTS.delete(row.object);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM readout_firmware WHERE readout = ?").bind(row.id),
+      env.DB.prepare("DELETE FROM offer_links WHERE readout = ?").bind(row.id),
       env.DB.prepare("DELETE FROM readout_networks WHERE id = ?").bind(row.id),
       env.DB.prepare("DELETE FROM readouts WHERE id = ?").bind(row.id),
     ]);

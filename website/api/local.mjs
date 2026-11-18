@@ -9,6 +9,9 @@
 // (proof-of-work.js's work.bits), so a test's tool need not do the full work;
 // AUTOFLASH_LOCAL_READOUT_LIMIT, the readouts a minute it takes, so a test can
 // reach the limit however slowly its readouts come.
+// AUTOFLASH_LOCAL_OFFERED_SEND sets OFFERED_SEND (wrangler.jsonc), "files"
+// unset; AUTOFLASH_LOCAL_OTA_BASE is where an offer's files are fetched from in
+// place of eWeLink's server (offered.js CLOUDS): the cloud stub's.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -28,6 +31,10 @@ const { d1 } = await import("./local-d1.mjs");
 const { work } = await import("./proof-of-work.js");
 if (process.env.AUTOFLASH_LOCAL_PROOF_BITS) {
   work.bits = Number(process.env.AUTOFLASH_LOCAL_PROOF_BITS);
+}
+const { CLOUDS } = await import("./offered.js");
+if (process.env.AUTOFLASH_LOCAL_OTA_BASE) {
+  CLOUDS.ewelink.base = process.env.AUTOFLASH_LOCAL_OTA_BASE;
 }
 
 const [address, port, folder, enough = ""] = process.argv.slice(2);
@@ -73,6 +80,7 @@ const EMAIL = {
 };
 // Made-up keys: this copy counts its senders, and keeps its devices, as the Worker does.
 const env = { READOUTS, DB, READOUT_LIMIT, REPORT_LIMIT, EMAIL, INGEST: "on", ENOUGH: enough,
+  OFFERED_SEND: process.env.AUTOFLASH_LOCAL_OFFERED_SEND ?? "files",
   SENDER_KEY: "a-made-up-key-for-this-computer", DEVICE_HASH_KEY_PERMANENT: "another-made-up-key-for-this-computer" };
 
 // Gone once the script that started it is (PARENT, its process id), however it ended.

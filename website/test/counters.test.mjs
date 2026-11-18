@@ -57,6 +57,16 @@ test("several at once are taken whole or not at all", async () => {
   }
 });
 
+test("bytes alone may be added, held to their limit, counting nothing more", async () => {
+  const db = d1();
+  await reserve(db, "s", null, { bytes: 10 });
+  assert.equal(await reserve(db, "s", null, { by: 0, bytes: 5, mostBytes: 20 }), true);
+  assert.equal(await reserve(db, "s", null, { by: 0, bytes: 6, mostBytes: 20 }), false, "past the limit");
+  assert.deepEqual(await read(db, "s"), { count: 1, bytes: 15 });
+  await release(db, "s", 5, 0);
+  assert.deepEqual(await read(db, "s"), { count: 1, bytes: 10 });
+});
+
 test("as many as still fit are taken, and no more", async () => {
   const db = d1();
   assert.equal(await reserveUpTo(db, "u", "2026-11-09", 4, 10), 4);

@@ -40,7 +40,7 @@ test("it answers as the Worker does and keeps what it is given in its folder", a
       stage: "first", firmware: [] }));
     const answer = await fetch(`http://127.0.0.1:${port}/v1/wanted`, { method: "POST", body,
       headers: { "Content-Type": "application/json", "X-Proof": proofFor(body, 20) } });
-    assert.deepEqual(await answer.json(), { wanted: false, why: "enough", held: [] });
+    assert.deepEqual(await answer.json(), { wanted: false, why: "enough", held: [], send: "files" });
     assert.match(fs.readFileSync(path.join(folder, "requests.log"), "utf8"), /POST \/v1\/wanted .* -> 200/);
   } finally {
     child.kill();

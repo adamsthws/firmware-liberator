@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { alert, alertLines, STORE_WARN } from "../api/alerts.js";
 import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "../api/downloads.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "../api/networks.js";
+import { OFFER_FETCH_ALERT_DAYS } from "../api/offered.js";
 import worker from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
 
@@ -184,4 +185,50 @@ test("downloads never read are counted from the first night the job ran", async 
   stored(bindings, "2026-11-07", 0);   // the first night, unread
   assert.deepEqual(await lines("2026-11-08"), [], "two nights");
   assert.match((await lines("2026-11-09"))[0], /for 3 nights in a row, none ever/);
+});
+
+// An offer of KEY taken as right on `day`, a link given for its file, and
+// whether that file is held.
+function agreedOffer(bindings, day, held = false, key = "NEWTHING|SN-NEW-01|1.0.0") {
+  const db = bindings.DB.db;
+  db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review, offer, offered)
+    VALUES (?1, ?2, 'first', ?1, 'o', 1, 'x', ?3, 'quorum', 'o', '1.2.0')`).run(`r-${key}`, key, `${day}T12:00:00Z`);
+  db.prepare("INSERT INTO agreed_offers (key, offer, offered, day) VALUES (?, 'o', '1.2.0', ?)").run(key, day);
+  db.prepare("INSERT INTO offer_links (readout, sha, path, cloud) VALUES (?, ?, '/ota/rom/x/y', 'ewelink')")
+    .run(`r-${key}`, "a".repeat(64));
+  if (held) {
+    db.prepare("INSERT INTO readout_firmware (readout, sha) VALUES (?, ?)").run(`r-${key}`, "a".repeat(64));
+  }
+}
+const daysBefore = (days) => new Date(Date.parse(`${TODAY}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+
+test("an offer's files the cloud has not given are told OFFER_FETCH_ALERT_DAYS after it agreed, and as often after",
+  async () => {
+    assert.equal(OFFER_FETCH_ALERT_DAYS, 3);
+    for (const [days, told] of [[2, false], [3, true], [4, false], [5, false], [6, true]]) {
+      const bindings = env();
+      agreedOffer(bindings, daysBefore(days));
+      const lines = await alertLines(bindings.DB, TODAY, LIMITS);
+      assert.equal(lines.length, Number(told), `${days} days`);
+      if (told) {
+        assert.match(lines[0], new RegExp(`^The files of 1 offer taken as right have not been fetched .*`
+          + `NEWTHING\\|SN-NEW-01\\|1\\.0\\.0 \\(offered 1\\.2\\.0, ${days} days\\)`));
+        assert.match(lines[0], /set OFFERED_SEND to "files" in website\/api\/wrangler\.jsonc/);
+      }
+    }
+  });
+
+test("an offer whose files are held is not told", async () => {
+  const bindings = env();
+  agreedOffer(bindings, daysBefore(OFFER_FETCH_ALERT_DAYS), true);
+  assert.deepEqual(await alertLines(bindings.DB, TODAY, LIMITS), []);
+});
+
+test("several offers missing files are one line, counting them all", async () => {
+  const bindings = env();
+  agreedOffer(bindings, daysBefore(3), false, "ONE|-|1.0.0");
+  agreedOffer(bindings, daysBefore(4), false, "TWO|-|1.0.0");
+  const lines = await alertLines(bindings.DB, TODAY, LIMITS);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^The files of 2 offers taken as right/);
 });

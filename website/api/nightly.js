@@ -16,6 +16,9 @@
 //   the maintainer's own testing and quarantined reports left out, no figure
 //   for fewer than SMALLEST reports or devices, and no model's name before
 //   enough senders gave it over enough days (vouching; snapshot.js).
+// - The files of offers taken as right that only links were sent for, and
+//   the cloud has not given yet, are fetched again (offered.js retryOffers),
+//   within the day's fetches.
 // - The maintainer's emulator runs are folded by day too (emulator_days,
 //   emulator.js), each day a run came in for since the last night.
 // - Before a day is folded, a device's reports that day far above its usual
@@ -26,10 +29,13 @@
 //   each report, is one; one of no kind, by its model.
 // The work is done in SQL, on the database's side, in a fixed few queries:
 // so a night's Worker time and queries stay small whatever the plan (the
-// free plan's 10 ms and 50 queries a run would be enough).
+// free plan's 10 ms and 50 queries a run would be enough). Only the offers'
+// files fetched again take more, a few for each file, held to
+// OFFER_RETRY_EACH_NIGHT offers and the day's fetches (offered.js).
 import { alert } from "./alerts.js";
 import { ready } from "./database.js";
 import { emulatorFolding } from "./emulator.js";
+import { retryOffers } from "./offered.js";
 import { prunePending } from "./pending.js";
 import { snapshot } from "./snapshot.js";
 
@@ -187,8 +193,10 @@ export function vouching(db, today) {
   ];
 }
 
-// `limits`: the API's, as index.js's scheduled() gives them, for alerts.js.
-export async function nightly(env, now = new Date(), limits = null) {
+// `limits`: the API's, as index.js's scheduled() gives them, for alerts.js
+// and the store's limit an offer's files are fetched within. `fetcher`: how
+// they are fetched.
+export async function nightly(env, now = new Date(), limits = null, fetcher = fetch) {
   if (!(await ready(env.DB))) {
     return { ran: false, why: "the database does not have every migration yet" };
   }
@@ -206,6 +214,7 @@ export async function nightly(env, now = new Date(), limits = null) {
     env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
       SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
       ON CONFLICT (day) DO UPDATE SET readouts = excluded.readouts, bytes = excluded.bytes`).bind(today, READOUTS_EVER)]);
+  const offers = limits ? await retryOffers(env, now, { totalBytes: limits.TOTAL_BYTES, fetcher }) : null;
   const alerted = limits ? await alert(env, today, limits) : { sent: false, lines: [], why: "no limits given" };
   const figures = await snapshot(env.DB, now);
   const text = JSON.stringify(figures);
@@ -216,5 +225,5 @@ export async function nightly(env, now = new Date(), limits = null) {
   if (!(await env.STATS.head(archive))) {
     await env.STATS.put(archive, text, options);
   }
-  return { ran: true, folded: results.length, months, pruned, held, alerted };
+  return { ran: true, folded: results.length, months, pruned, held, offers, alerted };
 }

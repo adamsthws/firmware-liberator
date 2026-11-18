@@ -12,16 +12,22 @@
 // than the one kept (networks.js). And the tool's downloads gone unread from
 // GitHub for DOWNLOADS_STALE_NIGHTS nights in a row, with why each night
 // (downloads.js) - and the token recommended only where its rate limit was why.
+// And offers taken as right whose files the cloud has not given
+// OFFER_FETCH_ALERT_DAYS after, and each as many days after (offered.js).
 import { read } from "./counters.js";
 import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "./downloads.js";
 import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "./networks.js";
+import { OFFER_FETCH_ALERT_DAYS, OFFER_FETCHES_DAILY, unfetched } from "./offered.js";
 
 export const STORE_WARN = 0.75;
 
 const DAY = 86_400_000;
 const dayBefore = (day) => new Date(Date.parse(`${day}T00:00:00Z`) - DAY).toISOString().slice(0, 10);
 const megabytes = (bytes) => `${Math.round(bytes / 1024 / 1024)} MB`;
+const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
+// Offers named in that line at most.
+const OFFERS_NAMED = 5;
 
 // What to say, as lines: [] when all is well. `limits` as index.js gives
 // them (its scheduled()): DAILY_COUNT, DAILY_BYTES, TOTAL_BYTES, NOTIFY_DAILY,
@@ -97,6 +103,18 @@ export async function alertLines(db, today, limits) {
       + (reasons.some((row) => row.limited)
         ? `GitHub's rate limit for a request with no token is shared by every Worker on the same addresses. ${TOKEN_FIX}`
         : reasons.length ? "None was GitHub's rate limit, so a token would not help: look at what it said." : "")).trim());
+  }
+  // Offers taken as right whose files were not given: told OFFER_FETCH_ALERT_DAYS
+  // after, and each as many days after, while any is missing.
+  const missing = (await unfetched(db)).map((row) => ({ ...row, days: daysBetween(row.day, today) }))
+    .filter((row) => row.days >= OFFER_FETCH_ALERT_DAYS);
+  if (missing.some((row) => row.days % OFFER_FETCH_ALERT_DAYS === 0)) {
+    lines.push(`The files of ${missing.length} ${missing.length === 1 ? "offer" : "offers"} taken as right have not `
+      + `been fetched from the cloud ${OFFER_FETCH_ALERT_DAYS} or more days after: `
+      + `${missing.slice(0, OFFERS_NAMED).map((row) => `${row.key} (offered ${row.offered}, ${row.days} days)`).join(", ")}`
+      + `${missing.length > OFFERS_NAMED ? ", and more" : ""}. Each night tries again, ${OFFER_FETCHES_DAILY} files a `
+      + "day at most (website/api/offered.js). If eWeLink no longer gives a file by its link, set OFFERED_SEND to "
+      + "\"files\" in website/api/wrangler.jsonc, and tools send the files again (.github/readouts.md).");
   }
   return lines;
 }

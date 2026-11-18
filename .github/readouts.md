@@ -128,6 +128,10 @@ let past, and only a readout that adds something is kept:
   offers` and the admin view's Offers agreed list them. A whole readout
   taken as right on its firmware does not close its offer until then.
   `review` and the admin view name what each was offered.
+- One sender sends one first stage of each offer and one whole readout of
+  each key. A whole readout after its sender's own first stage of the same
+  offer is taken, as every run sends its devices' offers first, but does not
+  count towards that offer again: its row names no offer.
 - Until three agree, a key has three more places, each for a readout from a
   network none of those held came from: three made up on one rented server's
   network cannot keep out the owners who would outvote them.
@@ -154,6 +158,41 @@ let past, and only a readout that adds something is kept:
 
 The confirmations and the nightly alerts are sent by Cloudflare Email
 Service, from the domain `cloudflare_settings.py` onboards for sending.
+
+## Offers sent as links
+
+A first stage can send the files eWeLink offers a device, or only each
+file's link and SHA-256, as eWeLink gives them. Which one is your setting:
+`OFFERED_SEND` in [wrangler.jsonc](../website/api/wrangler.jsonc), which
+`/v1/wanted` and `/v1/offers` pass on to the tool as `send`. While it is
+`"files"`, `/v1/offers` keeps nothing and answers each offer `full`, so the
+tool sends it again later. A tool told nothing, as every
+one released before it, sends files, so the file path always stays.
+
+- **Links go to `/v1/offers`**, every device's in an account in one request,
+  sent unasked as reports are. Each offer is held as a first stage of its
+  device is, under the same key (`index.js` `keyOf`; a cloud other than
+  eWeLink would add its own part), so links, first stages with files and
+  whole readouts agree on an offer together, each sender once. Its row's
+  object is a small JSON manifest, its links kept in `offer_links`.
+  `OFFERS_PER_REQUEST`, `SENDER_OFFERS_DAILY` and `OFFERS_DAILY` in
+  `index.js` hold them; one held already counts against none.
+- **The fetch.** Once an offer is taken as right, the API fetches each of its
+  files it does not hold from eWeLink's file server by name
+  ([offered.js](../website/api/offered.js) `CLOUDS`), and keeps one only if its
+  SHA-256 is the one agreed on: a made-up link fetches a file that does not
+  match, and the next link given for it is tried. A file kept is its mark
+  under `readouts/firmware/`, listed under the readout whose link fetched it.
+  `OFFER_FETCHES_DAILY` files are fetched a day at most, across everyone.
+- **A file not given** is tried again each night. One still missing
+  `OFFER_FETCH_ALERT_DAYS` after its offer agreed is in the nightly email.
+
+Set `OFFERED_SEND` to `"links"` once a released tool reads `send`, and watch
+the first offers agree and their files arrive. Set it back to `"files"` when
+the nightly email says files are not being fetched and eWeLink is the cause:
+its file server checking the device's id, say, or links no longer lasting.
+Every tool in the field sends files again from its next run, with no
+release.
 
 ## Bounces and complaints
 
@@ -221,8 +260,9 @@ token. Putting or deleting an object needs one that can edit the bucket.
   API's `wrangler.jsonc`, so no more of it are taken. Its readouts stay.
 - **Making room**, should the store fill (the nightly alert and the usage
   check warn long before): delete readouts no longer needed, each with its
-  row in the `readouts` table and its offered files' `readouts/firmware/...`
-  marks. Then take their bytes off the store's count, from `website/`:
+  row in the `readouts` table, its offered files' `readouts/firmware/...`
+  marks and its `offer_links` rows. Then take their bytes off the store's
+  count, from `website/`:
 
   ```sh
   npx wrangler d1 execute firmware-liberator-api --config api/wrangler.jsonc --remote \

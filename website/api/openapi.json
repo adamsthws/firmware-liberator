@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Firmware Liberator API",
-    "version": "1.0.0",
-    "description": "What the Firmware Liberator tool sends the project: each run's report, and readouts of devices it does not convert yet, with the questions asked before one. Its only client is the tool (tools/autoflash/), which is open source, so the API holds no secret it could carry: each request is paid for with a proof of work, and daily limits bound the rest (website/api/index.js says how each path is guarded). A path under /v1/ keeps working, as this file says, for every version of the tool released against it: a change it cannot take goes under /v2/. /confirm and /forget are pages a person opens from an email, outside any version, as a link once sent must keep working."
+    "version": "1.1.0",
+    "description": "What the Firmware Liberator tool sends the project: each run's report, readouts of devices it does not convert yet, with the questions asked before one, and the firmware eWeLink offers each device, sent as links for the API to fetch. Its only client is the tool (tools/autoflash/), which is open source, so the API holds no secret it could carry: each request is paid for with a proof of work, and daily limits bound the rest (website/api/index.js says how each path is guarded). A path under /v1/ keeps working, as this file says, for every version of the tool released against it: a change it cannot take goes under /v2/. /confirm and /forget are pages a person opens from an email, outside any version, as a link once sent must keep working."
   },
   "servers": [
     {
@@ -80,6 +80,117 @@
           },
           "413": {
             "description": "Its length not given, or over 4096 bytes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Not application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/offers": {
+      "post": {
+        "operationId": "offers",
+        "summary": "First stages sent as links: the files eWeLink offers each device, by link and SHA-256",
+        "description": "Each offer is held as a first stage of its device is, and agrees with first stages and whole readouts naming the same files. Once one is taken as right, the API fetches each of its files it does not hold from the cloud, by the links given, keeping one only if its SHA-256 is the one agreed on. Sent unasked, every device's of an account in one request, when /v1/wanted answers \"send\": \"links\". A request of no offers asks only whether to send links, counting and keeping nothing; while send is \"files\", nothing is kept.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LightProof"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Offers"
+              },
+              "example": {
+                "format": 1,
+                "tool_version": "3.1.0",
+                "cloud": "ewelink",
+                "offers": [
+                  {
+                    "model": "NEWTHING",
+                    "stock_model": "SN-NEW-01",
+                    "stock_version": "1.0.0",
+                    "device": null,
+                    "files": [
+                      {
+                        "name": "user1.bin",
+                        "version": "1.2.0",
+                        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                        "path": "/ota/rom/0123456789abcdef0123456789abcdef/user1.1024.new.2.bin"
+                      }
+                    ]
+                  }
+                ],
+                "nonce": "0123456789abcdef"
+              }
+            }
+          },
+          "x-max-bytes": 32768
+        },
+        "responses": {
+          "200": {
+            "description": "Each offer's result, in order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffersTaken"
+                },
+                "example": {
+                  "send": "links",
+                  "offers": [
+                    {
+                      "result": "taken"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a request the tool makes: no cloud taken, or more than 50 offers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Its proof of work does not check out, or was used already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "413": {
+            "description": "Its length not given, or over 32768 bytes",
             "content": {
               "application/json": {
                 "schema": {
@@ -884,6 +995,13 @@
               "$ref": "#/components/schemas/Sha256"
             },
             "description": "Those of the files named that are held already, to be left out"
+          },
+          "send": {
+            "enum": [
+              "files",
+              "links"
+            ],
+            "description": "What a first stage sends of the files offered: the files, in its readout, or their links, to /v1/offers. A client given none sends files"
           }
         }
       },
@@ -1027,6 +1145,150 @@
         "type": "string",
         "pattern": "^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$",
         "description": "The Sonoff firmware version the device runs, or - for none"
+      },
+      "OfferedLink": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "sha256",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[\\x20-\\x7e]+$",
+            "description": "The file's name, as eWeLink gives it"
+          },
+          "version": {
+            "$ref": "#/components/schemas/StockVersion"
+          },
+          "sha256": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/ota/rom/[A-Za-z0-9]{32}/[A-Za-z0-9._-]{1,64}$",
+            "description": "The path of the link eWeLink gives the file, its server and query left out: of this shape for the cloud \"ewelink\""
+          }
+        }
+      },
+      "Offer": {
+        "type": "object",
+        "required": [
+          "model",
+          "stock_model",
+          "stock_version",
+          "files"
+        ],
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/Model"
+          },
+          "stock_model": {
+            "$ref": "#/components/schemas/StockModel"
+          },
+          "stock_version": {
+            "$ref": "#/components/schemas/StockVersion"
+          },
+          "device": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "The device, as a report names it (device_hash); null where the tool cannot tell. Checked, and not kept"
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/components/schemas/OfferedLink"
+            },
+            "description": "Each file eWeLink offers the device, each once; none for a device offered nothing, which is answered and not kept"
+          }
+        }
+      },
+      "Offers": {
+        "type": "object",
+        "required": [
+          "format",
+          "cloud",
+          "offers"
+        ],
+        "properties": {
+          "format": {
+            "const": 1
+          },
+          "tool_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[\\x20-\\x7e]+$"
+          },
+          "cloud": {
+            "enum": [
+              "ewelink"
+            ],
+            "description": "The cloud that offers the files: it says which shape a path takes and where the API fetches it"
+          },
+          "offers": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            },
+            "description": "The offers, none to ask only whether to send links (send)"
+          },
+          "nonce": {
+            "type": "string"
+          }
+        }
+      },
+      "OffersTaken": {
+        "type": "object",
+        "required": [
+          "send",
+          "offers"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "send": {
+            "enum": [
+              "files",
+              "links"
+            ],
+            "description": "As /v1/wanted says it: while \"files\", no offer is kept, each answered full, to send again once links are taken"
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "result"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "result": {
+                  "enum": [
+                    "taken",
+                    "have",
+                    "full",
+                    "refused"
+                  ],
+                  "description": "taken: kept; have: held already, its sender's again, enough of its device, or offered nothing - nothing more to send; full: a limit reached, or links not taken for now, to send another day; refused: not as the tool sends one"
+                },
+                "why": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "One an offer, in the order sent"
+          }
+        }
       }
     }
   }

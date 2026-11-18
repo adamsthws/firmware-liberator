@@ -277,9 +277,11 @@ test("one sender's readouts of one key are one, and take one of its day", async 
     statuses.push((await from(bindings, "192.0.2.9", { read: false, tool })).status);
   }
   assert.deepEqual(statuses, [201, 200, 200, 200]);
-  assert.equal((await from(bindings, "192.0.2.9", { tool: "e" })).status, 200, "nor a whole one of the same key");
+  // A whole one is not its first stage again: every run sends its devices' offers first.
+  assert.equal((await from(bindings, "192.0.2.9", { tool: "e" })).status, 201, "a whole one of the same key");
+  assert.equal((await from(bindings, "192.0.2.9", { tool: "g" })).status, 200, "but one whole one");
   const sender = (await bindings.DB.prepare("SELECT count FROM counters WHERE name LIKE 'sender:%'").first()).count;
-  assert.equal(sender, 1, "those not kept take none of its 20 a day");
+  assert.equal(sender, 2, "those not kept take none of its 20 a day");
   assert.equal((await from(bindings, "192.0.2.10", { read: false, tool: "f" })).status, 201, "another sender's is kept");
 });
 
@@ -654,7 +656,7 @@ test("asked first, a readout that would add nothing is not wanted - nor one its 
   assert.equal((await askFrom("192.0.2.2")).wanted, true, "another sender's would add one");
   await from(bindings, "192.0.2.2", { read: false });
   await from(bindings, "192.0.2.3", { read: false });
-  assert.deepEqual(await askFrom("192.0.2.4"), { wanted: false, why: "held", held: [] });
+  assert.deepEqual(await askFrom("192.0.2.4"), { wanted: false, why: "held", held: [], send: "files" });
   assert.equal((await askFrom("192.0.2.4", { ...ASKED, stock_version: "2.0.0" })).wanted, true);
   assert.equal((await askFrom("192.0.2.4", { ...ASKED, stage: "whole" })).wanted, true);
 });
@@ -880,6 +882,20 @@ test("asked first, a device enough readouts of are in is not wanted, any other i
   assert.equal(bindings.READOUTS.objects.size, 0);
 });
 
+test("asked first, the answer says whether a first stage sends its files or their links, as OFFERED_SEND says",
+  async () => {
+    assert.deepEqual(readout.SENDS, ["files", "links"]);
+    for (const [setting, send] of [[undefined, "files"], ["files", "files"], ["links", "links"], ["LINKS", "files"],
+      ["", "files"]]) {
+      const bindings = { ...env(), OFFERED_SEND: setting };
+      assert.equal((await ask(ASKED, bindings)).send, send, String(setting));
+      assert.equal((await ask({ ...ASKED, model: "OLDTHING" }, { ...bindings, ENOUGH: "OLDTHING" })).send, send,
+        "not wanted too");
+    }
+    const wrangler = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
+    assert.match(wrangler, /^\s*"OFFERED_SEND": "files"$/m, "files, until the maintainer flips it");
+  });
+
 test("twenty readouts a day are kept from one sender, counted under a keyed hash", async () => {
   assert.equal(readout.SENDER_DAILY, 20);
   const bindings = env();
@@ -921,7 +937,7 @@ test("asked first, the files held already are named, wanted or not", async () =>
   const { offered, files } = offering("an app");
   await send(post(readoutOf({ ...MANIFEST, model: "OTHERTHING", offered }, files)), bindings);
   const answer = await ask({ ...ASKED, firmware: [offered[0].sha256, "c".repeat(64)] }, bindings);
-  assert.deepEqual(answer, { wanted: true, held: [offered[0].sha256] });
+  assert.deepEqual(answer, { wanted: true, held: [offered[0].sha256], send: "files" });
   bindings.READOUTS.objects.set(`readouts/firmware/${"c".repeat(64)}`, { size: 1 });
   assert.deepEqual((await ask({ ...ASKED, firmware: ["c".repeat(64)] }, bindings)).held, ["c".repeat(64)]);
 });
@@ -939,7 +955,8 @@ test("asked first, a full day says so, by count or by bytes, and the next day do
   for (const [count, bytes] of [[readout.DAILY_COUNT, 1], [1, readout.DAILY_BYTES]]) {
     const bindings = env();
     dayCount(bindings, "2026-11-07", count, bytes);
-    assert.deepEqual(await ask({ ...ASKED, model: "FULL1" }, bindings, at), { wanted: false, why: "full", held: [] });
+    assert.deepEqual(await ask({ ...ASKED, model: "FULL1" }, bindings, at),
+      { wanted: false, why: "full", held: [], send: "files" });
     assert.equal((await ask({ ...ASKED, model: "FULL1" }, bindings, new Date("2026-11-08T00:00:01Z"))).wanted, true);
   }
 });

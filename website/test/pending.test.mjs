@@ -44,6 +44,18 @@ test("a readout never taken as right is deleted after its days, with its marks, 
   assert.equal((await read(env.DB, PENDING)).bytes, 30);
 });
 
+test("a readout deleted takes the links it gave with it", async () => {
+  const env = { DB: d1(), READOUTS: bucket() };
+  await kept(env, "old-pending", "pending", "2026-05-01T10:00:00Z");
+  await kept(env, "old-right", "quorum", "2026-05-01T10:00:00Z");
+  for (const id of ["old-pending", "old-right"]) {
+    await env.DB.prepare("INSERT INTO offer_links (readout, sha, path, cloud) VALUES (?1, ?2, '/ota/rom/x/y', 'ewelink')")
+      .bind(id, "a".repeat(64)).run();
+  }
+  await prunePending(env, "2026-11-09");
+  assert.deepEqual((await env.DB.prepare("SELECT readout FROM offer_links").all()).results, [{ readout: "old-right" }]);
+});
+
 test("an address never confirmed is deleted after its days", async () => {
   assert.equal(SIGNUP_DAYS, 7);
   const env = { DB: d1(), READOUTS: bucket() };

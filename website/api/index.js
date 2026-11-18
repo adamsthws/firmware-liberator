@@ -1,8 +1,8 @@
 // api.firmwareliberator.com: the project's API (tools/autoflash/readout.py,
 // .github/readouts.md). A Worker of its own, apart from the website's, so
-// nothing sent here can touch the site. Six paths, as openapi.json describes
-// them: four a POST from the tool, under /v1/ - /v1/reports (reports.js, which
-// says how it is guarded), and three for readouts and sign-ups - and /confirm
+// nothing sent here can touch the site. Seven paths, as openapi.json describes
+// them: five a POST from the tool, under /v1/ - /v1/reports (reports.js, which
+// says how it is guarded), and four for readouts and sign-ups - and /confirm
 // and /forget, which a person opens from an email.
 // Every one answers 503 while INGEST is not "on". A sender is counted by its
 // address, an IPv6 one by its /48 (sender.js).
@@ -10,7 +10,12 @@
 //   it is made. Its product model, firmware model and version, the stage it
 //   would be (a first stage, or a whole memory), and the firmware eWeLink
 //   offers it, by SHA-256: the answer says whether it is wanted, and which of
-//   those files are held already, so they are left out.
+//   those files are held already, so they are left out, and whether a first
+//   stage sends its offered files or their links (OFFERED_SEND).
+// - /v1/offers: first stages sent as links in place of files - every device's
+//   in an account, unasked, as reports are - each held and agreed as a first
+//   stage is; once one is taken as right, the API fetches its files itself
+//   (offered.js).
 // - /v1/readout: a readout, made with its owner's consent. Kept only if it adds
 //   something: fewer than PER_KEY readouts of that model and version at that
 //   stage are held (a whole one taking a first stage's place too), or it
@@ -35,8 +40,8 @@
 //   with PROOF_BITS zero bits, about 17 million tries (10 to 30 seconds in the
 //   tool's Python, once a readout), made within PROOF_AGE of now and good for
 //   that body alone. Hardware made for it does that in milliseconds, so the
-//   daily limits below, not this, are what bound the bucket. /wanted and
-//   /notify ask lighter work (LIGHT_PROOF_BITS, a second or two) good for a
+//   daily limits below, not this, are what bound the bucket. /wanted, /offers
+//   and /notify ask lighter work (LIGHT_PROOF_BITS, a second or two) good for a
 //   minute (LIGHT_PROOF_AGE), and taken once: each request is worked for
 //   afresh. A device's names are taken only as a model's name is written
 //   (MODEL, STOCK_MODEL, STOCK_VERSION), other text only as printable ASCII.
@@ -46,9 +51,9 @@
 //   limiter, never stored), and DAILY_COUNT readouts and DAILY_BYTES a day from
 //   everyone, counted in the database (counters.js), where two at once can
 //   never both pass the limit. /wanted reads that count too, and says so once
-//   the day is full. NOTIFY_DAILY addresses a day may be given. /wanted and
-//   /notify are not held to READOUT_LIMIT, which a batch's questions would
-//   use up before its readouts: the hostname's rate-limiting rule
+//   the day is full. NOTIFY_DAILY addresses a day may be given. /wanted,
+//   /offers and /notify are not held to READOUT_LIMIT, which a batch's
+//   questions would use up before its readouts: the hostname's rate-limiting rule
 //   (tools/repo/cloudflare_settings.py) holds them, as it does every path.
 // - Until the database has every migration this code needs (database.js),
 //   each path answers 503, so the tool tries again later.
@@ -146,9 +151,27 @@ export const AGREEMENT_SETTING = "email_on_agreement";
 // Readouts kept a day from one sender's address (SENDER_DAILY), counted under
 // a keyed hash of it (SENDER_KEY, a Worker secret), never the address itself.
 export const SENDER_DAILY = 20;
+// /v1/offers: a request of OFFERS_PER_REQUEST offers at most, OFFERS_MAX_BYTES
+// in all (50 offers of a few files each), an account's devices: more go in
+// the next.
+export const OFFERS_MAX_BYTES = 32 * 1024;
+export const OFFERS_PER_REQUEST = 50;
+// Offers kept a day from one sender (sender.js), counted as reports are. Only
+// offers not held count, so an account's are its devices' models and firmware
+// told apart, a few even in a large one; more go another day. As SENDER_DAILY,
+// so a flood needs OFFERS_DAILY / SENDER_OFFERS_DAILY addresses to fill a day.
+export const SENDER_OFFERS_DAILY = 20;
+// Offers kept a day from everyone: what bounds the readouts table's growth
+// from them. One held already, or its sender's again, counts against neither.
+export const OFFERS_DAILY = 2000;
+// What /v1/wanted tells the tool a first stage sends: its offered files, or
+// their links (/v1/offers) - OFFERED_SEND in wrangler.jsonc, the first of
+// these when it is anything else. A tool told nothing sends files.
+export const SENDS = ["files", "links"];
+const sendOf = (env) => (SENDS.includes(env.OFFERED_SEND) ? env.OFFERED_SEND : SENDS[0]);
 
 import { answer } from "./answer.js";
-import { read, release, reserve } from "./counters.js";
+import { read, release, reserve, reserveUpTo } from "./counters.js";
 import { ready } from "./database.js";
 import { refreshDownloads } from "./downloads.js";
 import { PENDING, SIGNUP_DAYS } from "./pending.js";
@@ -158,6 +181,7 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { SITE, page as shellPage } from "../src/shell.mjs";
 import { nightly } from "./nightly.js";
+import { CLOUDS, fetchOffer } from "./offered.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
 export { work };
@@ -166,16 +190,18 @@ export { work };
 // /v1/, kept working for every version of the tool released against them, and
 // the two pages an email links to. tools/repo/cloudflare_settings.py's firewall
 // rule, made from openapi.json, lets through these and their methods alone.
-export const ROUTES = { "/v1/readout": readout, "/v1/wanted": wanted, "/v1/notify": notify, "/v1/reports": reports,
-  "/confirm": confirm, "/forget": forget };
+export const ROUTES = { "/v1/readout": readout, "/v1/wanted": wanted, "/v1/offers": offers, "/v1/notify": notify,
+  "/v1/reports": reports, "/confirm": confirm, "/forget": forget };
 
 export default {
   // Every answer names the code it came from (API-Tree): the git tree of
   // website/api/ the website workflow deployed, which the release workflow
   // waits to see before it releases a tool that talks to it
   // (tools/repo/api_health.py deployed).
-  async fetch(request, env) {
-    const answered = await handle(request, env);
+  // `context`: the Worker's, whose waitUntil fetches an offer's files after
+  // the answer (offered.js).
+  async fetch(request, env, context) {
+    const answered = await handle(request, env, context);
     if (!env.API_TREE) {
       return answered;
     }
@@ -200,7 +226,7 @@ export default {
   },
 };
 
-async function handle(request, env) {
+async function handle(request, env, context) {
   const route = ROUTES[new URL(request.url).pathname];
   if (!route) {
     return answer(404, { error: "no such path: the tool's are under /v1/" });
@@ -214,7 +240,7 @@ async function handle(request, env) {
   if (!(await ready(env.DB))) {
     return answer(503, { error: "the API is being updated: try again later" }, { "Retry-After": "300" });
   }
-  return route(request, env);
+  return route(request, env, new Date(), context);
 }
 
 // The manifest a readout starts with, or null: the first file of its tar,
@@ -361,8 +387,11 @@ const firmwareKey = (sha) => `readouts/firmware/${sha}`;
 
 const isHeld = async (env, key) => (await env.READOUTS.head(key)) !== null;
 
-// A readout's key: its product, firmware model and version.
-const keyOf = (product, model, version) => `${product.toUpperCase()}|${model}|${version}`;
+// A readout's key: its product, firmware model and version, and the part its
+// cloud adds (offered.js CLOUDS: none for eWeLink's, which every readout from
+// before is of).
+const keyOf = (product, model, version, cloud = CLOUDS.ewelink) =>
+  `${product.toUpperCase()}|${model}|${version}${cloud.key}`;
 
 // The readouts table's rows that hold a place of key ?1 at stage ?2, offered
 // ?o: all but those rejected. First stages are held each offer apart, as
@@ -398,11 +427,19 @@ const PLACE_LEFT = (n, c, o) => `((SELECT count(*) FROM readouts WHERE key = ?1 
 const checkSince = (now) => new Date(now.getTime() - CHECK_DAYS * 86_400_000).toISOString();
 
 // Whether `sender` (?3) has a readout of key ?1 a readout at stage ?2,
-// offered ?o, would repeat: one of that offer, or a whole one if it is whole.
-// So a sender with many of one device sends one, three agreeing come from
-// three senders, and an owner may send a first stage again for a new offer.
+// offered ?o, would repeat: of a whole one, a whole one; of a first stage, one
+// of that offer, a first stage or a whole one, as a whole one holds all a
+// first stage does. Not a whole one its own first stage: every run sends its
+// devices' offers before an owner chooses to read one out. So a sender with
+// many of one device sends one of each, three agreeing come from three
+// senders, and an owner may send a first stage again for a new offer.
 const THEIRS = (o) => `EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND sender = ?3
-  AND (offer = ?${o} OR (?2 = 'whole' AND stage = 'whole')))`;
+  AND (CASE WHEN ?2 = 'whole' THEN stage = 'whole' ELSE offer = ?${o} END))`;
+// The offer a readout's row names, ?o: none ('') for a whole one whose sender's
+// first stage names it already, so one sender's two count as one towards the
+// offer (OFFER_AGREES) and keep to one row of key, offer and sender.
+const OFFER_NAMED = (o) => `CASE WHEN ?2 = 'whole' AND EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND sender = ?3
+  AND stage = 'first' AND offer = ?${o}) THEN '' ELSE ?${o} END`;
 
 // Whether a readout at `stage`, offered `offer`, would add anything for
 // `sender`, from `network`, at `now`: a place is left for it, and that sender
@@ -489,11 +526,12 @@ const OFFER_AGREES = `INSERT INTO agreed_offers (key, offer, offered, day) SELEC
 // agreed once PER_KEY of them, from MIN_NETWORKS networks, hold the same
 // fingerprint, or that fingerprint is taken as right already, and no other is.
 // The maintainer is told of each. A check that agrees with none taken as
-// right is a dispute.
+// right is a dispute. False if it is not held; else {offerAgreed}, whether
+// its offer is newly taken as right, so its files can be fetched (offered.js).
 async function hold(env, row, now) {
   const taken = await env.DB.prepare(
     `INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, offer, offered, checked)
-     SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8, ?11, ?12, ?2 = 'whole' AND ${AGREED(11)}
+     SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8, ${OFFER_NAMED(11)}, ?12, ?2 = 'whole' AND ${AGREED(11)}
      WHERE ${PLACE_LEFT(9, 10, 11)} AND NOT ${THEIRS(11)}
      ON CONFLICT DO NOTHING RETURNING id, checked`,
   ).bind(row.key, row.stage, row.sender, row.id, row.fingerprint, row.bytes, row.object, row.received, row.network,
@@ -541,7 +579,7 @@ async function hold(env, row, now) {
   } else if (taken.checked) {
     await tellDisputed(env, row);
   }
-  return true;
+  return { offerAgreed: Boolean(offerAgreed) };
 }
 
 // The maintainer's email that readouts of a key have come to agree: unless
@@ -617,8 +655,9 @@ const fullness = async (env, day) => {
   return today.count >= DAILY_COUNT || today.bytes >= DAILY_BYTES ? "full" : null;
 };
 
-// A question of the tool's, its light work done: the parsed JSON, or a Response.
-async function question(request, env, now, what) {
+// A question of the tool's, its light work done: the parsed JSON, or a
+// Response. `most`: the bytes it may be.
+async function question(request, env, now, what, most = QUESTION_MAX_BYTES) {
   if (request.method !== "POST") {
     return answer(405, { error: "asked by the tool, with POST" }, { Allow: "POST" });
   }
@@ -626,8 +665,8 @@ async function question(request, env, now, what) {
     return answer(415, { error: `${what} is application/json` });
   }
   const declared = Number(request.headers.get("Content-Length"));
-  if (!Number.isInteger(declared) || declared <= 0 || declared > QUESTION_MAX_BYTES) {
-    return answer(413, { error: `${what} says its length, at most ${QUESTION_MAX_BYTES} bytes` });
+  if (!Number.isInteger(declared) || declared <= 0 || declared > most) {
+    return answer(413, { error: `${what} says its length, at most ${most} bytes` });
   }
   const body = await request.arrayBuffer();
   if (body.byteLength !== declared) {
@@ -660,7 +699,8 @@ async function question(request, env, now, what) {
 // {"format": 1, "model", "stock_model", "stock_version", "stage": "first"|"whole",
 //  "firmware": [<SHA-256 of each file eWeLink offers it>], "device_hash"}. Answers
 // {"wanted": bool, "why": "enough"|"held"|"full"|"store-full"|"limit" when not,
-// "held": [<those of the files kept already>]}.
+// "held": [<those of the files kept already>], "send": "files"|"links"}: a first
+// stage sends its offered files, or their links to /v1/offers (OFFERED_SEND).
 export async function wanted(request, env, now = new Date()) {
   const asked = await question(request, env, now, "question");
   if (asked instanceof Response) {
@@ -681,7 +721,8 @@ export async function wanted(request, env, now = new Date()) {
       held.push(sha);
     }
   }
-  const no = (why) => answer(200, { wanted: false, why, held });
+  const send = sendOf(env);
+  const no = (why) => answer(200, { wanted: false, why, held, send });
   if (enoughOf(env).includes(asked.model.toUpperCase())) {
     return no("enough");
   }
@@ -699,10 +740,12 @@ export async function wanted(request, env, now = new Date()) {
   if (sender && (await read(env.DB, sender)).count >= SENDER_DAILY) {
     return no("limit");
   }
-  return answer(200, { wanted: true, held });
+  return answer(200, { wanted: true, held, send });
 }
 
-export async function readout(request, env, now = new Date()) {
+// `context` and `fetcher` as offers takes them: a readout may be the one that
+// takes an offer sent as links as right.
+export async function readout(request, env, now = new Date(), context = null, fetcher = fetch) {
   if (request.method !== "POST") {
     return answer(405, { error: "readouts are sent here by the tool, with POST" }, { Allow: "POST" });
   }
@@ -804,27 +847,50 @@ export async function readout(request, env, now = new Date()) {
   const row = { key: readoutKey, stage, sender: from, network, id, fingerprint: await fingerprintOf(manifest, stage),
     bytes: body.byteLength, object: key, received: now.toISOString(), offer, offered: offeredVersions(manifest),
     offerFiles: offeredShas(manifest).filter((sha) => /^[0-9a-f]{64}$/.test(String(sha))).length };
-  if (!(await hold(env, row, now))) {
+  const held = await hold(env, row, now);
+  if (!held) {
     await giveBack();   // its place taken meanwhile, by another sent at once
     return answer(200, { enough: true });
   }
   try {
     await keep(env, key, body, manifest, id, offered);
   } catch (error) {
-    // Nothing of it left behind: a mark left would say a file is held that
-    // is not, and nothing would ever delete it.
-    const { results: marks } = await env.DB.prepare("SELECT sha FROM readout_firmware WHERE readout = ?").bind(id).all();
-    for (const mark of marks) {
-      await env.READOUTS.delete(firmwareKey(mark.sha));
-    }
-    await env.READOUTS.delete(key);
-    await env.DB.prepare("DELETE FROM readout_firmware WHERE readout = ?").bind(id).run();
-    await env.DB.prepare("DELETE FROM readout_networks WHERE id = ?").bind(id).run();
-    await env.DB.prepare("DELETE FROM readouts WHERE id = ?").bind(id).run();
+    await unkeep(env, id, key);
     await giveBack();
     throw error;
   }
+  if (held.offerAgreed) {
+    await fetchAgreed(env, [[readoutKey, offer]], now, context, fetcher);
+  }
   return answer(201, { id });
+}
+
+// Nothing left of a readout whose keeping failed part way: a mark left would
+// say a file is held that is not, and nothing would ever delete it.
+async function unkeep(env, id, object) {
+  const { results: marks } = await env.DB.prepare("SELECT sha FROM readout_firmware WHERE readout = ?").bind(id).all();
+  for (const mark of marks) {
+    await env.READOUTS.delete(firmwareKey(mark.sha));
+  }
+  await env.READOUTS.delete(object);
+  await env.DB.batch(["readout_firmware WHERE readout", "offer_links WHERE readout", "readout_networks WHERE id",
+    "readouts WHERE id"].map((which) => env.DB.prepare(`DELETE FROM ${which} = ?`).bind(id)));
+}
+
+// The files of each offer newly taken as right (each [key, offer]) that links
+// were sent for, fetched (offered.js): after the answer, where the Worker
+// gives a `context` to wait on, else before it.
+async function fetchAgreed(env, agreed, now, context, fetcher) {
+  const fetching = (async () => {
+    for (const [key, offer] of agreed) {
+      await fetchOffer(env, key, offer, now, { totalBytes: TOTAL_BYTES, fetcher });
+    }
+  })();
+  if (context) {
+    context.waitUntil(fetching);
+  } else {
+    await fetching;
+  }
 }
 
 // A readout, with the marks of the offered files it holds (offeredIn).
@@ -846,6 +912,185 @@ async function keep(env, key, body, manifest, id, offered) {
       await env.READOUTS.put(firmwareKey(sha), id, { customMetadata: { readout: key } });
     }
   }
+}
+
+// Why one offer sent to /v1/offers is refused, or null: its device named as
+// /v1/wanted takes it, and each file by a name, the version offered, its
+// SHA-256 and a link of its cloud's shape, each file once.
+function offerProblem(offer, cloud) {
+  if (!fits(offer?.model, MODEL) || !fits(offer.stock_model, STOCK_MODEL) || !fits(offer.stock_version, STOCK_VERSION)) {
+    return "its device is not named as the tool names one";
+  }
+  if (!(offer.device == null || fits(offer.device, DEVICE_HASH))) {
+    return "its device is not a device_hash";
+  }
+  const files = offer.files;
+  if (!Array.isArray(files) || files.length > MAX_FIRMWARE) {
+    return `its files are not a list of at most ${MAX_FIRMWARE}`;
+  }
+  for (const file of files) {
+    if (!text(file?.name) || !fits(file.version, STOCK_VERSION) || !fits(file.sha256, /^[0-9a-f]{64}$/)) {
+      return "a file is not named, with its version and SHA-256, as the tool names one";
+    }
+    if (!fits(file.path, cloud.link)) {
+      return "a file's link is not of its cloud's shape";
+    }
+  }
+  if (new Set(files.map((file) => file.sha256)).size !== files.length) {
+    return "a file is named twice";
+  }
+  return null;
+}
+
+// The links of an offer's files, as offer_links keeps them: ?1 the readout,
+// ?2 the cloud, ?3 its files as JSON.
+const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud)
+  SELECT ?1, json_extract(value, '$.sha256'), json_extract(value, '$.path'), ?2 FROM json_each(?3)`;
+
+// The day's count of offers kept (counters.js).
+const offersOn = (day) => `offers:${day}`;
+
+// First stages sent as links, in place of their files (.github/readouts.md):
+// {"format": 1, "tool_version", "cloud": one of CLOUDS, "offers": [{"model",
+// "stock_model", "stock_version", "device", "files": [{"name", "version",
+// "sha256", "path"}]}]}, every device's in an account, sent unasked. Each offer
+// is held as a first stage is (hold), its row's object a manifest alone,
+// under the key a first stage of that device has, so it agrees with first
+// stages and whole readouts naming the same files, each sender once. Its
+// links are kept (offer_links); once an offer is taken as right, the API
+// fetches each file of it not held (offered.js), keeping one only if it is
+// what was agreed on. Answers {"send", "offers": [{"result", "why"}]}: `send`
+// as /v1/wanted says it, and one result an offer, in order. No offers at all
+// is the tool's question whether to send links, answered with nothing counted
+// or kept; and while `send` is "files", offers are answered "full" and nothing
+// is kept, so the tool sends them again once links are taken. Otherwise: "taken"; "have", held already, its sender's again, enough of its
+// device, or offered nothing (counted against nothing); "full", past
+// SENDER_OFFERS_DAILY, OFFERS_DAILY or the store's limits, to send another
+// day; "refused", not as the tool sends one (offerProblem).
+// `context` and `fetcher` as fetchAgreed takes them.
+export async function offers(request, env, now = new Date(), context = null, fetcher = fetch) {
+  const asked = await question(request, env, now, "request", OFFERS_MAX_BYTES);
+  if (asked instanceof Response) {
+    return asked;
+  }
+  const list = asked.offers;
+  if (typeof asked.cloud !== "string" || !Object.hasOwn(CLOUDS, asked.cloud)
+      || !(asked.tool_version === undefined || text(asked.tool_version, 32))
+      || !Array.isArray(list) || list.length > OFFERS_PER_REQUEST) {
+    return answer(400, { error: `that is not a request this tool makes: a cloud of ${Object.keys(CLOUDS).join(", ")}, `
+      + `and at most ${OFFERS_PER_REQUEST} offers` });
+  }
+  const send = sendOf(env);
+  const cloud = CLOUDS[asked.cloud];
+  if (send !== "links") {
+    return answer(200, { send, offers: list.map((offer) => {
+      const why = offerProblem(offer, cloud);
+      return why ? { result: "refused", why } : { result: "full", why: "the API takes files, not links, for now" };
+    }) });
+  }
+  if (!list.length) {
+    return answer(200, { send, offers: [] });
+  }
+  if (!env.SENDER_KEY) {
+    return answer(503, { error: "the API is being set up: try again later" }, { "Retry-After": "3600" });
+  }
+  const day = now.toISOString().slice(0, 10);
+  const results = [];
+  const fresh = [];
+  for (const [index, offer] of list.entries()) {
+    const why = offerProblem(offer, cloud);
+    if (why) {
+      results[index] = { result: "refused", why };
+      continue;
+    }
+    if (!offer.files.length) {
+      results[index] = { result: "have", why: "offered nothing" };
+      continue;
+    }
+    if (enoughOf(env).includes(offer.model.toUpperCase())) {
+      results[index] = { result: "have", why: "enough" };
+      continue;
+    }
+    const key = keyOf(offer.model, offer.stock_model, offer.stock_version, cloud);
+    const sender = await senderOf(env, request, key);
+    const network = await networkOf(env, request, key);
+    const offerHash = await offerOf(offer.files.map((file) => file.sha256));
+    if (!(await adds(env, key, "first", sender, network, now, offerHash))) {
+      results[index] = { result: "have", why: "held" };
+      continue;
+    }
+    const manifest = { format: FORMAT, cloud: asked.cloud, tool: asked.tool_version ?? "-", model: offer.model,
+      stock_model: offer.stock_model, stock_version: offer.stock_version, read: false,
+      offered: offer.files.map((file) => ({ name: file.name, version: file.version, sha256: file.sha256,
+        link: file.path })) };
+    fresh.push({ index, offer, key, sender, network, offerHash, manifest, body: JSON.stringify(manifest) });
+  }
+  // The sender's day first, then everyone's: what everyone's has no room for
+  // is given back to the sender's. Then the store's room, for them all at once.
+  const senderDay = `offer-sender:${await keyedHash(env, `offers|${addressOf(request)}`)}:${day}`;
+  const theirs = fresh.length ? await reserveUpTo(env.DB, senderDay, day, fresh.length, SENDER_OFFERS_DAILY) : 0;
+  const granted = theirs ? await reserveUpTo(env.DB, offersOn(day), day, theirs, OFFERS_DAILY) : 0;
+  if (granted < theirs) {
+    await release(env.DB, senderDay, 0, theirs - granted);
+  }
+  for (const each of fresh.slice(granted)) {
+    results[each.index] = { result: "full", why: "enough offers for today: send it another day" };
+  }
+  let taking = fresh.slice(0, granted);
+  const bytes = taking.reduce((total, each) => total + each.body.length, 0);
+  const room = [[READOUTS_EVER, TOTAL_BYTES], [PENDING, PENDING_BYTES]];
+  const reserved = [];
+  for (const [name, mostBytes] of taking.length ? room : []) {
+    if (await reserve(env.DB, name, null, { by: taking.length, bytes, mostBytes })) {
+      reserved.push(name);
+    }
+  }
+  // Each place given back, by `count` offers of `size` bytes.
+  const giveBack = async (count, size) => {
+    for (const name of reserved) {
+      await release(env.DB, name, size, count);
+    }
+    await release(env.DB, senderDay, 0, count);
+    await release(env.DB, offersOn(day), 0, count);
+  };
+  if (reserved.length < room.length) {
+    await giveBack(taking.length, bytes);
+    for (const each of taking) {
+      results[each.index] = { result: "full", why: "the store of readouts is full: send it another time" };
+    }
+    taking = [];
+  }
+  const agreed = [];
+  for (const each of taking) {
+    const digest = hex(await sha256(new TextEncoder().encode(`${each.key}|${each.offerHash}|${each.sender}`)));
+    const id = `${day}-${digest.slice(0, 12)}`;
+    const object = `readouts/${day}/${digest.slice(0, 24)}.json`;
+    const held = await hold(env, { key: each.key, stage: "first", sender: each.sender, network: each.network, id,
+      fingerprint: each.offerHash, bytes: each.body.length, object, received: now.toISOString(), offer: each.offerHash,
+      offered: offeredVersions(each.manifest), offerFiles: each.offer.files.length }, now);
+    if (!held) {
+      await giveBack(1, each.body.length);   // its place taken meanwhile, by another sent at once
+      results[each.index] = { result: "have", why: "held" };
+      continue;
+    }
+    try {
+      await env.DB.prepare(LINKS).bind(id, asked.cloud, JSON.stringify(each.offer.files)).run();
+      await env.READOUTS.put(object, each.body, { httpMetadata: { contentType: "application/json" },
+        customMetadata: { tool: each.manifest.tool.slice(0, 16), model: each.offer.model, read: "false" } });
+    } catch (error) {
+      await unkeep(env, id, object);
+      await giveBack(1, each.body.length);
+      throw error;
+    }
+    results[each.index] = { result: "taken" };
+    if (held.offerAgreed) {
+      agreed.push([each.key, each.offerHash]);
+    }
+  }
+  if (agreed.length) {
+    await fetchAgreed(env, agreed, now, context, fetcher);
+  }
+  return answer(200, { send, offers: results });
 }
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;

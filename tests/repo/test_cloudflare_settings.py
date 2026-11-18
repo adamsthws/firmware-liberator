@@ -1050,7 +1050,7 @@ class ApiAndStatsTests(unittest.TestCase):
         for path in cs.API_PATHS:
             self.assertIn(f'"{path}"', expression)
         self.assertIn('(http.request.method in {"POST"} and http.request.uri.path in '
-                      '{"/v1/wanted" "/v1/readout" "/v1/reports"})', expression)
+                      '{"/v1/wanted" "/v1/offers" "/v1/readout" "/v1/reports"})', expression)
         # The browser's question before the website's sign-up page posts.
         self.assertIn('(http.request.method in {"POST" "OPTIONS"} and http.request.uri.path in {"/v1/notify"})',
                       expression)

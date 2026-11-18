@@ -5,10 +5,11 @@
 // `by` more of `name` (one, by default), adding `bytes`, if that keeps it
 // within `most` and `mostBytes`: whether it did. All or none: never part.
 // `day` (YYYY-MM-DD) marks a day's count, which the nightly job deletes
-// later; null keeps it for good.
+// later; null keeps it for good. `by` 0 adds bytes alone: a file added to
+// something counted already (offered.js).
 export async function reserve(db, name, day, { by = 1, bytes = 0, most = Number.MAX_SAFE_INTEGER,
   mostBytes = Number.MAX_SAFE_INTEGER } = {}) {
-  if (!(Number.isInteger(by) && by >= 1) || by > most || bytes > mostBytes) {
+  if (!(Number.isInteger(by) && (by >= 1 || (by === 0 && bytes > 0))) || by > most || bytes > mostBytes) {
     return false;
   }
   const row = await db.prepare(

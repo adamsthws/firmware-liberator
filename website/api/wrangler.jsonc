@@ -75,6 +75,11 @@
     "INGEST": "on",
     // eWeLink product models enough readouts of are in, comma-separated:
     // the next is thanked and not kept.
-    "ENOUGH": ""
+    "ENOUGH": "",
+    // What a first stage sends of the files eWeLink offers a device, as
+    // /v1/wanted tells the tool: "files", or "links" for the API to fetch
+    // them itself (/v1/offers, offered.js). Back to "files" if eWeLink stops
+    // giving files by their links: .github/readouts.md says when.
+    "OFFERED_SEND": "files"
   }
 }

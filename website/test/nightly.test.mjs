@@ -1,7 +1,7 @@
 // api/nightly.js and api/snapshot.js: what is kept of the reports for good,
 // and the public figures made from it.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { LATEST_MIGRATION } from "../api/database.js";
@@ -36,6 +36,15 @@ function bucket() {
 }
 
 const env = () => ({ DB: d1(), STATS: bucket() });
+// The work a light proof asks, for `body` at `at`, at one bit.
+function solve(body, at) {
+  const digest = createHash("sha256").update(body).digest("hex");
+  for (let nonce = 0; ; nonce += 1) {
+    if (createHash("sha256").update(`${at.getTime() / 1000}:${digest}:${nonce}`).digest()[0] < 128) {
+      return nonce;
+    }
+  }
+}
 const rows = (bindings, sql, ...values) => bindings.DB.db.prepare(sql).all(...values).map((row) => ({ ...row }));
 const figures = (bindings) => JSON.parse(bindings.STATS.objects.get(night.SNAPSHOT_KEY).body);
 // Models enough senders have given, over enough days, to be shown (vouching).
@@ -327,6 +336,55 @@ test("a night costs a fixed few queries, well within even the free plan's 50", a
   await night.nightly({ ...bindings, DB: counted }, NIGHT);
   assert.ok(queries <= 25, `${queries} queries`);
 });
+
+test("an offer taken as right whose files the cloud did not give is fetched again, within the day's fetches",
+  async () => {
+    const { offers, TOTAL_BYTES } = await import("../api/index.js");
+    const { work } = await import("../api/proof-of-work.js");
+    const { OFFER_FETCHES_DAILY, OFFER_RETRY_EACH_NIGHT } = await import("../api/offered.js");
+    const before = work.bits;
+    work.bits = 1;
+    const app = Buffer.from("the app eWeLink offers");
+    const path = "/ota/rom/0123456789abcdef0123456789ABCDEF/user1.bin";
+    const url = `http://eu-otadl.coolkit.cc:8088${path}?deviceid=0&ts=1&sign=0`;
+    const asked = [];
+    // eWeLink's file server: down, then giving the file.
+    let up = false;
+    const fetcher = async (where) => {
+      asked.push(where);
+      return up ? new Response(app) : new Response("down", { status: 503 });
+    };
+    const bindings = { ...env(), READOUTS: { ...bucket(), delete: async () => {} }, SENDER_KEY: "a test key",
+      OFFERED_SEND: "links" };
+    const files = [{ name: "user1.bin", version: "1.2.0", sha256: createHash("sha256").update(app).digest("hex"),
+      path }];
+    for (const [n, address] of ["192.0.2.1", "192.0.2.2", "192.0.2.3"].entries()) {
+      const at = new Date(NIGHT.getTime() - 86_400_000 + n * 1000);
+      const body = Buffer.from(JSON.stringify({ format: 1, cloud: "ewelink", nonce: address, offers: [{
+        model: "NEWTHING", stock_model: "SN-NEW-01", stock_version: "1.0.0", files }] }));
+      const sent = new Request("https://api.firmwareliberator.com/v1/offers", { method: "POST", body, headers: {
+        "Content-Type": "application/json", "Content-Length": String(body.length), "CF-Connecting-IP": address,
+        "X-Proof": `${at.getTime() / 1000}:${solve(body, at)}` } });
+      Object.defineProperty(sent, "cf", { value: { asn: 64501 + n } });
+      assert.equal((await offers(sent, bindings, at, null, fetcher)).status, 200);
+    }
+    work.bits = before;
+    assert.equal(asked.length, 1, "tried once it agreed, and the cloud was down");
+    const limits = { DAILY_COUNT: 100, DAILY_BYTES: 1, TOTAL_BYTES, NOTIFY_DAILY: 1, REPORTS_DAILY: 1 };
+    bindings.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)")
+      .run("offer-fetches:2026-11-10", "2026-11-10", OFFER_FETCHES_DAILY);
+    up = true;
+    assert.deepEqual((await night.nightly(bindings, NIGHT, limits, fetcher)).offers, { offers: 1, fetched: 0, missing: 1 },
+      "the day's fetches used up");
+    assert.equal(asked.length, 1);
+    bindings.DB.db.prepare("DELETE FROM counters WHERE name = 'offer-fetches:2026-11-10'").run();
+    assert.deepEqual((await night.nightly(bindings, NIGHT, limits, fetcher)).offers, { offers: 1, fetched: 1, missing: 0 });
+    assert.deepEqual(asked, [url, url]);
+    assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${files[0].sha256}`));
+    assert.deepEqual((await night.nightly(bindings, NIGHT, limits, fetcher)).offers, { offers: 0, fetched: 0, missing: 0 },
+      "held, it is not fetched again");
+    assert.ok(OFFER_RETRY_EACH_NIGHT >= 1);
+  });
 
 test("the nightly cron runs the nightly job; the hourly one the reminders alone", async () => {
   const config = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
