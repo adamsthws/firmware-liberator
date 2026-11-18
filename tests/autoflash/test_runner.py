@@ -660,6 +660,16 @@ class GoBackTests(unittest.TestCase):
         ended.assert_called_once_with("stopped")
         self.assertIn(f"after it was sent {runner.GO_BACK_LIMIT + 1} times", self.ctx.last_failure)
 
+    def test_tried_again_the_step_not_taken_is_sent_afresh(self):
+        # Seen in an attended S61 run: tried again as it said to, once the
+        # device was switched off and on, the run went on from the check, sent
+        # nothing, and failed at once the same way.
+        self.state.mark("E1", DONE)
+        self.state.capture("E1.sent_again", runner.GO_BACK_LIMIT)
+        self.execute()
+        self.assertEqual(self.state.status("E1"), "pending")
+        self.assertEqual(self.state.data["captures"]["E1.sent_again"], 0)
+
 
 class GoBackRestartTests(unittest.TestCase):
     """A step sent again and again without taking: before the run stops, the
@@ -691,6 +701,15 @@ class GoBackRestartTests(unittest.TestCase):
         restarted.assert_not_called()
         self.assertEqual(code, 1)
         ended.assert_called_once_with("stopped")
+
+    def test_tried_again_after_it_stopped_its_restart_is_there_again(self):
+        # Tried again from What next, once the device was switched off and on:
+        # as many tries as the first go had, the restart among them, not half.
+        self.state.capture("E1.restarted", True)
+        with mock.patch.object(runner.restart, "restart"):
+            self.assertEqual(self.execute()[0], 1)
+        self.assertEqual((self.state.data["captures"]["E1.sent_again"],
+                          self.state.data["captures"]["E1.restarted"]), (0, False))
 
     def test_one_that_cannot_be_restarted_stops_the_run_asking_for_it(self):
         with mock.patch.object(runner.restart, "restart", return_value=False):

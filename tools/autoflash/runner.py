@@ -126,6 +126,14 @@ def _execute(ctx: Context, step: str) -> int:
             return 0
         if times > GO_BACK_LIMIT:
             ctx.state.mark(step, FAILED, error=back.reason)
+            # Tried again, as the run says to once the device is switched off
+            # and on, the step not taken is done afresh: left done, the run
+            # carried on would check it again without sending, and fail at once.
+            # Its tries start afresh too, its own restart among them: kept, the
+            # second go would have half the first's sends and no restart.
+            ctx.state.mark(back.step, PENDING, note=back.reason)
+            ctx.state.capture(f"{back.step}.sent_again", 0)
+            ctx.state.capture(f"{back.step}.restarted", False)
             output.stage_end("stopped")
             message = (f"{back.reason}, after it was sent {times} times. Switch the device off and on, "
                        "then try again")

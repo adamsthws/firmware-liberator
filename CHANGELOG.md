@@ -68,6 +68,11 @@ check.
 - A readout that could not be sent names where it is kept as the run's log is
   named, from where you run the tool (`captures/devices/...`), not by the whole
   path.
+- A conversion stopped because the device kept starting the firmware it had,
+  tried again once it is switched off and on as it says, sends the new firmware
+  again, with as many tries as the first go had, the device's own restart among
+  them. Before, it checked again without sending it, and failed at once the
+  same way.
 
 ## 3.0.0
 
