@@ -435,10 +435,39 @@ real server:
 | `ota/query` with the device's current version | no offer | S60 |
 | `ota/query` with its own id and version `0.0.1` | its latest firmware | S60, S61 |
 | its own id, with another model | its own firmware: the model is ignored | S60 |
-| a made-up id, with any model | an unrelated 3.5.0: never use one | |
+| a made-up id, with any model | an unrelated file (3.5.0, and 3.8.1 by November 2026): never use one | |
+| another made-up id | another release (3.8.2): ids like these are likely real devices' | |
+| its own id, asked again | the same link | S60 |
 | an empty id | error 400 | |
+| no `deviceid` at all, by model alone | error 400, `deviceid` is required | |
+| the older `/api/user/ota/query` | HTTP 503: no longer answered | |
 | GET on the offered URL as given | empty 400 | S60 |
 | GET with `?deviceid=<its id>&ts=1&sign=0` | the file; the signature is not checked, and a `Range` is answered | S60, S61 |
+| the same with a made-up id | the file: the id is not checked either, only that there is one | an ESP8266's file |
+
+So a file's link alone fetches it, with no account and no device: the link's
+path carries a random 32-character token, the same for every file of one
+release and for every device, which cannot be worked out from the file: two
+Sonoff Basics were sent the same link
+([Tasmota #476](https://github.com/arendst/Tasmota/issues/476)), and three
+other people posted that link's token. Links last: one published in
+2017, for an ESP8266 device's firmware 1.5.5, still gave both files in November
+2026, each matching the SHA-256 eWeLink sent with it. A link itself comes only
+from a signed-in query naming a real device's id; a link names no device, so
+passing one on gives away no more than the file does.
+
+A link names its server by address (`http://<address>:8088/ota/rom/...`), and
+a Cloudflare Worker cannot fetch it as given: Cloudflare refuses a request to
+a bare address (`error code: 1003`). By name it can, port 8088 included. Every
+region's server, `<region>-otadl.coolkit.cc` (`.cn` for China), gave both
+files tried, each first offered on a different address, so any one name serves
+any link's path.
+
+An ESP8266 device's file has no such wrapper: it starts with the chip's own
+image header (`ea 04`), so nothing at its start names the firmware. The 2017
+file holds its version (`1.5.5`) as a string, but not its model, which it
+reads from the device and sends as `"model":"%s"`: one ESP8266 file can serve
+several models.
 
 `tools/ewelink/firmware_name.py` uses this at stage 5, reading only the file's
 first bytes. Where eWeLink offers nothing, it falls back on the names in public
