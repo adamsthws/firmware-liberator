@@ -188,6 +188,16 @@ the emulator (`autoflash-emu-api`, `autoflash-emu-N-api` for instance N) that
 goes when it stops, so you see both sides: what the tool says, and what the API
 was asked and kept, in the state's `api/` (`captures/emulation/state/api/`).
 `AUTOFLASH_API_ENOUGH` is its `ENOUGH`, the products it has enough readouts of.
+`AUTOFLASH_LOCAL_OFFERED_SEND=links` is its `OFFERED_SEND`, so a readout's
+first stage sends the links of what eWeLink offers in place of the files.
+The API fetches those files from the device's stub once an offer is taken as
+right, over its plain-HTTP port 80 (`AUTOFLASH_LOCAL_OTA_BASE`): the router in
+the Beken emulator, the emulator's container by its name in the Espressif
+one, whose firewall lets that port in from the Docker network alone, and only
+with `--stub-cloud`. Locally no offer is agreed, as no request names its
+network: approve its first stage in the API's `api.sqlite` (`UPDATE readouts
+SET review = 'approved'`) and `POST` its `/local/retry-offers`, as a night
+after an approval would ([local.mjs](../website/api/local.mjs)).
 `--no-api` keeps readouts on the computer, unsent. Nothing a run in either
 emulator sends reaches the project's own API.
 

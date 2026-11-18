@@ -51,7 +51,9 @@
 #                             Its readouts go to the API's own code (website/api/local.mjs) in a
 #                             container beside the device (autoflash-beken-emu-api, or
 #                             autoflash-beken-emu-N-api), started with the first computer and gone
-#                             with the device; what it was asked and kept is in the state's api/
+#                             with the device; what it was asked and kept is in the state's api/.
+#                             Sent as links, an offer's files are fetched from the device's stub
+#                             (AUTOFLASH_LOCAL_OTA_BASE, the router by default)
 #   tools/beken/emulator/beken-emu.sh test [ARGS...]
 #                             upstream's own self-tests (tests/self_test.py ARGS,
 #                             -k PATTERN selects by name), under the patches; they run
@@ -369,7 +371,10 @@ case "${1:-}" in
             if docker ps -q --filter "name=^$DEVICE-api\$" | grep -q .; then
                 readout_url=$(local_api_readout_url "$DEVICE-api")
             else
-                local_api_start "$DEVICE-api" "$NETWORK" "$DEVICE_STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
+                # An offer's files, sent as links, fetched from the stub as from
+                # eWeLink: over its plaintext port on the router, no CA to trust.
+                AUTOFLASH_LOCAL_OTA_BASE=${AUTOFLASH_LOCAL_OTA_BASE:-http://$(subnet).1} \
+                    local_api_start "$DEVICE-api" "$NETWORK" "$DEVICE_STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
                 local_api_goes_with "$DEVICE" "$DEVICE-api"
                 readout_url=$LOCAL_API_READOUT_URL
             fi

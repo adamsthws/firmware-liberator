@@ -157,8 +157,10 @@ class StubOfferTests(unittest.TestCase):
                                                 "version": "0.0.1"}]}).encode()
         offers = stub.ota_query(asked)["data"]["otaInfoList"]
         self.assertEqual([offer["version"] for offer in offers], ["1.0.2"])
-        self.assertEqual(stub.ota_file("deviceid=1000abcdef&ts=1&sign=0"), b"the fota")
-        self.assertIsNone(stub.ota_file("deviceid=1000000000"))
+        link = offers[0]["binList"][0]["downloadUrl"]
+        self.assertEqual(link, f"https://192.0.2.1{stub.ota_path()}")
+        self.assertEqual(stub.ota_file(stub.ota_path(), "deviceid=1000abcdef&ts=1&sign=0"), b"the fota")
+        self.assertIsNone(stub.ota_file(stub.ota_path(), ""))
 
 
 if __name__ == "__main__":

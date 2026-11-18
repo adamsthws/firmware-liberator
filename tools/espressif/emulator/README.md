@@ -41,7 +41,9 @@ together and what it changes, for working on it. How to use it is in
   incoming connections and sudo asks for your password (`autoflash`), so the
   conversion must add its temporary rule for the device through sudo and remove
   it, and any exit path that leaves it behind shows up. ufw allows only the
-  device's DHCP and DNS, and port 8080 for your browser. With no systemd in the
+  device's DHCP and DNS, port 8080 for your browser, and with `--stub-cloud`
+  the stub's plain-HTTP port 80 on the Docker network, where the API below
+  fetches an offered file. With no systemd in the
   container, a stand-in answers the tool's `systemctl is-active ufw` from ufw's
   own setting. The `wifi` command needs no password, as a desktop's Wi-Fi menu
   does not. `--no-firewall` leaves ufw off.
@@ -50,7 +52,9 @@ together and what it changes, for working on it. How to use it is in
 - **The API** the tool's readouts go to is the project's own code
   (`website/api/local.mjs`) in a container of its own on the same Docker
   network, `autoflash-emu-api`, started before the emulator and removed by a
-  watcher once the emulator's container stops (`tools/repo/emulator-room.sh`);
+  watcher once the emulator's container stops (`tools/repo/emulator-room.sh`).
+  It fetches an offer's files, sent as links, from the stub by the emulator's
+  container name (`AUTOFLASH_LOCAL_OTA_BASE`, set by `emu.sh`);
   `unattended-test.sh` starts one of its own each run instead.
 
 ## The image

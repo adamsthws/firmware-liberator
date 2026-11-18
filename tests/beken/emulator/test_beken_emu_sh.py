@@ -471,7 +471,7 @@ class ComputerApiTests(unittest.TestCase):
     the device, one a device, so both sides of a readout are seen here; with
     --no-api, kept unsent. Docker a fake that says what it was asked."""
 
-    def run_computer(self, *options, api_running=False, readout_url=None):
+    def run_computer(self, *options, api_running=False, readout_url=None, ota_base=None):
         with tempfile.TemporaryDirectory() as tmp:
             checkout(tmp)
             shutil.copy2(ROOT / "tools/beken/emulator/computer.sh", Path(tmp, "tools/beken/emulator/computer.sh"))
@@ -487,6 +487,7 @@ class ComputerApiTests(unittest.TestCase):
             Path(tmp, "bin", "docker").write_text(
                 '#!/bin/sh\necho "$*" >> %s\n'
                 'case "$*" in\n'
+                '  "run -d "*) echo "with AUTOFLASH_LOCAL_OTA_BASE=$AUTOFLASH_LOCAL_OTA_BASE" >> %s ;;\n'
                 '  "network inspect -f {{range .IPAM.Config}}{{.IPRange}}{{end}} "*) echo 198.18.61.128/25 ;;\n'
                 '  "network inspect -f {{range .IPAM.Config}}{{.Subnet}}{{end}} "*) echo 198.18.61.0/24 ;;\n'
                 '  "ps -q --filter name=^autoflash-beken-emu-api$") %s ;;\n'
@@ -495,14 +496,15 @@ class ComputerApiTests(unittest.TestCase):
                 # The device runs a while: the watcher's last calls come after the script's.
                 '  "wait "*) sleep 1 ;;\n'
                 '  "inspect -f {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}} "*) echo 192.0.2.7 ;;\n'
-                'esac\n' % (calls, "echo abc123" if api_running else ":"), encoding="utf-8")
+                'esac\n' % (calls, calls, "echo abc123" if api_running else ":"), encoding="utf-8")
             Path(tmp, "bin", "docker").chmod(0o755)
             done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *options, "computer", "x.py"],
                                   capture_output=True, text=True, timeout=60,
                                   env={**{name: value for name, value in os.environ.items()
-                                          if name != "AUTOFLASH_READOUT_URL"},
+                                          if name not in ("AUTOFLASH_READOUT_URL", "AUTOFLASH_LOCAL_OTA_BASE")},
                                        "PATH": f"{tmp}/bin:{os.environ['PATH']}",
-                                       **({"AUTOFLASH_READOUT_URL": readout_url} if readout_url else {})})
+                                       **({"AUTOFLASH_READOUT_URL": readout_url} if readout_url else {}),
+                                       **({"AUTOFLASH_LOCAL_OTA_BASE": ota_base} if ota_base else {})})
             self.assertEqual(done.returncode, 0, done.stderr)
             asked = calls.read_text(encoding="utf-8").splitlines()
             started = next((n for n, line in enumerate(asked)
@@ -527,6 +529,12 @@ class ComputerApiTests(unittest.TestCase):
         self.assertIn("--network autoflash-beken-emu ", api)
         self.assertIn("node /website/api/local.mjs 0.0.0.0 8080 /api", api)
         self.assertIn("-e AUTOFLASH_READOUT_URL=http://192.0.2.7:8080/v1/readout", computer)
+        # An offer's files sent as links are fetched from the device's stub, on the router.
+        self.assertIn("with AUTOFLASH_LOCAL_OTA_BASE=http://198.18.61.1", asked)
+
+    def test_an_ota_base_given_is_where_the_api_fetches_offered_files(self):
+        asked, _ = self.run_computer(ota_base="http://192.0.2.9:8088")
+        self.assertIn("with AUTOFLASH_LOCAL_OTA_BASE=http://192.0.2.9:8088", asked)
 
     def test_a_second_computer_finds_the_first_ones_api(self):
         # One a device: a second readout finds the first's, as on the website.

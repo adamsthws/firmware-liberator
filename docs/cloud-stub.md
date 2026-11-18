@@ -293,7 +293,10 @@ Both changes are made to the instance's working copy as `emu.sh` builds it.
 ### The stub server
 
 [`stub_server.py`](../tools/ewelink/stub_cloud/stub_server.py) is one HTTPS
-listener on `192.168.60.1:443`, with Python's standard library alone. It logs
+listener on `192.168.60.1:443`, with Python's standard library alone, and
+the same over plain HTTP on port 80 of the emulator's address on its Docker
+network, where the website's API beside the emulator fetches the offered
+file, as the Beken stub's port 80 serves it there. It logs
 every message with secret values (`apikey`, `deviceid`, `devicekey`,
 `encrypt_key`, `staMac` and the like) redacted. Each connection's TLS
 handshake is made in its own thread with a 30 s timeout, so one stalled
@@ -316,7 +319,12 @@ client cannot stop the rest.
   (the tool) are the account API: a token, the device list and the update
   offer. Each sign-in gives a new token and ends the one before, as at
   eWeLink.
-- **`GET /ota/user1.bin?deviceid=<its id>`** serves the offered firmware.
+- **`GET /ota/rom/<token>/user1.bin?deviceid=<an id>`** serves the offered
+  firmware, at a link of eWeLink's shape: its token is the file's MD5, 32
+  letters and digits as eWeLink's random one is, so the link is the same each
+  run and for every device offered that file. As at eWeLink, any request
+  naming a device id is given the file, whoever's the id: the website's API
+  fetches a file whose link a readout sent with a made-up one.
 
 **The account record** is what makes the tool behave as it does against
 eWeLink. Its identity is read from the booted dump by
@@ -681,9 +689,11 @@ names the one dialled.
 - **The update offer.** As eWeLink offers a real device its official file,
   the stub offers the device's own stock app, packed as the RBL its
   bootloader applies, in the FOTA container its updater takes, named as its
-  kind's are. A readout reverts with it. Both it and the model are made once,
-  from the Sonoff firmware the device first started on, as it may next start
-  on another.
+  kind's are. It is served at a link of eWeLink's shape, as the Espressif
+  emulator's stub serves its own, and over plain HTTP on port 80 too, where
+  the website's API beside the device fetches it. A readout reverts with it.
+  Both it and the model are made once, from the Sonoff firmware the device
+  first started on, as it may next start on another.
 - **What devices said of themselves** is kept across restarts
   (`stub-reported.json`), as an eWeLink account keeps its devices while they
   run another firmware. `beken-emu.sh device` returns once the device is in

@@ -130,6 +130,13 @@ class ApiTests(unittest.TestCase):
         self.assertIn('api_env=(-e AUTOFLASH_READOUT_URL="$LOCAL_API_READOUT_URL")', self.text)
         self.assertIn('-e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" "${api_env[@]}"', self.text)
 
+    def test_the_api_fetches_offered_files_from_the_stub_by_this_containers_name(self):
+        # entrypoint.sh serves them in plaintext on the Docker network, where
+        # the name resolves; one given is kept.
+        self.assertIn('AUTOFLASH_LOCAL_OTA_BASE=${AUTOFLASH_LOCAL_OTA_BASE:-http://$NAME} \\\n'
+                      '        local_api_start "$NAME-api"', self.text)
+        self.assertIn('docker run --rm $tty --name "$NAME"', self.text)
+
     def test_no_api_leaves_it_out_and_windows_has_none(self):
         self.assertIn("--no-api) api=0 ;;", self.text)
         self.assertIn('if [ "$api" = 1 ] && [ "$windows" = 0 ]; then', self.text)

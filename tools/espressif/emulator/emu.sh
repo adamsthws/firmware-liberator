@@ -20,7 +20,9 @@
 #   tools/espressif/emulator/emu.sh --no-api   readouts kept unsent: by default they go to the API's own
 #                                    code (website/api/local.mjs) in a container beside the emulator
 #                                    (autoflash-emu-api, or autoflash-emu-N-api), gone with it; what it
-#                                    was asked and kept is in the state's api/
+#                                    was asked and kept is in the state's api/. Sent as links, an
+#                                    offer's files are fetched from the stub (AUTOFLASH_LOCAL_OTA_BASE,
+#                                    this emulator by its name by default)
 #   tools/espressif/emulator/emu.sh --instance N  another emulator beside the first (N = 1-99): its own
 #                                    container (autoflash-emu-N), state (state-N) and browser
 #                                    port (8080+N), so tests can run side by side
@@ -388,7 +390,11 @@ wait_for_room "$room"
 # there, out of this environment's reach.
 api_env=()
 if [ "$api" = 1 ] && [ "$windows" = 0 ]; then
-    local_api_start "$NAME-api" "$NETWORK" "$STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
+    # An offer's files, sent as links, fetched from the stub as from eWeLink:
+    # over its plaintext port, by this container's name on the Docker network
+    # (entrypoint.sh), no CA to trust. The Beken stub's is the router instead.
+    AUTOFLASH_LOCAL_OTA_BASE=${AUTOFLASH_LOCAL_OTA_BASE:-http://$NAME} \
+        local_api_start "$NAME-api" "$NETWORK" "$STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
     local_api_goes_with "$NAME" "$NAME-api"
     api_env=(-e AUTOFLASH_READOUT_URL="$LOCAL_API_READOUT_URL")
 fi

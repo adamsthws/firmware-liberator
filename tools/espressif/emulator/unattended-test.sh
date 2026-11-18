@@ -290,7 +290,9 @@ stub_env=()
 if [ "$api" = 1 ]; then
     rm -rf "$STATE/api" "$STATE/api-server.out"
     network=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$NAME" | awk '{print $1}')
-    local_api_start "$api_name" "$network" "$STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
+    # An offer's files fetched from the stub by the emulator's name, as emu.sh's API does.
+    AUTOFLASH_LOCAL_OTA_BASE=${AUTOFLASH_LOCAL_OTA_BASE:-http://$NAME} \
+        local_api_start "$api_name" "$network" "$STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
     AUTOFLASH_READOUT_URL=${AUTOFLASH_READOUT_URL:-$LOCAL_API_READOUT_URL}
     echo "Readouts go to the API's own code here: ${LOCAL_API_READOUT_URL%/v1/readout} (its container $api_name), kept in ${STATE#"$ROOT/"}/api/"
 fi

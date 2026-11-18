@@ -12,6 +12,11 @@
 // AUTOFLASH_LOCAL_OFFERED_SEND sets OFFERED_SEND (wrangler.jsonc), "files"
 // unset; AUTOFLASH_LOCAL_OTA_BASE is where an offer's files are fetched from in
 // place of eWeLink's server (offered.js CLOUDS): the cloud stub's.
+// POST /local/retry-offers, its own path and not the Worker's, fetches the
+// files of offers taken as right as the nightly job does (offered.js
+// retryOffers): here no offer is agreed, as no request names its network, so
+// one is taken as right by approving its first stage in api.sqlite. Refused
+// without AUTOFLASH_LOCAL_OTA_BASE: nothing here asks eWeLink's own server.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -26,13 +31,13 @@ if (major < 22 || (major === 22 && minor < 23)) {
 }
 
 // After the check: an older Node fails as these are loaded.
-const { default: worker } = await import("./index.js");
+const { default: worker, TOTAL_BYTES } = await import("./index.js");
 const { d1 } = await import("./local-d1.mjs");
 const { work } = await import("./proof-of-work.js");
 if (process.env.AUTOFLASH_LOCAL_PROOF_BITS) {
   work.bits = Number(process.env.AUTOFLASH_LOCAL_PROOF_BITS);
 }
-const { CLOUDS } = await import("./offered.js");
+const { CLOUDS, retryOffers } = await import("./offered.js");
 if (process.env.AUTOFLASH_LOCAL_OTA_BASE) {
   CLOUDS.ewelink.base = process.env.AUTOFLASH_LOCAL_OTA_BASE;
 }
@@ -100,9 +105,13 @@ const server = http.createServer(async (request, response) => {
   const body = Buffer.concat(chunks);
   const headers = new Headers(request.headers);
   headers.set("CF-Connecting-IP", request.socket.remoteAddress || "unknown");
-  const answer = await worker.fetch(new Request(`https://api.firmwareliberator.com${request.url}`, {
-    method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : body,
-  }), env);
+  const retrying = request.method === "POST" && request.url === "/local/retry-offers";
+  const answer = retrying && !process.env.AUTOFLASH_LOCAL_OTA_BASE
+    ? Response.json({ error: "AUTOFLASH_LOCAL_OTA_BASE is not set: nothing is fetched from eWeLink" }, { status: 409 })
+    : retrying ? Response.json(await retryOffers(env, new Date(), { totalBytes: TOTAL_BYTES }))
+    : await worker.fetch(new Request(`https://api.firmwareliberator.com${request.url}`, {
+      method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : body,
+    }), env);
   const text = await answer.text();
   fs.appendFileSync(path.join(folder, "requests.log"),
     `${new Date().toISOString()} ${request.method} ${request.url} ${body.length} -> ${answer.status} ${text}\n`);

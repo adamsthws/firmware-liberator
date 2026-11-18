@@ -60,6 +60,10 @@ class ApiTests(unittest.TestCase):
                 if re.search(r"(^|[\s\"'])(\$\{AUTOFLASH_NODE[^}]*\}|node)[\"']?\s+\S*local\.mjs", code):
                     self.assertIn('"$LOCAL_API_IMAGE" node', code, line)
 
+    def test_it_fetches_offered_files_from_the_stub_as_emu_shs_does(self):
+        self.assertIn('AUTOFLASH_LOCAL_OTA_BASE=${AUTOFLASH_LOCAL_OTA_BASE:-http://$NAME} \\\n'
+                      '        local_api_start "$api_name"', self.text)
+
     def test_readouts_go_to_it_unless_told_no_api(self):
         # Asked for: both sides of a readout seen here, the tool's and the API's.
         self.assertRegex(self.text, r"(?m)^emu_args=.* api=1$")

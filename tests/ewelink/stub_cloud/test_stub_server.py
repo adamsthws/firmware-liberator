@@ -1,9 +1,13 @@
 """stub_server.py, the local stand-in for eWeLink's cloud both emulators use."""
 
+import hashlib
 import json
 import subprocess
 import sys
+import threading
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -40,7 +44,8 @@ class FirmwareOfferTests(unittest.TestCase):
     def test_offered_only_to_a_device_behind_it(self):
         offer, = self.query("0.0.1")
         self.assertEqual((offer["version"], offer["binList"][0]["name"]), ("1.2.0", "user1.bin"))
-        self.assertEqual(offer["binList"][0]["downloadUrl"], "https://192.0.2.1/ota/user1.bin")
+        self.assertEqual(offer["binList"][0]["downloadUrl"],
+                         f"https://192.0.2.1/ota/rom/{hashlib.md5(b'the file').hexdigest()}/user1.bin")
         self.assertEqual(self.query("1.2.0"), [])  # the conversion's own question: nothing on offer
         self.assertEqual(self.query("0.0.1", "1000fedcba"), [])
         self.assertEqual(stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef"}).ota_query(b"{}"),
@@ -59,10 +64,79 @@ class FirmwareOfferTests(unittest.TestCase):
             self.assertEqual((line[2], line[4]), said)
             self.assertNotIn(deviceid, " ".join(map(str, line)))
 
-    def test_the_file_goes_to_the_devices_own_id(self):
-        self.assertEqual(self.stub.ota_file("deviceid=1000abcdef&ts=1&sign=0"), b"the file")
-        self.assertIsNone(self.stub.ota_file("deviceid=1000fedcba&ts=1&sign=0"))
-        self.assertIsNone(self.stub.ota_file(""))
+    def test_the_link_is_of_ewelinks_shape_and_the_tool_passes_it_on(self):
+        from tools.ewelink import offered_firmware
+        offer, = self.query("0.0.1")
+        link, = offered_firmware.links([offer])
+        self.assertEqual(link["path"], self.stub.ota_path())
+        self.assertEqual(link["sha256"], hashlib.sha256(b"the file").hexdigest())
+
+    def test_the_link_is_the_same_for_every_device_and_run_and_differs_by_file(self):
+        from tools.ewelink.stub_cloud.firmware import Update
+        again = stub_server.Stub("192.0.2.9", 443, 10, {"deviceid": "1000fedcba"}, Update("1.2.0", b"the file"))
+        other = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef"}, Update("1.3.0", b"another"))
+        self.assertEqual(again.ota_path(), self.stub.ota_path())
+        self.assertNotEqual(other.ota_path(), self.stub.ota_path())
+
+    def test_the_file_goes_to_any_request_naming_a_device_at_its_link_alone(self):
+        # As eWeLink's server: the id is not checked, only that there is one;
+        # the website's API asks with deviceid=0 (website/api/offered.js).
+        path = self.stub.ota_path()
+        self.assertEqual(self.stub.ota_file(path, "deviceid=1000abcdef&ts=1&sign=0"), b"the file")
+        self.assertEqual(self.stub.ota_file(path, "deviceid=0&ts=1&sign=0"), b"the file")
+        self.assertIsNone(self.stub.ota_file(path, ""))
+        self.assertIsNone(self.stub.ota_file(path, "deviceid=&ts=1"))
+        self.assertIsNone(self.stub.ota_file("/ota/user1.bin", "deviceid=0"))
+        self.assertIsNone(self.stub.ota_file(path.replace("/rom/", "/rom/0"), "deviceid=0"))
+        self.assertIsNone(stub_server.Stub("192.0.2.1", 443, 10).ota_file(path, "deviceid=0"))
+
+    def test_it_is_served_over_http_at_its_link(self):
+        server = stub_server.PlainServer(("127.0.0.1", 0), stub_server.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{server.server_address[1]}{self.stub.ota_path()}"
+        try:
+            with mock.patch.object(stub_server.Handler, "stub", self.stub, create=True), \
+                    mock.patch.object(stub_server, "log"):
+                with urllib.request.urlopen(f"{base}?deviceid=0&ts=1&sign=0", timeout=10) as reply:
+                    self.assertEqual(reply.read(), b"the file")
+                with self.assertRaises(urllib.error.HTTPError) as refused:
+                    urllib.request.urlopen(base, timeout=10)
+                self.assertEqual(refused.exception.code, 404)
+                refused.exception.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+class ListenerTests(unittest.TestCase):
+    """--plain-bind serves the same in plaintext beside the first socket: where
+    the Espressif emulator's readout API fetches an offered file."""
+
+    def listening(self, *argv):
+        import argparse
+        args = argparse.Namespace(bind="127.0.0.1", port=0, plain=True, cert=None, key=None,
+                                  plain_bind=None, plain_port=0)
+        for name, value in argv:
+            setattr(args, name, value)
+        servers = stub_server.listeners(argparse.ArgumentParser(), args)
+        for server in servers:
+            self.addCleanup(server.server_close)
+        return servers
+
+    def test_one_socket_unless_told(self):
+        self.assertEqual(len(self.listening()), 1)
+
+    def test_a_plain_bind_is_a_second_plaintext_socket_serving_the_offered_file(self):
+        from tools.ewelink.stub_cloud.firmware import Update
+        _, plain = self.listening(("plain_bind", "127.0.0.1"))
+        self.assertIsInstance(plain, stub_server.PlainServer)
+        stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef"}, Update("1.2.0", b"the file"))
+        threading.Thread(target=plain.serve_forever, daemon=True).start()
+        self.addCleanup(plain.shutdown)
+        with mock.patch.object(stub_server.Handler, "stub", stub, create=True), mock.patch.object(stub_server, "log"):
+            with urllib.request.urlopen(f"http://127.0.0.1:{plain.server_address[1]}{stub.ota_path()}?deviceid=0",
+                                        timeout=10) as reply:
+                self.assertEqual(reply.read(), b"the file")
 
 
 class DispatchTests(unittest.TestCase):

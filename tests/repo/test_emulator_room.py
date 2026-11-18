@@ -191,6 +191,9 @@ class LocalApiTests(unittest.TestCase):
         self.assertIn("--name emu-3-api --network emu-net", run)
         self.assertIn(f"-v {ROOT}/website:/website:ro -v {folder}:/api", run)
         self.assertTrue(run.endswith("node /website/api/local.mjs 0.0.0.0 8080 /api X"), run)
+        # What local.mjs takes from the environment reaches it.
+        for name in ("PROOF_BITS", "READOUT_LIMIT", "OFFERED_SEND", "OTA_BASE"):
+            self.assertIn(f" -e AUTOFLASH_LOCAL_{name} ", run)
         self.assertEqual(self.asked()[0], "rm -f emu-3-api")   # one a killed run left goes first
 
     def test_it_is_stopped_with_what_it_said_kept(self):

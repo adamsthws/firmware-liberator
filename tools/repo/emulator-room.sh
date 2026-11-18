@@ -84,13 +84,16 @@ LOCAL_API_IMAGE=node:22.23.4-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd7808
 # NETWORK, what it is asked and keeps in FOLDER; ENOUGH, the products it has
 # enough readouts of (wrangler.jsonc's ENOUGH). One NAME already running goes
 # first. Its readout address in LOCAL_API_READOUT_URL. ROOT: the checkout whose
-# website/ it runs.
+# website/ it runs. Given what local.mjs takes from the environment, among them
+# AUTOFLASH_LOCAL_OFFERED_SEND and AUTOFLASH_LOCAL_OTA_BASE, where it fetches
+# offered files from (the stub's address on NETWORK).
 local_api_start() {
     local name=$1 network=$2 folder=$3 enough=${4:-} waited=0
     docker rm -f "$name" >/dev/null 2>&1 || true
     mkdir -p "$folder"
     docker run -d --name "$name" --network "$network" --user "$(id -u):$(id -g)" \
         -v "$ROOT/website:/website:ro" -v "$folder:/api" -e AUTOFLASH_LOCAL_PROOF_BITS -e AUTOFLASH_LOCAL_READOUT_LIMIT \
+        -e AUTOFLASH_LOCAL_OFFERED_SEND -e AUTOFLASH_LOCAL_OTA_BASE \
         "$LOCAL_API_IMAGE" node /website/api/local.mjs 0.0.0.0 8080 /api "$enough" >/dev/null
     until docker logs "$name" 2>&1 | grep -q '^API on'; do
         [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" = true ] && [ $((waited += 1)) -le 60 ] || {

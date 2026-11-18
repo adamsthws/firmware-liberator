@@ -34,7 +34,8 @@ home=$(getent passwd "$user" | cut -d: -f6)
 # ufw blocking incoming connections, so the conversion has to add its
 # temporary rule for the device, through sudo, and remove it again. Allowed
 # here is only what the emulator itself needs: the device's DHCP and DNS from
-# this "computer" (its router), and your browser's port 8080. Turned on
+# this "computer" (its router), your browser's port 8080, and with the stub
+# its plaintext port 80 to the readout API beside the emulator. Turned on
 # before the rules below, so it cannot disturb them. emu.sh --no-firewall
 # leaves it off.
 if [ "$FIREWALL" = 1 ]; then
@@ -49,6 +50,7 @@ if [ "$FIREWALL" = 1 ]; then
     ufw allow in on "$LAN" to any port 53 comment 'emulator: DNS for the device' >/dev/null
     [ "$STUB_CLOUD" = 1 ] && ufw allow in on "$LAN" to any port 443 proto tcp comment 'emulator: the local cloud stub' >/dev/null
     ufw allow in on eth0 to any port 8080 proto tcp comment 'emulator: your browser' >/dev/null
+    [ "$STUB_CLOUD" = 1 ] && ufw allow in on eth0 to any port 80 proto tcp comment 'emulator: the stub, to the readout API' >/dev/null
     if [ "$WINDOWS" = 1 ]; then
         ufw allow in on eth0 to any port 7860 proto tcp comment 'emulator: the wire to Windows' >/dev/null
     fi
@@ -171,8 +173,12 @@ if [ "$STUB_CLOUD" = 1 ]; then
     if /opt/venv/bin/python3 -I -B "$stub/device_identity.py" /secrets/stock-flash.bin \
             ${STUB_PRODUCT_MODEL:+--product-model "$STUB_PRODUCT_MODEL"} --sta-mac "$DEVICE_MAC" \
             --out "$RUN/stub-device.json" 2>>/state/logs/stub.log; then
+        # Its files over plaintext too, on the Docker network only (eth0), where the
+        # readout API beside the emulator fetches an offered one, as from
+        # eWeLink's file server; the device reaches the stub on 192.168.60.1 alone.
         /opt/venv/bin/python3 -I -B "$stub/stub_server.py" \
             --bind 192.168.60.1 --port 443 --cert /stub-cloud/server.crt --key /stub-cloud/server.key \
+            --plain-bind "$(ip -4 -o addr show dev eth0 | awk '{split($4, a, "/"); print a[1]; exit}')" \
             --iot-host 192.168.60.1 --iot-domain iot.autoflash-stub.test --iot-port 443 \
             --device-json "$RUN/stub-device.json" \
             >> /state/logs/stub.log 2>&1 &

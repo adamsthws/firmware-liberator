@@ -22,7 +22,9 @@ One TLS socket on `:443` wears every hat, routed by request:
                           we booted, from --device-json). Asked with a version
                           older than the device's, the OTA query offers its own
                           firmware, as eWeLink offers the latest (firmware.py).
-  GET  /ota/user1.bin     that firmware, to the device's id, as eWeLink serves it.
+  GET  /ota/rom/<token>/user1.bin
+                          that firmware, at a link of eWeLink's shape, to any
+                          request naming a device id, as eWeLink serves it.
 
 Stdlib only, so it runs under the emulator image's plain python3. Every message
 is logged with secret values redacted, so one run is also the capture that pins
@@ -37,6 +39,11 @@ emulated Beken device's dispatch is plaintext (its factory dispatch URL is
 `http://...:80`); its IoT WebSocket is still `wss://` and verifies the server
 cert, so a run serves dispatch plaintext and the IoT channel over TLS and swaps
 the firmware's trust anchor. See tools/beken/emulator/cloud_online.py.
+
+With `--plain-bind ADDRESS` it serves plaintext HTTP there too (`--plain-port`,
+80 by default), as eWeLink serves its files, with no CA to trust: the Espressif
+emulator's readout API fetches an offered file there, as the Beken one's does
+from that stub's plaintext port.
 """
 
 from __future__ import annotations
@@ -387,6 +394,15 @@ class Stub:
             item["itemData"]["productModel"] = other["productModel"]
         return item
 
+    def ota_path(self) -> str:
+        """Where the offered file is, as eWeLink's links are: a release's token,
+        then the file's name. eWeLink's token is random; this one is the file's
+        MD5, 32 letters and digits too, so it is the same every run and for
+        every device offered that file."""
+        from tools.ewelink.stub_cloud.firmware import FILE_NAME
+        token = hashlib.md5(self.update.data if self.update else b"", usedforsecurity=False).hexdigest()
+        return f"/ota/rom/{token}/{FILE_NAME}"
+
     def ota_query(self, body: bytes = b"") -> dict:
         """What eWeLink offers: nothing to a device asking with its own version
         (the conversion only reads this; it delivers firmware over LAN), and the
@@ -404,15 +420,16 @@ class Stub:
                     and version_tuple(str(info.get("version", ""))) < version_tuple(self.update.version)):
                 offers.append({"deviceid": mine, "model": info.get("model"), "version": self.update.version,
                                "binList": [{"name": FILE_NAME, "downloadUrl":
-                                            f"https://{self.iot_host}/ota/{FILE_NAME}",
+                                            f"https://{self.iot_host}{self.ota_path()}",
                                             "digest": hashlib.sha256(self.update.data).hexdigest()}]})
         return {"error": 0, "data": {"otaInfoList": offers}}
 
-    def ota_file(self, query: str) -> bytes | None:
-        """The offered file, to the device's own id, as Sonoff's server asks."""
+    def ota_file(self, path: str, query: str) -> bytes | None:
+        """The offered file, at its link, to a request naming a device: eWeLink's
+        server checks only that there is an id, not whose it is, and the
+        website's API fetches with a made-up one (website/api/offered.js)."""
         import urllib.parse
-        asked = urllib.parse.parse_qs(query).get("deviceid", [""])[0]
-        if self.update is None or not asked or asked != (self.account_device() or {}).get("deviceid"):
+        if self.update is None or path != self.ota_path() or not urllib.parse.parse_qs(query).get("deviceid"):
             return None
         return self.update.data
 
@@ -482,7 +499,7 @@ class Handler(socketserver.BaseRequestHandler):
         elif path == "/v2/device/ota/query":
             self._serve_signed_in(sock, headers, lambda: self.stub.ota_query(body), peer, "OTA query")
         elif path.startswith("/ota/"):
-            data = self.stub.ota_file(query)
+            data = self.stub.ota_file(path, query)
             log(peer, "OTA file ->", f"{len(data)} bytes" if data else "refused")
             self._send_http(sock, 200 if data else 404, data or b"", "application/octet-stream")
         else:
@@ -672,6 +689,22 @@ class PlainServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+def listeners(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[socketserver.TCPServer]:
+    """The sockets it serves: --bind's, TLS unless --plain, then --plain-bind's
+    in plaintext when given."""
+    if args.plain:
+        servers: list[socketserver.TCPServer] = [PlainServer((args.bind, args.port), Handler)]
+    else:
+        if not args.cert or not args.key:
+            parser.error("--cert and --key are required unless --plain is given")
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(args.cert, args.key)
+        servers = [TLSServer((args.bind, args.port), Handler, context)]
+    if args.plain_bind:
+        servers.append(PlainServer((args.plain_bind, args.plain_port), Handler))
+    return servers
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--bind", default="0.0.0.0")
@@ -681,6 +714,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--plain", action="store_true",
                         help="serve plaintext HTTP/WS, no TLS (an emulated Beken device dials "
                              "http://...:80 with the factory dispatch URL)")
+    parser.add_argument("--plain-bind", metavar="ADDRESS",
+                        help="also serve plaintext HTTP on ADDRESS, as eWeLink serves its files: where "
+                             "the readout API beside the Espressif emulator fetches an offered file")
+    # 80, as the Beken stub's plaintext port, and not eWeLink's file port 8088:
+    # beside the tool, that is its own first file server's (firewall.DELIVERY_PORTS),
+    # and the tool listens on none below 8088.
+    parser.add_argument("--plain-port", type=int, default=80)
     parser.add_argument("--iot-host", default="192.168.60.1",
                         help="IoT server handed back by dispatch: a numeric IP (the device "
                              "does no DNS for it) that the cert's IP SAN covers")
@@ -716,20 +756,14 @@ def main(argv: list[str] | None = None) -> int:
         else "no firmware to offer")
     Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain, others,
                         args.reported_json)
-    if args.plain:
-        server = PlainServer((args.bind, args.port), Handler)
-        scheme = "plaintext"
-    else:
-        if not args.cert or not args.key:
-            parser.error("--cert and --key are required unless --plain is given")
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(args.cert, args.key)
-        server = TLSServer((args.bind, args.port), Handler, context)
-        scheme = "TLS"
-    log(f"stub listening on {args.bind}:{args.port} ({scheme}); "
-        f"dispatch -> {args.iot_host}:{args.iot_port}")
+    servers = listeners(parser, args)
+    log(f"stub listening on {args.bind}:{args.port} ({'plaintext' if args.plain else 'TLS'})"
+        + (f" and {args.plain_bind}:{args.plain_port} (plaintext)" if args.plain_bind else "")
+        + f"; dispatch -> {args.iot_host}:{args.iot_port}")
+    for server in servers[1:]:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        servers[0].serve_forever()
     except KeyboardInterrupt:
         pass
     return 0
