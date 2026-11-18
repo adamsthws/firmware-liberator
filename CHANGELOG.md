@@ -80,6 +80,9 @@ check.
   to try again - under "Nothing was read out." Before, it said so in its stage,
   whose notes are taken away as it passes, so only "Nothing was read out." was
   left.
+- While a converted device is waited for to start its new firmware, the stage
+  says so under its line - in either chip family - for the minutes before it
+  asks you to switch the device off and on. Before, only the spinner turned.
 
 ## 3.0.0
 

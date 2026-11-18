@@ -50,6 +50,22 @@ class UntilBackTests(unittest.TestCase):
             self.assertEqual(shown.call_args.args[1], ["its own line"])
 
 
+class WaitingSaidTests(unittest.TestCase):
+    def test_the_wait_for_the_new_firmware_says_what_it_is(self):
+        # Seen in an attended S61 run: minutes of the stage's spinner alone
+        # while OpenBeken was waited for, before the run asked for the device
+        # to be switched off and on. In either chip family's route.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="openbeken")
+            said = []
+            with mock.patch.object(arrival.output, "working",
+                                   side_effect=lambda text: said.append(text) or mock.MagicMock()):
+                self.assertEqual(arrival.until_back(ctx, lambda _restarted: "found", "OpenBeken", "advice"),
+                                 "found")
+        self.assertEqual(said, ["Waiting for OpenBeken to start on the device and answer - it can take a few "
+                                "minutes"])
+
+
 class PowerCycleTests(unittest.TestCase):
     def test_asked_and_counted_by_whom_the_emulators_switch_used_where_there_is_one(self):
         with tempfile.TemporaryDirectory() as tmp:

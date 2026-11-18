@@ -49,6 +49,12 @@ class NotTaken(Exception):
     was sent was not installed, and will not be by waiting."""
 
 
+def waiting_for(what: str) -> str:
+    """What a wait for `what` (a firmware's name) to answer on the device says
+    while it lasts (until_back)."""
+    return f"Waiting for {what} to start on the device and answer - it can take a few minutes"
+
+
 def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
                sent_by: str | None = None) -> T:
     """look(restarted), and again each time the person at the keyboard says
@@ -70,7 +76,11 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
     asked_back = None   # when the person said it was back on, to time its return
     while True:
         try:
-            found = look(restarted)
+            # Said under the stage's line once it has lasted a moment (output.working):
+            # minutes of a spinner alone, before the run asks to switch it off and
+            # on, looked as if nothing was happening.
+            with output.working(waiting_for(what)):
+                found = look(restarted)
         except NotTaken as exc:
             ctx.state.set_input("restart_asked", None)
             if sent_by is None:
