@@ -14,8 +14,8 @@
 //   stage sends its offered files or their links (OFFERED_SEND).
 // - /v1/offers: first stages sent as links in place of files - every device's
 //   in an account, unasked, as reports are - each held and agreed as a first
-//   stage is; once one is taken as right, the API fetches its files itself
-//   (offered.js).
+//   stage is; the API fetches the files itself, on first sight and once an
+//   offer is taken as right (offered.js).
 // - /v1/readout: a readout, made with its owner's consent. Kept only if it adds
 //   something: fewer than PER_KEY readouts of that model and version at that
 //   stage are held (a whole one taking a first stage's place too), or it
@@ -181,7 +181,7 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { SITE, page as shellPage } from "../src/shell.mjs";
 import { nightly } from "./nightly.js";
-import { CLOUDS, fetchOffer } from "./offered.js";
+import { CLOUDS, fetchNamed, fetchOffer, firstSightOf } from "./offered.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
 export { work };
@@ -309,6 +309,28 @@ async function offeredIn(files, manifest) {
     found.push(item.sha256);
   }
   return found;
+}
+
+// The cloud a readout's links are of: its key is eWeLink's (keyOf), so they
+// are too, and its manifest says "cloud": "ewelink" or nothing.
+const LINKED_CLOUD = "ewelink";
+
+// The links a readout gives in place of offered files (.github/readouts.md):
+// manifest.offered's entries {"file": null, "version", "sha256", "link"},
+// each {sha256, path} as offer_links keeps them, checked as an offer's file
+// is (offerProblem): null if one is not, or names another cloud.
+function linksIn(manifest) {
+  const linked = (Array.isArray(manifest.offered) ? manifest.offered : [])
+    .filter((item) => (item?.file === null || item?.file === undefined) && item?.link !== undefined)
+    .slice(0, MAX_FIRMWARE);
+  if (!linked.length) {
+    return [];
+  }
+  if ((manifest.cloud ?? LINKED_CLOUD) !== LINKED_CLOUD
+      || !linked.every((item) => fits(item.link, CLOUDS[LINKED_CLOUD].link) && fits(item.sha256, /^[0-9a-f]{64}$/))) {
+    return null;
+  }
+  return linked.map((item) => ({ sha256: item.sha256, path: item.link }));
 }
 
 // The bytes an xz file unpacks to, read from its index without unpacking it:
@@ -746,8 +768,9 @@ export async function wanted(request, env, now = new Date()) {
   return answer(200, { wanted: true, held, send });
 }
 
-// `context` and `fetcher` as offers takes them: a readout may be the one that
-// takes an offer sent as links as right.
+// `context` and `fetcher` as offers takes them: a readout may give links in
+// place of its offered files (linksIn), fetched as an offer's are, or be the
+// one that takes an offer sent as links as right.
 export async function readout(request, env, now = new Date(), context = null, fetcher = fetch) {
   if (request.method !== "POST") {
     return answer(405, { error: "readouts are sent here by the tool, with POST" }, { Allow: "POST" });
@@ -783,6 +806,10 @@ export async function readout(request, env, now = new Date(), context = null, fe
   const offered = await offeredIn(files, manifest);
   if (!offered) {
     return answer(400, { error: "a file the readout names is not in it, or is not the file it says" });
+  }
+  const links = linksIn(manifest);
+  if (!links) {
+    return answer(400, { error: "a file the readout links is not linked as eWeLink links one" });
   }
   if (manifest.read === true && !wholeFlash(files)) {
     return answer(400, { error: "a readout of the whole memory holds no whole flash chip's memory" });
@@ -856,14 +883,18 @@ export async function readout(request, env, now = new Date(), context = null, fe
     return answer(200, { enough: true });
   }
   try {
+    if (links.length) {
+      await env.DB.prepare(LINKS).bind(id, LINKED_CLOUD, JSON.stringify(links)).run();
+    }
     await keep(env, key, body, manifest, id, offered);
   } catch (error) {
     await unkeep(env, id, key);
     await giveBack();
     throw error;
   }
-  if (held.offerAgreed) {
-    await fetchAgreed(env, [[readoutKey, offer]], now, context, fetcher);
+  if (links.length || held.offerAgreed) {
+    await fetchFiles(env, request, links.length ? [id] : [], held.offerAgreed ? [[readoutKey, offer]] : [], now, context,
+      fetcher);
   }
   return answer(201, { id });
 }
@@ -880,11 +911,20 @@ async function unkeep(env, id, object) {
     "readouts WHERE id"].map((which) => env.DB.prepare(`DELETE FROM ${which} = ?`).bind(id)));
 }
 
-// The files of each offer newly taken as right (each [key, offer]) that links
-// were sent for, fetched (offered.js): after the answer, where the Worker
-// gives a `context` to wait on, else before it.
-async function fetchAgreed(env, agreed, now, context, fetcher) {
+// The files fetched that links were sent for (offered.js): first those of
+// each readout just kept (`named`, their ids) not held, on first sight, then
+// those of each offer newly taken as right (`agreed`, each [key, offer]) still
+// not held, first sight's held to the sender's day (OFFER_FIRST_SIGHT_PER_SENDER).
+// After the answer, where the Worker gives a `context` to wait on, else before it.
+async function fetchFiles(env, request, named, agreed, now, context, fetcher) {
+  const day = now.toISOString().slice(0, 10);
+  const sender = named.length ? firstSightOf(await keyedHash(env, `first-sight|${addressOf(request)}`), day) : null;
   const fetching = (async () => {
+    for (const id of named) {
+      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sender, fetcher })).capped) {
+        break;
+      }
+    }
     for (const [key, offer] of agreed) {
       await fetchOffer(env, key, offer, now, { totalBytes: TOTAL_BYTES, fetcher });
     }
@@ -946,7 +986,7 @@ function offerProblem(offer, cloud) {
 }
 
 // The links of an offer's files, as offer_links keeps them: ?1 the readout,
-// ?2 the cloud, ?3 its files as JSON.
+// ?2 the cloud, ?3 its files as JSON, each {sha256, path}.
 const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud)
   SELECT ?1, json_extract(value, '$.sha256'), json_extract(value, '$.path'), ?2 FROM json_each(?3)`;
 
@@ -960,9 +1000,9 @@ const offersOn = (day) => `offers:${day}`;
 // is held as a first stage is (hold), its row's object a manifest alone,
 // under the key a first stage of that device has, so it agrees with first
 // stages and whole readouts naming the same files, each sender once. Its
-// links are kept (offer_links); once an offer is taken as right, the API
-// fetches each file of it not held (offered.js), keeping one only if it is
-// what was agreed on. Answers {"send", "offers": [{"result", "why"}]}: `send`
+// links are kept (offer_links), and the API fetches each file not held, on
+// first sight and again once the offer is taken as right (offered.js),
+// keeping one only if it is the file the SHA-256 given names. Answers {"send", "offers": [{"result", "why"}]}: `send`
 // as /v1/wanted says it, and one result an offer, in order. No offers at all
 // is the tool's question whether to send links, answered with nothing counted
 // or kept; and while `send` is "files", offers are answered "full" and nothing
@@ -970,7 +1010,7 @@ const offersOn = (day) => `offers:${day}`;
 // device, or offered nothing (counted against nothing); "full", past
 // SENDER_OFFERS_DAILY, OFFERS_DAILY or the store's limits, to send another
 // day; "refused", not as the tool sends one (offerProblem).
-// `context` and `fetcher` as fetchAgreed takes them.
+// `context` and `fetcher` as fetchFiles takes them.
 export async function offers(request, env, now = new Date(), context = null, fetcher = fetch) {
   const asked = await question(request, env, now, "request", OFFERS_MAX_BYTES);
   if (asked instanceof Response) {
@@ -1064,6 +1104,7 @@ export async function offers(request, env, now = new Date(), context = null, fet
     taking = [];
   }
   const agreed = [];
+  const named = [];
   for (const each of taking) {
     const digest = hex(await sha256(new TextEncoder().encode(`${each.key}|${each.offerHash}|${each.sender}`)));
     const id = `${day}-${digest.slice(0, 12)}`;
@@ -1086,12 +1127,13 @@ export async function offers(request, env, now = new Date(), context = null, fet
       throw error;
     }
     results[each.index] = { result: "taken" };
+    named.push(id);
     if (held.offerAgreed) {
       agreed.push([each.key, each.offerHash]);
     }
   }
-  if (agreed.length) {
-    await fetchAgreed(env, agreed, now, context, fetcher);
+  if (named.length) {
+    await fetchFiles(env, request, named, agreed, now, context, fetcher);
   }
   return answer(200, { send, offers: results });
 }

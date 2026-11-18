@@ -108,7 +108,7 @@
       "post": {
         "operationId": "offers",
         "summary": "First stages sent as links: the files eWeLink offers each device, by link and SHA-256",
-        "description": "Each offer is held as a first stage of its device is, and agrees with first stages and whole readouts naming the same files. Once one is taken as right, the API fetches each of its files it does not hold from the cloud, by the links given, keeping one only if its SHA-256 is the one agreed on. Sent unasked, every device's of an account in one request, when /v1/wanted answers \"send\": \"links\". A request of no offers asks only whether to send links, counting and keeping nothing; while send is \"files\", nothing is kept.",
+        "description": "Each offer is held as a first stage of its device is, and agrees with first stages and whole readouts naming the same files. The API fetches each of its files it does not hold from the cloud, by the link given, as soon as an offer kept names it, and again by every link given once the offer is taken as right, keeping one only if its SHA-256 is the one given. Sent unasked, every device's of an account in one request, when /v1/wanted answers \"send\": \"links\". A request of no offers asks only whether to send links, counting and keeping nothing; while send is \"files\", nothing is kept.",
         "parameters": [
           {
             "$ref": "#/components/parameters/LightProof"
@@ -219,7 +219,7 @@
       "post": {
         "operationId": "readout",
         "summary": "A readout of a device, made with its owner's consent",
-        "description": "A tar, uncompressed, its first file manifest.json; then each file eWeLink offers the device, as served, at the place the manifest's `offered` gives it, which the API checks against the SHA-256 given; then the device's memory, each .bin xz-compressed. .github/readouts.md has the format.",
+        "description": "A tar, uncompressed, its first file manifest.json; then each file eWeLink offers the device, as served, at the place the manifest's `offered` gives it, which the API checks against the SHA-256 given; then the device's memory, each .bin xz-compressed. When /v1/wanted answers \"send\": \"links\", an `offered` entry may give the file's link in place of the file ({\"file\": null, \"version\", \"sha256\", \"link\"}, a path of /v1/offers' shape, the manifest's `cloud` \"ewelink\"), which the API fetches itself as it does an offer's. .github/readouts.md has the format.",
         "parameters": [
           {
             "$ref": "#/components/parameters/Proof"
@@ -278,7 +278,7 @@
             }
           },
           "400": {
-            "description": "Not a readout the tool makes, or a file it names is not in it or not the file it says",
+            "description": "Not a readout the tool makes, or a file it names is not in it or not the file it says, or a link it gives is not of eWeLink's shape",
             "content": {
               "application/json": {
                 "schema": {
@@ -1001,7 +1001,7 @@
               "files",
               "links"
             ],
-            "description": "What a first stage sends of the files offered: the files, in its readout, or their links, to /v1/offers. A client given none sends files"
+            "description": "What a readout sends of the files offered: the files, in it, or their links - a first stage's to /v1/offers, a whole readout's in its manifest. A client given none sends files"
           }
         }
       },

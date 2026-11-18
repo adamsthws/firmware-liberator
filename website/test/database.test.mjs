@@ -12,7 +12,7 @@ import { d1, migrate, migration, migrations } from "../api/local-d1.mjs";
 // file, whose hash goes here once it is final.
 const WRITTEN = {
   "0001_initial.sql": "8329e87c764023e407a84ff567cd19f7f502c879b68039637ec189566ef98862",
-  "0002_offer_links.sql": "9ebd0f54683b3c6577f882f2567e277535424795a234ef541928a40284e625a5",
+  "0002_offer_links.sql": "835d2fc71ede5d44aa0ca469fd19db7c8eb46b55e2bbc7d052fd6994ac9dc015",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {

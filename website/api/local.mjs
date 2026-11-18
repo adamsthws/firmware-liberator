@@ -10,13 +10,14 @@
 // AUTOFLASH_LOCAL_READOUT_LIMIT, the readouts a minute it takes, so a test can
 // reach the limit however slowly its readouts come.
 // AUTOFLASH_LOCAL_OFFERED_SEND sets OFFERED_SEND (wrangler.jsonc), "files"
-// unset; AUTOFLASH_LOCAL_OTA_BASE is where an offer's files are fetched from in
-// place of eWeLink's server (offered.js CLOUDS): the cloud stub's.
+// unset; AUTOFLASH_LOCAL_OTA_BASE is where the files of links sent are fetched
+// from in place of eWeLink's server (offered.js CLOUDS): the cloud stub's.
+// Without it every fetch fails: nothing here asks eWeLink's own server.
 // POST /local/retry-offers, its own path and not the Worker's, fetches the
 // files of offers taken as right as the nightly job does (offered.js
 // retryOffers): here no offer is agreed, as no request names its network, so
 // one is taken as right by approving its first stage in api.sqlite. Refused
-// without AUTOFLASH_LOCAL_OTA_BASE: nothing here asks eWeLink's own server.
+// without AUTOFLASH_LOCAL_OTA_BASE.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -40,6 +41,11 @@ if (process.env.AUTOFLASH_LOCAL_PROOF_BITS) {
 const { CLOUDS, retryOffers } = await import("./offered.js");
 if (process.env.AUTOFLASH_LOCAL_OTA_BASE) {
   CLOUDS.ewelink.base = process.env.AUTOFLASH_LOCAL_OTA_BASE;
+} else {
+  // The Worker's paths fetch nothing else, so none is turned away but eWeLink's.
+  globalThis.fetch = async () => {
+    throw new Error("AUTOFLASH_LOCAL_OTA_BASE is not set: nothing is fetched from eWeLink");
+  };
 }
 
 const [address, port, folder, enough = ""] = process.argv.slice(2);

@@ -94,7 +94,7 @@ print(json.dumps({"port": server.server_address[1], "files": files}), flush=True
 server.serve_forever()
 `;
 
-test("sent as links, an offer's files are fetched from the cloud stub once one is taken as right", async () => {
+test("sent as links, an offer's files are fetched from the cloud stub on first sight", async () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-api-"));
   const stub = spawn(process.env.AUTOFLASH_PYTHON || "python3", ["-c", STUB],
     { cwd: new URL("../../", import.meta.url).pathname });
@@ -114,12 +114,12 @@ test("sent as links, an offer's files are fetched from the cloud stub once one i
     assert.deepEqual(await sent.json(), { send: "links", offers: [{ result: "taken" }] });
     const kept = fs.readdirSync(folder).find((name) => /^readouts__\d{4}-\d{2}-\d{2}__[0-9a-f]{24}\.json$/.test(name));
     assert.equal(JSON.parse(fs.readFileSync(path.join(folder, kept), "utf8")).offered[0].link, files[0].path);
-    // Here no request names its network, so none is agreed: approved, as the maintainer would.
+    // Here no request names its network, so none is agreed: approved, as the maintainer would; held already.
     const db = new (await import("node:sqlite")).DatabaseSync(path.join(folder, "api.sqlite"));
     db.prepare("UPDATE readouts SET review = 'approved' WHERE stage = 'first'").run();
     db.close();
     const retried = await fetch(`http://127.0.0.1:${port}/local/retry-offers`, { method: "POST" });
-    assert.deepEqual(await retried.json(), { offers: 1, fetched: 1, missing: 0 });
+    assert.deepEqual(await retried.json(), { offers: 0, fetched: 0, missing: 0 });
     const held = path.join(folder, `readouts__firmware__${files[0].sha256}`);
     assert.equal(fs.readFileSync(held, "utf8"), "the stub's offered file");
     assert.deepEqual(JSON.parse(fs.readFileSync(`${held}.meta.json`, "utf8")).customMetadata,

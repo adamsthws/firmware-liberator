@@ -98,7 +98,8 @@ The API relies on this much of the manifest: its `format`, its `model`,
 `stock_model` and `stock_version` (together the readout's key), whether the memory
 was `read`, and what every genuine readout of that key shares - `firmware`
 and `layout` for a whole one, the SHA-256 of each `offered` file for a first
-stage - and each `offered` file's `file`, where it is in the tar. A change to any of these is a change to both sides.
+stage - and each `offered` file's `file`, where it is in the tar, or, in
+place of the file, its `link` (below). A change to any of these is a change to both sides.
 
 ## Where it goes
 
@@ -161,34 +162,59 @@ Service, from the domain `cloudflare_settings.py` onboards for sending.
 
 ## Offers sent as links
 
-A first stage can send the files eWeLink offers a device, or only each
-file's link and SHA-256, as eWeLink gives them. Which one is your setting:
+A readout can send the files eWeLink offers a device, or only each file's
+link and SHA-256, as eWeLink gives them. Which one is your setting:
 `OFFERED_SEND` in [wrangler.jsonc](../website/api/wrangler.jsonc), which
 `/v1/wanted` and `/v1/offers` pass on to the tool as `send`. While it is
 `"files"`, `/v1/offers` keeps nothing and answers each offer `full`, so the
 tool sends it again later. A tool told nothing, as every
 one released before it, sends files, so the file path always stays.
 
-- **Links go to `/v1/offers`**, every device's in an account in one request,
-  sent unasked as reports are. Each offer is held as a first stage of its
-  device is, under the same key (`index.js` `keyOf`; a cloud other than
-  eWeLink would add its own part), so links, first stages with files and
-  whole readouts agree on an offer together, each sender once. Its row's
-  object is a small JSON manifest, its links kept in `offer_links`.
+- **A first stage's links go to `/v1/offers`**, every device's in an account
+  in one request, sent unasked as reports are. Each offer is held as a first
+  stage of its device is, under the same key (`index.js` `keyOf`; a cloud
+  other than eWeLink would add its own part), so links, first stages with
+  files and whole readouts agree on an offer together, each sender once. Its
+  row's object is a small JSON manifest, its links kept in `offer_links`.
   `OFFERS_PER_REQUEST`, `SENDER_OFFERS_DAILY` and `OFFERS_DAILY` in
   `index.js` hold them; one held already counts against none.
-- **The fetch.** Once an offer is taken as right, the API fetches each of its
-  files it does not hold from eWeLink's file server by name
-  ([offered.js](../website/api/offered.js) `CLOUDS`), and keeps one only if its
-  SHA-256 is the one agreed on: a made-up link fetches a file that does not
-  match, and the next link given for it is tried. A file kept is its mark
-  under `readouts/firmware/`, listed under the readout whose link fetched it.
-  `OFFER_FETCHES_DAILY` files are fetched a day at most, across everyone.
+- **A whole readout's links are in its manifest.** Each `offered` entry is
+  then `{"file": null, "version", "sha256", "link"}`, with no file under
+  `offered/` for it, and the manifest says `"cloud": "ewelink"`. The API
+  checks each link as an offer's (its path's shape, its SHA-256), turns the
+  readout away if one is not, and keeps them in `offer_links`. The readout's
+  offer is still its files' SHA-256s, and its fingerprint its firmware.
+- **The fetch, on first sight.** Each file a kept offer or readout links,
+  not held, is fetched by that link after the answer, from eWeLink's file
+  server by name ([offered.js](../website/api/offered.js) `CLOUDS`), and kept
+  only if its SHA-256 is the one given. This needs no agreement: a file
+  fetched from eWeLink proves itself, and eWeLink's files are a finite set,
+  so however many offers are made up the store holds no more than those. A
+  link that does not give its file is noted (`offer_fetch_failures`) and not
+  tried again for that SHA-256 on first sight, so the same made-up link sent
+  again costs nothing. A file kept is its mark under `readouts/firmware/`,
+  listed under the readout whose link fetched it, with the firmware names its
+  Sonoff wrapper gives (custom metadata `names`, joined by `+`; none for an
+  ESP8266 file), for you to review; nothing is refused on them.
+- **Agreement still says whose offer it is.** Once an offer is taken as
+  right, each of its files still not held is tried by the links given for
+  it, `OFFER_FETCH_PATHS` at most, those from the most networks first. A link that gave another file is
+  never tried again for it; one that gave nothing is, once a day.
+  `OFFER_FETCHES_DAILY` files are fetched a day at most, across everyone,
+  first sight's and agreement's alike. Of those, one sender's offers and
+  readouts get `OFFER_FIRST_SIGHT_PER_SENDER` first-sight fetches a day, so
+  one sender's made-up links cannot use up the day before owners' files are
+  tried; a file past it is fetched once its offer agrees, which no sender's
+  count holds.
 - **A file not given** is tried again each night. One still missing
   `OFFER_FETCH_ALERT_DAYS` after its offer agreed is in the nightly email.
+- **The admin view's Offers sent as links** counts the readouts that sent
+  links, by key beside each key's offers agreed, the files fetched from
+  links and their bytes, the files still missing for an agreed offer, and
+  the day's fetches against `OFFER_FETCHES_DAILY`.
 
 Set `OFFERED_SEND` to `"links"` once a released tool reads `send`, and watch
-the first offers agree and their files arrive. Set it back to `"files"` when
+the first files arrive and offers agree. Set it back to `"files"` when
 the nightly email says files are not being fetched and eWeLink is the cause:
 its file server checking the device's id, say, or links no longer lasting.
 Every tool in the field sends files again from its next run, with no
