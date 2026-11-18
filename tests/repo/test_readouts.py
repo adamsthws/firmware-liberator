@@ -14,8 +14,9 @@ OBJECTS = f"/accounts/a1/r2/buckets/{cs.READOUTS_BUCKET}/objects"
 class FakeBucket:
     """The R2 API's object listing, two to a page, as Cloudflare pages it with a cursor."""
 
-    def __init__(self, keys):
+    def __init__(self, keys, noted=None):
         self.keys = keys
+        self.noted = noted or {}
         self.asked = []
 
     def __call__(self, path, method="GET", body=None, ok_missing=False, whole=False):
@@ -30,7 +31,8 @@ class FakeBucket:
         page = chosen[start:start + 2]
         more = start + 2 < len(chosen)
         return {"result": [{"key": key, "size": 10, "last_modified": "2026-11-07T10:00:00Z",
-                            "custom_metadata": {"model": "S60TPF", "read": "true"}} for key in page],
+                            "custom_metadata": self.noted.get(key, {"model": "S60TPF", "read": "true"})}
+                           for key in page],
                 "result_info": {"is_truncated": more, "cursor": str(start + 2) if more else ""}}
 
 
@@ -58,15 +60,38 @@ class ReadoutsTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([line.split()[0] for line in out.splitlines()[:-1]], keys[:5])
         self.assertIn("model=S60TPF", out)
-        self.assertEqual(out.splitlines()[-1], f"5 in {cs.READOUTS_BUCKET}")
+        self.assertEqual(out.splitlines()[-1], f"5 in {cs.READOUTS_BUCKET} (readout: 5)")
         self.assertEqual([query.get("cursor") for query in fake.asked], [None, "2", "4"])
 
     def test_the_marks_beside_the_readouts_are_left_out_unless_asked_for(self):
         keys = ["readouts/2026-11-07/aa.tar", "readouts/held/NSPANEL/E32-MSW-NX/1.5.0/first",
                 "readouts/firmware/" + "a" * 64]
-        self.assertEqual(run(FakeBucket(keys))[1].splitlines()[-1], f"1 in {cs.READOUTS_BUCKET}")
+        self.assertEqual(run(FakeBucket(keys))[1].splitlines()[-1], f"1 in {cs.READOUTS_BUCKET} (readout: 1)")
         self.assertIn("2 in", run(FakeBucket(keys[1:]), "readouts/")[1])
         self.assertIn("1 in", run(FakeBucket(keys), "readouts/held/")[1])
+
+    def test_readouts_and_offers_sent_as_links_are_listed_each_saying_which(self):
+        keys = ["readouts/2026-11-07/aa.tar", "readouts/2026-11-07/" + "b" * 24 + ".json",
+                "readouts/firmware/" + "a" * 64]
+        code, out = run(FakeBucket(keys, {keys[1]: {"tool": "3.1.0", "model": "S60TPF", "read": "false"}}))
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertEqual([line.split()[:2] for line in lines[:-1]], [[keys[0], "readout"], [keys[1], "offer"]])
+        self.assertIn("tool=3.1.0  model=S60TPF  read=false", lines[1])
+        self.assertEqual(lines[-1], f"2 in {cs.READOUTS_BUCKET} (offer: 1, readout: 1)")
+
+    def test_firmware_lists_the_files_fetched_apart_from_the_marks_of_those_in_readouts(self):
+        fetched, marked = "readouts/firmware/" + "a" * 64, "readouts/firmware/" + "b" * 64
+        fake = FakeBucket(["readouts/2026-11-07/aa.tar", fetched, marked], {
+            fetched: {"readout": "readouts/2026-11-07/" + "c" * 24 + ".json", "fetched": "true"},
+            marked: {"readout": "readouts/2026-11-07/aa.tar"}})
+        code, out = run(fake, "firmware")
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertEqual([line.split()[:2] for line in lines[:-1]], [[fetched, "fetched"], [marked, "mark"]])
+        self.assertIn(f"readout=readouts/2026-11-07/{'c' * 24}.json", lines[0])
+        self.assertEqual(lines[-1], f"2 in {cs.READOUTS_BUCKET} (fetched: 1, mark: 1)")
+        self.assertEqual(fake.asked[0]["prefix"], "readouts/firmware/")
 
     def test_who_asked_to_be_emailed_and_a_products_owners(self):
         asked = []

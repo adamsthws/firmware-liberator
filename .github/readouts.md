@@ -251,6 +251,12 @@ wrangler reads its own name, `CLOUDFLARE_API_TOKEN`: set it to the same
 token. Putting or deleting an object needs one that can edit the bucket.
 `readouts.py --help` lists its other commands.
 
+`readouts.py` lists the readouts (`readout`, a tar) and the offers sent as
+links (`offer`, a JSON manifest), each line saying which. `readouts.py
+firmware` lists the offered files under `readouts/firmware/`: each one
+`fetched` from its link, its bytes there, or a `mark` of one a readout holds,
+with that readout's object.
+
 - **Reviewing.** `readouts.py review` lists the readouts waiting, by key,
   with an odd one's fingerprint marked; `approve ID` or `reject ID` settles
   one. A rejected one frees its place for another sender's.

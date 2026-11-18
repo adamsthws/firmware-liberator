@@ -2,6 +2,9 @@
 """The readouts people have sent, in the R2 bucket the API Worker keeps them in.
 
     python3 tools/repo/readouts.py [prefix]        list them (prefix: readouts/)
+    python3 tools/repo/readouts.py firmware        the offered files held: each
+                                                    one fetched, or a mark of one
+                                                    in a readout
     python3 tools/repo/readouts.py notify [PRODUCT]  who asked to be emailed as
                                                     more devices are supported
                                                     (of a product: its owners)
@@ -20,10 +23,14 @@
                                                     since REF (the latest release's
                                                     tag), and whom to tell of each
 
-Each line is a readout's key, size, when it came in and what the Worker noted
-of it: the tool, the model, and whether it holds a whole read.
-Under readouts/ only the readouts are listed, not the marks of what is held
-beside them; a prefix given lists everything under it.
+Each line is an object's key, what it is, its size, when it came in and what
+the Worker noted of it: the tool, the model, and whether it holds a whole
+read. A `readout` is a readout's tar; an `offer` the JSON manifest of a first
+stage sent as links (.github/readouts.md, "Offers sent as links"). Under
+readouts/ only those are listed, not the marks of what is held beside them; a
+prefix given lists everything under it. `firmware` lists readouts/firmware/:
+each offered file `fetched` from its link, its bytes there, or a `mark` of one
+held inside a readout, with the readout's object.
 
 `review` lists, by product, firmware model and version, each readout the
 API has not taken as right: fewer than three of them, from three senders,
@@ -52,7 +59,7 @@ when a new device is supported (.github/readouts.md). `changes` lists each devic
 status in devices/status.json differs from REF's, with its owners: run it
 when a release changes one. Never from CI, whose logs are public.
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
-readout.tar`, from website/, with CLOUDFLARE_API_TOKEN, as wrangler names it,
+readout.tar` (an offer's or a fetched file's the same way), from website/, with CLOUDFLARE_API_TOKEN, as wrangler names it,
 set to the same token. It is CLOUDFLARE_READOUTS_REVIEW_TOKEN, in the
 environment or tools/repo/.env.infra, as TOKENS in
 tools/repo/cloudflare_settings.py allows it; tools/repo/cloudflare_tokens.py
@@ -91,10 +98,25 @@ def objects(prefix: str) -> Iterator[dict[str, Any]]:
         query["cursor"] = info["cursor"]
 
 
+# Where the offered files held are marked, each by its SHA-256 (website/api/index.js firmwareKey).
+FIRMWARE = "readouts/firmware/"
+
+
+def kind(item: dict[str, Any]) -> str:
+    """What an object is: a readout's tar, an offer's manifest, an offered file
+    fetched from its link, a mark of one a readout holds, or something else."""
+    key = item["key"]
+    if key.startswith(FIRMWARE):
+        return "fetched" if (item.get("custom_metadata") or {}).get("fetched") == "true" else "mark"
+    return "readout" if key.endswith(".tar") else "offer" if key.endswith(".json") else "other"
+
+
 def describe(item: dict[str, Any]) -> str:
     noted = item.get("custom_metadata") or {}
-    return "  ".join(shown(part) for part in [item["key"], f"{item.get('size', 0):>10}", item.get("last_modified", ""),
-                     *(f"{key}={noted[key]}" for key in ("tool", "model", "read") if key in noted)])
+    return "  ".join(shown(part) for part in [item["key"], f"{kind(item):<7}", f"{item.get('size', 0):>10}",
+                                              item.get("last_modified", ""),
+                                              *(f"{key}={noted[key]}" for key in ("tool", "model", "read", "readout")
+                                                if key in noted)])
 
 
 def shown(value: Any) -> str:
@@ -366,18 +388,19 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) > 1 or args[:1] in (["-h"], ["--help"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    prefix = args[0] if args else "readouts/"
-    count = 0
+    prefix = FIRMWARE if args == ["firmware"] else args[0] if args else "readouts/"
+    counts: dict[str, int] = {}
     try:
         for item in objects(prefix):
-            if not args and not item["key"].endswith(".tar"):
+            if not args and kind(item) not in ("readout", "offer"):
                 continue   # the marks of what is held
             print(describe(item))
-            count += 1
+            counts[kind(item)] = counts.get(kind(item), 0) + 1
     except cs.SettingsError as error:
         print(f"readouts: {error}", file=sys.stderr)
         return 1
-    print(f"{count} in {cs.READOUTS_BUCKET}")
+    each = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
+    print(f"{sum(counts.values())} in {cs.READOUTS_BUCKET}" + (f" ({each})" if each else ""))
     return 0
 
 
