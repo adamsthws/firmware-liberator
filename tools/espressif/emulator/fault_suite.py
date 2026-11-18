@@ -2667,14 +2667,19 @@ class Scenario:
         self.target_final = target if len(results) > first else self.target
         return self.finish(results, None)
 
+    def dhcp_log(self):
+        """Every address the emulator's router gave the device, and any it gave
+        back, as its dnsmasq logged them (container/bin/wifi-root)."""
+        return self.ex("cat", "/run/autoflash-emu/dnsmasq.log").stdout
+
     def names_seen(self):
         """The names the device went by on the home network (DHCP, in order,
         repeats folded) and the networks it put out (its serial log)."""
         # By its MAC: a readdress gives it another address part way.
-        dhcp = self.ex("sh", "-c", "grep DHCPACK /run/autoflash-emu/dnsmasq.log 2>/dev/null"
-                                   f" | grep -i ' {MAC} '").stdout
+        dhcp = [line for line in self.dhcp_log().splitlines()
+                if "DHCPACK" in line and f" {MAC} ".lower() in line.lower()]
         names, networks = [], []
-        for line in dhcp.splitlines():
+        for line in dhcp:
             name = line.split()[-1]
             if ":" not in name and (not names or names[-1] != name):
                 names.append(name)
@@ -2880,14 +2885,15 @@ class Scenario:
                "seconds": round(time.time() - self.created)}
         with open(RESULTS, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
-        # Every run's log, events and recording, and the device's serial
-        # output, whatever the verdict, laid out as the Beken suite's: gone
+        # Every run's log, events and recording, the router's DHCP log and the
+        # device's serial output, whatever the verdict, laid out as the Beken suite's: gone
         # from the emulator when its next scenario begins.
         folder = Path(self.log).parent
         fault_verdicts.keep_runs(runs, folder,
                                  lambda path: self.carried.get(fault_verdicts.filed_as(path), 0))
         fault_verdicts.keep_recordings(Path(self.log).read_text(encoding="utf-8", errors="replace"),
                                        self.state / "work", folder)
+        fault_verdicts.keep_dhcp_log(self.dhcp_log(), folder)
         uart = self.state / "logs/uart.log"
         if uart.exists():
             with open(uart, "rb") as serial:

@@ -370,6 +370,14 @@ def scenario_folder(logs: Path, scenario_id: str) -> Path:
     return logs / scenario_id.replace(":", "_").replace(">", "-")
 
 
+def keep_dhcp_log(text: str, folder: Path) -> None:
+    """Every address the emulator's router gave the device, and any it gave
+    back (its lease), as its dnsmasq logged them: kept in `folder` as
+    dhcp.log, whatever the verdict, by both families' suites alike."""
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "dhcp.log").write_text(text, encoding="utf-8")
+
+
 def keep_runs(runs: Iterable[Path], folder: Path, before: Callable[[Path], int] = lambda path: 0) -> None:
     """Each of a scenario's run logs (`runs`, oldest first) and the events
     beside it copied into `folder` as run-1.log and run-1.events.jsonl, ...,

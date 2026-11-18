@@ -412,6 +412,20 @@ class ScenarioFolderTests(unittest.TestCase):
             self.assertEqual((folder / "run-2.log").read_text(encoding="utf-8"), "second\n")
             self.assertFalse((folder / "run-2.events.jsonl").exists())   # it wrote none
 
+    def test_the_routers_dhcp_log_is_kept_by_both_suites_alike(self):
+        # Every address the router gave the device: the Espressif suite kept
+        # none, though its router logs them as the Beken one's does.
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "logs/s"
+            fault_verdicts.keep_dhcp_log("DHCPACK(br0) 192.168.60.55 12:34:56:ab:cd:ef sonoff\n", folder)
+            self.assertIn("192.168.60.55", (folder / "dhcp.log").read_text(encoding="utf-8"))
+        root = Path(fault_verdicts.__file__).resolve().parents[2]
+        for suite in ("tools/espressif/emulator/fault_suite.py", "tools/beken/emulator/fault_suite.py"):
+            with self.subTest(suite=suite):
+                text = (root / suite).read_text(encoding="utf-8")
+                self.assertIn("fault_verdicts.keep_dhcp_log(", text)
+                self.assertNotIn('"dhcp.log"', text, "through keep_dhcp_log, which both suites share")
+
 
 class EvidenceTests(unittest.TestCase):
     def test_a_failures_records_are_kept_whole_but_its_firmware_images(self):

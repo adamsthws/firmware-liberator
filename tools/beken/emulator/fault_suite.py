@@ -1140,8 +1140,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
             outcome = dict(outcome, result="FAIL-SCREEN")
             notes["screen"] = screen
     fault_verdicts.keep_runs(instance.runs(), folder)
-    # Every address the router gave the device, and any it gave back (lease).
-    (folder / "dhcp.log").write_text(instance.dhcp_log(), encoding="utf-8")
+    fault_verdicts.keep_dhcp_log(instance.dhcp_log(), folder)
     if log.exists():   # every run's recording: what each stage showed on the way
         fault_verdicts.keep_recordings(log.read_text(encoding="utf-8", errors="replace"),
                                        instance.state / "work", folder)

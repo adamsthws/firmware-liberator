@@ -1506,6 +1506,7 @@ class KeptLogsTests(unittest.TestCase):
         with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
                 mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
                 mock.patch.object(sc, "names_seen", return_value=([], [])), \
+                mock.patch.object(sc, "dhcp_log", return_value="DHCPACK(tap0) 192.168.60.50 12:34:56:ab:cd:ef\n"), \
                 mock.patch.object(sc, "template_ok", return_value=True), \
                 mock.patch.object(sc, "release_of", return_value=None):
             row = sc.finish([(0, "Converted")], None)
@@ -1523,6 +1524,8 @@ class KeptLogsTests(unittest.TestCase):
         self.assertTrue((folder / "run-1.log").read_text(encoding="utf-8").startswith("[10:00:00]"))
         self.assertEqual((folder / "run-1.events.jsonl").read_text(encoding="utf-8"), '{"ours": 1}\n')
         self.assertEqual((folder / "serial.log").read_bytes(), b"this one's\n")
+        # Every address the router gave the device, as the Beken suite keeps it.
+        self.assertIn("192.168.60.50", (folder / "dhcp.log").read_text(encoding="utf-8"))
         self.assertFalse((folder / "evidence").exists())
 
     def test_a_failure_keeps_its_run_records_whole_too(self):
@@ -1563,6 +1566,7 @@ class EndChecksTests(unittest.TestCase):
             with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
                     mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
                     mock.patch.object(sc, "names_seen", return_value=([], [])), \
+                    mock.patch.object(sc, "dhcp_log", return_value=""), \
                     mock.patch.object(sc, "template_ok", return_value=True), \
                     mock.patch.object(sc, "release_of", return_value=release):
                 return sc.finish([(0, result)], None)
