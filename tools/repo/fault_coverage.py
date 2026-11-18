@@ -67,30 +67,14 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
 NOT_YET: dict[str, tuple[Cell, ...]] = {
     "badimage-once": (("readout", "beken"),),
     "badimage-restart": (("readout", "beken"),),
-    "cancel-continue": (("conversion", "beken"), ("readout", "beken")),
-    "cancel-new": (("conversion", "beken"), ("readout", "beken")),
-    "cancel-switch": (("conversion", "beken"),),
-    "corrupt-once": (("conversion", "beken"), ("readout", "beken")),
-    "ctrlc-apart": (("conversion", "beken"), ("readout", "beken")),
-    "ctrlc-countdown": (("conversion", "beken"),),
-    "ctrlc-once": (("readout", "beken"),),
-    "diskfull-once": (("conversion", "beken"), ("readout", "beken")),
-    "double-deviceoff": (("readout", "beken"),),
-    "double-outage": (("conversion", "beken"), ("readout", "beken")),
     "fallback": (("readout", "beken"),),
-    "hangup-continue": (("conversion", "beken"), ("readout", "beken")),
     "legacy": (("conversion", "beken"),),
-    "pcoff": (("conversion", "beken"), ("readout", "beken")),
     # An S60's: its emulator's router gives the device one address alone, and
     # passes the ARP for no other to it (container/bin/wifi-root's dhcp-host,
     # entrypoint.sh's filter), both in the image; and the suite watches the
     # device at that address throughout.
-    "readdress-new": (("conversion", "espressif"), ("readout", "espressif"), ("readout", "beken")),
+    "readdress-new": (("conversion", "espressif"), ("readout", "espressif")),
     "safemode-ten": (("conversion", "beken"),),
-    "second-run": (("conversion", "beken"), ("readout", "beken")),
-    "sleep": (("conversion", "beken"), ("readout", "beken")),
-    "token-login": (("conversion", "beken"), ("readout", "beken")),
-    "weak": (("conversion", "beken"), ("readout", "beken")),
 }
 
 

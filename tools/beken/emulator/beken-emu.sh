@@ -388,6 +388,9 @@ case "${1:-}" in
                            -v "$DEVICE_STATE/air:/device/air:ro" --cap-add NET_ADMIN
                            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)"
                            -e TERM_PROGRAM -e AUTOFLASH_READOUT_URL="$readout_url"
+                           # The countdown after a Ctrl-C long enough to press another in
+                           # (AUTOFLASH_EMULATOR_COUNTDOWN, the fault suite's ctrlc-countdown).
+                           -e AUTOFLASH_EMULATOR_COUNTDOWN
                            -e AUTOFLASH_EWELINK_API_BASE="https://$(subnet).1" --entrypoint bash)
         CONTAINER_USER=0:0 container /work/tools/beken/emulator/computer.sh "$@" ;;
     test) shift; ensure; firmwares; container /opt/beken-emulator/tests/self_test.py "$@" ;;

@@ -57,6 +57,15 @@ command again itself), and the router giving the device
 a new address once the step is done (readdress); and at each route's
 "apply", the device switched off 10, 50 or 90% of the way through its
 bootloader writing the new firmware in - timed off the device's own output.
+And at the steps that write, the Espressif suite's tries of the tool's own
+handling and of the network spoilt (OWN_HANDLING, NETWORK): Ctrl-C twice, then
+the run carried on, started afresh or to the other firmware (cancel);
+Ctrl-C twice apart, and at its countdown (ctrlc); the window closed (hangup);
+a second run beside it (second); the computer asleep (sleep) or off the
+network (pcoff); packets lost (weak) or changed (corrupt); an outage
+twice running (double). At B2 the account signed in to
+again beside the run (token), and at B4 the disk filling as the backup is
+written (diskfull). The readout's read has them too.
 And at each step that sends an image the stock bootloader installs - Sonoff's
 firmware's (B2) and OpenBeken's fetch of ESPHome (J2, O1) - an image it
 refuses (badimage): the tool sends it spoilt once (--simulate-bad-image
@@ -179,6 +188,43 @@ CORE = ([("deviceoff", 1), ("deviceoff", 30)] + [("outage", s) for s in OUTAGES]
 FALLBACK_STEPS = {"K2"}
 # At the steps that write, the riskiest moments too: just begun, nearly done.
 TIMING = [("deviceoff", 1), ("crash", 1)]
+# The tool's own handling, the same at every step, as the Espressif suite's
+# (its cancel, hangup, sleep, pcoff and OWN_HANDLING): tried where it matters
+# most, at the steps that write. Ctrl-C twice, then the run carried on
+# (continue), started again (new, --new) or to the other firmware (switch);
+# Ctrl-C twice apart, which must not stop it (FAIL-STOPPED), and at the
+# countdown it asks after one, which must (FAIL-NOT-STOPPED); the window
+# closed, which must stop it and be said by the next run (FAIL-NO-NOTE); a
+# second run beside it, which must be refused (FAIL-NOT-REFUSED) and leave it
+# be (FAIL-DISTURBED); the computer asleep for 10 minutes, or off the network
+# for 30 s or 2 minutes.
+OWN_HANDLING = [("cancel", "continue"), ("cancel", "new"), ("ctrlc", "apart"), ("ctrlc", "countdown"),
+                ("hangup", "continue"), ("second", "run"), ("sleep", 600), ("pcoff", 30), ("pcoff", 120)]
+# The network between this computer and the device spoilt, as the Espressif
+# suite's: one packet in ten lost for a minute (weak); a packet changed, its
+# checksum made good, so only the tool's and the device's own checks can tell
+# (corrupt, NO-TRAFFIC where none was); a power cut, or an outage, then
+# another as the tool sends again, or twice running as the device fetches on (double).
+NETWORK = [("weak", 60), ("corrupt", "once"), ("double", "deviceoff-1"), ("double", "outage-30")]
+# How long a double waits for the run to send its command again before the
+# second fault comes anyway, the step still under way (cut_as_sent_again).
+RESENT_WITHIN = 60
+# Where Ctrl-C twice can switch to the other firmware (cancel-switch); and
+# what a run says, refusing to switch part way, to start again with --new.
+OTHER = {"openbeken": "esphome", "esphome": "openbeken"}
+SWITCH_REFUSED = "cannot switch to"
+# How long the countdown after one Ctrl-C waits in the emulator, for the
+# second to land in it (ctrlc-countdown; prompts.countdown_carry_on).
+COUNTDOWN = 30
+# Ctrl-C twice apart: past the countdown's own wait, as the Espressif suite's.
+APART = 11
+# Where the run sends through eWeLink, and the account is signed in to again
+# beside it, each sign-in ending the one before (token-login): Sonoff's update.
+TOKEN_STEPS = {"B2"}
+# Where the backup is written (B4), and the disk fills as it is: the run must
+# never go on without all of it (diskfull, FAIL-BAD-BACKUP).
+DISKFULL = ("sonoff>openbeken", "B4")
+DISKFULL_LIMIT = 1_000_000   # bytes a file may grow to while it lasts, for a minute
 RUN_LIMIT = 1500       # seconds one run of the tool may take
 RECOVERY_RUNS = 4      # runs after the fault before a scenario fails
 # The steps whose image the stock bootloader installs, and the tool can send
@@ -220,6 +266,17 @@ OPENBEKEN_CHECK = ["sonoff>openbeken:B4:crash-1", "sonoff>esphome:J2:badimage-on
 READOUT_PHASES = {"read": ("read", "read-done", 400), "back": ("back", "back-done", 100)}
 READOUT_FAULTS = [("read", "deviceoff", 1, 40), ("read", "outage", 30, 40), ("read", "crash", 1, 40),
                   ("back", "deviceoff", 1, 10), ("back", "outage", 30, 10)]
+# And in the read, the longest phase, what a conversion's steps that write
+# have (OWN_HANDLING, NETWORK): the tool's own handling, the network spoilt,
+# Ctrl-C once, the account signed in to again beside it; the device at a new
+# address as the read ends; and the disk filling as the readout is written,
+# at its end. Not Ctrl-C at the countdown: a readout asks after a Ctrl-C only
+# at its next question (readout.py), so an unattended one counts down to none
+# (tools/repo/fault_coverage.py NOT_EVERYWHERE).
+READOUT_HANDLING = [fault for fault in OWN_HANDLING if fault != ("ctrlc", "countdown")]
+READOUT_FAULTS += [("read", fault, arg, 40) for fault, arg in
+                   READOUT_HANDLING + NETWORK + [("ctrlc", "once"), ("token", "login"), ("readdress", "new")]]
+READOUT_FAULTS += [("read", "diskfull", "once", 40)]
 READOUT = "readout.tar"
 # A readout of every device in the account (readout --all) the stub lists
 # beside the S61, made up (stub_cloud.accounts), each sent to the API beside the
@@ -250,11 +307,20 @@ def scenarios(quick: bool = False) -> list[dict]:
                     for fault, arg in TIMING:
                         found.append(dict(id=sid(route, step, fault, arg, at), route=route, step=step,
                                           fault=fault, arg=arg, at=at))
-                # A power cut there, then another as the tool sends it again; and the
-                # device at a new address once it is sent, as a router may give it.
-                for fault, arg in (("double", "deviceoff-1"), ("readdress", "new")):
+                # The tool's own handling and the network spoilt (OWN_HANDLING,
+                # NETWORK); and the device at a new address once it is sent, as a
+                # router may give it.
+                target = route.split(">")[1]
+                for fault, arg in (OWN_HANDLING + NETWORK + [("readdress", "new")]
+                                   + ([("cancel", "switch")] if target in OTHER else [])):
                     found.append(dict(id=sid(route, step, fault, arg), route=route, step=step,
                                       fault=fault, arg=arg, at=40))
+            if step in TOKEN_STEPS and route.startswith("sonoff>"):
+                found.append(dict(id=sid(route, step, "token", "login"), route=route, step=step,
+                                  fault="token", arg="login", at=40))
+            if (route, step) == DISKFULL:
+                found.append(dict(id=sid(route, step, "diskfull", "once"), route=route, step=step,
+                                  fault="diskfull", arg="once", at=40))
             if step in FALLBACK_STEPS:
                 found.append(dict(id=sid(route, step, "fallback", 150), route=route, step=step,
                                   fault="fallback", arg=150, at=40))
@@ -429,8 +495,12 @@ class Instance:
         `folder`), in the enough account the products the API has enough of
         (AUTOFLASH_API_ENOUGH), and in the many account the API taking one
         readout a minute, so its limit is reached however slowly they come."""
-        for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH", "AUTOFLASH_LOCAL_READOUT_LIMIT"):
+        for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH", "AUTOFLASH_LOCAL_READOUT_LIMIT",
+                        "AUTOFLASH_EMULATOR_COUNTDOWN"):
             self.env.pop(setting, None)
+        # The countdown after one Ctrl-C long enough for a second to land in it.
+        if (sc.get("fault"), sc.get("arg")) == ("ctrlc", "countdown"):
+            self.env["AUTOFLASH_EMULATOR_COUNTDOWN"] = str(COUNTDOWN)
         name = sc.get("account")
         if not name:
             return
@@ -470,7 +540,7 @@ class Instance:
         kept unsent (--no-api), for readout_problems to judge; with `api`, sent
         to the API beside the emulator, for api_problems to judge."""
         args = ([*([] if api else ["--no-api"]), "computer", "tools/repo/unattended_run.py", "--command",
-                 "readout", "--", "--env-file", "captures/tool.env"]
+                 "readout", "--", "--env-file", "captures/tool.env"] + (["--new"] if new else [])
                 if target == "readout" else
                 ["--no-api", "computer", "tools/repo/unattended_run.py", "--", "--env-file", "captures/tool.env",
                  "--firmware", target] + (["--new"] if new else [])) + list(more)
@@ -607,19 +677,160 @@ def cut_power(instance: Instance, seconds: float, wait: float = 30) -> bool:
     return went_off
 
 
-def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
+def computer_address(instance: Instance, notes: dict) -> str:
+    """The computer's address on the Wi-Fi, to bring it back on at: "" (noted)
+    where it has none."""
+    address = subprocess.run(["docker", "inspect", "-f",
+                              "{{(index .NetworkSettings.Networks \"%s\").IPAddress}}" % instance.network,
+                              instance.computer], capture_output=True, text=True).stdout.strip()
+    notes["outage_address"] = address
+    if not address:
+        not_applied(notes, "the computer's address on the Wi-Fi")
+    return address
+
+
+def computer_back(instance: Instance, address: str, notes: dict) -> None:
+    """The computer back on the Wi-Fi. A run may end while it is off: then
+    there is no computer to bring back, and the fault still happened."""
+    back = subprocess.run(["docker", "network", "connect", "--ip", address, instance.network, instance.computer],
+                          capture_output=True, text=True)
+    if back.returncode and running(instance.computer):
+        not_applied(notes, "docker network connect")
+
+
+# The tool's own process on the computer, under the recorder: signalled
+# itself, so a second Ctrl-C, or a window closed, reaches it as a terminal's
+# would, not the recorder (unattended_run.py) around it.
+TOOL = "tools/autoflash/cli.py"
+
+
+def signal_tool(instance: Instance, sig: str, notes: dict, required: bool = True) -> None:
+    """`sig` to the run; `required` false for one it may have ended already
+    (the second Ctrl-C of two)."""
+    done = subprocess.run(["docker", "exec", instance.computer, "pkill", f"-{sig}", "-f", TOOL],
+                          capture_output=True, text=True)
+    if done.returncode and required:
+        not_applied(notes, f"{sig} to the run")
+
+
+def as_you(instance: Instance, *command: str, timeout: float = 60) -> subprocess.CompletedProcess:
+    """`command` on the computer as your user, in its copy of the checkout, as
+    the run there is (computer.sh): the stub's CA trusted."""
+    return subprocess.run(["docker", "exec", "-u", f"{os.getuid()}:{os.getgid()}", "-w", "/work",
+                           "-e", "HOME=/tmp", "-e", "SSL_CERT_FILE=/tmp/ca-bundle.pem", instance.computer,
+                           *command], capture_output=True, text=True, timeout=timeout)
+
+
+def as_root(instance: Instance, script: str, timeout: float = 60) -> subprocess.CompletedProcess:
+    """A shell `script` on the computer as its root, who may change its network."""
+    return subprocess.run(["docker", "exec", "-u", "0", instance.computer, "sh", "-c", script],
+                          capture_output=True, text=True, timeout=timeout)
+
+
+# One packet in ten lost on the computer's Wi-Fi each way, and the rest
+# delayed, as the Espressif suite's weak network (netem out, a drop in).
+WEAK_ON = ("tc qdisc add dev eth0 root netem delay 150ms 100ms loss 10% && "
+           "tc qdisc add dev eth0 handle ffff: ingress && "
+           "tc filter add dev eth0 parent ffff: protocol ip u32 match u32 0 0 "
+           "action gact ok random netrand drop 10")
+WEAK_OFF = "tc qdisc del dev eth0 root; tc qdisc del dev eth0 ingress"
+# A TCP packet of 128 bytes or more in 20 (in 2 at a short step), a byte of
+# its data changed past any header and its checksum made good, each way on the
+# computer's Wi-Fi: the Espressif suite's corrupt_filter, by the same length
+# bands, as the computer sends and takes them.
+SHORT_STEP = 5
+
+
+def corrupt_on(every: int) -> str:
+    from tools.espressif.emulator.fault_suite import LENGTHS, corrupt_filter
+    return "; ".join(["tc qdisc add dev eth0 clsact"] + [
+        f"tc filter add dev eth0 {way} pref {base + i} " + " ".join(corrupt_filter(value, mask, every))
+        for way, base in (("egress", 10), ("ingress", 20)) for i, (value, mask) in enumerate(LENGTHS)])
+
+
+CORRUPTED = re.compile(r"pedit.*?Sent \d+ bytes (\d+) pkt", re.S)
+
+
+def corrupt(instance: Instance, length: float, notes: dict) -> None:
+    """Packets changed until one has been, or a minute, as the Espressif suite's."""
+    done = as_root(instance, corrupt_on(2 if length <= SHORT_STEP else 20))
+    if done.returncode:
+        not_applied(notes, f"the packet changer: {done.stderr.strip()[-120:]}")
+        as_root(instance, "tc qdisc del dev eth0 clsact")
+        return
+    edited, deadline = 0, time.monotonic() + 60
+    while not edited and time.monotonic() < deadline:
+        time.sleep(0.2)
+        shown = as_root(instance, "tc -s filter show dev eth0 egress; tc -s filter show dev eth0 ingress").stdout
+        edited = sum(int(n) for n in CORRUPTED.findall(shown))
+    as_root(instance, "tc qdisc del dev eth0 clsact")
+    notes["corrupted_packets"] = edited
+
+
+def second_run(instance: Instance, target: str, notes: dict) -> None:
+    """A second window, the same command, while the run works: it must be
+    refused (runs.py), the first left be."""
+    command = (["readout"] if target in READOUTS else ["run", "--firmware", target])
+    try:
+        done = as_you(instance, "timeout", "150", "python", TOOL, *command, "--unattended",
+                      "--env-file", "captures/tool.env", timeout=200)
+        said = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;]*m", "", done.stdout + done.stderr))
+    except subprocess.TimeoutExpired:
+        said = ""
+    notes["second_refused"] = "another run is converting this device" in said
+    notes["second_said"] = said[-300:]
+
+
+def countdown(instance: Instance, notes: dict) -> None:
+    """Ctrl-C, then Ctrl-C again as the run counts down to carrying on:
+    it must stop at once."""
+    signal_tool(instance, "INT", notes)
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        if "You pressed Ctrl-C" in instance.last_log():
+            time.sleep(3)
+            signal_tool(instance, "INT", notes, required=False)
+            notes["countdown_pressed"] = True
+            return
+        time.sleep(0.5)
+
+
+def fill_disk(instance: Instance, notes: dict) -> None:
+    """The run's files held to DISKFULL_LIMIT bytes for a minute, as a disk
+    filling: as your user, whose soft limit it is, so it can be lifted."""
+    pid = subprocess.run(["docker", "exec", instance.computer, "pgrep", "-o", "-f", TOOL],
+                         capture_output=True, text=True).stdout.strip()
+    if not pid or as_you(instance, "prlimit", f"--pid={pid}", f"--fsize={DISKFULL_LIMIT}:").returncode:
+        not_applied(notes, "the run's file size limited")
+        return
+    notes["diskfull_pid"] = pid
+    time.sleep(60)
+    as_you(instance, "prlimit", f"--pid={pid}", "--fsize=unlimited:")
+
+
+def sign_in_again(instance: Instance, notes: dict) -> None:
+    """The account signed in to beside the run, as the app on a phone does:
+    eWeLink keeps one sign-in, so the run's ends."""
+    done = as_you(instance, "sh", "-c", "set -a && . captures/tool.env && exec python -c 'import os; "
+                  "from tools.ewelink.get_device_key import login; "
+                  "login(os.environ[\"EWELINK_EMAIL\"], os.environ[\"EWELINK_PASSWORD\"], \"+44\", \"eu\"); "
+                  "print(\"signed in again\")'")
+    notes["token"] = (done.stdout + done.stderr).strip()[-200:]
+    if done.returncode:
+        not_applied(notes, "the sign-in beside the run")
+
+
+def inject(instance: Instance, fault: str, arg, notes: dict, target: str = "", length: float = 30) -> None:
+    """The fault, now: `target`, what the run is to (for a second run beside
+    it); `length`, how long its step usually takes."""
     if fault == "deviceoff":
         if not cut_power(instance, arg):
             not_applied(notes, "the device switched off")
     elif fault == "outage":
         # The network gone, as the Espressif suite's outage is, the router off:
         # the device's access point off the air, and this computer off it too.
-        address = subprocess.run(["docker", "inspect", "-f",
-                                  "{{(index .NetworkSettings.Networks \"%s\").IPAddress}}" % instance.network,
-                                  instance.computer], capture_output=True, text=True).stdout.strip()
-        notes["outage_address"] = address
+        address = computer_address(instance, notes)
         if not address:
-            not_applied(notes, "the computer's address on the Wi-Fi")
             return
         try:
             instance.router("off")
@@ -631,12 +842,45 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
             instance.router("on")
         except subprocess.CalledProcessError:
             not_applied(notes, "the router switched on again")
-        # A run may end while the computer is off the Wi-Fi: then there is no
-        # computer to bring back, and the outage still happened.
-        back = subprocess.run(["docker", "network", "connect", "--ip", address, instance.network, instance.computer],
-                              capture_output=True, text=True)
-        if back.returncode and running(instance.computer):
-            not_applied(notes, "docker network connect")
+        computer_back(instance, address, notes)
+    elif fault in ("pcoff", "sleep"):
+        # This computer off the network - and asleep, everything of it
+        # stopped - the device's Wi-Fi left as it is, then all back at once.
+        address = computer_address(instance, notes)
+        if not address:
+            return
+        must(notes, "docker", "network", "disconnect", instance.network, instance.computer)
+        if fault == "sleep":
+            must(notes, "docker", "pause", instance.computer)
+        time.sleep(arg)
+        if fault == "sleep":
+            must(notes, "docker", "unpause", instance.computer)
+        computer_back(instance, address, notes)
+    elif fault == "weak":
+        if as_root(instance, WEAK_ON).returncode:
+            not_applied(notes, "the weak network")
+        time.sleep(arg)
+        as_root(instance, WEAK_OFF)
+    elif fault == "corrupt":
+        corrupt(instance, length, notes)
+    elif fault == "cancel":
+        signal_tool(instance, "INT", notes)
+        time.sleep(1)
+        signal_tool(instance, "INT", notes, required=False)
+    elif fault == "ctrlc" and arg == "apart":
+        signal_tool(instance, "INT", notes)
+        time.sleep(APART)
+        signal_tool(instance, "INT", notes, required=False)
+    elif fault == "ctrlc" and arg == "countdown":
+        countdown(instance, notes)
+    elif fault == "hangup":
+        signal_tool(instance, "HUP", notes)
+    elif fault == "second":
+        second_run(instance, target, notes)
+    elif fault == "diskfull":
+        fill_disk(instance, notes)
+    elif fault == "token":
+        sign_in_again(instance, notes)
     elif fault == "fallback":
         # The router alone off, long enough for ESPHome to raise its own network.
         try:
@@ -721,7 +965,33 @@ def not_fired(fault: str, notes: dict) -> bool:
                 or (fault == "double" and not notes.get("second_cut"))
                 or (fault == "readdress" and not (notes.get("moved_from") and notes.get("moved_to")
                                                   and notes["moved_from"] != notes["moved_to"]))
-                or (fault == "ctrlc" and not notes.get("ctrlc_seen")))
+                or (fault in ("ctrlc", "cancel") and not notes.get("ctrlc_seen")))
+
+
+def handling_verdict(sc: dict, notes: dict, ok: bool, runs: int, texts: Callable[[], list[str]]) -> str | None:
+    """What the tool's own handling, or the network spoilt, did wrong, as the
+    Espressif suite judges it (None for nothing): `ok`, whether the scenario
+    got to its end; `runs`, the runs of the tool from the fault on; `texts`,
+    each run's words, asked for where they are needed."""
+    fault, arg = sc["fault"], sc["arg"]
+    if fault == "corrupt" and not notes.get("corrupted_packets"):
+        return "NO-TRAFFIC"
+    if fault == "ctrlc" and arg in ("once", "apart") and ok and runs > 1:
+        return "FAIL-STOPPED"     # one Ctrl-C, or two apart, must not stop the run
+    if fault == "ctrlc" and arg == "countdown" and not notes.get("countdown_pressed"):
+        return "NOT-FIRED"
+    if fault in ("hangup", "ctrlc") and arg in ("continue", "countdown") and runs == 1:
+        return "FAIL-NOT-STOPPED"  # the window closed, or Ctrl-C at the countdown, stops it
+    # The next run must say why the last one stopped, carrying it on: a
+    # readout is never carried on (readout.py), so says nothing of it.
+    if (fault == "hangup" and sc.get("route", "").split(">")[-1] not in READOUTS
+            and "when its window was closed" not in re.sub(r"\s+", " ", "".join(texts()))):
+        return "FAIL-NO-NOTE"
+    if fault == "second" and not notes.get("second_refused"):
+        return "FAIL-NOT-REFUSED"
+    if fault == "second" and ok and runs > 1:
+        return "FAIL-DISTURBED"    # the run refused must not disturb the first
+    return None
 
 
 def wait_for(run: subprocess.Popen, seen: Callable[[], bool], limit: float = RUN_LIMIT) -> bool:
@@ -826,6 +1096,10 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = bad_image_scenario(instance, sc, target, log, notes)
     else:
         outcome = step_scenario(instance, sc, target, log, notes)
+    # The route the runs went: another firmware's, where the person switched to
+    # it after Ctrl-C twice (cancel-switch), the device then judged on that.
+    route = outcome.pop("route", sc["route"])
+    target = route.split(">")[1]
     person.done.set()
     person.join(10)
     if outcome["result"] in ("PASS", "FAIL") and fault_verdicts.unexpected(
@@ -838,11 +1112,11 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     if outcome["result"] == "PASS" and target not in READOUTS:
         names = instance.dhcp_names()
         flash = None
-        if "J2" in route_steps(sc["route"]):
+        if "J2" in route_steps(route):
             instance.stop()   # its flash kept as it stops
             flash = (instance.state / "flash.bin").read_bytes()
         notes["dhcp_names"] = names
-        problems = interim_problems(sc["route"], names, flash)
+        problems = interim_problems(route, names, flash)
         if problems:
             outcome = dict(outcome, result="FAIL")
             notes["interim"] = problems
@@ -945,16 +1219,50 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
 
 def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes: dict) -> bool:
     """A double's second cut, as the run under way sends its command again: one
-    that does converts by itself, and no run again would get the cut."""
+    that does converts by itself, and no run again would get the cut. One that
+    rides the first out with nothing sent again - an outage, the device
+    fetching on - gets the second as the step goes on, twice running, as the
+    Espressif suite's double is."""
     def resent() -> int:   # the command sent again (tools/ewelink/ota_push, output.EVENTS)
         return sum(item["event"] == "resent" for item in instance.last_events())
     before = resent()
-    if not wait_for(run, lambda: resent() > before):
+    delay = ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100
+    if doubled(sc)[0] == "outage":
+        # The device fetches on through an outage, needing nothing sent again:
+        # the second as soon as the step has gone on a while.
+        time.sleep(delay)
+        if run.poll() is not None or happened(instance, "done", step=sc["step"]):
+            return False
+    elif wait_for(run, lambda: resent() > before, limit=RESENT_WITHIN):
+        time.sleep(delay)
+    elif run.poll() is not None or happened(instance, "done", step=sc["step"]):
         return False
-    time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
-    inject(instance, "deviceoff", 1, notes)
+    inject(instance, *doubled(sc), notes)
     notes["second_cut"] = True
     return True
+
+
+def doubled(sc: dict) -> tuple[str, int]:
+    """A double's fault, each time: "deviceoff-1" a 1 s power cut, "outage-30"
+    a 30 s outage."""
+    fault, length = sc["arg"].rsplit("-", 1)
+    return fault, int(length)
+
+
+def backup_whole(instance: Instance) -> bool:
+    """Whether the device's backup this run took is there, every file of it as
+    its manifest says (records.save_beken_backup)."""
+    import hashlib
+    found = list((instance.state / "work/captures/devices").glob("*/sonoff-backup/backup.json"))
+    for manifest in found:
+        try:
+            regions = json.loads(manifest.read_text(encoding="utf-8"))["regions"]
+            if any(hashlib.sha256((manifest.parent / name).read_bytes()).hexdigest() != region["sha256"]
+                   for name, region in regions.items()):
+                return False
+        except (OSError, ValueError, KeyError):
+            return False
+    return bool(found)
 
 
 def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
@@ -969,46 +1277,62 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
             return dict(result="NO-STEP")
         recover(instance, target, notes)
         run = instance.tool(target, log)
+    length = ROUTES[sc["route"]][sc["step"]]
     if sc["fault"] == "readdress":
         if not wait_for(run, lambda: happened(instance, "done", step=sc["step"])):
             notes["mistimed"] = True
         readdress(instance, notes)
     else:
-        time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
+        time.sleep(length * sc["at"] / 100)
         if happened(instance, "done", step=sc["step"]):
             notes["mistimed"] = True
-        fault, arg = ("deviceoff", 1) if sc["fault"] == "double" else (sc["fault"], sc["arg"])
-        inject(instance, fault, arg, notes)
+        fault, arg = doubled(sc) if sc["fault"] == "double" else (sc["fault"], sc["arg"])
+        inject(instance, fault, arg, notes, target=target, length=length)
         if fault == "crash":
             run.wait(timeout=60)
             time.sleep(arg)
         if sc["fault"] == "double":
             cut_as_sent_again(instance, run, sc, notes)
     finish(run, instance)
+    # After Ctrl-C twice, the person runs it to the other firmware (switch) or
+    # afresh (new), as the Espressif suite's cancel does; else as it was.
+    if (sc["fault"], sc["arg"]) == ("cancel", "switch"):
+        target = OTHER[target]
+    route = f"{sc['route'].split('>')[0]}>{target}"
+    afresh = (sc["fault"], sc["arg"]) == ("cancel", "new")
     second = sc["fault"] == "double" and not notes.get("second_cut")
     runs = 1
-    while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS:
+    while not converted(instance.last_state(), route) and runs <= RECOVERY_RUNS:
         recover(instance, target, notes)
-        run = instance.tool(target, log)
+        run = instance.tool(target, log, new=afresh)
         if second and wait_for_step(instance, sc["step"], run):
-            # The second cut, as the tool sends the step again.
-            time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
-            inject(instance, "deviceoff", 1, notes)
+            # The second fault, as the tool sends the step again.
+            time.sleep(length * sc["at"] / 100)
+            inject(instance, *doubled(sc), notes)
             notes["second_cut"] = True
             second = False
         finish(run, instance)
         runs += 1
+        # A switch to the other firmware part way is refused, the run saying to
+        # start again with --new: as the person told, as the Espressif suite does.
+        afresh = (sc["fault"], sc["arg"]) == ("cancel", "switch") and SWITCH_REFUSED in instance.last_log()
+        if afresh:
+            notes["switch_refused"] = True
     if sc["fault"] == "readdress":
         notes["moved_to"] = instance.lease()
-    if sc["fault"] == "ctrlc":
-        notes["ctrlc_seen"] = any(CTRL_C_LOGGED in path.read_text(encoding="utf-8", errors="replace")
-                                  for path in instance.runs())
-    ok = converted(instance.last_state(), sc["route"])
+    if sc["fault"] in ("ctrlc", "cancel"):
+        notes["ctrlc_seen"] = any(CTRL_C_LOGGED in text for text in instance.run_texts())
+    ok = converted(instance.last_state(), route)
     if notes.get("mistimed"):
         return dict(result="MISTIMED", runs=runs)
     if ok and not_fired(sc["fault"], notes):
         return dict(result="NOT-FIRED", runs=runs)
-    return dict(result="PASS" if ok else "FAIL", runs=runs)
+    wrong = handling_verdict(sc, notes, ok, runs, instance.run_texts)
+    if sc["fault"] == "diskfull" and not backup_whole(instance):
+        wrong = "FAIL-BAD-BACKUP"   # never on without the whole backup
+    if wrong:
+        return dict(result=wrong, runs=runs, route=route)
+    return dict(result="PASS" if ok else "FAIL", runs=runs, route=route)
 
 
 def to_api(sc: dict) -> bool:
@@ -1083,19 +1407,37 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     def problems_now() -> list[str] | None:
         return api_problems(instance, log) if sent else readout_problems(instance)
     run = instance.tool("readout", log, api=sent)
+    second = sc["fault"] == "double"
     if sc["fault"] != "none":
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
             return dict(result="NO-STEP", runs=1)
-        time.sleep(length * sc["at"] / 100)
-        if happened(instance, "phase", phase=ends):
-            notes["mistimed"] = True
-        inject(instance, sc["fault"], sc["arg"], notes)
-        if sc["fault"] == "crash":
-            run.wait(timeout=60)
-            time.sleep(sc["arg"])
+        if sc["fault"] in ("readdress", "diskfull"):
+            # As the read ends: the device then asked for at the address it had,
+            # or the readout written as the disk fills.
+            if not wait_for(run, lambda: happened(instance, "phase", phase=ends)):
+                notes["mistimed"] = True
+            if sc["fault"] == "readdress":
+                readdress(instance, notes)
+            else:
+                inject(instance, "diskfull", sc["arg"], notes)
+        else:
+            time.sleep(length * sc["at"] / 100)
+            if happened(instance, "phase", phase=ends):
+                notes["mistimed"] = True
+            fault, arg = doubled(sc) if second else (sc["fault"], sc["arg"])
+            inject(instance, fault, arg, notes, target="readout", length=length)
+            if fault == "crash":
+                run.wait(timeout=60)
+                time.sleep(arg)
+            if second and not wait_for(run, lambda: happened(instance, "phase", phase=ends), limit=RESENT_WITHIN):
+                # Ridden out, the read going on: the second, twice running.
+                if run.poll() is None:
+                    inject(instance, fault, arg, notes)
+                    notes["second_cut"], second = True, False
     finish(run, instance)
+    afresh = (sc["fault"], sc["arg"]) == ("cancel", "new")
     runs = 1
     while problems_now() != [] and runs <= RECOVERY_RUNS:
         since = len(instance.stub_said())
@@ -1103,14 +1445,28 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
         settle(instance, since)
         again = "sonoff" if instance.answering() else "readout"
         notes.setdefault("then", []).append(again)
-        finish(instance.tool(again, log, api=sent and again == "readout"), instance)
+        run = instance.tool(again, log, new=afresh and again == "readout", api=sent and again == "readout")
+        afresh = afresh and again != "readout"   # --new the first time it is read out again
+        if second and again == "readout" and wait_for(run, lambda: happened(instance, "phase", phase="read")):
+            # A double's second fault: as the next readout reads again.
+            time.sleep(READOUT_PHASES["read"][2] * sc["at"] / 100)
+            inject(instance, *doubled(sc), notes)
+            notes["second_cut"], second = True, False
+        finish(run, instance)
         runs += 1
+    if sc["fault"] == "readdress":
+        notes["moved_to"] = instance.lease()
+    if sc["fault"] in ("ctrlc", "cancel"):
+        notes["ctrlc_seen"] = any(CTRL_C_LOGGED in text for text in instance.run_texts())
     problems = problems_now()
     notes["readout"] = problems if problems is not None else ["none kept"]
     if notes.get("mistimed"):
         return dict(result="MISTIMED", runs=runs)
     if not_fired(sc["fault"], notes):
         return dict(result="NOT-FIRED", runs=runs)
+    wrong = handling_verdict(sc, notes, problems == [], runs, instance.run_texts)
+    if wrong:
+        return dict(result=wrong, runs=runs)
     if problems != []:
         # No whole readout kept; or sent, the API's verdict (api_problems).
         first = notes["readout"][0].split(":")[0]

@@ -900,7 +900,7 @@ emulated ones started from the public S61s dump
 (`beken-emu.sh --instance N device`,
 [its README](../tools/beken/emulator/README.md)), each on a home Wi-Fi of its
 own with the local eWeLink stub, so nothing reaches the internet and every
-scenario can run side by side. It has 414 scenarios.
+scenario can run side by side. It has 579 scenarios.
 
 #### What it covers (Beken)
 
@@ -920,6 +920,24 @@ says to and going back after, as the Espressif suite's does. At the steps that w
 cut and a kill at 10% and at 90%, a power cut and another as the tool sends
 the step again (`double`), and the router giving the device a new address
 once the step is done (`readdress`).
+
+**The tool's own handling, and the network spoilt**, as the Espressif suite
+tries them, at the steps that write (`OWN_HANDLING`, `NETWORK`): Ctrl-C twice,
+then the run carried on (`cancel-continue`), started afresh (`cancel-new`) or
+to the other firmware (`cancel-switch`); Ctrl-C twice apart, which must not
+stop it (FAIL-STOPPED, as Ctrl-C once must not either), and at the countdown
+it asks after one, which must (FAIL-NOT-STOPPED); the window closed, which
+must stop it, the next run saying why (FAIL-NO-NOTE); a second run beside it,
+which must be refused (FAIL-NOT-REFUSED) and leave it be (FAIL-DISTURBED);
+the computer asleep for 10 minutes (`sleep`, its container paused and off the
+Wi-Fi), or off the Wi-Fi for 30 s or 2 minutes (`pcoff`); one packet in ten
+lost for a minute (`weak`), a packet changed with its checksum made good
+(`corrupt`, NO-TRAFFIC where none passed), and an outage twice running, as the
+device fetches on (`double-outage`). The signals go to the tool itself, not the
+recorder around it. And at B2, the eWeLink account signed in to again beside
+the run (`token-login`); at B4, the backup, the run's files held to 1 MB for a
+minute as a disk filling (`diskfull`): the run must never go on without the
+whole backup, every file as its manifest says (FAIL-BAD-BACKUP).
 
 **The bootloader's write.** Each route also has the device switched off 10,
 50 and 90% of the way through its bootloader writing the new firmware in
@@ -949,7 +967,12 @@ for a Beken device, found by its hardware address as every device is.
   at 40% of the read (about 400 s: the whole 4 MB in 256 paced chunks, where
   B4 reads 8 in 12 s) and at 10% of putting Sonoff's firmware back (100 s, as
   O2 and K3 take: the fault lands while the readout OpenBeken fetches it, the
-  part only the readout has); and with the tool killed mid-read.
+  part only the readout has); and with the tool killed mid-read. In the read,
+  too, what a conversion's steps that write are tried with - the tool's own
+  handling, but Ctrl-C at the countdown, which a readout never asks, and the
+  network spoilt - and Ctrl-C once, the account signed in to
+  again, the device given a new address as the read ends, and the disk
+  filling as the read ends, as the readout is written.
 - After each, as a person would: the device is switched off and on where the
   run says to, Sonoff's firmware put back with the tool
   (`run --firmware sonoff`) where the device was left on OpenBeken, and
