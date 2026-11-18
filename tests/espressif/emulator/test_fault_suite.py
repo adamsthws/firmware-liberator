@@ -1823,6 +1823,17 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(self.converted(0, sent=True)[0], "FAIL-SENT")
         self.assertEqual(self.converted(0, template=False)[0], "FAIL-DISTURBED")
 
+    def test_a_sign_in_again_beside_the_run_trusts_the_stub(self):
+        # Seen: without the stub's OpenSSL settings its certificate was not
+        # trusted, and token-login never happened on the stub (NOT-FIRED).
+        sc = self.scenario(fault="token", arg="login")
+        with mock.patch.object(sc, "must", return_value=mock.Mock(stdout="logged in again", stderr="")) as must, \
+                mock.patch.object(fs, "STUB_CLOUD", True):
+            sc.fault("token", "login", 0, None)
+        script = must.call_args.args[2]
+        for key, value in fs.STUB_ENV.items():
+            self.assertIn(f"{key}={value}", script)
+
     def test_how_a_readout_ended(self):
         with tempfile.TemporaryDirectory() as tmp:
             sc = self.scenario()

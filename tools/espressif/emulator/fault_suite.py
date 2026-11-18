@@ -165,6 +165,11 @@ DEVICE_URL = f"http://{DEVICE_IP}"
 NOTEMPLATE_MQTT_HOST = "192.0.2.10"
 APP0_OFFSET = 0xE0000  # Tasmota's own firmware, on its layout (tools/espressif/safeboot/safeboot_migration.py)
 DEVICE_CMD = "/opt/autoflash-emu/bin/device"
+# What a run of the tool beside the scenario's - a second window's, a sign-in
+# again - needs to reach the stub, as unattended-test.sh gives the run itself:
+# without the stub's OpenSSL settings its certificate is not trusted.
+STUB_ENV = {"AUTOFLASH_EWELINK_API_BASE": "https://apia.autoflash-stub.test",
+            "SSL_CERT_FILE": "/run/autoflash-emu/stub-ca-bundle.pem", "OPENSSL_CONF": "/stub-cloud/openssl.cnf"}
 ESPHOME_OTA_PORT = 3232
 MAX_RUNS = 4
 TOOL = "tools/autoflash/cli.py"
@@ -1587,8 +1592,7 @@ class Scenario:
             self.ex("prlimit", f"--pid={pid}", "--fsize=unlimited:", as_tool=True)
         elif fault == "token":
             # Beside the run, so not given the stub's address as the run is.
-            stub = ("AUTOFLASH_EWELINK_API_BASE=https://apia.autoflash-stub.test "
-                    "SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem && " if STUB_CLOUD else "")
+            stub = (" ".join(f"{key}={value}" for key, value in STUB_ENV.items()) + " && " if STUB_CLOUD else "")
             out = self.must("sh", "-c", "cd /work && set -a && . /tmp/autoflash-unattended.env && " + stub +
                             "/opt/venv/bin/python -c 'import os; from tools.ewelink.get_device_key import login; "
                             "login(os.environ[\"EWELINK_EMAIL\"], os.environ[\"EWELINK_PASSWORD\"], \"+44\", \"eu\"); "
