@@ -52,6 +52,13 @@ class Admin(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(said.encode())
 
+    def do_GET(self):
+        """As emulator.js answers check's GET of the runs' path: past Access,
+        to a path that takes POST alone."""
+        type(self).seen.append((self.headers, None))
+        self.send_response(405)
+        self.end_headers()
+
     def log_message(self, *args):
         pass
 
@@ -170,6 +177,16 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertEqual((headers.get("CF-Access-Client-Id"), headers.get("CF-Access-Client-Secret")),
                          ("cid.access", "made-up"))
         self.assertEqual(emulator_stats.send(self.folder), "Emulator stats: none to send")
+
+    def test_every_request_says_what_sends_it_not_urllibs_user_agent(self):
+        # Cloudflare's Browser Integrity Check refuses urllib's own (1010).
+        emulator_stats.record(self.folder, **run_args())
+        self.settled()
+        with mock.patch("sys.stdout", io.StringIO()) as said:
+            self.assertEqual(emulator_stats.main(["check"]), 0)
+        self.assertIn("takes this computer's runs", said.getvalue())
+        self.assertEqual([headers.get("User-Agent") for headers, _ in Admin.seen], [emulator_stats.USER_AGENT] * 2)
+        self.assertRegex(emulator_stats.USER_AGENT, r"^Autoflash-emulator-stats/\d")
 
     def test_runs_kept_while_a_send_is_under_way_are_sent_after_it(self):
         with emulator_stats._sending:   # a send under way

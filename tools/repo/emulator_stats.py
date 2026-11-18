@@ -85,6 +85,10 @@ UNSENT, UNSENT_BATCHES = KINDS[0][0], KINDS[1][0]
 # Runs a request at most: the admin view's MAX_RUNS (a test holds them alike).
 CHUNK = 500
 TIMEOUT = 30.0
+# Every request says what sends it: Cloudflare's Browser Integrity Check,
+# on for the zone, refuses urllib's own User-Agent ("error code: 1010")
+# before Access or the admin view sees it.
+USER_AGENT = f"Autoflash-emulator-stats/{__version__}"
 FIRMWARE_FILE = ROOT / "artifacts" / "firmware.json"
 # One suite run's id, the same for every run it records: a batch.
 BATCH = secrets.token_hex(8)
@@ -385,9 +389,13 @@ def check_run(folder: Path, *, family: str, device: str, route: str, passed: boo
            verdict="PASS" if passed else "FAIL", seconds=seconds, cloud=cloud, workers=2)
 
 
+def _headers(token: tuple[str, str]) -> dict[str, str]:
+    return {"User-Agent": USER_AGENT, "CF-Access-Client-Id": token[0], "CF-Access-Client-Secret": token[1]}
+
+
 def _post(path: str, key: str, rows: list[dict[str, Any]], token: tuple[str, str]) -> dict[str, Any]:
-    request = urllib.request.Request(scope_url() + path, data=json.dumps({key: rows}).encode(), method="POST", headers={
-        "Content-Type": "application/json", "CF-Access-Client-Id": token[0], "CF-Access-Client-Secret": token[1]})
+    request = urllib.request.Request(scope_url() + path, data=json.dumps({key: rows}).encode(), method="POST",
+                                     headers={"Content-Type": "application/json", **_headers(token)})
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         return json.loads(response.read())
 
@@ -500,8 +508,7 @@ def main(argv: list[str]) -> int:
             print(f"No {CLIENT_ID} and {CLIENT_SECRET}, in the environment or {CREDENTIALS}: "
                   "python3 tools/repo/cloudflare_settings.py apply writes them, and push copies them here")
             return 1
-        request = urllib.request.Request(scope_url() + "/runs", method="GET", headers={
-            "CF-Access-Client-Id": token[0], "CF-Access-Client-Secret": token[1]})
+        request = urllib.request.Request(scope_url() + "/runs", method="GET", headers=_headers(token))
         try:
             urllib.request.urlopen(request, timeout=TIMEOUT)
         except urllib.error.HTTPError as error:
