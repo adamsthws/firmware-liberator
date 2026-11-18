@@ -88,7 +88,10 @@ def readout_image() -> bytes:
 def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any]) -> None:
     """Send the readout OpenBeken to the device through eWeLink, wrapped under
     the firmware name its updater expects. The first write."""
-    container = fota_wrap.wrap(readout_image(), name=name, version=fota_wrap.ANNOUNCED_VERSION)
+    # Spoilt where a test asks (--simulate-bad-image readout, images.as_sent):
+    # the bootloader refuses it, and the device starts Sonoff's firmware again.
+    container = fota_wrap.wrap(images.as_sent(ctx, "readout", readout_image()), name=name,
+                               version=fota_wrap.ANNOUNCED_VERSION)
     device_ip = ctx.state.require("device_ip")[0]
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     firewall.ensure_firewall(ctx)

@@ -489,7 +489,7 @@ class BadImageScenarioTests(unittest.TestCase):
         found = {sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "badimage" and sc["arg"] == "once"}
         self.assertEqual(found, {"sonoff>openbeken:B2:badimage-once", "sonoff>esphome:B2:badimage-once",
                                  "sonoff>esphome:J2:badimage-once", "openbeken>esphome:O1:badimage-once",
-                                 "interim>esphome:J2:badimage-once"})
+                                 "interim>esphome:J2:badimage-once", "sonoff>readout:start:badimage-once"})
 
     def outcome(self, arg, *events):
         sc = {"id": "x", "route": "sonoff>openbeken", "step": "B2", "fault": "badimage", "arg": arg, "at": 40}
@@ -1141,7 +1141,7 @@ class ReadoutScenarioTests(unittest.TestCase):
               fault_suite.READOUT_HANDLING + fault_suite.NETWORK + [("ctrlc", "once"), ("token", "login"),
                                                                ("readdress", "new")]),
             "sonoff>readout:read:diskfull-once",
-            "openbeken>readout:start:none-first-stage"])
+            "sonoff>readout:start:badimage-once", "openbeken>readout:start:none-first-stage"])
 
     def test_a_readout_is_run_as_one_found_by_itself(self):
         from unittest import mock

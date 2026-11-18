@@ -44,7 +44,8 @@ INTERIM_NAME = "the interim firmware"
 # sent spoilt, the first N times a run sends it (once, without N) - one byte of
 # the RBL's body changed, so the device fetches it whole and an update's own CRC
 # (made after) passes, but its bootloader, checking the body's CRC in the RBL's
-# header, refuses to install it.
+# header, refuses to install it. A readout's step is "readout", for the
+# reading firmware it sends (readout_beken.deliver_readout).
 SPOIL_STEP: str | None = None
 SPOIL_TIMES = 1
 # Testing only (run --simulate-unknown-table): the official file's table read
@@ -57,8 +58,10 @@ def as_sent(ctx: Context, step: str, image: bytes) -> bytes:
     (SPOIL_STEP) and this run has sent it spoilt fewer than SPOIL_TIMES times -
     so a test may ask on every run, as a route reaches the step only after a
     restart asked for."""
+    if step != SPOIL_STEP:
+        return image
     spoilt_so_far = int(ctx.state.data.get("captures", {}).get(f"{step}.spoilt") or 0)
-    if step != SPOIL_STEP or spoilt_so_far >= SPOIL_TIMES:
+    if spoilt_so_far >= SPOIL_TIMES:
         return image
     ctx.state.capture(f"{step}.spoilt", spoilt_so_far + 1)
     spoilt = bytearray(image)

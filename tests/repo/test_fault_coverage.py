@@ -23,7 +23,7 @@ class CoverageTests(unittest.TestCase):
                 self.assertFalse(listed - found.get(name, set()), "tried there now: take it off NOT_YET")
 
     def test_every_situation_named_is_one_a_suite_tries(self):
-        for name in [*fault_coverage.NOT_EVERYWHERE, *fault_coverage.NOT_YET]:
+        for name in [*fault_coverage.NOT_EVERYWHERE, *fault_coverage.NOT_IN, *fault_coverage.NOT_YET]:
             with self.subTest(situation=name):
                 self.assertIn(name, self.cells)
         words = {*fault_coverage.COMMANDS, *fault_coverage.FAMILIES}
@@ -31,6 +31,17 @@ class CoverageTests(unittest.TestCase):
             with self.subTest(situation=name):
                 self.assertLessEqual(set(within), words)
                 self.assertTrue(why)
+
+    def test_a_cell_ruled_out_alone_is_one_the_situation_is_for_and_not_tried(self):
+        # Else NOT_EVERYWHERE says it, or the cell is tried after all.
+        for name, ruled_out in fault_coverage.NOT_IN.items():
+            within = fault_coverage.NOT_EVERYWHERE.get(name, ((), ""))[0]
+            for where, why in ruled_out.items():
+                with self.subTest(situation=name, cell=where):
+                    self.assertTrue(all(narrowing in where for narrowing in within))
+                    self.assertNotIn(where, self.cells[name])
+                    self.assertNotIn(where, fault_coverage.NOT_YET.get(name, ()))
+                    self.assertTrue(why)
 
     def test_a_situation_is_its_fault_and_the_kind_its_argument_names(self):
         def named(fault, arg):

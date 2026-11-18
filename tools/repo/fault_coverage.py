@@ -3,8 +3,8 @@
 a way a readout ends - is to be tried in every cell, a conversion and a
 readout on each chip family's suite, as the attended suite's scenarios are
 (attended_suite.coverage_gaps). NOT_EVERYWHERE names a situation that cannot
-be, with the cells it is for and why; NOT_YET, each cell a situation could be
-tried in and is not yet. tests/repo/test_fault_coverage.py fails on a gap in
+be, with the cells it is for and why, and NOT_IN one cell alone it cannot be
+tried in; NOT_YET, each cell a situation could be tried in and is not yet. tests/repo/test_fault_coverage.py fails on a gap in
 neither, and on one in NOT_YET filled since - so a fault added to one suite
 asks for the other, and the list of what is left only shrinks.
 
@@ -43,10 +43,11 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
                                            f"and {TASMOTA}; an S60's readout reads through the bridge, which runs "
                                            "none (readout_espressif)"),
     "lossy-phase": (("conversion", "espressif"), "as blips"),
-    "badimage-restart": (("beken",), "the run restarting the device to send a refused image afresh, past its own "
-                                     "sends (runner.GO_BACK_LIMIT): an S60's refused image ends its run - the "
-                                     "installer's Tasmota at D1, Sonoff's updater's reader in a readout - and the "
-                                     "next sends it again (badimage-once)"),
+    "badimage-restart": (("conversion", "beken"), "the run restarting the device to send a refused image afresh, "
+                                                  "past its own sends (runner.GO_BACK_LIMIT): an S60's refused image "
+                                                  "ends its run - the installer's Tasmota at D1 - and a readout's "
+                                                  "refused reader ends it on either family, the device on Sonoff's "
+                                                  "firmware; the next sends it again (badimage-once)"),
     "bootloop-fallback": (("conversion", "espressif"), f"Tasmota's boot-loop module: {TASMOTA}; {FIRST_STAGE}"),
     "lostapp-factory": (("conversion", "espressif"), f"Tasmota's own safeboot: {TASMOTA}; {FIRST_STAGE}"),
     "lostapp-switched": (("conversion", "espressif"), "as lostapp-factory"),
@@ -62,12 +63,17 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
     "safemode-ten": (("conversion",), f"ESPHome's safe mode, on a converted device: {FIRST_STAGE}"),
 }
 
+# A cell a situation cannot be tried in though the others it is for can, and
+# why: as NOT_EVERYWHERE, for one cell alone.
+NOT_IN: dict[str, dict[Cell, str]] = {
+    "fallback": {("readout", "beken"): "a device's own network, raised as it loses the home one: an S61 read out "
+                                       "runs Sonoff's firmware or the reading OpenBeken, neither of which raises one "
+                                       "(only ESPHome does, at K2)"},
+}
+
 # Each cell a situation could be tried in and is not yet. Filling one takes it
 # off; finding it cannot be moves it to NOT_EVERYWHERE, with why.
 NOT_YET: dict[str, tuple[Cell, ...]] = {
-    "badimage-once": (("readout", "beken"),),
-    "badimage-restart": (("readout", "beken"),),
-    "fallback": (("readout", "beken"),),
     "legacy": (("conversion", "beken"),),
     # An S60's: its emulator's router gives the device one address alone, and
     # passes the ARP for no other to it (container/bin/wifi-root's dhcp-host,
@@ -109,12 +115,13 @@ def covered(found: dict[str, Iterable[dict[str, Any]]]) -> dict[str, set[Cell]]:
 
 
 def gaps(cells: dict[str, set[Cell]]) -> dict[str, set[Cell]]:
-    """Each situation's cells it is for (NOT_EVERYWHERE) that try it not."""
+    """Each situation's cells it is for (NOT_EVERYWHERE, NOT_IN) that try it not."""
     every = {(command, family) for command in COMMANDS for family in FAMILIES}
     found = {}
     for name, tried in cells.items():
         within = NOT_EVERYWHERE.get(name, ((), ""))[0]
         missing = {where for where in every if all(narrowing in where for narrowing in within)} - tried
+        missing -= set(NOT_IN.get(name, {}))
         if missing:
             found[name] = missing
     return found

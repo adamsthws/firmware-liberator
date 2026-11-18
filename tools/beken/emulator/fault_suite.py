@@ -347,6 +347,9 @@ def readout_scenarios() -> list[dict]:
         return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
     return [one("sonoff>readout", "start", "none", "unattended"),
             *(one("sonoff>readout", step, fault, arg, at) for step, fault, arg, at in READOUT_FAULTS),
+            # Its reading firmware sent spoilt: refused by the bootloader, the
+            # device back on Sonoff's, and read whole by the next run.
+            one("sonoff>readout", "start", "badimage", "once"),
             one("openbeken>readout", "start", "none", "first-stage"),
             *(one(READOUT_ALL, "start", "none", account) | {"account": account} for account in accounts.ACCOUNTS),
             *(one(READOUT_ALL, step, fault, arg) | {"account": "mixed"} for step, fault, arg in READOUT_ALL_FAULTS)]
@@ -965,7 +968,8 @@ def not_fired(fault: str, notes: dict) -> bool:
                 or (fault == "double" and not notes.get("second_cut"))
                 or (fault == "readdress" and not (notes.get("moved_from") and notes.get("moved_to")
                                                   and notes["moved_from"] != notes["moved_to"]))
-                or (fault in ("ctrlc", "cancel") and not notes.get("ctrlc_seen")))
+                or (fault in ("ctrlc", "cancel") and not notes.get("ctrlc_seen"))
+                or (fault == "badimage" and notes.get("spoilt") is False))
 
 
 def handling_verdict(sc: dict, notes: dict, ok: bool, runs: int, texts: Callable[[], list[str]]) -> str | None:
@@ -1406,9 +1410,10 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
 
     def problems_now() -> list[str] | None:
         return api_problems(instance, log) if sent else readout_problems(instance)
-    run = instance.tool("readout", log, api=sent)
+    spoil = ("--simulate-bad-image", "readout") if sc["fault"] == "badimage" else ()
+    run = instance.tool("readout", log, api=sent, **({"more": spoil} if spoil else {}))
     second = sc["fault"] == "double"
-    if sc["fault"] != "none":
+    if sc["fault"] not in ("none", "badimage"):
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
@@ -1437,6 +1442,8 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
                     inject(instance, fault, arg, notes)
                     notes["second_cut"], second = True, False
     finish(run, instance)
+    if spoil:   # the reading firmware sent spoilt, as asked (images.as_sent)
+        notes["spoilt"] = bool((instance.last_state().get("captures") or {}).get("readout.spoilt"))
     afresh = (sc["fault"], sc["arg"]) == ("cancel", "new")
     runs = 1
     while problems_now() != [] and runs <= RECOVERY_RUNS:

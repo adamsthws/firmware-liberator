@@ -268,8 +268,10 @@ without reading the device whole, is to be tried in every cell - a
 conversion and a readout, in each family's suite - as the attended
 scenarios are. `tools/repo/fault_coverage.py` names the cells each is tried
 in. Its `NOT_EVERYWHERE` gives the cells a fault can only be for, and why (a
-Tasmota's settings erased by seven power cuts, on an S60 alone). Its
-`NOT_YET` lists every cell a fault could be tried in and is not yet.
+Tasmota's settings erased by seven power cuts, on an S60 alone), and its
+`NOT_IN` a single cell one cannot be tried in (a fallback network in an S61's
+readout, where nothing raises one). Its `NOT_YET` lists every cell a fault
+could be tried in and is not yet.
 `tests/repo/test_fault_coverage.py` fails on a cell missing from both, so a
 fault added to one suite asks for the others, and on one tried since, so the
 list only gets shorter:
@@ -972,7 +974,10 @@ for a Beken device, found by its hardware address as every device is.
   handling, but Ctrl-C at the countdown, which a readout never asks, and the
   network spoilt - and Ctrl-C once, the account signed in to
   again, the device given a new address as the read ends, and the disk
-  filling as the read ends, as the readout is written.
+  filling as the read ends, as the readout is written. And the readout
+  OpenBeken sent spoilt (`--simulate-bad-image readout`), as a conversion's
+  image is at B2: the bootloader refuses it, the device starts Sonoff's
+  firmware again, and the readout run again must read it whole.
 - After each, as a person would: the device is switched off and on where the
   run says to, Sonoff's firmware put back with the tool
   (`run --firmware sonoff`) where the device was left on OpenBeken, and

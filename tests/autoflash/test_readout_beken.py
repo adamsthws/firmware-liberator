@@ -300,6 +300,26 @@ class ReadWholeFlashTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
 
+    def test_the_reader_is_sent_spoilt_only_where_a_test_asks(self):
+        # --simulate-bad-image readout, for the fault suite's refused reader:
+        # one byte of its body changed, so the device's bootloader refuses it.
+        from types import SimpleNamespace
+        image = bytes(range(256)) * 64
+        done = SimpleNamespace(sent=True, complete=True, bytes_served=1, error=None, interrupted=False)
+        for asked, spoilt in ((None, False), ("B2", False), ("readout", True)):
+            ctx = a_ctx()
+            ctx.state.data = {"captures": {}}   # what as_sent counts its spoilt sends in
+            ctx.state.capture = lambda key, value: ctx.state.data["captures"].__setitem__(key, value)
+            with self.subTest(asked=asked), mock.patch.object(rb.images, "SPOIL_STEP", asked), \
+                    mock.patch.object(rb, "readout_image", return_value=image), \
+                    mock.patch.object(rb.fota_wrap, "wrap", side_effect=lambda body, **_: body) as wrap, \
+                    mock.patch.object(rb.firewall, "choose_port", return_value=8088), \
+                    mock.patch.object(rb.firewall, "ensure_firewall"), mock.patch.object(rb.output, "say"), \
+                    mock.patch.object(rb.safety_locks, "say_lock_back"), \
+                    mock.patch.object(rb.ota_push, "deliver", return_value=done):
+                rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
+            self.assertEqual(wrap.call_args.args[0] != image, spoilt)
+
     def test_the_reads_start_and_end_are_events_and_its_start_is_in_the_runs_log(self):
         # The Beken fault suite times a fault in the read from its events
         # (READOUT_PHASES); on a terminal the wait is shown, not logged.
