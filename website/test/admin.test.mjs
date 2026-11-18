@@ -396,3 +396,26 @@ test("the stages that needed the device's own network, and why, or a power cycle
   assert.match(html, /Setup network and power cycles, by stage/);
   assert.match(html, /<th class="number">- settings lost<\/th>/);
 });
+
+test("the fortnight's reports by how each run ended, every run result counted once, held ones in none", async () => {
+  const schema = JSON.parse(readFileSync(new URL("../api/report-schema.json", import.meta.url), "utf8"));
+  assert.deepEqual(admin.OUTCOMES.flatMap(([, results]) => results).sort(), [...schema.properties.result.enum].sort());
+  const bindings = env();
+  const run = (id, result, day = "2026-11-09") => bindings.DB.batch(writes(bindings.DB,
+    { ...structuredClone(FIXTURE), id, result }, `device-${id}`, day));
+  await run("r1", "converted");
+  await run("r2", "updated");
+  await run("r3", "failed");
+  await run("r4", "failed");
+  await run("r5", "cancelled");
+  await run("r6", "crashed", "2026-11-08");
+  await run("r7", "failed");
+  bindings.DB.db.prepare("UPDATE reports SET quarantined = 1 WHERE id = 'r7'").run();
+  const { week } = await admin.gather(bindings, new Date(NOW));
+  assert.deepEqual(week.map((row) => [row.day, row.o0, row.o1, row.o2, row.o3]),
+    [["2026-11-08", 0, 0, 1, 0], ["2026-11-09", 2, 2, 0, 1]]);
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  for (const said of ["2026-11-09: 2 converted", "2026-11-09: 2 failed", "2026-11-09: 1 cancelled", "2026-11-08: 1 crashed"]) {
+    assert.match(html, new RegExp(`<title>${said}</title>`));
+  }
+});

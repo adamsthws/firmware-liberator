@@ -256,6 +256,12 @@ const COUNTED = `SELECT count(*) AS runs,
     count(DISTINCT CASE WHEN result = 'converted' THEN device_hash END) AS converted
   FROM reports WHERE tag = 'user' AND quarantined = 0
     AND (device_hash IS NULL OR device_hash NOT IN (SELECT device_hash FROM devices WHERE dev = 1))`;
+// How the runs reported in the last fortnight ended: each part's name, the
+// reports' results it counts (report-schema.json's run results, each once)
+// and its colour, as the emulator runs' chart colours passed and failed.
+// Updated and put-back runs finished as a conversion does.
+export const OUTCOMES = [["converted", ["converted", "updated", "put-back"], "series-1"], ["failed", ["failed"], "series-2"],
+  ["crashed", ["crashed"], "critical"], ["cancelled", ["cancelled"], "muted"]];
 export const SYSTEMS = `SELECT * FROM (SELECT 'all' AS os, * FROM (${COUNTED})
     UNION ALL SELECT * FROM (${COUNTED.replace("SELECT", "SELECT os_family AS os,")} GROUP BY os_family))
   ORDER BY os = 'all' DESC, runs DESC, os`;
@@ -281,8 +287,9 @@ export async function gather(env, now) {
     recent: await all(`SELECT day, tag, tool, result, step, error, text, device, model, firmware, source, os_family, seconds, quarantined,
         crash_site, firmware_name, firmware_name_expected AS name_expected
       FROM reports ORDER BY day DESC LIMIT 40`),
-    week: await all(`SELECT day, count(*) AS runs, sum(result = 'converted') AS converted, sum(quarantined) AS held
-      FROM reports WHERE day >= ? GROUP BY day ORDER BY day`, since(13)),
+    week: await all(`SELECT day, ${OUTCOMES.map(([, results], at) =>
+      `sum(result IN (${results.map((result) => `'${result}'`).join(", ")})) AS o${at}`).join(", ")}
+      FROM reports WHERE day >= ? AND quarantined = 0 GROUP BY day ORDER BY day`, since(13)),
     store: await all("SELECT day, readouts, bytes FROM store_days WHERE day >= ? ORDER BY day", since(180)),
     mail: await all("SELECT day, outcome, code, n FROM mail_days WHERE day >= ? ORDER BY day", since(30)),
     readouts: await all("SELECT review, count(*) AS n, sum(bytes) AS bytes FROM readouts GROUP BY review ORDER BY review"),
@@ -397,9 +404,11 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + tile("Held for review", number(data.held.length))
       + tile("Last night's job counted to", data.lastFolded ?? "not yet run")
       + `</div></section>`,
-    `<section class="card"><h2>Reports, the last fortnight</h2><p class="sub">Every report that came in, by day; held ones are in no figure.</p>`
-      + columns(data.week.map((row) => ({ day: row.day, parts: { converted: row.converted, other: row.runs - row.converted } })),
-        ["converted", "other"], "Reports a day", FULL)
+    `<section class="card"><h2>Reports, the last fortnight</h2><p class="sub">Every run's report that came in, by day and
+      how the run ended, so few conversions can be told from few runs; held ones are in no figure.</p>`
+      + columns(data.week.map((row) => ({ day: row.day,
+        parts: Object.fromEntries(OUTCOMES.map(([name], at) => [name, row[`o${at}`]])) })),
+      OUTCOMES.map(([name]) => name), "Reports a day, by how the run ended", FULL, OUTCOMES.map(([, , kind]) => kind))
       + `</section>`,
     `<section class="card" id="downloads"><h2>Downloads and devices converted</h2><p class="sub">The tool downloaded, as
       GitHub counts it each night (${DOWNLOADS.join(" and ")} of every release), beside the devices
