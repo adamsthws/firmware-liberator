@@ -713,7 +713,8 @@ Beken suite's (`fault_verdicts.scenario_folder`):
   only its last screen (`cat` it in a terminal, or feed it to
   `unattended_run.Screen`);
 - `serial.log`: the device's serial output, up to `SERIAL_KEPT` of it;
-- `evidence/`: what a failure leaves, its run records whole.
+- `evidence/`: what a failure leaves, its run records whole but the
+  backup's firmware images (`fault_verdicts.keep_evidence`).
 
 A scenario run again keeps its earlier attempts, numbered in order:
 `<scenario>.1` is its first.
@@ -999,7 +1000,8 @@ device, so the tool asks for a switch off and on only after a fault.
 Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder), each scenario's
 folder in `logs/` laid out as the Espressif suite's, with `dhcp.log` beside:
-every address the router gave the device. A scenario passes
+every address the router gave the device, which only the Beken emulator's
+router logs. A scenario passes
 when the run's record has every step of its route done (FAIL otherwise, as
 for the interim firmware, above) and none of these applies:
 

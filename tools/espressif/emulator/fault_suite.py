@@ -2854,10 +2854,7 @@ class Scenario:
                     self.probe()
                 except Exception as exc:  # noqa: BLE001 - a look, never the verdict
                     self.say(f"PROBE: failed: {exc!r}")
-            # Beyond the Beken suite's: the run records whole (state, reports,
-            # live/), which a failure of a conversion carried on is read by.
-            shutil.copytree(records_under(self.state / "work"), folder / "evidence", dirs_exist_ok=True,
-                            ignore=shutil.ignore_patterns("*.bin"))
+            fault_verdicts.keep_evidence(records_under(self.state / "work"), folder)
         sh("docker", "stop", name(self.n), timeout=120)
         return row
 

@@ -113,6 +113,7 @@ class EndChecksTests(unittest.TestCase):
             run.write_text(log, encoding="utf-8")
             device = SimpleNamespace(reset=lambda start: None, account=lambda sc, folder: None,
                                      start=lambda firmware: True, runs=lambda: [run],
+                                     records=lambda: run.parents[2],
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
                                    dhcp_log=lambda: "DHCPACK(br0) 198.18.62.51 12:34:56:ab:cd:ef openbeken-cdef\n",
                                    last_outcome=lambda since: outcome, run_texts=lambda: [said + log],
@@ -126,6 +127,8 @@ class EndChecksTests(unittest.TestCase):
                 folder = Path(tmp, "logs/sonoff-openbeken_B2_deviceoff-1")
                 kept.extend(sorted((path.name, path.read_text(encoding="utf-8")) for path in folder.iterdir()
                                    if path.name.startswith(("run-", "dhcp"))))
+                kept.extend(("evidence", str(path.relative_to(folder))) for path in sorted(folder.rglob("*"))
+                            if "evidence" in path.parts and path.is_file())
             return outcome
 
     def test_each_runs_log_and_events_and_the_routers_dhcp_log_are_kept(self):
@@ -134,6 +137,14 @@ class EndChecksTests(unittest.TestCase):
         self.assertEqual([name for name, _ in kept], ["dhcp.log", "run-1.events.jsonl", "run-1.log"])
         self.assertIn("DHCPACK", kept[0][1])
         self.assertIn('"began"', kept[1][1])
+
+    def test_a_failure_keeps_its_run_records_whole_as_the_espressif_suites_does(self):
+        kept = []
+        self.assertEqual(self.result("False", kept=kept)["result"], "FAIL-CHECKS")
+        self.assertIn(("evidence", "evidence/runs/1/run.log"), kept)
+        passed = []
+        self.result("True", kept=passed)
+        self.assertNotIn("evidence", [name for name, _ in passed])
 
     def test_the_checks_are_read_from_the_runs_own_outcome_where_it_kept_one(self):
         # Its words in the log do not decide: the run judged its checks itself.

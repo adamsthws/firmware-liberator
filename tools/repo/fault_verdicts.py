@@ -341,6 +341,17 @@ def keep_runs(runs: Iterable[Path], folder: Path, before: Callable[[Path], int] 
             (folder / kept).write_text(text[before(source):], encoding="utf-8")
 
 
+def keep_evidence(records: Path, folder: Path) -> None:
+    """A failed scenario's run records whole (`records`, the tool's devices/
+    folder) copied into `folder`/evidence: each run's state, outcomes and
+    report, and the device's own record, which say where a failure stood
+    beyond what the runs' logs do.  Firmware images (the backup's .bin and
+    .rbl) are left out: a megabyte or more each, and nothing a run decided."""
+    if records.is_dir():
+        shutil.copytree(records, folder / "evidence", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("*.bin", "*.rbl"))
+
+
 # As tools/repo/unattended_run.py says where it kept a run's recording.
 RECORDING = re.compile(r"^Kept in (?P<folder>\S+?)/?: screen\.ansi", re.M)
 

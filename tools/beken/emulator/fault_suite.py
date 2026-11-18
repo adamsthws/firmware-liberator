@@ -81,7 +81,8 @@ it has an update, in the emulator as on a real device
 
 Results: captures/emulation/beken/suite/results.jsonl (AUTOFLASH_BEKEN_EMU_SUITE_DIR
 for another folder), and each scenario's run
-logs and the device's serial output beside it; a scenario run again keeps its
+logs and the device's serial output beside it, with what a failure leaves (its
+run records, in evidence/), as the Espressif suite's; a scenario run again keeps its
 earlier attempts' beside them, numbered (logs/<scenario>.1 the first). A fault that never happened is
 NOT-FIRED, not a pass. Each result's notes say how short of memory the computer
 was; a failure while it was starved prints "memory-starved", as the device's
@@ -477,15 +478,18 @@ class Instance:
         return subprocess.Popen(self.command(*args), env=self.env, stdout=out, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
 
-    def all_runs(self) -> list[Path]:
-        """Every run's log in the instance. A device saved by a release before
-        3.0.0 has its records in plugs/, until this checkout's tool carries it
-        on and renames them."""
+    def records(self) -> Path:
+        """The tool's records in the instance: devices/, or plugs/ where a
+        device saved by a release before 3.0.0 keeps them, until this
+        checkout's tool carries it on and renames them."""
         captures = self.state / "work/captures"
         earlier = captures / "plugs"
-        records = earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
+        return earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
+
+    def all_runs(self) -> list[Path]:
+        """Every run's log in the instance (records)."""
         found = []
-        for log in records.glob("*/runs/*/run.log"):
+        for log in self.records().glob("*/runs/*/run.log"):
             try:  # the tool files a run under its device once it knows the device
                 found.append((log.stat().st_mtime, log))
             except FileNotFoundError:
@@ -871,6 +875,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         shutil.copy(instance.state / "serial.log", folder / "serial.log")
     except OSError:
         pass
+    if outcome["result"] != "PASS":
+        fault_verdicts.keep_evidence(instance.records(), folder)
     notes["memory"] = memory.note()
     return dict(**outcome, notes=notes, seconds=round(time.monotonic() - started))
 

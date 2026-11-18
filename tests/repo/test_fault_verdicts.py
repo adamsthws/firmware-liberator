@@ -370,6 +370,21 @@ class ScenarioFolderTests(unittest.TestCase):
             self.assertFalse((folder / "run-2.events.jsonl").exists())   # it wrote none
 
 
+class EvidenceTests(unittest.TestCase):
+    def test_a_failures_records_are_kept_whole_but_its_firmware_images(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            records, folder = Path(directory) / "devices", Path(directory) / "logs/s"
+            backup = records / "12-34-56-ab-cd-ef/sonoff-backup"
+            backup.mkdir(parents=True)
+            for name in ("backup.json", "flash.bin", "stock-app-1.0.2.rbl"):
+                (backup / name).write_text("x", encoding="utf-8")
+            fault_verdicts.keep_evidence(records, folder)
+            self.assertEqual(sorted(path.name for path in (folder / "evidence").rglob("*") if path.is_file()),
+                             ["backup.json"])
+
+
 class RecordingTests(unittest.TestCase):
     def test_each_runs_recording_is_kept_beside_the_scenario(self):
         # The emulator's own copies go when its next scenario begins: seen,
