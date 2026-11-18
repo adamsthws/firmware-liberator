@@ -598,9 +598,11 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
             raise WebsiteFull(full)
         if batch is not None:
             return ""
+        # Said under the report's headline (end), not in the stage: told there,
+        # it went with the stage's notes as the stage passed, and the person saw
+        # only "Nothing was read out." - not why, nor when to try again.
         said = full or NOT_NEEDED
-        output.tell(f"    {said[0].upper()}{said[1:]}")
-        return ""
+        return f"{said[0].upper()}{said[1:]}"
     manifest = {
         "format": FORMAT, "tool": __version__, "model": asked.product, "stock_model": asked.model,
         "stock_version": asked.version, "brand": str(device.get("brandName") or ""),

@@ -76,6 +76,10 @@ check.
 - A readout asks for a taller window when yours is too short, as a conversion
   does: its questions and its stages' notes are cleared away as it goes,
   which a short window cannot do.
+- A readout the website does not need, or cannot take now, says so - and when
+  to try again - under "Nothing was read out." Before, it said so in its stage,
+  whose notes are taken away as it passes, so only "Nothing was read out." was
+  left.
 
 ## 3.0.0
 

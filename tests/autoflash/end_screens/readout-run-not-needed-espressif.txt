@@ -4,6 +4,7 @@
  Stage 4 - Fetching the eWeLink firmware       - Complete
 
  Nothing was read out.
+ Not needed: the website has what it needs of this device already.
 
      Liberator:  3.0.0                               Devices:    1
      OS:         Ubuntu 24.04.5 LTS                  Accepted:   0

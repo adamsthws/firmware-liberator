@@ -4,6 +4,7 @@
  Stage 4 - Fetching the eWeLink firmware       - Complete
 
  Nothing was read out.
+ Not read out: the website has taken all the readouts it can today. Try again tomorrow.
 
      Liberator:    3.0.0                             Devices:    1
      OS:           Ubuntu 24.04.5 LTS                Accepted:   0

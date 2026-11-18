@@ -824,21 +824,23 @@ class NotWantedTests(unittest.TestCase):
 
     def test_nothing_is_fetched_sent_to_it_or_sent_in_and_it_asks_as_a_whole_readout(self):
         said = self.run_basicr4(params={"fwVersion": "1.1.0", "staMac": "12:34:56:AB:CD:EF"})
-        self.assertEqual((said, ended(self.ctx)[-1][1]), ("", readout.UNNEEDED))   # the report says so
+        # Said with the report (readout.end), and the report says so too.
+        self.assertEqual((said, ended(self.ctx)[-1][1]),
+                         ("Not needed: the website has what it needs of this device already.", readout.UNNEEDED))
         product, model, version, stage, _, device = readout.ask_wanted.call_args.args
         self.assertEqual((product, version, stage), ("BASICR4", "1.1.0", "whole"))
         # The device, as its report names it, so the website counts devices, not questions.
         self.assertEqual(device, report_data.device_hash("12:34:56:ab:cd:ef"))
 
     def test_why_is_shown_and_nothing_asked(self):
-        # On the screen, not the log alone; the email question waits for the
-        # tool's exit (signup).
+        # On the screen, not the log alone - and not in the stage, whose notes
+        # go as it passes, leaving "Nothing was read out." with no why: said
+        # under the report's headline (readout.end). The email question waits
+        # for the tool's exit (signup).
         with mock.patch.object(prompts, "ask_choice") as asked:
-            self.assertEqual(self.run_basicr4(), "")
+            self.assertEqual(self.run_basicr4(), "Not needed: the website has what it needs of this device already.")
         asked.assert_not_called()
         readout.notify.assert_not_called()
-        self.assertIn("    Not needed: the website has what it needs of this device already.",
-                      [call.args[0] for call in output.tell.call_args_list])
 
     def test_in_a_batch_it_says_so_and_the_rest_go_on(self):
         with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
