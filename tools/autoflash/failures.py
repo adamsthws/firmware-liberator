@@ -79,7 +79,8 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
     ("ewelink-account", r"eWeLink account|eWeLink query failed"),
     ("computer-network", r"this computer reaches|this computer's address|are all in use on this computer"
                          r"|--listen-ip|readout could not be sent|did not fetch the \S+ instructions"
-                         r"|without reaching this computer|firewall rule|^sudo |the website answered"),
+                         r"|without reaching this computer|firewall rule|^sudo |the website answered"
+                         r"|the website turned the readout down"),
     ("network-join", r"did not join|cannot join it|has not answered on your Wi-Fi|has not come back on your Wi-Fi"
                      r"|did not answer on your Wi-Fi"
                      r"|is not on your Wi-Fi"

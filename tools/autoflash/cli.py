@@ -33,6 +33,7 @@ from tools.autoflash import (  # noqa: E402
     hostsys,
     interrupt,
     join,
+    offers,
     output,
     records,
     prompts,
@@ -790,6 +791,7 @@ def read_out(ctx: Context) -> int:
     finally:
         firewall.release_firewall(ctx)
         runs.forget_run_secrets(ctx.dir)
+        offers.drop(ctx)
         output.finish()
 
 
@@ -866,6 +868,7 @@ def convert(ctx: Context, given: list[str]) -> int:
                 report.send_cancelled_report(ctx, how)
             except Exception as exc:  # noqa: BLE001 - never let the report hide how it ended
                 output.log_only(f"The report could not be made: {type(exc).__name__}: {exc}")
+        offers.drop(ctx)
         output.finish()
 
 

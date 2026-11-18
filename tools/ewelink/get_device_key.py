@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
@@ -12,12 +13,13 @@ import os
 import re
 import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Iterator, TypeVar
 
 try:
     from tools.autoflash.errors import plainly
@@ -216,6 +218,54 @@ def login_session(account: str, password: str, country_code: str, region: str) -
 T = TypeVar("T")
 
 
+class Calls:
+    """Whose turn it is to ask eWeLink, within one run: the run's own calls -
+    any number, nested or at once - or one in the background (the offers
+    sent beside a run, tools/autoflash/offers.py), never both. The run's go
+    first: one waiting keeps the background from its next call, and waits
+    only for the one under way to end."""
+
+    def __init__(self) -> None:
+        self._changed = threading.Condition()
+        self._run = 0
+        self._background = False
+
+    @contextlib.contextmanager
+    def run(self) -> Iterator[None]:
+        with self._changed:
+            self._run += 1
+        try:
+            with self._changed:
+                while self._background:
+                    self._changed.wait()
+            yield
+        finally:
+            with self._changed:
+                self._run -= 1
+                self._changed.notify_all()
+
+    @contextlib.contextmanager
+    def background(self, stop: threading.Event) -> Iterator[bool]:
+        """The background's turn, once the run has no call under way or
+        waiting: True, or False once `stop` is set first."""
+        with self._changed:
+            while self._run and not stop.is_set():
+                self._changed.wait(1.0)
+            taken = self._background = not stop.is_set()
+        try:
+            yield taken
+        finally:
+            if taken:
+                with self._changed:
+                    self._background = False
+                    self._changed.notify_all()
+
+
+# Every eWeLink call of the run's, in this process (Account.use) and in the
+# helper tools it starts (each run within CALLS.run()), takes its turn here.
+CALLS = Calls()
+
+
 class Account:
     """One sign-in to an eWeLink account, made when first needed and used
     for everything after: each sign-in ends the one before it, and eWeLink
@@ -236,11 +286,12 @@ class Account:
     def use(self, work: Callable[[str, dict[str, Any]], T]) -> T:
         """`work(region, session)`, again with a new sign-in if eWeLink had
         ended this one."""
-        try:
-            return work(*self.session())
-        except SessionEnded:
-            self.held = None
-            return work(*self.session())
+        with CALLS.run():
+            try:
+                return work(*self.session())
+            except SessionEnded:
+                self.held = None
+                return work(*self.session())
 
     def end(self) -> None:
         self.held = None

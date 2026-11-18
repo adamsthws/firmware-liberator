@@ -18,7 +18,7 @@ email **privacy@firmwareliberator.com**.
   a few days ([details](what-the-tool-sends.md#providing-your-email-address-optional)). The
   tool also keeps it on your computer, so as not to ask again, until you
   have it forget it (`start.sh email`).
-- **Reports and readouts** hold nothing that names you
+- **Reports, offers and readouts** hold nothing that names you
   ([what the tool sends](what-the-tool-sends.md), [readouts](readouts.md)).
 
 Nothing is sold or shared.

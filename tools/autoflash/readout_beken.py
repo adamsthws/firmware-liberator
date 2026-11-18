@@ -36,6 +36,7 @@ from tools.autoflash.routes.beken import images, onward
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts, rbl, scrub
 from tools.ewelink import ota_push
+from tools.ewelink.get_device_key import CALLS
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -99,7 +100,7 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
 
     while True:
         output.say("Sending the readout firmware through eWeLink...")
-        with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
+        with safety_locks.lifted(ROOT, "RECOVERY_LOCK"), CALLS.run():
             delivered = ota_push.deliver(
                 account=ctx.ewelink, device_id=device["deviceid"], firmware=container,
                 version=fota_wrap.ANNOUNCED_VERSION, listen_ip=ctx.listen_ip(), listen_port=port, device_ip=device_ip,

@@ -135,6 +135,7 @@ class BeginTests(Case):
             upload.begin(self.ctx())
         self.assertEqual(said, [upload.NOTICE_TEXT])
         self.assertIn("--no-report", upload.NOTICE_TEXT)
+        self.assertIn("firmware eWeLink offers", upload.NOTICE_TEXT)   # offers.py's, sent too
 
     def test_the_notice_is_said_once_where_reports_were_kept_before_it(self):
         self.item("a" * 32)

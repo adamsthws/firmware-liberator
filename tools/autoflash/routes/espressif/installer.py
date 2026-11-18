@@ -41,6 +41,7 @@ from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
 from tools.autoflash.routes import arrival
 from tools.autoflash.routes.espressif import images
 from tools.ewelink import ota_push
+from tools.ewelink.get_device_key import CALLS
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -161,7 +162,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
 
     while True:
         started = time.monotonic()
-        with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
+        with safety_locks.lifted(ROOT, "RECOVERY_LOCK"), CALLS.run():
             code = hostsys.run_tool(
                 hostsys.python_script(
                     "tools/espressif/serve_tasmota_ota.py",

@@ -349,6 +349,8 @@ class ModelGuardTests(unittest.TestCase):
                               account_devices=lambda: [SWITCH, {**S60, "params": {**S60["params"], "rssi": -61}}])
 
         def fake_tool(args, **_):
+            turn = self.calls.run.return_value
+            self.in_turn = turn.__enter__.called and not turn.__exit__.called
             if "tools/ewelink/query_ota.py" in args and self.written:
                 self.tool_args = args
                 (root / "ota-metadata.json").write_text(json.dumps({
@@ -365,8 +367,11 @@ class ModelGuardTests(unittest.TestCase):
              mock.patch.object(esphome, "is_esphome", return_value=False), \
              mock.patch.object(openbeken, "is_openbeken", return_value=False), \
              mock.patch.object(firmware_name, "learn", return_value=self.learned) as self.learn, \
-             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
-            return account.step_discover(ctx)
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"), \
+             mock.patch.object(account, "CALLS") as self.calls, mock.patch.dict(account.ASKED_OFFERS, clear=True):
+            result = account.step_discover(ctx)
+            self.asked_offers = dict(account.ASKED_OFFERS)
+            return result
 
     def test_an_s60_continues(self):
         self.assertEqual(self.discover_with_model("SN-ESP32C3-S60-01")["model"], "SN-ESP32C3-S60-01")
@@ -406,6 +411,20 @@ class ModelGuardTests(unittest.TestCase):
         self.learn.assert_called_once_with(offer, "10000e32ab", "", "SN-ESP32C3-S60-01")
         self.assertFalse(result["update_offered"])
         self.assertNotIn("10000e32ab", str(result))
+
+    def test_the_query_takes_the_run_s_turn_at_ewelink(self):
+        # Not beside one of the offers sent in the background (offers.py).
+        self.discover_with_model("SN-ESP32C3-S60-01")
+        self.assertTrue(self.in_turn)
+
+    def test_the_latest_offer_is_kept_for_the_offers_sent_beside_the_run(self):
+        offer = [{"version": "1.2.0", "binList": []}]
+        self.saved = {"latest_offer": {"offers": offer}, "deviceid": "10000e32ab"}
+        self.discover_with_model("SN-ESP32C3-S60-01")
+        self.assertEqual(self.asked_offers, {"10000e32ab": {"offers": offer}})
+        self.saved = {"latest_offer": {"problem": "EwelinkError"}, "deviceid": "10000e32ab"}
+        self.discover_with_model("SN-ESP32C3-S60-01")
+        self.assertEqual(self.asked_offers, {})   # asked again in the background
 
     def test_asks_query_ota_for_the_latest_offer(self):
         self.discover_with_model("SN-ESP32C3-S60-01")

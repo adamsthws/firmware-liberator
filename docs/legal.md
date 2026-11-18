@@ -136,6 +136,17 @@ exceptions above allow.
 - It is stored privately on the project's server and never published or
   passed on; the docs describe what it shows as for any dump.
 
+### What eWeLink offers your devices
+
+- The tool sends the project the link and SHA-256 of each firmware file
+  eWeLink offers your devices, as it sends a report: no file, and nothing of
+  you or your account
+  ([what the tool sends](what-the-tool-sends.md#what-ewelink-offers-your-devices)).
+- Once owners on several networks have sent the same offer, the project's
+  server downloads those files from eWeLink's own server, where Sonoff
+  publishes them for every device, and stores them privately as readouts are:
+  never published or passed on.
+
 ### Signing in to eWeLink
 
 - The tool signs in to eWeLink as you, with your own account, to talk to your

@@ -56,7 +56,10 @@ firmware eWeLink offers it, which is still worth having.
 
 Otherwise the tool downloads the offered firmware as the device would, except
 any file the website already has, sending nothing to the device. For a
-device the tool has not seen before, that is the whole readout.
+device the tool has not seen before, that is the whole readout. When the
+website asks for links instead, such a readout downloads nothing: it sends
+each offered file's link and SHA-256 alone, and the website fetches the
+files from eWeLink itself once enough readouts agree on them.
 
 A device listed as **Supported**, **Testers wanted** or **Readout wanted**
 ([devices](../devices/README.md)) is then read out in full. A variant of a
@@ -143,7 +146,11 @@ A readout is one file, `readout.tar`, holding:
 | `offered/<name>` | each file of the firmware eWeLink offers the device, as eWeLink serves it | yes | yes |
 
 A device whose memory was not read has only the manifest and the offered
-firmware.
+firmware. Sent as links, it is not a file at all: the device's model, the
+name and version of its Sonoff firmware, the device as a
+[report](what-the-tool-sends.md#how-your-device-is-recognised) names it, and
+each offered file's name, version, SHA-256 and path on eWeLink's server,
+which is the same for every device on that release.
 
 ## Sending it
 
@@ -172,6 +179,9 @@ sh start.sh readout --send <path to readout.tar>
 ```
 
 To keep it from being sent, delete its file.
+
+A readout sent as links needs only a smaller puzzle, and one that cannot be
+sent is not kept: read the device out again.
 
 ## Where it goes
 

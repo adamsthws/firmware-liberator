@@ -14,6 +14,7 @@ from tools.ewelink import discover_ewelink, firmware_name
 from tools.autoflash import (detect, esphome, hostsys, join, kinds, openbeken, output, records, prompts, runs,
                              setup_network)
 from tools.autoflash.errors import Abort, NothingWritten
+from tools.ewelink.get_device_key import CALLS
 from tools.ewelink.query_ota import ota_endpoints
 
 if TYPE_CHECKING:
@@ -402,6 +403,11 @@ class Asked:
     deviceid: str
 
 
+# Each device's latest offer as eWeLink gave it to _ask this sitting, by its
+# id: the offers sent beside the run (offers.py) ask eWeLink for it no more.
+ASKED_OFFERS: dict[str, dict[str, Any]] = {}
+
+
 def ask_account(ctx: Context, device_id: str, device_ip: str | None = None) -> Asked:
     """Ask eWeLink what a device is and runs, by its id in the account.
     Nothing is sent to the device. With its address, what answers there is
@@ -415,10 +421,13 @@ def ask_account(ctx: Context, device_id: str, device_ip: str | None = None) -> A
 def _ask(ctx: Context, *query_args: str) -> Asked:
     """Run query_ota and read what it wrote."""
     meta = ctx.dir / "ota-metadata.json"
-    if hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", *query_args,
-                                      "--email", ctx.email(), "--region", ctx.ewelink_region(),
-                                      "--output", str(meta), "--latest-offer"),
-                interactive=True, env=ctx.helper_env()) != 0:
+    env = ctx.helper_env()
+    with CALLS.run():
+        code = hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", *query_args,
+                                                      "--email", ctx.email(), "--region", ctx.ewelink_region(),
+                                                      "--output", str(meta), "--latest-offer"),
+                                interactive=True, env=env)
+    if code != 0:
         reasons = output.tool_problems(1)
         raise Abort("the eWeLink query failed" + (f": {reasons[0]}" if reasons else ""))
     try:
@@ -434,6 +443,8 @@ def _ask(ctx: Context, *query_args: str) -> Asked:
     finally:
         # Its download links may work as access tokens; what is needed is now read.
         meta.unlink(missing_ok=True)
+    if latest.get("offers") is not None and deviceid:
+        ASKED_OFFERS[deviceid] = latest
     return Asked(version, model, product, endpoints, latest, deviceid)
 
 

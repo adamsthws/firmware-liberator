@@ -437,7 +437,8 @@ class AnotherDeviceTests(unittest.TestCase):
 
 class CtrlCEndsTheSittingTests(unittest.TestCase):
     """Ctrl-C that stops a readout or a conversion stops the sitting: no
-    email question after it (signup), as it was a way out."""
+    email question after it (signup), as it was a way out. The offers sent
+    beside it are dropped where they are (offers.drop)."""
 
     def stopped_by(self, run, command):
         from types import SimpleNamespace
@@ -452,8 +453,10 @@ class CtrlCEndsTheSittingTests(unittest.TestCase):
                 mock.patch.object(cli.report_upload, "begin"), mock.patch.object(cli, "stopped_report", return_value=None), \
                 mock.patch.object(cli, "issue_alone", return_value=False), mock.patch.object(cli, "stopped_by", return_value=None), \
                 mock.patch.object(cli.runner, "stopped_mid_send", return_value=False), \
+                mock.patch.object(cli.offers, "drop") as dropped, \
                 mock.patch.object(cli, command, side_effect=KeyboardInterrupt):
             self.assertEqual(run(ctx), 130)
+            dropped.assert_called_once_with(ctx)
             return cli.signup.SITTING.stopped
 
     def test_in_a_readout(self):

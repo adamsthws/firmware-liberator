@@ -32,6 +32,7 @@ from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import installer
 from tools.autoflash.runs import ROOT
 from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, flashmap, scrub
+from tools.ewelink.get_device_key import CALLS
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -128,7 +129,7 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id:
         output.say("The reader is on the device already, from a readout stopped part way.")
         ctx.state.set_input(readout.STATE_KEY, "sent")
         return read_through(ctx, device_ip)
-    with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
+    with safety_locks.lifted(ROOT, "RECOVERY_LOCK"), CALLS.run():
         code = hostsys.run_tool(hostsys.python_script(
             "tools/espressif/serve_tasmota_ota.py",
             "--listen-ip", ctx.listen_ip(), "--listen-port", str(port),

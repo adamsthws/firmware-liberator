@@ -1,6 +1,7 @@
 """The firmware files eWeLink offers a device, whole: for a readout of it
 (tools/autoflash/readout.py), where they are a second version of its firmware
-beside the one the device runs.
+beside the one the device runs; or, where the website asks for them instead,
+each file's link and SHA-256 alone (links), which it fetches itself.
 
 eWeLink offers a device the latest firmware when asked as one that is behind
 (query_ota.latest_offer), and its server sends a file only to a request made as
@@ -29,6 +30,10 @@ TIMEOUT = 60.0
 # readout's offer unlike every other device's, so it can never agree.
 ATTEMPTS = 3
 RETRY_PAUSE = 2.0
+# The only shape of link passed on (links): eWeLink's path to a release's
+# file, a token and the file's name, so nothing odd ever reaches the website.
+LINK_PATH = re.compile(r"/ota/rom/[A-Za-z0-9]{32}/[A-Za-z0-9._-]{1,64}")
+SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -91,7 +96,7 @@ def fetch(offers: list[dict[str, Any]], deviceid: str,
                 except Exception as exc:  # whatever goes wrong: a readout needs none of it
                     data, why = b"", type(exc).__name__
                     continue
-                if data and re.fullmatch(r"[0-9a-f]{64}", digest) and hashlib.sha256(data).hexdigest() != digest:
+                if data and SHA256.fullmatch(digest) and hashlib.sha256(data).hexdigest() != digest:
                     data, why = b"", "not the file its digest names"
                     continue
                 break
@@ -101,3 +106,22 @@ def fetch(offers: list[dict[str, Any]], deviceid: str,
             if data and all(data != kept.data for kept in found):
                 found.append(Offered(name.rsplit("/", 1)[-1], str(offer.get("version") or ""), data))
     return found, problems
+
+
+def links(offers: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Each file eWeLink's offers name, as the website fetches it itself: its
+    name, version, SHA-256 (eWeLink's digest) and path on eWeLink's server,
+    the host and query left out - the same for every device on that release.
+    Only a path of LINK_PATH's shape with a SHA-256 beside it; nothing is
+    downloaded."""
+    found: list[dict[str, str]] = []
+    for offer in offers:
+        for item in offer.get("binList") or []:
+            digest = str(item.get("digest") or "").lower()
+            path = urllib.parse.urlsplit(str(item.get("downloadUrl", ""))).path
+            if not (SHA256.fullmatch(digest) and LINK_PATH.fullmatch(path)) or len(found) >= MAX_FILES:
+                continue
+            if all(digest != kept["sha256"] for kept in found):
+                found.append({"name": str(item.get("name") or "firmware.bin").rsplit("/", 1)[-1],
+                              "version": str(offer.get("version") or ""), "sha256": digest, "path": path})
+    return found

@@ -81,6 +81,32 @@ stages people choose to stop at, and which devices people want supported next: s
   issue names its report. An issue is public: one that names a report lets
   anyone see that report's details beside it.
 
+## What eWeLink offers your devices
+
+Once a conversion or a readout has signed in to your eWeLink account, the tool
+also asks eWeLink, in the background, which firmware it offers each device in
+the account, and sends the project that offer, so the project has the
+firmware devices are given, to test the tool against. An offer holds, for each
+device, its model, the name and version of its Sonoff firmware, the device as
+a report names it (below), and for each file eWeLink offers, its name,
+version, SHA-256 and path on eWeLink's server. The project then fetches those
+files from eWeLink itself.
+
+- **An offer never holds** your eWeLink account or its sign-in, a device's
+  eWeLink ID, its name, or any address. The path is the same for every
+  device on that release: the tool leaves out the rest of the link.
+- **It is sent unasked**, as a report is, and only while the website asks for
+  links. Nothing of it shows on your screen and the run never waits for it;
+  it uses the run's own sign-in to eWeLink, never one of its own. If the run
+  ends first, it is dropped: nothing is kept to send later.
+- **Each device's offer goes at most once a week** from your computer
+  (`OFFER_RESEND_DAYS` in
+  [`tools/autoflash/offers.py`](../tools/autoflash/offers.py)): the day it
+  last went is kept in `captures/offers-sent.json`, by the device's code,
+  never its ID.
+- **It is turned off as reports are** ([below](#turning-it-off)), and a dry
+  run, the emulator and an unattended run never send one.
+
 ## How your device is recognised
 
 So that a device converted twice counts as one, and a readout of it and its
@@ -132,13 +158,15 @@ Reports are never sold, shared, or used to contact you.
 
 ## Turning it off
 
+These stop both reports and offers.
+
 - **For one run:** add `--no-report`, as in `sh start.sh run --no-report`
   (`start.cmd run --no-report` on Windows).
 - **For every run:** add `AUTOFLASH_NO_REPORT=1` to the `.env` file in the
   tool's folder.
 
-On its first run on a computer, the tool says it sends reports, linking to
-this page. A dry run (`--dry-run`) and a run in the
+On its first run on a computer, the tool says it sends reports and offers,
+linking to this page. A dry run (`--dry-run`) and a run in the
 [emulator](emulator.md) never send one.
 
 ## A report that could not be sent

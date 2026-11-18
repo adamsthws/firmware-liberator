@@ -76,7 +76,7 @@
     ],
     [
       "computer-network",
-      "this computer reaches|this computer's address|are all in use on this computer|--listen-ip|readout could not be sent|did not fetch the \\S+ instructions|without reaching this computer|firewall rule|^sudo |the website answered"
+      "this computer reaches|this computer's address|are all in use on this computer|--listen-ip|readout could not be sent|did not fetch the \\S+ instructions|without reaching this computer|firewall rule|^sudo |the website answered|the website turned the readout down"
     ],
     [
       "network-join",

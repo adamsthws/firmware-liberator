@@ -1,0 +1,215 @@
+"""What eWeLink offers every device in the account - each file's link and
+SHA-256 (readout.an_offer) - sent to the website unasked as a run goes, as
+its report is (docs/what-the-tool-sends.md), so the firmware of devices no one
+reads out reaches it too.
+
+Beside the run, never in its way: a thread (start), begun once the run has
+listed the account's devices, asks eWeLink for each device's latest offer, one
+at a time with PAUSE between, on the run's own sign-in - never one of its own,
+which would end the run's - and stops if eWeLink ends it. Its calls take
+turns with the run's (get_device_key.CALLS), the run's first; an offer the run
+asked for already is not asked again (account.ASKED_OFFERS). Then one request
+to /offers (readout.send_offers), and only where the website asks for links
+(its `send`, asked first with none: readout.website_sends). Nothing on the screen, one line in the run's log. Dropped
+wherever it is as the run ends (drop): nothing is kept to send later.
+
+Sent only where reports are, and never from an unattended run (enabled).
+Each device's offer goes again only OFFER_RESEND_DAYS after this computer
+last sent it (SENT).
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import json
+import threading
+from typing import Any, Callable, TYPE_CHECKING
+
+from tools.autoflash import account, output, prompts, readout, report_data, report_upload, runs
+from tools.ewelink.get_device_key import CALLS, EwelinkError, SessionEnded
+from tools.ewelink.query_ota import latest_offer, ota_identity
+
+if TYPE_CHECKING:
+    from tools.autoflash.context import Context
+
+OFFER_RESEND_DAYS = 7
+# Seconds between two devices' questions to eWeLink: an account of many
+# devices is asked over a minute or two, as the app would, not all at once.
+PAUSE = 3.0
+# The day this computer last sent each device's offer, by its key (key_of),
+# beside the settings: {key: "YYYY-MM-DD"}.
+SENT = runs.SETTINGS_PATH.parent / "offers-sent.json"
+# The website's answers that settle an offer until OFFER_RESEND_DAYS on;
+# "full" does not, and goes at a later run.
+SETTLED = ("taken", "have", "refused")
+
+
+def enabled(ctx: Context) -> bool:
+    """Whether this run sends offers: where it sends its report
+    (report_upload.enabled: not --no-report, AUTOFLASH_NO_REPORT, a dry run
+    or the emulator), and not unattended, as readouts are not
+    (readout.upload_url)."""
+    return report_upload.enabled(ctx) and not prompts.UNATTENDED and readout.upload_url() is not None
+
+
+def key_of(device: dict[str, Any]) -> str | None:
+    """A device as SENT keeps it: its hash as a report's (report_data.device_hash),
+    or, where eWeLink gives no MAC, its account id hashed - never the id itself."""
+    found = report_data.device_hash((device.get("params") or {}).get("staMac"))
+    deviceid = str(device.get("deviceid") or "")
+    return found or (hashlib.sha256(f"ewelink-device:{deviceid}".encode()).hexdigest() if deviceid else None)
+
+
+def sent_before() -> dict[str, str]:
+    try:
+        kept = json.loads(SENT.read_text(encoding="utf-8"))
+        return {str(key): str(day) for key, day in kept.items()}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def recent(day: str, today: dt.date) -> bool:
+    """Whether an offer sent on `day` was sent within OFFER_RESEND_DAYS."""
+    try:
+        return (today - dt.date.fromisoformat(day)).days < OFFER_RESEND_DAYS
+    except ValueError:
+        return False
+
+
+def due(device: dict[str, Any], kept: dict[str, str], today: dt.date) -> bool:
+    """Whether the device's offer is to be sent: not sent from here recently."""
+    key = key_of(device)
+    return key is not None and not recent(kept.get(key, ""), today)
+
+
+def remember(keys: list[str], today: dt.date) -> None:
+    """These devices' offers sent today; those sent longer ago forgotten."""
+    kept = {key: day for key, day in sent_before().items() if recent(day, today)}
+    kept.update(dict.fromkeys(keys, today.isoformat()))
+    SENT.parent.mkdir(parents=True, exist_ok=True)
+    part = SENT.with_suffix(".part")
+    part.write_text(json.dumps(kept, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    part.replace(SENT)
+
+
+class Sender:
+    """One run's offers, sent beside it (start)."""
+
+    def __init__(self, ctx: Context, devices: list[dict[str, Any]], today: dt.date | None = None,
+                 log: Callable[[str], None] = output.log_only) -> None:
+        self.ctx = ctx
+        self.devices = list(devices)
+        self.today = today or dt.date.today()
+        self.stop = threading.Event()
+        self.done = threading.Event()
+        self.log = log
+        self.asked = False   # eWeLink asked once already: PAUSE before the next
+
+    def say(self, text: str) -> None:
+        """The run's log's one line of offers, unless the run has ended."""
+        if not self.stop.is_set():
+            self.log(f"Offers of the account's devices: {text}")
+
+    def run(self) -> None:
+        try:
+            self.send()
+        except Exception as error:  # noqa: BLE001 - never worth stopping a run for
+            self.say(f"not sent ({type(error).__name__}: {error}).")
+        finally:
+            self.done.set()
+
+    def send(self) -> None:
+        kept = sent_before()
+        todo = [device for device in self.devices if due(device, kept, self.today)]
+        if not todo:
+            self.say(f"none due (each sent within {OFFER_RESEND_DAYS} days).")
+            return
+        # Asked with no offers before eWeLink is asked anything: not /wanted,
+        # whose every question the website counts as a device wanted.
+        if readout.website_sends() != "links":
+            self.say("not sent: the website takes files, not links, for now.")
+            return
+        offers, keys, unsaid = [], [], 0
+        while todo:
+            device = self.next_of(todo)
+            latest = self.latest(device)
+            if latest is None:
+                return   # stopped, or eWeLink ended the sign-in: said already
+            if "offers" in latest:
+                params, extra = device.get("params") or {}, device.get("extra") or {}
+                offers.append(readout.an_offer(str(device.get("productModel") or ""), str(extra.get("model") or ""),
+                                               str(params.get("fwVersion") or ""), latest["offers"],
+                                               report_data.device_hash(params.get("staMac"))))
+                keys.append(key_of(device))
+            else:
+                unsaid += 1
+        if self.stop.is_set():
+            return
+        if not offers:
+            self.say(f"none sent: eWeLink said nothing of {unsaid}.")
+            return
+        sends, results = readout.send_offers(offers)
+        if sends != "links":   # switched to files meanwhile: none kept
+            self.say("not sent: the website takes files, not links, for now.")
+            return
+        remember([key for key, (result, _) in zip(keys, results) if result in SETTLED], self.today)
+        counts = {word: sum(result == word for result, _ in results) for word in ("taken", "have", "full", "refused")}
+        whys = "; ".join(dict.fromkeys(why for result, why in results if result == "refused" and why))
+        self.say(f"{len(offers)} sent: {counts['taken']} taken, {counts['have']} held already, "
+                 f"{counts['full']} for another day, {counts['refused']} turned down"
+                 + (f" ({whys[:200]})" if whys else "") + (f"; eWeLink said nothing of {unsaid}" if unsaid else "")
+                 + ".")
+
+    def next_of(self, todo: list[dict[str, Any]]) -> dict[str, Any]:
+        """The next device to ask of, taken from `todo`: the one the run is
+        converting last, as the run asks eWeLink for its offer itself."""
+        chosen = getattr(getattr(self.ctx, "account_device", None), "device_id", None)
+        index = next((n for n, device in enumerate(todo) if device.get("deviceid") != chosen), 0)
+        return todo.pop(index)
+
+    def latest(self, device: dict[str, Any]) -> dict[str, Any] | None:
+        """eWeLink's latest offer to `device` ({"offers"} or {"problem"}), the
+        run's own where it asked already; None once the run has ended or
+        eWeLink has ended its sign-in, which stops the sending."""
+        deviceid = str(device.get("deviceid") or "")
+        if deviceid in account.ASKED_OFFERS:
+            return account.ASKED_OFFERS[deviceid]
+        try:
+            identity = ota_identity(device)
+        except (EwelinkError, KeyError):
+            return {"problem": "no model or version"}
+        if self.asked and self.stop.wait(PAUSE):
+            return None
+        self.asked = True
+        with CALLS.background(self.stop) as turn:
+            if not turn:
+                return None   # the run ended (drop)
+            # The run's sign-in as it holds it now: none, and none is made here.
+            held = getattr(getattr(self.ctx, "ewelink", None), "held", None)
+            if held is None:
+                self.say("not sent: the run holds no sign-in to eWeLink.")
+                return None
+            try:
+                return latest_offer(held[0], held[1]["at"], identity)
+            except SessionEnded:
+                self.say("not sent: eWeLink ended the sign-in.")
+                return None
+
+
+def start(ctx: Context, devices: list[dict[str, Any]]) -> Sender | None:
+    """Begin sending the account's offers beside the run, once a run (enabled),
+    on the devices it has just listed."""
+    if getattr(ctx, "offers", None) is not None or not devices or not enabled(ctx):
+        return None
+    ctx.offers = sender = Sender(ctx, devices)
+    threading.Thread(target=sender.run, name="offers", daemon=True).start()
+    return sender
+
+
+def drop(ctx: Context) -> None:
+    """As the run ends, however it ends: its offers dropped wherever they are."""
+    sender: Sender | None = getattr(ctx, "offers", None)
+    if sender is not None and not sender.done.is_set():
+        sender.say("not sent: the run ended first.")
+        sender.stop.set()

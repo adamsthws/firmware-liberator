@@ -21,6 +21,7 @@ from tools.autoflash import (
     join,
     kinds,
     noise,
+    offers,
     output,
     phases,
     records,
@@ -164,6 +165,7 @@ class Context:
         self.report_work = None
         self.last_report_id: str | None = None   # the one sent: on the screen's report, for an issue
         self.last_failed_step = ""  # and which it was: a failure may send earlier steps back
+        self.offers: offers.Sender | None = None   # the account's offers, sent beside the run
         try:
             output.private(bundle_ssid(self.manifest_path), "wifi-name")
         except (BundleError, OSError, ValueError):
@@ -326,6 +328,7 @@ class Context:
             return None
         account.keep_account_private(devices)
         signup.saw_devices(devices)
+        offers.start(self, devices)   # each device's offer, sent beside the run
         return devices
 
     def _sign_in(self) -> tuple[str, dict[str, Any]]:

@@ -16,6 +16,14 @@ check.
 
 ## 3.1.0
 
+- Once you have signed in to eWeLink, the tool sends the project what eWeLink
+  offers each device in your account - each firmware file's link and SHA-256,
+  no file - in the background while the run goes on, once a week at most for
+  each device, when the website asks for links. It is sent as a report is,
+  and `--no-report` stops it too
+  ([what the tool sends](docs/what-the-tool-sends.md#what-ewelink-offers-your-devices)).
+  A readout's first stage sends the same in place of the files, when the
+  website asks for links.
 - A conversion or a readout asks what next however it ended, not only one that
   finished: unless you stopped it with `q` or Ctrl-C, you can read out or convert
   another device without starting the tool again. After a conversion that

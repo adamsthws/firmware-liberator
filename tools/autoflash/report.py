@@ -18,6 +18,7 @@ from tools.autoflash import __version__, esphome, hostsys, join, kinds, output, 
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
+from tools.ewelink.get_device_key import CALLS
 from tools.autoflash.routes import update
 
 if TYPE_CHECKING:
@@ -624,8 +625,9 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
         return said({"Relay": MOTOR_MODE, "Power meter": "not checked"}, metered)
     if record is not None:
-        checked = ewelink_relay.check_relay(
-            account=ctx.ewelink, device_id=device_id, say=output.say)
+        with CALLS.run():   # its socket to eWeLink too, not only Account.use's calls
+            checked = ewelink_relay.check_relay(
+                account=ctx.ewelink, device_id=device_id, say=output.say)
     else:
         output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
                    "could not be switched there. Check the eWeLink app.")

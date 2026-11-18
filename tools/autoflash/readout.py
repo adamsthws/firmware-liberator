@@ -52,8 +52,17 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 # Where readouts go: a Worker of their own, apart from the website's, with a
-# private store behind it: the project's API (website/api/index.js).
+# private store behind it: the project's API (website/api/index.js). Its
+# questions, /wanted and /notify, and first stages sent as links, /offers,
+# are beside it (light_post).
 UPLOAD_URL = "https://api.firmwareliberator.com/v1/readout"
+OFFERS = "/offers"
+# The most offers one request to /offers carries, and its most bytes (the
+# API's OFFERS_PER_REQUEST and OFFERS_MAX_BYTES); and the cloud they come
+# from, the only one the tool knows.
+OFFERS_PER_REQUEST = 50
+OFFERS_MAX_BYTES = 32 * 1024
+CLOUD = "ewelink"
 # The work each readout carries, as the Worker asks it (its PROOF_BITS); and
 # the lighter work of /wanted and /notify (LIGHT_PROOF_BITS).
 PROOF_BITS = 24
@@ -186,11 +195,14 @@ class WebsiteFull(NothingWritten):
 @dataclass(frozen=True)
 class Wanted:
     """The website's answer to /wanted: whether a readout would add anything,
-    why not ("enough", "held", "full" for the day or "store-full"), and which
-    offered files it holds."""
+    why not ("enough", "held", "full" for the day or "store-full"), which
+    offered files it holds, and how a first stage sends them: "files", or
+    "links" (each file's link and SHA-256 alone, to /offers), as the website
+    is set to take them."""
     wanted: bool
     why: str = ""
     held: frozenset[str] = frozenset()
+    send: str = "files"
 
 
 @dataclass(frozen=True)
@@ -618,9 +630,14 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     # Those the website holds already are left out - but for a Beken device read
     # in full, which needs Sonoff's own to put back.
     beken_whole = bool(learned and whole and learned.chip.startswith("BK"))
-    with output.working("Downloading the firmware eWeLink offers it..."):
-        updates, problems = offered_firmware.fetch(offers, asked.deviceid,
-                                                   skip=frozenset() if beken_whole else answer.held)
+    # A first stage the website takes as links sends them instead (sent_links):
+    # nothing is downloaded.
+    as_links = answer.send == "links" and not whole
+    updates, problems = [], []
+    if not as_links:
+        with output.working("Downloading the firmware eWeLink offers it..."):
+            updates, problems = offered_firmware.fetch(offers, asked.deviceid,
+                                                       skip=frozenset() if beken_whole else answer.held)
     for problem in problems:
         output.log_only(f"    Offered firmware: {problem}")
     sent = updates if not beken_whole else [item for item in updates if item.sha256 not in answer.held]
@@ -663,6 +680,9 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
         manifest["read"] = ctx.readout.whole = False
         begin("save")
+        if as_links:
+            return sent_links(ctx, an_offer(asked.product, asked.model, asked.version, offers,
+                                            device_hash(ctx.readout.mac)), batch)
         return offer(ctx, manifest, None, sent, batch=batch, device=device)
     ctx.readout.whole, ctx.readout.back = True, back
     begin("save")
@@ -787,6 +807,30 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
     return sent(ctx, data, url, path, back)
 
 
+# How a first stage sent as links ends, by the website's answer for it.
+LINKS_ENDED = {"taken": (ACCEPTED, ""), "have": (UNNEEDED, ""), "full": (WEBSITE_FULL, FULL_TODAY)}
+
+
+def sent_links(ctx: Context, item: dict[str, Any], batch: Batch | None) -> str:
+    """A first stage as the website asks for it (Wanted.send): its offer, each
+    file's link and SHA-256 (an_offer), sent to /offers in place of the files,
+    which the website fetches itself once enough readouts agree on them.
+    Nothing is kept to send later. What the person is still to do."""
+    try:
+        with output.working("Sending the readout..."):
+            result, why = send_offers([item])[1][0]
+    except (OSError, ValueError) as exc:
+        raise Abort(f"the readout could not be sent: {website_problem(exc)}") from exc
+    if result not in LINKS_ENDED:   # "refused", why saying why
+        raise Abort(f"the website turned the readout down: {why or result or 'no reason given'}")
+    ended = became(ctx)
+    ended.outcome, ended.detail = LINKS_ENDED[result]
+    output.log_only(f"    The readout, as links: {ended.outcome}.")
+    if ended.outcome == WEBSITE_FULL and batch is None:
+        return f"{FULL_TODAY[0].upper()}{FULL_TODAY[1:]}"
+    return ""
+
+
 def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
     """offer()'s readout sent to `url`; what the person is still to do. Its
     reference is the report's to say (became)."""
@@ -896,7 +940,65 @@ def ask_wanted(product: str, model: str, version: str, stage: str, firmware: lis
         output.log_only(f"    Whether a readout is wanted: not answered ({exc}); it goes ahead.")
         return Wanted(True)
     held = frozenset(str(sha) for sha in answer.get("held") or [] if str(sha) in firmware)
-    return Wanted(answer.get("wanted") is not False, str(answer.get("why") or ""), held)
+    # An earlier website gives no `send`: it takes files.
+    return Wanted(answer.get("wanted") is not False, str(answer.get("why") or ""), held,
+                  "links" if answer.get("send") == "links" else "files")
+
+
+def an_offer(product: str, model: str, version: str, offers: list[dict[str, Any]],
+             device: str | None) -> dict[str, Any]:
+    """One device's offer as /offers takes it: the device as /wanted is asked
+    of it, `device` its hash (report_data.device_hash) or None, and each file
+    eWeLink offers it by its link and SHA-256 (offered_firmware.links) - none
+    where eWeLink offers nothing, which the website only counts."""
+    return {"model": product, "stock_model": model or "-", "stock_version": version or "-", "device": device,
+            "files": offered_firmware.links(offers)}
+
+
+def offers_request(offers: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"format": FORMAT, "tool_version": __version__, "cloud": CLOUD, "offers": offers}
+
+
+def in_requests(offers: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """`offers` in as few requests as the website takes: at most
+    OFFERS_PER_REQUEST each, and OFFERS_MAX_BYTES with room for light_post's
+    nonce."""
+    requests: list[list[dict[str, Any]]] = []
+    for item in offers:
+        last = requests[-1] if requests else None
+        if last is None or len(last) >= OFFERS_PER_REQUEST \
+                or len(json.dumps(offers_request([*last, item])).encode()) > OFFERS_MAX_BYTES - 64:
+            requests.append([item])
+        else:
+            last.append(item)
+    return requests
+
+
+def website_sends() -> str:
+    """How the website takes offers now, asked with none (an empty /offers,
+    which it counts nowhere): "links", or "files" - an earlier website, or one
+    that cannot say, too. OSError or ValueError when it cannot be asked."""
+    return "links" if light_post(OFFERS, offers_request([])).get("send") == "links" else "files"
+
+
+def send_offers(offers: list[dict[str, Any]]) -> tuple[str, list[tuple[str, str]]]:
+    """Send offers (an_offer) to /offers, as many a request as it takes
+    (in_requests), each with the light work /wanted asks: how the website
+    takes them ("links" only where every answer said so; with "files" it kept
+    none), and its answer for each, in order, as (result, why) - "taken",
+    "have" (held already, or sent before), "full" (none more today) or
+    "refused" (why says why). OSError or ValueError when it cannot say."""
+    results: list[tuple[str, str]] = []
+    sends = "links"
+    for these in in_requests(offers):
+        answer = light_post(OFFERS, offers_request(these))
+        if answer.get("send") != "links":
+            sends = "files"
+        each = answer.get("offers")
+        if not isinstance(each, list) or len(each) != len(these) or not all(isinstance(item, dict) for item in each):
+            raise ValueError("the website did not answer for each offer")
+        results += [(str(item.get("result") or ""), str(item.get("why") or "")) for item in each]
+    return sends, results
 
 
 def notify(email: str, devices: Iterable[tuple[str, str]], readouts: Iterable[str] = (), *,

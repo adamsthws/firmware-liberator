@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -87,6 +88,74 @@ class AccountTests(unittest.TestCase):
                 self.assertRaises(get_device_key.EwelinkError) as raised:
             get_device_key.get_devices("eu", "t")
         self.assertNotIsInstance(raised.exception, get_device_key.SessionEnded)
+
+
+class CallsTests(unittest.TestCase):
+    """The run's eWeLink calls and the background's take turns, the run's first."""
+
+    def setUp(self):
+        self.calls, self.stop = get_device_key.Calls(), threading.Event()
+
+    def background(self, took: list) -> threading.Thread:
+        def take():
+            with self.calls.background(self.stop) as turn:
+                took.append(turn)
+        thread = threading.Thread(target=take, daemon=True)
+        thread.start()
+        return thread
+
+    def test_the_background_waits_while_the_run_has_a_call_under_way(self):
+        took = []
+        with self.calls.run(), self.calls.run():   # nested: one turn
+            thread = self.background(took)
+            thread.join(0.3)
+            self.assertEqual(took, [])
+        thread.join(2)
+        self.assertEqual(took, [True])
+
+    def test_the_run_waits_only_for_the_background_s_call_under_way(self):
+        order, inside, leave = [], threading.Event(), threading.Event()
+
+        def background():
+            with self.calls.background(self.stop):
+                inside.set()
+                leave.wait(2)
+                order.append("background")
+        thread = threading.Thread(target=background, daemon=True)
+        thread.start()
+        inside.wait(2)
+        threading.Timer(0.2, leave.set).start()
+        with self.calls.run():
+            order.append("run")
+        thread.join(2)
+        self.assertEqual(order, ["background", "run"])
+
+    def test_a_run_s_call_waiting_goes_before_the_background_s_next(self):
+        took = []
+        with self.calls.run():
+            thread = self.background(took)
+            with self.calls.run():   # another, begun before the first ends
+                pass
+            thread.join(0.2)
+            self.assertEqual(took, [])
+        thread.join(2)
+        self.assertEqual(took, [True])
+
+    def test_a_background_stopped_while_waiting_gets_no_turn(self):
+        took = []
+        with self.calls.run():
+            thread = self.background(took)
+            self.stop.set()
+            thread.join(3)
+            self.assertEqual(took, [False])
+        with self.calls.run():   # and leaves nothing held
+            pass
+
+    def test_every_use_of_an_account_takes_the_run_s_turn(self):
+        account = get_device_key.Account(mock.Mock(return_value=("eu", {"at": "t"})))
+        with mock.patch.object(get_device_key, "CALLS") as calls:
+            account.use(lambda region, session: None)
+        calls.run.assert_called_once_with()
 
 
 class DeviceKeyTests(unittest.TestCase):

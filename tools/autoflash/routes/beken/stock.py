@@ -15,7 +15,7 @@ from tools.autoflash.routes import arrival
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
 from tools.ewelink import ota_push
-from tools.ewelink.get_device_key import EwelinkError
+from tools.ewelink.get_device_key import CALLS, EwelinkError
 from tools.ewelink.query_ota import latest_offer, ota_identity
 
 if TYPE_CHECKING:
@@ -165,13 +165,14 @@ def step_push(ctx: Context) -> dict[str, Any]:
     while True:
         output.say(f"Sending {shown} {version} ({len(image):,} bytes; {len(container):,} wrapped) through eWeLink...")
         started = time.monotonic()
-        delivered = ota_push.deliver(
-            account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
-            # One file, not the two an Espressif device is offered (one for each app
-            # slot): a Beken device has one app, which its bootloader replaces.
-            listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
-            wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False,
-            event=output.event)
+        with CALLS.run():
+            delivered = ota_push.deliver(
+                account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
+                # One file, not the two an Espressif device is offered (one for each app
+                # slot): a Beken device has one app, which its bootloader replaces.
+                listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
+                wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False,
+                event=output.event)
         if not delivered.sent:
             raise Abort(f"the firmware was not sent: {delivered.error or 'eWeLink did not take the command'}. "
                         f"{ota_push.NOT_SENT}")

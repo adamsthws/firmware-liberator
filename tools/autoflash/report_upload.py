@@ -7,7 +7,8 @@ however many devices a sitting reads out.
 
 - On by default; off with --no-report, AUTOFLASH_NO_REPORT=1 (the environment
   or .env), in the emulator, and for a dry or simulated run. The first time
-  the tool runs on a computer it says so, once.
+  the tool runs on a computer it says so, once. The same switch turns off
+  the offers sent beside a run (offers.py).
 - The API asks each report for its proof of work, made for the report's
   random id before the report exists (proof_of_work.py): begun as the run
   begins, in a process of its own at the lowest priority, so it is done
@@ -60,7 +61,8 @@ SEND_TIMEOUT = 30.0
 EXIT_WAIT = 5.0
 WHAT_IS_SENT = "https://firmwareliberator.com/docs/what-the-tool-sends"
 # Said the first time on a computer, with WHAT_IS_SENT linked under it.
-NOTICE_TEXT = "Anonymous reports of each run help improve the tool; --no-report stops them."
+NOTICE_TEXT = ("Anonymous reports of each run, and the firmware eWeLink offers your devices, help improve "
+               "the tool; --no-report stops them.")
 
 
 def upload_url() -> str:

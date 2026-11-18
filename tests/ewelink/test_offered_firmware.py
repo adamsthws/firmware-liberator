@@ -1,8 +1,9 @@
 """The firmware eWeLink offers a device, fetched whole as the device asks for
 it, for its readout: never more than an update file, never twice, never
-stopping the readout."""
+stopping the readout; or its links alone, for the website to fetch."""
 import hashlib
 import unittest
+from unittest import mock
 
 from tools.ewelink import offered_firmware
 
@@ -76,6 +77,49 @@ class FetchTests(unittest.TestCase):
     def test_nothing_is_asked_without_the_devices_id(self):
         self.assertEqual(offered_firmware.fetch(OFFERS, "", lambda url, deviceid: b"x"),
                          ([], ["no device id to ask with"]))
+
+
+TOKEN = "Ab3" * 10 + "Z9"   # 32 letters and digits, as eWeLink's
+SHA = hashlib.sha256(b"one").hexdigest()
+
+
+class LinksTests(unittest.TestCase):
+    def offer(self, url, digest=SHA, name="user1.bin"):
+        return [{"version": "1.2.0", "binList": [{"name": name, "downloadUrl": url, "digest": digest}]}]
+
+    def test_each_file_s_path_name_version_and_sha256_without_its_host_or_query(self):
+        url = f"https://eu-otadl.coolkit.cc:8088/ota/rom/{TOKEN}/user1.1024.new.2.bin?deviceid=1&sign=x"
+        self.assertEqual(offered_firmware.links(self.offer(url, SHA.upper())), [
+            {"name": "user1.bin", "version": "1.2.0", "sha256": SHA,
+             "path": f"/ota/rom/{TOKEN}/user1.1024.new.2.bin"}])
+
+    def test_nothing_is_downloaded(self):
+        with mock.patch.object(offered_firmware, "download") as downloaded, \
+                mock.patch.object(offered_firmware, "urlopen") as opened:
+            offered_firmware.links(self.offer(f"https://example.com/ota/rom/{TOKEN}/user1.bin"))
+        downloaded.assert_not_called()
+        opened.assert_not_called()
+
+    def test_only_a_path_of_the_expected_shape_is_passed_on(self):
+        for path in ("/ota/rom/short/user1.bin", f"/ota/rom/{TOKEN}x/user1.bin", f"/ota/rom/{TOKEN}/../x.bin",
+                     f"/ota/rom/{TOKEN}/a b.bin", f"/ota/rom/{TOKEN}/" + "a" * 65, f"/other/{TOKEN}/user1.bin",
+                     f"/ota/rom/{TOKEN}/sub/user1.bin"):
+            with self.subTest(path=path):
+                self.assertEqual(offered_firmware.links(self.offer("https://example.com" + path)), [])
+
+    def test_only_a_file_with_a_sha256_beside_it(self):
+        url = f"https://example.com/ota/rom/{TOKEN}/user1.bin"
+        for digest in ("", "a" * 63, "g" * 64, None):
+            with self.subTest(digest=digest):
+                self.assertEqual(offered_firmware.links(self.offer(url, digest)), [])
+
+    def test_the_same_file_twice_once_and_no_more_than_an_update_has(self):
+        offers = [{"version": "1.2.0", "binList": [
+            {"name": f"user{n}.bin", "downloadUrl": f"https://example.com/ota/rom/{TOKEN}/user{n}.bin",
+             "digest": f"{n:x}" * 64} for n in (1, 1, 2, 3, 4, 5, 6)]}]
+        found = offered_firmware.links(offers)
+        self.assertEqual([item["name"] for item in found], ["user1.bin", "user2.bin", "user3.bin", "user4.bin"])
+        self.assertEqual(len(found), offered_firmware.MAX_FILES)
 
 
 if __name__ == "__main__":

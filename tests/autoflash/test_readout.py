@@ -340,6 +340,18 @@ class StillWantedTests(unittest.TestCase):
         self.assertTrue(wanted.wanted)
         self.assertEqual(got, {})
 
+    def test_how_a_first_stage_sends_its_firmware_is_the_website_s_to_say(self):
+        cheap = mock.patch.object(readout, "LIGHT_PROOF_BITS", 8)
+        cheap.start()
+        self.addCleanup(cheap.stop)
+        self.assertEqual(self.ask(answer={"wanted": True, "send": "links"})[0].send, "links")
+        self.assertEqual(self.ask(answer={"wanted": True, "send": "files"})[0].send, "files")
+        # An earlier website, one not answering, or one answering something else: files.
+        self.assertEqual(self.ask(answer={"wanted": True})[0].send, "files")
+        self.assertEqual(self.ask(answer={"wanted": True, "send": "LINKS"})[0].send, "files")
+        self.assertEqual(self.ask(status=500, answer={"send": "links"})[0].send, "files")
+        self.assertEqual(self.ask(url=None)[0].send, "files")
+
 
 class RateLimitTests(unittest.TestCase):
     """The website takes two readouts a minute from one address: a readout of
@@ -1098,6 +1110,186 @@ class FirstStageTests(unittest.TestCase):
         manifest = offered.call_args.args[1]
         self.assertEqual((manifest["model"], manifest["stock_model"], manifest["stock_version"], manifest["read"]),
                          ("NEWTHING", "SN-ESP32C3-NEW-01", "1.0.0", False))
+
+
+TOKEN = "Ab3" * 10 + "Z9"
+LINKED = {"offers": [{"version": "1.1.0", "binList": [
+    {"name": "user1.bin", "downloadUrl": f"https://example.com/ota/rom/{TOKEN}/user1.bin?a=1", "digest": "a" * 64},
+    {"name": "user2.bin", "downloadUrl": f"https://example.com/ota/rom/{TOKEN}/user2.bin", "digest": "b" * 64}]}]}
+
+
+class LinksTests(unittest.TestCase):
+    """A first stage the website asks for as links: each file's link and
+    SHA-256 sent to /offers, nothing downloaded; a whole readout as ever."""
+
+    def setUp(self):
+        start_run(self)
+        readout.ask_wanted.return_value = readout.Wanted(True, send="links")
+        for patch in (mock.patch.object(account, "ask_account", return_value=account.Asked(
+                          "1.0.0", "SN-NEW-01", "NEWTHING", [], LINKED, "1000abcdef")),
+                      mock.patch.object(readout, "send_offers", return_value=("links", [("taken", "")]))):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def first_stage(self, batch=None):
+        device = {**DEVICE, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:EF"}}
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer") as offered:
+            said = readout.run(self.ctx, device, batch=batch)
+        offered.assert_not_called()   # no readout made or uploaded
+        return said
+
+    def test_its_offer_goes_to_offers_and_nothing_is_downloaded(self):
+        self.assertEqual(self.first_stage(), "")
+        offered_firmware.fetch.assert_not_called()
+        (sent,), = readout.send_offers.call_args.args
+        self.assertEqual(sent, {"model": "NEWTHING", "stock_model": "SN-NEW-01", "stock_version": "1.0.0",
+                                "device": report_data.device_hash("12:34:56:ab:cd:ef"), "files": [
+                                    {"name": "user1.bin", "version": "1.1.0", "sha256": "a" * 64,
+                                     "path": f"/ota/rom/{TOKEN}/user1.bin"},
+                                    {"name": "user2.bin", "version": "1.1.0", "sha256": "b" * 64,
+                                     "path": f"/ota/rom/{TOKEN}/user2.bin"}]})
+        self.assertNotIn("1000abcdef", json.dumps(sent))
+        self.assertEqual(ended(self.ctx), [(HALL, readout.ACCEPTED, "")])
+
+    def test_its_stages_are_a_first_stage_s(self):
+        self.first_stage()
+        self.assertEqual([line for line in self.stages if line[0].isdigit()],
+                         ["2 Probing the device", "3 Fetching the eWeLink firmware", "4 Saving the readout"])
+
+    def test_how_it_ends_is_the_website_s_answer(self):
+        for answer, outcome, said in ((("have", ""), readout.UNNEEDED, ""),
+                                      (("full", ""), readout.WEBSITE_FULL, "Not read out: the website has taken "
+                                                                           "all the readouts it can today. Try "
+                                                                           "again tomorrow.")):
+            with self.subTest(answer=answer):
+                readout.send_offers.return_value = ("links", [answer])
+                self.assertEqual(self.first_stage(), said)
+                self.assertEqual(ended(self.ctx)[-1][1], outcome)
+
+    def test_one_turned_down_or_not_sent_fails_and_nothing_is_kept(self):
+        for problem in ([("refused", "not a model this tool sends")], OSError("down")):
+            with self.subTest(problem=problem):
+                if isinstance(problem, Exception):
+                    readout.send_offers.side_effect = problem
+                else:
+                    readout.send_offers.return_value = ("links", problem)
+                with self.assertRaisesRegex(errors.Abort, "not a model|could not be sent"):
+                    self.first_stage()
+                self.assertEqual(ended(self.ctx)[-1][1], readout.FAILED)
+                self.assertEqual(list(Path(self.tmp.name).glob("*.tar")), [])
+
+    def test_in_a_batch_one_with_no_room_lets_the_rest_go_on(self):
+        readout.send_offers.return_value = ("links", [("full", "")])
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer") as offered:
+            said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
+        offered.assert_not_called()
+        self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.WEBSITE_FULL, readout.FULL_TODAY),
+                                                         (PORCH, readout.WEBSITE_FULL, readout.FULL_TODAY)]))
+
+    def test_without_links_asked_for_its_files_are_sent_as_ever(self):
+        readout.ask_wanted.return_value = readout.Wanted(True)
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer", return_value="") as offered:
+            readout.run(self.ctx, DEVICE)
+        offered_firmware.fetch.assert_called_once()
+        offered.assert_called_once()
+        readout.send_offers.assert_not_called()
+
+    def test_a_whole_readout_still_carries_its_files(self):
+        from tools.autoflash import kinds
+        basicr4 = kinds.SONOFF_BASICR4
+        asked = account.Asked("1.1.0", basicr4.stock_model, "BASICR4", [], LINKED, "1000abcdef")
+        with mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked)), \
+                learned(basicr4.wrapper_model, "ESP32C3"), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
+                mock.patch.object(readout, "offer", return_value="") as offered:
+            readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
+        offered_firmware.fetch.assert_called_once()
+        self.assertEqual([item.name for item in offered.call_args.args[3]], ["user1.bin"])
+        readout.send_offers.assert_not_called()
+
+
+class SendOffersTests(unittest.TestCase):
+    """POST /offers: the offers as the API takes them, with light work, at
+    most OFFERS_PER_REQUEST a request, an answer for each."""
+
+    def test_one_request_with_light_work_beside_where_readouts_go(self):
+        posted = []
+
+        def light_post(path, value):
+            posted.append((path, value))
+            return {"send": "links", "offers": [{"result": "taken"}, {"result": "refused", "why": "bad path"}]}
+        with mock.patch.object(readout, "light_post", side_effect=light_post):
+            self.assertEqual(readout.send_offers([{"model": "A"}, {"model": "B"}]),
+                             ("links", [("taken", ""), ("refused", "bad path")]))
+        (path, value), = posted
+        self.assertEqual(path, "/offers")
+        self.assertEqual(value, {"format": 1, "tool_version": readout.__version__, "cloud": "ewelink",
+                                 "offers": [{"model": "A"}, {"model": "B"}]})
+
+    def test_more_than_a_request_carries_go_in_the_next(self):
+        sizes = []
+
+        def light_post(path, value):
+            sizes.append(len(value["offers"]))
+            return {"send": "links", "offers": [{"result": "have"}] * len(value["offers"])}
+        with mock.patch.object(readout, "light_post", side_effect=light_post):
+            _, results = readout.send_offers([{"model": str(n)} for n in range(readout.OFFERS_PER_REQUEST + 3)])
+        self.assertEqual(sizes, [readout.OFFERS_PER_REQUEST, 3])
+        self.assertEqual(len(results), readout.OFFERS_PER_REQUEST + 3)
+
+    def test_a_request_is_never_larger_than_the_website_takes(self):
+        big = {"model": "A", "files": [{"path": "p" * 1000}]}
+        sizes = []
+
+        def light_post(path, value):
+            body = json.dumps({**value, "nonce": "0" * 16}).encode()
+            self.assertLessEqual(len(body), readout.OFFERS_MAX_BYTES)
+            sizes.append(len(value["offers"]))
+            return {"offers": [{"result": "taken"}] * len(value["offers"])}
+        with mock.patch.object(readout, "light_post", side_effect=light_post):
+            self.assertEqual(len(readout.send_offers([big] * 40)[1]), 40)
+        self.assertGreater(len(sizes), 1)
+        self.assertEqual(sum(sizes), 40)
+
+    def test_links_only_where_every_answer_says_so(self):
+        answers = iter([{"send": "links", "offers": [{"result": "taken"}]}, {"offers": [{"result": "full"}]}])
+        with mock.patch.object(readout, "OFFERS_PER_REQUEST", 1), \
+                mock.patch.object(readout, "light_post", side_effect=lambda path, value: next(answers)):
+            self.assertEqual(readout.send_offers([{"model": "A"}, {"model": "B"}])[0], "files")
+
+    def test_how_the_website_takes_offers_is_asked_with_none(self):
+        for answer, sends in (({"send": "links", "offers": []}, "links"), ({"send": "files", "offers": []}, "files"),
+                              ({"offers": []}, "files")):
+            with self.subTest(answer=answer), mock.patch.object(readout, "light_post", return_value=answer) as post:
+                self.assertEqual(readout.website_sends(), sends)
+            post.assert_called_once_with("/offers", {"format": 1, "tool_version": readout.__version__,
+                                                     "cloud": "ewelink", "offers": []})
+
+    def test_an_answer_not_one_for_each_offer_is_none(self):
+        for answer in ({}, {"offers": [{"result": "taken"}]}, {"offers": ["taken", "have"]}):
+            with self.subTest(answer=answer), mock.patch.object(readout, "light_post", return_value=answer), \
+                    self.assertRaises(ValueError):
+                readout.send_offers([{"model": "A"}, {"model": "B"}])
+
+    def test_the_request_as_it_reaches_the_website(self):
+        got = {}
+
+        class Answer(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        def urlopen(request, timeout):
+            got.update(url=request.full_url, type=request.headers["Content-type"], body=json.loads(request.data))
+            return Answer(json.dumps({"offers": [{"result": "taken"}]}).encode())
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/v1/readout"), \
+                mock.patch.object(readout, "LIGHT_PROOF_BITS", 8), \
+                mock.patch.object(readout.hostsys, "urlopen", side_effect=urlopen):
+            readout.send_offers([{"model": "A"}])
+        self.assertEqual((got["url"], got["type"]), ("http://127.0.0.1:9/v1/offers", "application/json"))
+        self.assertEqual(got["body"]["offers"], [{"model": "A"}])
 
 
 class ChooseTests(unittest.TestCase):
