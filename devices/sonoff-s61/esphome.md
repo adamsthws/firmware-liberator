@@ -145,7 +145,7 @@ the other's.
 
 Each of these works in the BekenEmulator fork, on a 4 MB flash shaped like a
 real S61 (stock firmware, provisioned with a test network), with no bypass of
-any check the device makes. None has been tried on a real S61 yet.
+any check the device makes.
 
 1. **The conversion**, the way the tool drives it. The device, on the local
    eWeLink stub, is pushed an `upgrade` command; it fetches the FOTA-wrapped

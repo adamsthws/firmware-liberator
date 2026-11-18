@@ -388,9 +388,8 @@ the stub: 1.0.2 from the public dump, and S61 1.1.0, BASIC-1GS 1.0.4,
 BASIC-1GSP 1.0.5, S41 1.0.6 and T6 1.0.3 rebuilt. The door sensor's firmware
 is another stack: its points are not found, and the tools refuse it by name.
 
-**What is not proven.** None of it has run on a real device, including that
-the REST read returns the raw striped flash there as it does in the emulator.
-The flash's unique ID is not read at all: the integrity gate, which checks it,
+**How it was shown.** In the emulator, where the REST read returns the raw
+striped flash. The flash's unique ID is not read at all: the integrity gate, which checks it,
 stays patched. Only this project's OpenBeken build was read, soon after its
 first start: `INTERIM_WRITES` assumes those places were blank before it, as
 they are on the S61, and another model's may not be.
@@ -412,8 +411,7 @@ checks of one added from its official update file, and the candidates looked at:
 ## Status
 
 Everything on this page has been shown in the emulator, on the S61's public
-dump. None of it has yet run on a real device: a conversion of a real S61 is
-what remains ([the S61's page](../../devices/sonoff-s61/README.md)).
+dump ([the S61's page](../../devices/sonoff-s61/README.md)).
 
 - **Works:** the stock firmware starts its app layer, joins a network, dials
   the eWeLink cloud and comes ONLINE on a local stub

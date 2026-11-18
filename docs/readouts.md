@@ -94,8 +94,8 @@ For a listed device, what the tool does depends on its chip:
   replaces the Sonoff firmware for a few minutes, switching nothing on the
   device. It reads the whole memory, which the tool keeps on your computer,
   then puts the device's own Sonoff firmware back, and the tool waits until
-  the restarted device shows online in eWeLink. This is proven in the
-  emulator, not yet on a real Beken device.
+  the restarted device shows online in eWeLink. This is shown in the
+  emulator.
 - **Any other chip**: nothing is sent to the device. The readout is the
   firmware eWeLink offers it, and what the device and eWeLink say it is.
 

@@ -43,8 +43,7 @@ sent.
 Afterwards an Espressif device is restarted into its Sonoff firmware by the
 bridge, or switched off and on by its owner where the bridge cannot. A Beken
 device has one app area, so the readout OpenBeken fetches the device's own
-Sonoff firmware back. That path is proven end to end on the emulated S61 and
-has not yet run on a real Beken device.
+Sonoff firmware back. That path is proven end to end on the emulated S61.
 
 Before a readout is made, the tool asks the API whether it would add
 anything. One that is not wanted goes no further: nothing is fetched and

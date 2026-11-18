@@ -195,6 +195,10 @@ way.
 - **Say where.** "From this project" or "on your computer", not "from here".
 - **Write full sentences.** A reader should not have to read one twice to find
   out what it is about.
+- **Say what is known, and how it was shown**: "seen in the emulator", "checked
+  on hardware by the template's author". Leave out what has not been tried
+  yet: such a line goes stale the day someone tries it, and nothing tells you.
+  A device's status says how far it has been tested.
 - **Keep to any computer.** The tool, its tests and its emulators run on many
   kinds of computer, so describe what was found as it applies to any of them
   ("a firewall that turns the emulators' network away", "a 6-core computer"),
@@ -212,7 +216,8 @@ For example:
 
 Released sections of `CHANGELOG.md` are history and stay as they were.
 `tests/repo/test_docs_voice.py` fails on "we", "our", "ours", "us" and "from
-here" in the docs.
+here" in the docs, and on a line saying something is not yet tried on a real
+device there, in the tools' READMEs or in `.github/`.
 [docs/home-assistant-adoption.md](docs/home-assistant-adoption.md) is a good page
 to copy the style from.
 

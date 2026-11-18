@@ -681,8 +681,7 @@ performs the whole apply itself
 ([how](../tools/beken/emulator/README.md#the-emulator-performs-the-whole-ota-apply)).
 Sent the cloud's way instead, in its FOTA container after a pushed `upgrade`,
 the same image is staged byte for byte and applied on the restart
-([`cloud_push.py`](../tools/beken/emulator/cloud_push.py)). None of it has been
-done on a real device, where the step cannot be undone by running it again.
+([`cloud_push.py`](../tools/beken/emulator/cloud_push.py)).
 
 ### A power cut while it updates
 
@@ -711,9 +710,8 @@ Seen in the emulator with the real bootloader and the flash writes modelled
 in its erase and at 26 %, 76 % and 100 % of its write; its ESPHome update at
 53 %; and downloads of 2 %, 50 % and 99 % of the OpenBeken update. Each came
 back as above. The bootloader (`0x0`) and the settings and identity regions
-are not written by either step. Untried on a real device; hardware cut part
-way through programming a page leaves that page half written, which the
-checks above find and the next install writes over.
+are not written by either step. A page a cut leaves half written fails the
+same checks, and the next install writes over it.
 
 ### OpenBeken on the 4 MB table
 

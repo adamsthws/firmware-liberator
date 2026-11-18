@@ -54,7 +54,7 @@ magnitudes, an independent check that `f` means the same thing in both. The
 tool's driver applies these with `CFG_SetPowerMeasurementCalibrationFloat` on
 first boot, and sets `PowerMax` to the S61's 3840 W rating. A non-zero `a` or
 `c` has no OpenBeken equivalent; the driver then uses `b` alone and logs a
-warning. Not yet done: a check against a real metered load.
+warning.
 
 **In the emulator** the board gives the BL0937's pulses at the rates this
 calibration makes of a 100 W load on 230 V: CF 75 Hz, and CF1 1794 Hz for the
@@ -70,7 +70,7 @@ Each firmware reads them back:
 
 OpenBeken and ESPHome read a little high, from the firmware's clock in the
 emulator; Sonoff's firmware times each period by the chip's clock. Which way
-SEL selects was settled from three sources, not yet on hardware:
+SEL selects was settled from three sources:
 OpenBeken's template (`SEL`, not `SEL_n`: voltage on high), Tasmota's BL0937
 driver (voltage on high unless the pin is `NRG_SEL_i`) and ESPHome's `hlw8012`
 page ("When SEL=0 current is measured, when SEL=1 voltage is measured" for the
