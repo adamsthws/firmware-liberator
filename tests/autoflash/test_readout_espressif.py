@@ -80,6 +80,33 @@ class BridgeTests(unittest.TestCase):
         self.assertIs(waited.call_args.kwargs["sent"], True)
         self.assertTrue(self.ctx.state.input(readout.STATE_KEY))
 
+    def test_a_reader_asked_spoilt_is_sent_spoilt_once(self):
+        # --simulate-bad-image readout, as the fault suite's badimage-once: Sonoff's
+        # updater refuses it, and the next run sends it whole.
+        from tools.autoflash import firewall
+        from tools.autoflash.routes.espressif import images
+        from tools.espressif import analyze_vendor_ota, dump_stock_flash
+
+        def sent_app(spoil):
+            with learned(BASICR4.wrapper_model, "ESP32C3"), \
+                    mock.patch.object(images, "SPOIL_STEP", spoil), \
+                    mock.patch.object(prompts, "require_word", return_value=True), \
+                    mock.patch.object(firewall, "choose_port", return_value=8088), \
+                    mock.patch.object(firewall, "ensure_firewall"), \
+                    mock.patch.object(safety_locks, "lifted"), mock.patch.object(safety_locks, "say_lock_back"), \
+                    mock.patch.object(hostsys, "run_tool", return_value=0) as sent, \
+                    mock.patch.object(readout_espressif, "find_bridge", side_effect=OSError("stop here")), \
+                    mock.patch.object(dump_stock_flash, "read_dump"):
+                with self.assertRaises(OSError):
+                    readout.run(self.ctx, DEVICE)
+            command = sent.call_args.args[0]
+            return Path(command[command.index("--firmware") + 1]).read_bytes()
+        whole, spoilt = sent_app(None), sent_app("readout")
+        self.assertEqual(len(whole), len(spoilt))
+        self.assertNotEqual(whole, spoilt)
+        self.assertEqual(analyze_vendor_ota.analyze(spoilt)["wrapper"]["model"], BASICR4.wrapper_model)
+        self.assertEqual(self.ctx.state.data["captures"]["readout.spoilt"], 1)
+
     def test_on_the_reading_program_already_it_reads_through_it_sending_nothing(self):
         from tools.autoflash import firewall
         from tools.espressif import dump_stock_flash

@@ -57,7 +57,8 @@ APP_DESC_MAGIC = 0xABCD5432
 # (routes/beken/images.py): the step whose image is sent spoilt, the first N
 # times a run sends it (once, without N) - one byte in its middle changed, so
 # the device takes it whole but refuses it, its own check of the image failing.
-# Only D1 asks: the Berry Tasmota, which the installer checks before switching to it.
+# D1 asks, for the Berry Tasmota, which the installer checks before switching to
+# it; and a readout, for its reader ("readout"), which Sonoff's updater checks.
 SPOIL_STEP: str | None = None
 SPOIL_TIMES = 1
 
@@ -69,8 +70,10 @@ class ImageError(ValueError):
 def as_sent(ctx: Context, step: str, image: bytes) -> bytes:
     """`image` as `step` sends it: spoilt, where a test asked for that step's
     (SPOIL_STEP) and this run has sent it spoilt fewer than SPOIL_TIMES times."""
+    if step != SPOIL_STEP:
+        return image
     spoilt_so_far = int(ctx.state.data.get("captures", {}).get(f"{step}.spoilt") or 0)
-    if step != SPOIL_STEP or spoilt_so_far >= SPOIL_TIMES:
+    if spoilt_so_far >= SPOIL_TIMES:
         return image
     ctx.state.capture(f"{step}.spoilt", spoilt_so_far + 1)
     spoilt = bytearray(image)

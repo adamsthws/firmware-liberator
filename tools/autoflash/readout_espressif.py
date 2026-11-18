@@ -29,7 +29,7 @@ from typing import Any, TYPE_CHECKING
 from tools.autoflash import errors, firewall, hostsys, names, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash import setup_network
 from tools.autoflash.errors import Abort, NothingWritten
-from tools.autoflash.routes.espressif import installer
+from tools.autoflash.routes.espressif import images, installer
 from tools.autoflash.runs import ROOT
 from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, flashmap, scrub
 from tools.ewelink.get_device_key import CALLS
@@ -103,7 +103,8 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id:
     read the whole flash through it. `known`: a kind the tool converts, which the bridge has run on before."""
     app = chip.bridge_app()
     wrapped = ctx.dir / "autoflash-bridge-readout.ota"
-    wrapped.write_bytes(build_vendor_ota.build_wrapper(app, version=build_vendor_ota.app_version(app), model=name))
+    wrapped.write_bytes(images.as_sent(ctx, "readout", build_vendor_ota.build_wrapper(
+        app, version=build_vendor_ota.app_version(app), model=name)))
     output.transient_begin()
     # No word against a power cut here, as the Beken readout has: the reader
     # goes in the spare firmware slot, and the device starts Sonoff's again
