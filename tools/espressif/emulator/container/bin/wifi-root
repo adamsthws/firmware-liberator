@@ -4,12 +4,17 @@
 #   wifi-root join SSID    the device's own network: this computer is a client of
 #                          the device there, while the home network's router stays
 #                          up - the device may be trying Wi-Fi details on it
+#   wifi-root readdress ADDRESS
+#                          the router forgets the device's address and gives it
+#                          ADDRESS when it next asks, as a home router may (the
+#                          fault suite's readdress); .50 until then
 set -euo pipefail
-RUN=/run/autoflash-emu
+RUN=${AUTOFLASH_EMU_RUN:-/run/autoflash-emu}   # another for its tests, as `wifi` takes
 . "$RUN/env"
 HOME_SSID=PICSimLabWifi
 NET=192.168.60
-DEVICE_IP=$NET.50
+# The device's address on the home network: .50, unless readdress gave it another.
+DEVICE_IP=$(cat "$RUN/device-ip" 2>/dev/null || echo "$NET.50")
 JOINED=devicenet   # this computer's interface on the device's network
 
 # This computer's own traffic (the tool and its servers run as the user who
@@ -27,6 +32,17 @@ leave_device_network() {
     while iptables -D OUTPUT -o eth0 -m owner --uid-owner "$user" -j DROP 2>/dev/null; do :; done
 }
 
+# The router's DHCP and DNS (dnsmasq), the device given DEVICE_IP.
+start_router() {
+    if [ "$CLOUD" = 1 ]; then dns=(--resolv-file=/etc/resolv.conf); else dns=(--no-resolv); fi
+    dnsmasq --interface="$LAN" --bind-interfaces --except-interface=lo \
+        --dhcp-range="$NET.100,$NET.199,255.255.255.0,1h" \
+        --dhcp-host="$DEVICE_MAC,$DEVICE_IP" \
+        --dhcp-option=option:router,"$NET.1" --dhcp-option=option:dns-server,"$NET.1" \
+        --dhcp-leasefile="$RUN/leases" --pid-file="$RUN/dnsmasq.pid" \
+        --log-dhcp --log-facility="$RUN/dnsmasq.log" "${dns[@]}"
+}
+
 # tap0's own MAC, from a join of an earlier version that took tap0 over
 [ -f "$RUN/tap-mac" ] || cat /sys/class/net/tap0/address > "$RUN/tap-mac"
 
@@ -39,16 +55,32 @@ home)
             ip link set tap0 down; ip link set tap0 address "$(cat "$RUN/tap-mac")"; ip link set tap0 up; }
         ip address flush dev "$LAN"
         ip address add "$NET.1/24" dev "$LAN"
-        if [ "$CLOUD" = 1 ]; then dns=(--resolv-file=/etc/resolv.conf); else dns=(--no-resolv); fi
-        dnsmasq --interface="$LAN" --bind-interfaces --except-interface=lo \
-            --dhcp-range="$NET.100,$NET.199,255.255.255.0,1h" \
-            --dhcp-host="$DEVICE_MAC,$DEVICE_IP" \
-            --dhcp-option=option:router,"$NET.1" --dhcp-option=option:dns-server,"$NET.1" \
-            --dhcp-leasefile="$RUN/leases" --pid-file="$RUN/dnsmasq.pid" \
-            --log-dhcp --log-facility="$RUN/dnsmasq.log" "${dns[@]}"
+        start_router
     fi
     echo "$HOME_SSID" > "$RUN/network"
     echo "$DEVICE_IP:80" > "$RUN/browser-target"
+    ;;
+readdress)
+    address=${2:?which address}
+    case "$address" in "$NET".[1-9]|"$NET".[1-9][0-9]) ;;
+        *) echo "readdress: an address from $NET.1 to $NET.99, not $address" >&2; exit 2 ;; esac
+    echo "$address" > "$RUN/device-ip"
+    DEVICE_IP=$address
+    # Its DHCP alone started again: the router keeps its own address, as a
+    # home router forgetting a lease does - taken off for a moment, as home
+    # does, it cut off what the tool serves the device (seen: D5's plan never
+    # fetched).
+    if router_up; then kill "$(cat "$RUN/dnsmasq.pid")"; sleep 1; fi
+    # Its pid forgotten too: nothing in the container reaps it, and its
+    # zombie answers kill -0 (router_up).
+    rm -f "$RUN/dnsmasq.pid"
+    : > "$RUN/leases"
+    start_router
+    echo "$address:80" > "$RUN/browser-target"
+    # The ARP filter (entrypoint.sh) lets requests for the device's own address
+    # alone reach its emulated Wi-Fi: the new one now.
+    tc filter del dev tap0 egress pref 1 2>/dev/null || true
+    tc filter add dev tap0 egress pref 1 protocol arp flower arp_op request arp_tip "$address" action pass
     ;;
 join)
     ssid=${2:?which network}
@@ -85,7 +117,7 @@ join)
     fi
     ;;
 *)
-    echo "usage: wifi-root home | join SSID" >&2
+    echo "usage: wifi-root home | join SSID | readdress ADDRESS" >&2
     exit 2
     ;;
 esac

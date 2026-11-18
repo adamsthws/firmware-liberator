@@ -13,7 +13,7 @@ together and what it changes, for working on it. How to use it is in
  │  browser-forward ─────────────┘                                          │
  │  autoflash/cli.py, nmcli stand-in, wifi / device commands                  │
  │        │                                                                 │
- │  tap0 192.168.60.1/24 ── dnsmasq (DHCP + DNS; device fixed at .50)         │
+ │  tap0 192.168.60.1/24 ── dnsmasq (DHCP + DNS; device at .50)               │
  │        │                    └─ internet: only with --cloud (iptables)    │
  │  QEMU (lcgamboa fork) ── emulated Wi-Fi ── open AP PICSimLabWifi         │
  │        └─ flash.bin / efuse.bin in captures/emulation/state/             │
@@ -26,8 +26,10 @@ together and what it changes, for working on it. How to use it is in
   points, wired to a tap device in the container. The image holds both of its
   builds, `qemu-system-riscv32` and `qemu-system-xtensa`.
 - **The home network.** `tap0` is the home network and the container its
-  router: dnsmasq hands out addresses (the device's MAC always gets
-  192.168.60.50), and mDNS works as on a real LAN. Without `--cloud`, iptables
+  router: dnsmasq hands out addresses (the device's MAC gets 192.168.60.50,
+  unless `wifi-root readdress ADDRESS` gave it another: the router forgets the
+  old one, as a home router may, and the device takes the new one when it next
+  asks - the fault suite's `readdress`), and mDNS works as on a real LAN. Without `--cloud`, iptables
   keeps the container off the internet, so the cloned identity cannot be used
   by mistake.
 - **The Docker network** every instance and any Windows container share,
@@ -301,6 +303,7 @@ its own with its own MAC (02:53:36:30:00:02).
   address on the network, and that burst of ARP requests stopped the fork's
   Wi-Fi receiving for good: the device kept sending but heard nothing until
   restarted. A real device ignores requests for other addresses anyway.
+  `wifi-root readdress` moves the filter to the new address.
 
 ### The device's board (`board.py`)
 
