@@ -601,9 +601,13 @@ def _main() -> int:
         if args.run:
             args.run = records.earlier_run_name(args.run)
         adopt_older_runs()
-        if args.command == "run" and not args.unattended:
+        # A conversion and a readout alike - each asks questions, and clears
+        # them and its stages' notes away as it goes, which a window too short
+        # cannot - but readout --send, which says one line.
+        stages = args.command == "run" or (args.command == "readout" and not getattr(args, "send", None))
+        if stages and not args.unattended:
             output.start_at_top()
-        if args.command == "run" and not args.verbose and not args.unattended:
+        if stages and not args.verbose and not args.unattended:
             prompts.wait_for_taller_window()  # before anything else is shown
         if args.command == "list":
             args.run = args.run or "-"

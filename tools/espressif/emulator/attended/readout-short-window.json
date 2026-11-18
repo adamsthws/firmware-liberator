@@ -1,5 +1,5 @@
 {
- "about": "A readout of a device on Sonoff's firmware in a window 24 rows tall, which a readout, unlike a conversion, does not ask to be made taller: it reads out all the same, its stages and report drawn as they should be",
+ "about": "A readout of a device on Sonoff's firmware in a window 24 rows tall: asked to be made taller, as a conversion is, gone on with a key, and read out all the same, its stages and report drawn as they should be",
  "covers": [
   "from-sonoff",
   "accepted",
@@ -10,6 +10,10 @@
  "minutes": 40,
  "size": "100x24",
  "answers": [
+  {
+   "when": "Or press any key to go on as it is",
+   "type": "x"
+  },
   {
    "when": "Which device should be read out",
    "type": "1\r",

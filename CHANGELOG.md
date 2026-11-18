@@ -73,6 +73,9 @@ check.
   again, with as many tries as the first go had, the device's own restart among
   them. Before, it checked again without sending it, and failed at once the
   same way.
+- A readout asks for a taller window when yours is too short, as a conversion
+  does: its questions and its stages' notes are cleared away as it goes,
+  which a short window cannot do.
 
 ## 3.0.0
 

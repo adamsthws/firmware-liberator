@@ -18,7 +18,7 @@ from tools.autoflash.state import DONE, RunState
 
 
 class BeforeTheRunTests(unittest.TestCase):
-    def main(self, *, choosing, more=()):
+    def main(self, *, choosing, more=(), command="run"):
         """cli.main() for `run`, the question of which run answered by `choosing`.
         What main() sets for the whole process is put back afterwards;
         self.top and self.taller are the window's two calls."""
@@ -27,7 +27,7 @@ class BeforeTheRunTests(unittest.TestCase):
         # More patches than one `with` may nest (CPython allows 20 blocks).
         with contextlib.ExitStack() as patched:
             for patch in (
-                    mock.patch("sys.argv", ["cli.py", "run", *more]), mock.patch("sys.stdout", screen),
+                    mock.patch("sys.argv", ["cli.py", command, *more]), mock.patch("sys.stdout", screen),
                     mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"),
                     mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"),
                     mock.patch.object(sonoff_firmware, "SIMULATE_NONE"),
@@ -41,6 +41,7 @@ class BeforeTheRunTests(unittest.TestCase):
                     mock.patch.object(records, "take_over_earlier_names", self.taken_over),
                     mock.patch.object(prompts, "wait_for_taller_window", self.taller),
                     mock.patch.object(cli, "resolve_run_name", side_effect=choosing),
+                    mock.patch.object(cli, "start_new_run", side_effect=choosing),
                     mock.patch.object(cli.signup, "ask_on_exit", self.exit_question),
             ):
                 patched.enter_context(patch)
@@ -62,6 +63,15 @@ class BeforeTheRunTests(unittest.TestCase):
         code, screen = self.main(choosing=AssertionError("went on"))
         self.assertEqual(code, 2)
         self.assertIn("REFUSING: captures/plugs and captures/devices both exist.", screen)
+
+    def test_a_readout_asks_for_a_taller_window_as_a_conversion_does(self):
+        # Its stages and questions are cleared away as a conversion's are, which
+        # a window too short cannot do; readout --send says one line, and asks not.
+        for command, more, asks in (("run", (), True), ("readout", (), True),
+                                    ("readout", ("--send", "readout.tar"), False)):
+            with self.subTest(command=command, more=more):
+                self.main(choosing=KeyboardInterrupt, command=command, more=more)
+                self.assertEqual((self.taller.called, self.top.called), (asks, asks))
 
     def test_ctrl_c_at_the_first_question_stops_without_a_traceback(self):
         # Seen: Ctrl-C at "A conversion did not finish last time. What now"
@@ -293,7 +303,8 @@ class AnotherDeviceTests(unittest.TestCase):
         # "Readout saved in ...".
         _, _, _, top = self.main(codes=[0, 0, 0], answers=[self.READ_OUT, self.READ_OUT, KeyboardInterrupt()],
                                  command="readout")
-        self.assertEqual((self.ran, top.call_count), (["read_out"] * 3, 2))
+        # The first too, as a conversion's first is (it asks for a taller window as one does).
+        self.assertEqual((self.ran, top.call_count), (["read_out"] * 3, 1 + 2))
 
     def test_a_readout_starts_a_run_of_its_own(self):
         # Never an unfinished conversion carried on.
