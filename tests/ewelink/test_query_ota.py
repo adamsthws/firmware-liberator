@@ -45,6 +45,57 @@ class QueryOtaTests(unittest.TestCase):
         )
 
 
+def ids(n: int) -> list[dict[str, str]]:
+    return [{"deviceid": f"1000{k:06x}", "model": "M", "version": "1.2.0"} for k in range(n)]
+
+
+class LatestOffersTests(unittest.TestCase):
+    """Many devices' latest offers, QUERY_MOST a query, matched back by deviceid."""
+
+    def ask(self, identities, answer):
+        asked = []
+
+        def api_json(url, body, headers):
+            listed = json.loads(body)["deviceInfoList"]
+            asked.append(listed)
+            return answer(listed)
+        with mock.patch.object(query_ota, "api_json", side_effect=api_json):
+            return query_ota.latest_offers("eu", "token", identities), asked
+
+    @staticmethod
+    def each_offered(listed):
+        return {"error": 0, "data": {"otaInfoList": [{"deviceid": item["deviceid"], "version": "9"}
+                                                     for item in listed]}}
+
+    def test_at_most_eWeLink_s_limit_a_query_each_asked_as_behind_all(self):
+        found, asked = self.ask(ids(31), self.each_offered)
+        self.assertEqual([len(listed) for listed in asked], [query_ota.QUERY_MOST, 1])
+        self.assertEqual(query_ota.QUERY_MOST, 30)
+        self.assertEqual({item["version"] for listed in asked for item in listed}, {query_ota.VERSION_BEHIND_ALL})
+        self.assertEqual(len(found), 31)
+
+    def test_each_offer_goes_to_the_device_it_names(self):
+        def answer(listed):   # in another order, and one entry for no device asked
+            return {"error": 0, "data": {"otaInfoList": [
+                {"deviceid": listed[1]["deviceid"], "version": "b"}, {"deviceid": "1000ffffff", "version": "x"},
+                {"deviceid": listed[0]["deviceid"], "version": "a"}]}}
+        found, _ = self.ask(ids(3), answer)
+        self.assertEqual(found, {"1000000000": {"offers": [{"deviceid": "1000000000", "version": "a"}]},
+                                 "1000000001": {"offers": [{"deviceid": "1000000001", "version": "b"}]},
+                                 "1000000002": {"offers": []}})   # left out of the answer: offered nothing
+
+    def test_a_query_failing_is_noted_for_its_devices_alone(self):
+        def answer(listed):
+            return {"error": 500, "msg": "busy"} if len(listed) == query_ota.QUERY_MOST else self.each_offered(listed)
+        found, _ = self.ask(ids(31), answer)
+        self.assertEqual(found["1000000000"], {"problem": "EwelinkError"})
+        self.assertEqual(found["100000001e"], {"offers": [{"deviceid": "100000001e", "version": "9"}]})
+
+    def test_the_sign_in_ended_is_raised(self):
+        with self.assertRaises(query_ota.SessionEnded):
+            self.ask(ids(2), lambda listed: {"error": 401, "msg": "token"})
+
+
 class LatestOfferTests(unittest.TestCase):
     IDENTITY = {"deviceid": "10000e32ab", "model": "SN-ESP32C3-S60-01", "version": "1.2.0"}
 

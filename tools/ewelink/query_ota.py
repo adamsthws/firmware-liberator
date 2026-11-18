@@ -31,6 +31,9 @@ from tools.ewelink.get_device_key import (
 
 
 VERSION_BEHIND_ALL = "0.0.1"  # older than any firmware, so eWeLink offers the latest
+# The most devices one query asks of: eWeLink turns away a deviceInfoList of
+# more (error 400, "must contain less than or equal to 30 items").
+QUERY_MOST = 30
 
 
 def ota_identity(device: dict[str, Any]) -> dict[str, str]:
@@ -49,7 +52,13 @@ def ota_identity(device: dict[str, Any]) -> dict[str, str]:
 
 
 def query_ota(region: str, token: str, identity: dict[str, str]) -> dict[str, Any]:
-    body = json.dumps({"deviceInfoList": [identity]}).encode("utf-8")
+    return query_many(region, token, [identity])
+
+
+def query_many(region: str, token: str, identities: list[dict[str, str]]) -> dict[str, Any]:
+    """eWeLink's answer for up to QUERY_MOST devices at once: an otaInfoList
+    entry for each device offered an update, naming its deviceid."""
+    body = json.dumps({"deviceInfoList": identities}).encode("utf-8")
     response = api_json(
         API[region] + "/v2/device/ota/query",
         body=body,
@@ -79,6 +88,27 @@ def latest_offer(region: str, token: str, identity: dict[str, str]) -> dict[str,
         raise  # signed in to again, and asked again (get_device_key.Account)
     except Exception as exc:  # whatever goes wrong: a run needs none of this
         return {"problem": type(exc).__name__}
+
+
+def latest_offers(region: str, token: str, identities: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+    """latest_offer for many devices, QUERY_MOST a query: by deviceid,
+    {"offers": [...]} - none for one the answer leaves out - or {"problem": ...}
+    for each device of a query that failed. SessionEnded is raised."""
+    found: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(identities), QUERY_MOST):
+        these = identities[start:start + QUERY_MOST]
+        try:
+            reply = query_many(region, token, [{**identity, "version": VERSION_BEHIND_ALL} for identity in these])
+            listed = list(reply["data"]["otaInfoList"])
+        except SessionEnded:
+            raise
+        except Exception as exc:  # whatever goes wrong: a run needs none of this
+            found.update({identity["deviceid"]: {"problem": type(exc).__name__} for identity in these})
+            continue
+        for identity in these:
+            found[identity["deviceid"]] = {"offers": [offer for offer in listed if isinstance(offer, dict)
+                                                      and offer.get("deviceid") == identity["deviceid"]]}
+    return found
 
 
 def ota_endpoints(ota_list: list[dict[str, Any]]) -> list[tuple[str, int]]:

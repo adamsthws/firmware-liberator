@@ -70,15 +70,21 @@ def upload_url() -> str:
     return os.environ.get("AUTOFLASH_REPORTS_URL") or UPLOAD_URL
 
 
-def enabled(ctx: Context) -> bool:
-    """Whether this run sends its report."""
+def chosen(ctx: Context) -> bool:
+    """Whether this run may send what it sends unasked, as the person and the
+    run's options have it: not --no-report, AUTOFLASH_NO_REPORT, a dry run or
+    a simulated failure. Where it goes is each sender's own (enabled,
+    offers.enabled)."""
     args = getattr(ctx, "args", None)
     if any(getattr(args, flag, False) for flag in ("no_report", "dry_run", "simulate_backup_failure",
                                                    "simulate_bad_image", "simulate_unknown_table")):
         return False
-    if os.environ.get("AUTOFLASH_NO_REPORT", "").strip().lower() in ("1", "yes", "true", "on"):
-        return False
-    return not hostsys.emulated()
+    return os.environ.get("AUTOFLASH_NO_REPORT", "").strip().lower() not in ("1", "yes", "true", "on")
+
+
+def enabled(ctx: Context) -> bool:
+    """Whether this run sends its report: never from the emulator."""
+    return chosen(ctx) and not hostsys.emulated()
 
 
 def start_work(report_id: str) -> subprocess.Popen[str]:

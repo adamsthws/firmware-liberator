@@ -20,6 +20,7 @@ from unittest import mock
 from tools.autoflash import account, hostsys, offers, output, prompts, readout, report_data
 from tools.ewelink import get_device_key
 from tools.ewelink.get_device_key import SessionEnded
+from tools.ewelink.query_ota import QUERY_MOST
 
 TODAY = dt.date(2026, 11, 18)
 TOKEN = "Ab3" * 10 + "Z9"
@@ -35,6 +36,11 @@ def offer_of(n: int) -> dict:
          "digest": f"{n:x}" * 64}]}]}
 
 
+def many(n: int) -> list[dict]:
+    """`n` devices of the account, each with an id of its own."""
+    return [{**PORCH, "deviceid": f"1000{k:06x}"} for k in range(n)]
+
+
 def a_ctx(**args) -> SimpleNamespace:
     """A run signed in to eWeLink, its sign-in never to be made again."""
     sign_in = mock.Mock(side_effect=AssertionError("the background signed in"))
@@ -44,20 +50,26 @@ def a_ctx(**args) -> SimpleNamespace:
 
 class World(unittest.TestCase):
     """Each test's own SENT, the website taking links and every offer, and
-    eWeLink stood in for (self.asked: each device asked of, by id)."""
+    eWeLink stood in for (self.queries: each query's devices, by id;
+    self.asked: every device asked of)."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.sent_path = Path(tmp.name) / "offers-sent.json"
         self.asked: list[str] = []
+        self.queries: list[list[str]] = []
         self.logged: list[str] = []
         self.answers = lambda items: ("links", [("taken", "")] * len(items))
 
-        def latest(region, token, identity):
+        def latest(region, token, identities):
             self.assertEqual((region, token), ("eu", "run-token"))   # the run's own sign-in
-            self.asked.append(identity["deviceid"])
-            return offer_of(len(self.asked))
+            self.queries.append([identity["deviceid"] for identity in identities])
+            found = {}
+            for identity in identities:
+                self.asked.append(identity["deviceid"])
+                found[identity["deviceid"]] = offer_of(len(self.asked))
+            return found
         self.latest = mock.Mock(side_effect=latest)
         self.sends = mock.Mock(return_value="links")
         # Never asked: the website counts each /wanted question as a device wanted.
@@ -65,7 +77,7 @@ class World(unittest.TestCase):
         self.send_offers = mock.Mock(side_effect=lambda items: self.answers(items))
         for patch in (mock.patch.object(offers, "SENT", self.sent_path),
                       mock.patch.object(offers, "PAUSE", 0.0),
-                      mock.patch.object(offers, "latest_offer", self.latest),
+                      mock.patch.object(offers, "latest_offers", self.latest),
                       mock.patch.object(readout, "ask_wanted", self.wanted),
                       mock.patch.object(readout, "website_sends", self.sends),
                       mock.patch.object(readout, "send_offers", self.send_offers),
@@ -86,7 +98,7 @@ class SendTests(World):
     def test_each_device_s_offer_goes_in_one_request_on_the_run_s_sign_in(self):
         ctx = a_ctx()
         self.run_sender(ctx)
-        self.assertEqual(self.asked, ["1000abcdef", "1000fedcba"])
+        self.assertEqual(self.queries, [["1000abcdef", "1000fedcba"]])   # one query for both
         ctx.ewelink._sign_in.assert_not_called()
         self.send_offers.assert_called_once()
         hall, porch = self.sent()
@@ -132,10 +144,10 @@ class SendTests(World):
         self.send_offers.assert_not_called()
 
     def test_eWeLink_ending_the_sign_in_stops_it(self):
-        self.latest.side_effect = SessionEnded("eWeLink ended the sign-in")
+        self.latest.side_effect = [{}, SessionEnded("eWeLink ended the sign-in"), {}]
         ctx = a_ctx()
-        self.run_sender(ctx)
-        self.assertEqual(self.latest.call_count, 1)   # not the next device
+        self.run_sender(ctx, devices=many(QUERY_MOST * 2 + 1))
+        self.assertEqual(self.latest.call_count, 2)   # not the next query
         ctx.ewelink._sign_in.assert_not_called()
         self.send_offers.assert_not_called()
         self.assertEqual(self.logged, ["Offers of the account's devices: not sent: eWeLink ended the sign-in."])
@@ -146,29 +158,46 @@ class SendTests(World):
         self.assertEqual(self.asked, ["1000fedcba"])
         self.assertEqual(self.sent()[0]["files"][0]["sha256"], "9" * 64)
 
-    def test_the_device_the_run_converts_is_asked_of_last(self):
-        ctx = a_ctx()
-        ctx.account_device = SimpleNamespace(device_id="1000abcdef")
-        self.run_sender(ctx)
-        self.assertEqual(self.asked, ["1000fedcba", "1000abcdef"])
+    def test_eWeLink_is_asked_of_at_most_its_limit_of_devices_at_once(self):
+        self.run_sender(devices=many(QUERY_MOST + 1))
+        self.assertEqual([len(query) for query in self.queries], [QUERY_MOST, 1])
+        self.assertEqual(len(self.sent()), QUERY_MOST + 1)
+        self.send_offers.assert_called_once()
+
+    def test_each_offer_goes_with_the_device_eWeLink_gave_it_to(self):
+        self.latest.side_effect = [{"1000fedcba": offer_of(7), "1000abcdef": offer_of(5)}]
+        self.run_sender()
+        self.assertEqual([(item["model"], item["files"][0]["sha256"]) for item in self.sent()],
+                         [("S60TPG", "5" * 64), ("NEWTHING", "7" * 64)])
+
+    def test_a_query_that_failed_leaves_its_devices_out_and_the_rest_go(self):
+        devices = many(QUERY_MOST + 1)
+        self.latest.side_effect = [{device["deviceid"]: {"problem": "EwelinkError"} for device in devices[:QUERY_MOST]},
+                                   {devices[-1]["deviceid"]: offer_of(1)}]
+        self.run_sender(devices=devices)
+        self.assertEqual(len(self.sent()), 1)
+        self.assertIn(f"eWeLink said nothing of {QUERY_MOST}", self.logged[-1])
 
     def test_one_eWeLink_says_nothing_of_is_left_out(self):
-        self.latest.side_effect = [{"problem": "EwelinkError"}, offer_of(2)]
+        self.latest.side_effect = [{"1000abcdef": {"problem": "EwelinkError"}, "1000fedcba": offer_of(2)}]
         self.run_sender()
         self.assertEqual([item["model"] for item in self.sent()], ["NEWTHING"])
         self.assertIn("eWeLink said nothing of 1", self.logged[-1])
 
     def test_one_eWeLink_offers_nothing_is_sent_with_no_files(self):
-        self.latest.side_effect = [{"offers": []}, {"offers": []}]
+        self.latest.side_effect = [{"1000abcdef": {"offers": []}, "1000fedcba": {"offers": []}}]
         self.run_sender()
         self.assertEqual([item["files"] for item in self.sent()], [[], []])
 
-    def test_a_pause_between_two_devices_questions(self):
-        sender = offers.Sender(a_ctx(), [HALL, PORCH], TODAY, log=self.logged.append)
-        with mock.patch.object(offers, "PAUSE", 3.0), mock.patch.object(sender.stop, "wait",
-                                                                         return_value=False) as paused:
-            sender.run()
-        paused.assert_called_once_with(3.0)
+    def test_a_pause_between_two_queries_alone(self):
+        for count, pauses in ((2, 0), (QUERY_MOST * 2 + 1, 2)):
+            with self.subTest(devices=count):
+                self.sent_path.unlink(missing_ok=True)   # none sent before
+                sender = offers.Sender(a_ctx(), many(count), TODAY, log=self.logged.append)
+                with mock.patch.object(offers, "PAUSE", 3.0), mock.patch.object(sender.stop, "wait",
+                                                                                 return_value=False) as paused:
+                    sender.run()
+                self.assertEqual(paused.call_args_list, [mock.call(3.0)] * pauses)
 
     def test_a_problem_is_logged_never_raised(self):
         self.send_offers.side_effect = OSError("down")
@@ -193,12 +222,12 @@ class StopTests(World):
         ctx, logged = a_ctx(), []
         inside, gate = threading.Event(), threading.Event()
 
-        def latest(region, token, identity):
+        def latest(region, token, identities):
             inside.set()
             gate.wait(2)
-            return offer_of(1)
+            return {}
         self.latest.side_effect = latest
-        sender = offers.Sender(ctx, [HALL, PORCH], TODAY, log=logged.append)
+        sender = offers.Sender(ctx, many(QUERY_MOST + 1), TODAY, log=logged.append)
         ctx.offers = sender
         thread = threading.Thread(target=sender.run, daemon=True)
         thread.start()
@@ -226,11 +255,11 @@ class StopTests(World):
     def test_a_run_s_call_never_overlaps_one_of_its(self):
         inside, overlapped = threading.Event(), []
 
-        def latest(region, token, identity):
+        def latest(region, token, identities):
             inside.set()
             threading.Event().wait(0.3)
             overlapped.append(False)
-            return offer_of(1)
+            return {"1000abcdef": offer_of(1)}
         self.latest.side_effect = latest
         thread = threading.Thread(target=self.run_sender, kwargs={"devices": [HALL]}, daemon=True)
         thread.start()
@@ -278,7 +307,7 @@ class ResendTests(World):
 
 
 class EnabledTests(unittest.TestCase):
-    """Sent where a run's report is, and never unattended."""
+    """Sent where the person lets reports be sent, only where readouts may go."""
 
     def setUp(self):
         for patch in (mock.patch.dict(os.environ, {"AUTOFLASH_NO_REPORT": "", "AUTOFLASH_READOUT_URL": ""}),
@@ -304,6 +333,12 @@ class EnabledTests(unittest.TestCase):
             self.assertFalse(offers.enabled(a_ctx()))
         with mock.patch.object(prompts, "UNATTENDED", True):
             self.assertFalse(offers.enabled(a_ctx()))
+
+    def test_the_emulator_sends_to_its_own_api_where_readouts_go(self):
+        with mock.patch.dict(os.environ, {hostsys.EMULATOR_MARKS[0]: "http://127.0.0.1:9",
+                                          "AUTOFLASH_READOUT_URL": "http://127.0.0.1:9/v1/readout"}):
+            self.assertTrue(offers.enabled(a_ctx()))
+            self.assertFalse(offers.enabled(a_ctx(no_report=True)))
 
     def test_started_once_a_run_and_only_where_enabled(self):
         ctx = a_ctx()

@@ -4,8 +4,8 @@ its report is (docs/what-the-tool-sends.md), so the firmware of devices no one
 reads out reaches it too.
 
 Beside the run, never in its way: a thread (start), begun once the run has
-listed the account's devices, asks eWeLink for each device's latest offer, one
-at a time with PAUSE between, on the run's own sign-in - never one of its own,
+listed the account's devices, asks eWeLink for each device's latest offer,
+QUERY_MOST devices a query with PAUSE between, on the run's own sign-in - never one of its own,
 which would end the run's - and stops if eWeLink ends it. Its calls take
 turns with the run's (get_device_key.CALLS), the run's first; an offer the run
 asked for already is not asked again (account.ASKED_OFFERS). Then one request
@@ -13,7 +13,7 @@ to /offers (readout.send_offers), and only where the website asks for links
 (its `send`, asked first with none: readout.website_sends). Nothing on the screen, one line in the run's log. Dropped
 wherever it is as the run ends (drop): nothing is kept to send later.
 
-Sent only where reports are, and never from an unattended run (enabled).
+Sent where the person lets reports be sent, and only where readouts may go (enabled).
 Each device's offer goes again only OFFER_RESEND_DAYS after this computer
 last sent it (SENT).
 """
@@ -28,14 +28,14 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import account, output, prompts, readout, report_data, report_upload, runs
 from tools.ewelink.get_device_key import CALLS, EwelinkError, SessionEnded
-from tools.ewelink.query_ota import latest_offer, ota_identity
+from tools.ewelink.query_ota import QUERY_MOST, latest_offers, ota_identity
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 OFFER_RESEND_DAYS = 7
-# Seconds between two devices' questions to eWeLink: an account of many
-# devices is asked over a minute or two, as the app would, not all at once.
+# Seconds between two of the queries eWeLink is asked, QUERY_MOST devices
+# each: a large account is not asked all at once.
 PAUSE = 3.0
 # The day this computer last sent each device's offer, by its key (key_of),
 # beside the settings: {key: "YYYY-MM-DD"}.
@@ -46,11 +46,11 @@ SETTLED = ("taken", "have", "refused")
 
 
 def enabled(ctx: Context) -> bool:
-    """Whether this run sends offers: where it sends its report
-    (report_upload.enabled: not --no-report, AUTOFLASH_NO_REPORT, a dry run
-    or the emulator), and not unattended, as readouts are not
-    (readout.upload_url)."""
-    return report_upload.enabled(ctx) and not prompts.UNATTENDED and readout.upload_url() is not None
+    """Whether this run sends offers: where the person lets it send its report
+    (report_upload.chosen: not --no-report, AUTOFLASH_NO_REPORT or a dry run),
+    never unattended, and only where a readout may go (readout.upload_url):
+    the website, or a test's own server - in the emulator, its local API."""
+    return report_upload.chosen(ctx) and not prompts.UNATTENDED and readout.upload_url() is not None
 
 
 def key_of(device: dict[str, Any]) -> str | None:
@@ -104,7 +104,6 @@ class Sender:
         self.stop = threading.Event()
         self.done = threading.Event()
         self.log = log
-        self.asked = False   # eWeLink asked once already: PAUSE before the next
 
     def say(self, text: str) -> None:
         """The run's log's one line of offers, unless the run has ended."""
@@ -130,12 +129,12 @@ class Sender:
         if readout.website_sends() != "links":
             self.say("not sent: the website takes files, not links, for now.")
             return
+        found = self.latest(todo)
+        if found is None:
+            return   # stopped, or eWeLink ended the sign-in: said already
         offers, keys, unsaid = [], [], 0
-        while todo:
-            device = self.next_of(todo)
-            latest = self.latest(device)
-            if latest is None:
-                return   # stopped, or eWeLink ended the sign-in: said already
+        for device in todo:
+            latest = found[str(device.get("deviceid") or "")]
             if "offers" in latest:
                 params, extra = device.get("params") or {}, device.get("extra") or {}
                 offers.append(readout.an_offer(str(device.get("productModel") or ""), str(extra.get("model") or ""),
@@ -161,41 +160,39 @@ class Sender:
                  + (f" ({whys[:200]})" if whys else "") + (f"; eWeLink said nothing of {unsaid}" if unsaid else "")
                  + ".")
 
-    def next_of(self, todo: list[dict[str, Any]]) -> dict[str, Any]:
-        """The next device to ask of, taken from `todo`: the one the run is
-        converting last, as the run asks eWeLink for its offer itself."""
-        chosen = getattr(getattr(self.ctx, "account_device", None), "device_id", None)
-        index = next((n for n, device in enumerate(todo) if device.get("deviceid") != chosen), 0)
-        return todo.pop(index)
-
-    def latest(self, device: dict[str, Any]) -> dict[str, Any] | None:
-        """eWeLink's latest offer to `device` ({"offers"} or {"problem"}), the
-        run's own where it asked already; None once the run has ended or
-        eWeLink has ended its sign-in, which stops the sending."""
-        deviceid = str(device.get("deviceid") or "")
-        if deviceid in account.ASKED_OFFERS:
-            return account.ASKED_OFFERS[deviceid]
-        try:
-            identity = ota_identity(device)
-        except (EwelinkError, KeyError):
-            return {"problem": "no model or version"}
-        if self.asked and self.stop.wait(PAUSE):
-            return None
-        self.asked = True
-        with CALLS.background(self.stop) as turn:
-            if not turn:
-                return None   # the run ended (drop)
-            # The run's sign-in as it holds it now: none, and none is made here.
-            held = getattr(getattr(self.ctx, "ewelink", None), "held", None)
-            if held is None:
-                self.say("not sent: the run holds no sign-in to eWeLink.")
-                return None
+    def latest(self, todo: list[dict[str, Any]]) -> dict[str, dict[str, Any]] | None:
+        """eWeLink's latest offer to each device ({"offers"} or {"problem"}), by
+        its id: the run's own where it asked already, the rest QUERY_MOST a
+        query, PAUSE between two. None once the run has ended or eWeLink has
+        ended its sign-in, which stops the sending."""
+        found: dict[str, dict[str, Any]] = {}
+        identities = []
+        for device in todo:
+            deviceid = str(device.get("deviceid") or "")
+            if deviceid in account.ASKED_OFFERS:
+                found[deviceid] = account.ASKED_OFFERS[deviceid]
+                continue
             try:
-                return latest_offer(held[0], held[1]["at"], identity)
-            except SessionEnded:
-                self.say("not sent: eWeLink ended the sign-in.")
+                identities.append(ota_identity(device))
+            except (EwelinkError, KeyError):
+                found[deviceid] = {"problem": "no model or version"}
+        for start in range(0, len(identities), QUERY_MOST):
+            if start and self.stop.wait(PAUSE):
                 return None
-
+            with CALLS.background(self.stop) as turn:
+                if not turn:
+                    return None   # the run ended (drop)
+                # The run's sign-in as it holds it now: none, and none is made here.
+                held = getattr(getattr(self.ctx, "ewelink", None), "held", None)
+                if held is None:
+                    self.say("not sent: the run holds no sign-in to eWeLink.")
+                    return None
+                try:
+                    found.update(latest_offers(held[0], held[1]["at"], identities[start:start + QUERY_MOST]))
+                except SessionEnded:
+                    self.say("not sent: eWeLink ended the sign-in.")
+                    return None
+        return found
 
 def start(ctx: Context, devices: list[dict[str, Any]]) -> Sender | None:
     """Begin sending the account's offers beside the run, once a run (enabled),

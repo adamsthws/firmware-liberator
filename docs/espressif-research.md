@@ -438,6 +438,7 @@ real server:
 | a made-up id, with any model | an unrelated file (3.5.0, and 3.8.1 by November 2026): never use one | |
 | another made-up id | another release (3.8.2): ids like these are likely real devices' | |
 | its own id, asked again | the same link | S60 |
+| a list of entries in one query | one offer each, naming its `deviceid`; at most 30 (`"deviceInfoList" must contain less than or equal to 30 items`) | S60 |
 | an empty id | error 400 | |
 | no `deviceid` at all, by model alone | error 400, `deviceid` is required | |
 | the older `/api/user/ota/query` | HTTP 503: no longer answered | |
