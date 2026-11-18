@@ -35,6 +35,18 @@ class ReadTests(unittest.TestCase):
             self.assertEqual(firmware.read(path), firmware.Update("1.2.0", wrapped))
 
 
+class VersionTests(unittest.TestCase):
+    def test_the_apps_own_version_or_else_the_recorded_one(self):
+        from tests.espressif.test_dump_stock_flash import esp_image
+        from tools.ewelink.stub_cloud import firmware
+        self.assertEqual(firmware.version_of(esp_image("1.2.0", "esp32_fw"), "1.1.0"), "1.2.0")
+        # The S60's own: no x.y.z, so the version eWeLink gave the device.
+        s60 = esp_image("v1.0.0-21-g28df76c-dirty", "esp32_fw")
+        self.assertEqual(firmware.version_of(s60, "1.2.0"), "1.2.0")
+        self.assertEqual(firmware.version_of(s60, ""), "1.0.0")
+        self.assertEqual(firmware.version_of(s60, "-"), "1.0.0")
+
+
 class KindTests(unittest.TestCase):
     def test_by_its_firmwares_own_model(self):
         from tools.autoflash import kinds

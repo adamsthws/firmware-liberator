@@ -348,8 +348,12 @@ class Stub:
         params = {**seen.get("params", {}), "model": model}
         if "switch" not in params and "switches" not in params:
             params["switches"] = [{"switch": "off", "outlet": 0}]
-        if seen.get("fwVersion"):  # unknown until the device has said, as at eWeLink
-            params["fwVersion"] = seen["fwVersion"]
+        # The version it last said; one it has not said to this stub - a device
+        # started converted, from a state saved without the stub's record - is
+        # listed with its backup's, the firmware eWeLink heard it on when it
+        # was paired. Without one no firmware is offered it (query_ota).
+        if seen.get("fwVersion") or self.update:
+            params["fwVersion"] = seen.get("fwVersion") or self.update.version
         if d.get("staMac"):  # eWeLink has it from the device; this one never says it here
             params.setdefault("staMac", d["staMac"])
         item = {"itemData": {

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from tools.ewelink.stub_cloud import stub_server
@@ -183,6 +184,19 @@ class AccountDeviceTests(unittest.TestCase):
             self.assertEqual(again.device_thing()["data"]["thingList"][0]["itemData"]["params"]["fwVersion"], "1.2.0")
             kept.write_text("not json", encoding="utf-8")   # spoilt: none kept, nothing assumed
             self.assertEqual(stub_server.Stub("192.0.2.1", 443, 10, device, reported_file=kept).reported, {})
+
+    def test_a_device_never_heard_is_listed_with_its_backups_version(self):
+        # Started converted from a state saved without the stub's record: eWeLink
+        # heard it on its Sonoff firmware when it was paired, so it is listed with
+        # that version, and the readout's query for the latest is offered the file.
+        device = {"deviceid": "1000abcdef", "devicekey": "k", "model": "S60TPF"}
+        stub = stub_server.Stub("192.0.2.1", 443, 10, device, update=SimpleNamespace(version="1.2.0", data=b"app"))
+        params = lambda: stub.device_thing()["data"]["thingList"][0]["itemData"]["params"]
+        self.assertEqual(params()["fwVersion"], "1.2.0")
+        stub.heard({"action": "update", "deviceid": "1000abcdef", "params": {"fwVersion": "1.1.0"}})
+        self.assertEqual(params()["fwVersion"], "1.1.0")
+        # With no firmware to offer, none is assumed.
+        self.assertNotIn("fwVersion", self.stub(device).device_thing()["data"]["thingList"][0]["itemData"]["params"])
 
     def test_the_relay_is_off_until_the_device_reports_it(self):
         # The POW Elite's and POWCT's firmware reports its relay only when it changes.

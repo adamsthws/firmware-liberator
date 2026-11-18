@@ -169,16 +169,20 @@ fi
 # eWeLink gave this device in the tool's own records of earlier runs (a real
 # conversion's, a kept device's, an instance's), or
 # AUTOFLASH_EMU_STUB_PRODUCT_MODEL; with neither, none - and the run's report
-# leaves it blank rather than guess.
-product_seen() {
-    "$PY" -I - "$ROOT/captures" "$EMU/saved" "$(dirname "$STATE")" "${mac//:/-}" <<'EOF'
+# leaves it blank rather than guess. record_seen KEY gives any such record's
+# newest value: the stock version is read so too, below.
+record_seen() {
+    "$PY" -I - "$ROOT/captures" "$EMU/saved" "$(dirname "$STATE")" "${mac//:/-}" "$1" <<'EOF'
 import glob, json, os, re, sys
-captures, saved, states, device = sys.argv[1:]
+captures, saved, states, device, key = sys.argv[1:]
+def value(record):
+    found = str((record or {}).get(key) or "").strip()
+    return found.upper() if key == "product_model" else found
 seen = []
 # A test copy of a public dump says what it is a copy of (public_dump.py).
 try:
     with open(f"{captures}/devices/{device}/device.json") as f:
-        model = str(json.load(f).get("product_model") or "").strip().upper()
+        model = value(json.load(f))
     if model:
         seen.append((float("inf"), model))
 except (OSError, ValueError):
@@ -193,7 +197,7 @@ for runs in (f"{captures}/devices/{device}/runs", f"{saved}/*/captures/*s/{devic
         try:
             with open(path) as f:
                 changed = os.fstat(f.fileno()).st_mtime
-                model = str((json.load(f).get("inputs") or {}).get("product_model") or "").strip().upper()
+                model = value(json.load(f).get("inputs"))
         except (OSError, ValueError, AttributeError):
             continue
         if model:
@@ -204,7 +208,7 @@ EOF
 product=""
 if [ "$stub" = 1 ]; then
     product=$(printf '%s' "${AUTOFLASH_EMU_STUB_PRODUCT_MODEL:-}" | tr '[:lower:]' '[:upper:]')
-    [ -n "$product" ] || product=$(product_seen)
+    [ -n "$product" ] || product=$(record_seen product_model)
     case "$product" in
     ""|[A-Z0-9]*) ;;
     *) echo "AUTOFLASH_EMU_STUB_PRODUCT_MODEL is a product model such as S60TPG, not '$product'" >&2; exit 2 ;;
@@ -258,7 +262,8 @@ fi
 # Sonoff's with no backup: the device's own, made as the device's is (firmware.py).
 if [ "$stub" = 1 ]; then
     "$PY" -I "$ROOT/$STUB_DIR/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
-        --trust-ca "$STUB_CA/ca.crt" --product "$product" || rm -f "$STATE/stub-firmware.bin"
+        --trust-ca "$STUB_CA/ca.crt" --product "$product" --version "$(record_seen stock_version)" \
+        || rm -f "$STATE/stub-firmware.bin"
 fi
 # The account's other devices, which the stub lists beside this one, none of
 # them emulated: AUTOFLASH_EMU_STUB_OTHERS names a JSON list of them
@@ -356,7 +361,7 @@ for candidate in ("198.18.60.0/24", "172.31.60.0/24", "10.231.60.0/24"):
     docker network create --subnet "$subnet" --label autoflash.emulator=1 "$NETWORK" >/dev/null 2>&1 ||
         docker network inspect "$NETWORK" >/dev/null
 fi
-model=${product:-$(product_seen)}
+model=${product:-$(record_seen product_model)}
 # Some stock firmware stops at start-up without the external RAM its device has.
 psram=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
 from tools.autoflash import kinds

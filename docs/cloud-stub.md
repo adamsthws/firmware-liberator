@@ -337,7 +337,14 @@ the instance's network.
   are kept in the instance's `stub-reported.json`, and saved and restored with
   a device (`unattended-test.sh --save`, `--from`; `--fresh` forgets them), so
   a device converted since, which never speaks to the cloud again, is listed
-  with the version it last ran, as eWeLink lists it.
+  with the version it last ran, as eWeLink lists it. A device that has said
+  nothing to this stub yet - one kept before the file was, or a fresh one in
+  the moment before it first speaks - is listed with the version of the
+  firmware the stub offers, its backup's: the one eWeLink heard it on when it
+  was paired. That is the app's own where it carries an x.y.z one; the S60's
+  says `v1.0.0-21-g28df76c-dirty`, so `emu.sh` gives the version from the
+  tool's records of the device (`stock_version`, found as the product model is,
+  below).
 - `params.staMac` is how the tool finds the device on the network, as
   Sonoff's firmware need answer nothing there. The device never reports its
   MAC on this channel, so it is the MAC `emu.sh` runs the device with

@@ -8,7 +8,12 @@ back on Sonoff's firmware, as it fetches the real file from eWeLink.
 emu.sh makes it on your computer, where patch_stock has what it needs, into
 the instance's state, and the stub reads it from there (read()):
 
-    python -I tools/ewelink/stub_cloud/firmware.py STOCK_FLASH OUT --trust-ca CA [--product DUALR3]
+    python -I tools/ewelink/stub_cloud/firmware.py STOCK_FLASH OUT --trust-ca CA [--product DUALR3] [--version 1.2.0]
+
+The file is named the version the app carries, or where it carries none of the
+x.y.z kind (the S60's says "v1.0.0-21-g28df76c-dirty"), the one eWeLink gave the
+device as in the tool's records (--version): the stub lists a device with it
+until the device says its own, as eWeLink lists it with the last it said.
 """
 
 from __future__ import annotations
@@ -51,7 +56,14 @@ def kind_of(model: str | None, product: str | None) -> kinds.Kind | None:
             or next((kind for kind in kinds.EVERY if model and kind.stock_model == model), None))
 
 
-def update_of(flash: bytes, ca_pem: bytes | None, product: str | None = None) -> Update:
+def version_of(app: bytes, recorded: str | None) -> str:
+    """The version to name the update `app` with: its own x.y.z one, else the
+    one recorded for the device, else 1.0.0."""
+    return build_vendor_ota.app_version(app) or (recorded if version_tuple(recorded or "") else "1.0.0")
+
+
+def update_of(flash: bytes, ca_pem: bytes | None, product: str | None = None,
+              version: str | None = None) -> Update:
     """The update file for the device whose stock flash this is, eWeLink's
     product model for it `product` where known."""
     patched = patch_stock.patch(flash, ca_pem)
@@ -63,7 +75,7 @@ def update_of(flash: bytes, ca_pem: bytes | None, product: str | None = None) ->
     kind = kind_of(frame_params(flash).get("model"), product)
     if kind is None:
         raise ValueError("the dump's model is not a kind this tool knows")
-    version = build_vendor_ota.app_version(app) or "1.0.0"
+    version = version_of(app, version)
     return Update(version, build_vendor_ota.build_wrapper(app, version=version, model=kind.wrapper_model))
 
 
@@ -84,8 +96,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("output", type=Path)
     parser.add_argument("--trust-ca", type=Path, default=None, help="the stub's CA, for the firmware to trust")
     parser.add_argument("--product", default="", help="eWeLink's product model for the device, e.g. DUALR3")
+    parser.add_argument("--version", default="",
+                        help="the version eWeLink gave the device, for an app that carries no x.y.z one")
     args = parser.parse_args(argv)
-    update = update_of(args.flash.read_bytes(), args.trust_ca.read_bytes() if args.trust_ca else None, args.product)
+    update = update_of(args.flash.read_bytes(), args.trust_ca.read_bytes() if args.trust_ca else None, args.product,
+                       args.version)
     args.output.write_bytes(update.data)
     args.output.chmod(0o644)
     return 0

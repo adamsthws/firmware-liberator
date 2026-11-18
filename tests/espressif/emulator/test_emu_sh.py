@@ -26,12 +26,12 @@ def pick(taken: str) -> str:
     return done.stdout.strip()
 
 
-def product_seen(folder: Path, before: str = "") -> subprocess.CompletedProcess:
-    """emu.sh's product_seen, on the captures, saved devices and instance
+def product_seen(folder: Path, before: str = "", key: str = "product_model") -> subprocess.CompletedProcess:
+    """emu.sh's record_seen KEY, on the captures, saved devices and instance
     states under `folder`, for device 12-34-56-ab-cd-ef; `before` runs first."""
-    program = re.search(r"product_seen\(\) \{\n.*?<<'EOF'\n(.*?)\nEOF\n", SCRIPT.read_text(encoding="utf-8"),
+    program = re.search(r"record_seen\(\) \{\n.*?<<'EOF'\n(.*?)\nEOF\n", SCRIPT.read_text(encoding="utf-8"),
                         re.S).group(1)
-    arguments = [str(folder / "captures"), str(folder / "saved"), str(folder / "emulation"), "12-34-56-ab-cd-ef"]
+    arguments = [str(folder / "captures"), str(folder / "saved"), str(folder / "emulation"), "12-34-56-ab-cd-ef", key]
     return subprocess.run([sys.executable, "-I", "-c", before + program, *arguments],
                           capture_output=True, text=True, timeout=60)
 
@@ -55,6 +55,25 @@ class ProductModelTests(unittest.TestCase):
         done = product_seen(self.folder, gone)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), "S60TPG")
+
+
+class StockVersionTests(unittest.TestCase):
+    def test_the_version_ewelink_gave_is_found_in_the_devices_record(self):
+        # The S60's app calls itself "v1.0.0-21-g28df76c-dirty": without this
+        # the stub listed a fresh device as on 1.0.0 until it spoke, and a
+        # readout asking in that moment had its reader refused ("Device reports
+        # 1.2.0, expected 1.0.0").
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        device = folder / "captures/devices/12-34-56-ab-cd-ef"
+        device.mkdir(parents=True)
+        (device / "device.json").write_text(json.dumps({"stock_version": "1.2.0", "product_model": "s60tpg"}),
+                                            encoding="utf-8")
+        self.assertEqual(product_seen(folder, key="stock_version").stdout.strip(), "1.2.0")
+        self.assertEqual(product_seen(folder).stdout.strip(), "S60TPG")
+
+    def test_the_stub_firmware_is_given_it(self):
+        self.assertIn('--version "$(record_seen stock_version)"', SCRIPT.read_text(encoding="utf-8"))
 
 
 class EmulatorNetworkTests(unittest.TestCase):
