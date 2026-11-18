@@ -503,6 +503,9 @@ class Context:
             host,
             user=self.state.input("web_user"),
             password=self.web_password,
+            # Found again by its hardware address once a restart brings it
+            # back on another, as the Beken route's waits do (join.wait_for).
+            follow=self.finder.poll,
         )
 
     @property

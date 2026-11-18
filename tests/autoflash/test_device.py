@@ -423,6 +423,54 @@ class RebootDetectionTests(unittest.TestCase):
         self.wait_on_clock(Fake("10.0.0.5"), clock, before=10)
 
 
+class FollowedTests(unittest.TestCase):
+    """A device that restarts onto another address - a router giving its new
+    firmware one, as a home router may - is found there by its hardware
+    address (follow, a run's DeviceFinder), as the Beken route's waits find
+    it: seen in the fault suite, an S60's restart waited 300 s at the old one."""
+
+    MOVED = "192.0.2.55"
+
+    def device(self):
+        from tools.autoflash.device import Device
+        moved = self.MOVED
+
+        class Fake(Device):
+            def reachable(self, timeout=3.0):
+                return self.host == moved
+
+            def started_at(self):
+                return "#2"   # a boot after the one before the restart
+
+            def uptime_seconds(self):
+                return 4
+
+        return Fake("192.0.2.50", follow=lambda: moved)
+
+    def test_a_restart_is_waited_for_at_the_devices_new_address(self):
+        import tools.autoflash.device as device_module
+        device = self.device()
+        with mock.patch.object(device_module.time, "sleep"):
+            device.wait_for_reboot(timeout=60, settle=0, started_at="#1", before=30)
+        self.assertEqual(device.host, self.MOVED)   # and every request after goes there
+
+    def test_waiting_for_it_to_answer_finds_it_there_too(self):
+        import tools.autoflash.device as device_module
+        device = self.device()
+        with mock.patch.object(device_module.time, "sleep"):
+            device.wait_reachable(timeout=60)
+        self.assertEqual(device.host, self.MOVED)
+
+    def test_a_run_s_device_is_followed_by_its_finder(self):
+        from types import SimpleNamespace
+        from tools.autoflash.context import Context
+        ctx = mock.Mock(spec=Context)
+        ctx.state = SimpleNamespace(input=lambda key: {"device_ip": "192.0.2.50"}.get(key))
+        ctx.web_password = None
+        device = Context.device.fget(ctx)
+        self.assertIs(device.follow, ctx.finder.poll)
+
+
 class BootIdentityTests(unittest.TestCase):
     """started_at: Tasmota counts a boot once it has been up 10 s, so a count
     read before then is waited out - it went up by one in the same boot, and

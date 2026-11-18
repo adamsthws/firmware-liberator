@@ -34,6 +34,10 @@ check.
   start does.
   Before, a run that failed ended at the email question. A conversion that
   became a readout, the device not being supported, asks as a readout does.
+- An S60 that comes back from a restart on another address - a router can
+  give a new firmware one, if nobody reserved its address - is found there by
+  its hardware address, as an S61 always was, and the run says "The device is
+  now at ...". Before, it waited five minutes at the old address and stopped.
 - Ctrl-C twice, or the window closed, while an S61 is sent its firmware
   through eWeLink stops the run as asked, and the next run says why it
   stopped. Before, it ended as a delivery that failed part way, with a switch

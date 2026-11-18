@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 class DeviceError(RuntimeError):
@@ -193,11 +193,25 @@ class Device:
         user: str | None = None,
         password: str | None = None,
         timeout: float = 10.0,
+        follow: Callable[[], str | None] | None = None,
     ) -> None:
         self.host = host
         self.user = user
         self.password = password
         self.timeout = timeout
+        # Where the device is now, found by its hardware address (a run's
+        # join.DeviceFinder.poll): asked while it does not answer at `host`,
+        # as a restart can bring it back on another address - a router may
+        # give a new firmware another, which nobody had reserved.
+        self.follow = follow
+
+    def _followed(self) -> bool:
+        """Whether the device answered `follow` at another address, now `host`."""
+        found = self.follow() if self.follow else None
+        if found and found != self.host:
+            self.host = found
+            return True
+        return False
 
     # -- plumbing -----------------------------------------------------------
 
@@ -565,6 +579,8 @@ class Device:
         while time.monotonic() < deadline:
             if self.reachable():
                 return time.monotonic() - started
+            if self._followed():
+                continue
             time.sleep(poll)
         raise DeviceError(f"{self.host} did not answer within {timeout:.0f}s")
 
@@ -589,6 +605,7 @@ class Device:
             time.sleep(3.0)
             if not self.reachable(timeout=2.0):
                 seen_offline = True
+                self._followed()   # back on another address: asked there next
                 continue
             if started_at is not None:
                 try:
