@@ -96,9 +96,13 @@ files from eWeLink itself.
   eWeLink ID, its name, or any address. The path is the same for every
   device on that release: the tool leaves out the rest of the link.
 - **It is sent unasked**, as a report is, and only while the website asks for
-  links. Nothing of it shows on your screen and the run never waits for it;
-  it uses the run's own sign-in to eWeLink, never one of its own. If the run
-  ends first, it is dropped: nothing is kept to send later.
+  links. Nothing of it shows on your screen and the run never waits for it:
+  the small puzzle it carries, which lets the server turn away floods, is
+  worked out beside the run at the lowest priority. It uses the run's own
+  sign-in to eWeLink, never one of its own. If the run ends first, it is
+  dropped: nothing is kept to send later. A device whose offer has a file
+  with a link of a shape the tool does not know is left out, to go once a
+  later version knows it.
 - **Each device's offer goes at most once a week** from your computer
   (`OFFER_RESEND_DAYS` in
   [`tools/autoflash/offers.py`](../tools/autoflash/offers.py)): the day it

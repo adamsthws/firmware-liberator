@@ -59,13 +59,19 @@ any file the website already has, sending nothing to the device. For a
 device the tool has not seen before, that is the whole readout. When the
 website asks for links instead, such a readout downloads nothing: it sends
 each offered file's link and SHA-256 alone, and the website fetches the
-files from eWeLink itself once enough readouts agree on them.
+files from eWeLink itself once enough readouts agree on them. If any file's
+link is not of the shape the tool knows, the readout downloads and sends the
+files instead.
 
 A device listed as **Supported**, **Testers wanted** or **Readout wanted**
 ([devices](../devices/README.md)) is then read out in full. A variant of a
 listed device that runs other firmware, such as its Matter version, counts as
 one the tool has not seen. The tool says what it will do, and sends nothing
-to the device until you type PROCEED.
+to the device until you type PROCEED. When the website asks for links, a
+readout in full also sends each offered file's link in place of the file,
+except a file whose link is not of the shape the tool knows, which it
+downloads and sends. It downloads no other, except for a Beken device, whose
+Sonoff firmware the tool puts back from the offered file.
 
 ### Every device at once
 
@@ -143,7 +149,7 @@ A readout is one file, `readout.tar`, holding:
 | `efuse.bin.xz` | the chip's fixed settings (its eFuses), as the reading program saw them, compressed | yes | |
 | `info.txt` | what the reading program said about the device | yes | yes |
 | `report.json` | the check of the memory read: its partitions and hashes | yes | |
-| `offered/<name>` | each file of the firmware eWeLink offers the device, as eWeLink serves it | yes | yes |
+| `offered/<name>` | each file of the firmware eWeLink offers the device, as eWeLink serves it; when the website asks for links, only those whose link is of a shape the tool does not know, and `manifest.json` lists the rest by link | yes | yes |
 
 A device whose memory was not read has only the manifest and the offered
 firmware. Sent as links, it is not a file at all: the device's model, the

@@ -1133,8 +1133,9 @@ LINKED = {"offers": [{"version": "1.1.0", "binList": [
 
 
 class LinksTests(unittest.TestCase):
-    """A first stage the website asks for as links: each file's link and
-    SHA-256 sent to /offers, nothing downloaded; a whole readout as ever."""
+    """Where the website asks for links: a first stage's, each file's link and
+    SHA-256, sent to /offers; a whole readout's in its manifest. Nothing
+    downloaded, but for a Beken device read in full."""
 
     def setUp(self):
         start_run(self)
@@ -1211,18 +1212,94 @@ class LinksTests(unittest.TestCase):
         offered.assert_called_once()
         readout.send_offers.assert_not_called()
 
-    def test_a_whole_readout_still_carries_its_files(self):
-        from tools.autoflash import kinds
-        basicr4 = kinds.SONOFF_BASICR4
-        asked = account.Asked("1.1.0", basicr4.stock_model, "BASICR4", [], LINKED, "1000abcdef")
+    def whole(self, product: str, kind, chip: str, reader, offers=LINKED) -> mock.Mock:
+        """A whole readout of `kind` taken, its offer() stood in for."""
+        asked = account.Asked("1.1.0", kind.stock_model, product, [], offers, "1000abcdef")
         with mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked)), \
-                learned(basicr4.wrapper_model, "ESP32C3"), \
-                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
+                learned(kind.wrapper_model, chip), mock.patch.object(reader, "read_and_anonymise",
+                                                                    return_value=({"flash.bin": b"\xe9"}, True)), \
+                mock.patch.object(readout_beken, "stock_from_offered", return_value=mock.Mock()), \
                 mock.patch.object(readout, "offer", return_value="") as offered:
-            readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
-        offered_firmware.fetch.assert_called_once()
-        self.assertEqual([item.name for item in offered.call_args.args[3]], ["user1.bin"])
+            readout.run(self.ctx, record(product, kind.stock_model))
+        readout.send_offers.assert_not_called()   # its memory goes as a readout, not to /offers
+        return offered
+
+    def test_a_whole_readout_sends_links_of_its_offered_files_and_downloads_none(self):
+        from tools.autoflash import kinds
+        readout.ask_wanted.return_value = readout.Wanted(True, "", frozenset({"a" * 64}), "links")
+        offered = self.whole("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", readout_espressif)
+        offered_firmware.fetch.assert_not_called()
+        manifest, files, updates = offered.call_args.args[1:]
+        self.assertEqual(manifest["offered"], [
+            {"file": None, "version": "1.1.0", "sha256": "a" * 64, "held": True},
+            {"file": None, "version": "1.1.0", "sha256": "b" * 64, "link": f"/ota/rom/{TOKEN}/user2.bin"}])
+        self.assertEqual(manifest["cloud"], "ewelink")
+        names = tarfile.open(fileobj=io.BytesIO(readout.package(manifest, files, updates))).getnames()
+        self.assertEqual(names, ["manifest.json", "flash.bin.xz"])   # no file under offered/
+
+    def test_one_with_every_file_held_names_no_cloud(self):
+        from tools.autoflash import kinds
+        readout.ask_wanted.return_value = readout.Wanted(True, "", frozenset({"a" * 64, "b" * 64}), "links")
+        manifest = self.whole("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", readout_espressif).call_args.args[1]
+        self.assertEqual([item.get("held") for item in manifest["offered"]], [True, True])
+        self.assertNotIn("cloud", manifest)
+
+    def test_a_file_whose_link_has_another_shape_goes_as_a_file_beside_the_links(self):
+        from tools.autoflash import kinds
+        other = offered_firmware.Offered("user2.bin", "1.1.0", b"\xe9other")
+        offers = {"offers": [{"version": "1.1.0", "binList": [
+            LINKED["offers"][0]["binList"][0],
+            {"name": "user2.bin", "downloadUrl": "https://example.com/rom/user2.bin", "digest": other.sha256}]}]}
+        offered_firmware.fetch.return_value = ([other], [])
+        offered = self.whole("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", readout_espressif, offers)
+        self.assertEqual(offered_firmware.fetch.call_args.kwargs["skip"], frozenset({"a" * 64}))
+        manifest, files, updates = offered.call_args.args[1:]
+        self.assertEqual(manifest["offered"], [
+            {"file": "offered/user2.bin", "version": "1.1.0", "size": len(other.data), "sha256": other.sha256},
+            {"file": None, "version": "1.1.0", "sha256": "a" * 64, "link": f"/ota/rom/{TOKEN}/user1.bin"}])
+        self.assertEqual(manifest["cloud"], "ewelink")
+        names = tarfile.open(fileobj=io.BytesIO(readout.package(manifest, files, updates))).getnames()
+        self.assertEqual(names, ["manifest.json", "offered/user2.bin", "flash.bin.xz"])
+
+    def test_a_first_stage_with_a_link_of_another_shape_goes_as_files(self):
+        offers = {"offers": [{"version": "1.1.0", "binList": [
+            LINKED["offers"][0]["binList"][0],
+            {"name": "user2.bin", "downloadUrl": "https://example.com/rom/user2.bin", "digest": "b" * 64}]}]}
+        with mock.patch.multiple(account, ask_account=mock.Mock(return_value=account.Asked(
+                    "1.0.0", "SN-NEW-01", "NEWTHING", [], offers, "1000abcdef"))), \
+                learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), \
+                mock.patch.object(readout, "offer", return_value="") as offered:
+            readout.run(self.ctx, DEVICE)
         readout.send_offers.assert_not_called()
+        offered_firmware.fetch.assert_called_once()
+        manifest, _, updates = offered.call_args.args[1:]
+        self.assertEqual([item.name for item in updates], ["user1.bin"])
+        self.assertNotIn("cloud", manifest)
+        self.assertTrue(all("link" not in item for item in manifest["offered"]))
+
+    def test_a_beken_device_read_in_full_still_fetches_them_to_put_sonoff_back_but_sends_links(self):
+        from tools.autoflash import kinds
+        stock = offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9stock")
+        offers = {"offers": [{"version": "1.1.0", "binList": [
+            {"name": "user1.bin", "downloadUrl": f"https://example.com/ota/rom/{TOKEN}/user1.bin",
+             "digest": stock.sha256}]}]}
+        offered_firmware.fetch.return_value = ([stock], [])
+        offered = self.whole("S61STPF", kinds.SONOFF_S61, "BK7238", readout_beken, offers)
+        self.assertEqual(offered_firmware.fetch.call_args.kwargs["skip"], frozenset())
+        manifest, _, updates = offered.call_args.args[1:]
+        self.assertEqual(updates, [])
+        self.assertEqual([item["link"] for item in manifest["offered"]], [f"/ota/rom/{TOKEN}/user1.bin"])
+
+    def test_a_whole_readout_taking_files_carries_them_as_ever(self):
+        from tools.autoflash import kinds
+        readout.ask_wanted.return_value = readout.Wanted(True)
+        offered = self.whole("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", readout_espressif)
+        offered_firmware.fetch.assert_called_once()
+        manifest, _, updates = offered.call_args.args[1:]
+        self.assertEqual([item.name for item in updates], ["user1.bin"])
+        self.assertEqual(manifest["offered"], [{"file": "offered/user1.bin", "version": "1.1.0", "size": 1,
+                                                "sha256": updates[0].sha256}])
+        self.assertNotIn("cloud", manifest)
 
 
 class SendOffersTests(unittest.TestCase):
@@ -1232,7 +1309,7 @@ class SendOffersTests(unittest.TestCase):
     def test_one_request_with_light_work_beside_where_readouts_go(self):
         posted = []
 
-        def light_post(path, value):
+        def light_post(path, value, **_):
             posted.append((path, value))
             return {"send": "links", "offers": [{"result": "taken"}, {"result": "refused", "why": "bad path"}]}
         with mock.patch.object(readout, "light_post", side_effect=light_post):
@@ -1246,7 +1323,7 @@ class SendOffersTests(unittest.TestCase):
     def test_more_than_a_request_carries_go_in_the_next(self):
         sizes = []
 
-        def light_post(path, value):
+        def light_post(path, value, **_):
             sizes.append(len(value["offers"]))
             return {"send": "links", "offers": [{"result": "have"}] * len(value["offers"])}
         with mock.patch.object(readout, "light_post", side_effect=light_post):
@@ -1258,7 +1335,7 @@ class SendOffersTests(unittest.TestCase):
         big = {"model": "A", "files": [{"path": "p" * 1000}]}
         sizes = []
 
-        def light_post(path, value):
+        def light_post(path, value, **_):
             body = json.dumps({**value, "nonce": "0" * 16}).encode()
             self.assertLessEqual(len(body), readout.OFFERS_MAX_BYTES)
             sizes.append(len(value["offers"]))
@@ -1271,7 +1348,7 @@ class SendOffersTests(unittest.TestCase):
     def test_links_only_where_every_answer_says_so(self):
         answers = iter([{"send": "links", "offers": [{"result": "taken"}]}, {"offers": [{"result": "full"}]}])
         with mock.patch.object(readout, "OFFERS_PER_REQUEST", 1), \
-                mock.patch.object(readout, "light_post", side_effect=lambda path, value: next(answers)):
+                mock.patch.object(readout, "light_post", side_effect=lambda path, value, **_: next(answers)):
             self.assertEqual(readout.send_offers([{"model": "A"}, {"model": "B"}])[0], "files")
 
     def test_how_the_website_takes_offers_is_asked_with_none(self):
@@ -1280,7 +1357,8 @@ class SendOffersTests(unittest.TestCase):
             with self.subTest(answer=answer), mock.patch.object(readout, "light_post", return_value=answer) as post:
                 self.assertEqual(readout.website_sends(), sends)
             post.assert_called_once_with("/offers", {"format": 1, "tool_version": readout.__version__,
-                                                     "cloud": "ewelink", "offers": []})
+                                                     "cloud": "ewelink", "offers": []},
+                                         prove=readout.light_proof)
 
     def test_an_answer_not_one_for_each_offer_is_none(self):
         for answer in ({}, {"offers": [{"result": "taken"}]}, {"offers": ["taken", "have"]}):
@@ -1307,6 +1385,27 @@ class SendOffersTests(unittest.TestCase):
             readout.send_offers([{"model": "A"}])
         self.assertEqual((got["url"], got["type"]), ("http://127.0.0.1:9/v1/offers", "application/json"))
         self.assertEqual(got["body"]["offers"], [{"model": "A"}])
+
+    def test_its_work_made_as_the_caller_says(self):
+        bodies, proofs = [], []
+
+        class Answer(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        def urlopen(request, timeout):
+            proofs.append(request.headers["X-proof"])
+            return Answer(json.dumps({"send": "links", "offers": [{"result": "taken"}]}).encode())
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/v1/readout"), \
+                mock.patch.object(readout, "proof", side_effect=AssertionError("made here")), \
+                mock.patch.object(readout.hostsys, "urlopen", side_effect=urlopen):
+            self.assertEqual(readout.website_sends(prove=lambda body: bodies.append(body) or "1:2"), "links")
+            readout.send_offers([{"model": "A"}], prove=lambda body: bodies.append(body) or "1:2")
+        self.assertEqual(proofs, ["1:2", "1:2"])
+        self.assertEqual([json.loads(body)["offers"] for body in bodies], [[], [{"model": "A"}]])
 
 
 class ChooseTests(unittest.TestCase):

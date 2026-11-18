@@ -106,6 +106,13 @@ class LinksTests(unittest.TestCase):
                      f"/ota/rom/{TOKEN}/sub/user1.bin"):
             with self.subTest(path=path):
                 self.assertEqual(offered_firmware.links(self.offer("https://example.com" + path)), [])
+                self.assertEqual(offered_firmware.unlinked(self.offer("https://example.com" + path)), 1)
+
+    def test_those_left_out_are_counted(self):
+        good, other = f"https://example.com/ota/rom/{TOKEN}/user1.bin", "https://example.com/rom/user2.bin"
+        self.assertEqual(offered_firmware.unlinked(self.offer(good)), 0)
+        self.assertEqual(offered_firmware.unlinked(self.offer(good, None)), 1)
+        self.assertEqual(offered_firmware.unlinked(self.offer(good) + self.offer(other) + self.offer(other)), 2)
 
     def test_only_a_file_with_a_sha256_beside_it(self):
         url = f"https://example.com/ota/rom/{TOKEN}/user1.bin"

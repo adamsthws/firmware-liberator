@@ -633,27 +633,39 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     # Those the website holds already are left out - but for a Beken device read
     # in full, which needs Sonoff's own to put back.
     beken_whole = bool(learned and whole and learned.chip.startswith("BK"))
-    # A first stage the website takes as links sends them instead (sent_links):
-    # nothing is downloaded.
-    as_links = answer.send == "links" and not whole
+    # Where the website takes links, it is sent each file's link in place of
+    # the file, which it fetches itself: a first stage to /offers
+    # (sent_links), a whole readout in its manifest. Only links of the shape
+    # known (offered_firmware.unlinked): a file with another is downloaded and
+    # sent as in files, and a first stage with one goes as files whole, as an
+    # offer must name every file. Nothing else is downloaded - but for a Beken
+    # device read in full, as above.
+    unlinked = offered_firmware.unlinked(offers)
+    links = answer.send == "links" and (whole or not unlinked)
+    as_links = links and not whole
+    linked = [item for item in offered_firmware.links(offers) if item["sha256"] not in answer.held] if links else []
+    by_link = {item["sha256"] for item in linked}
     updates, problems = [], []
-    if not as_links:
+    if not links or beken_whole or unlinked:
         with output.working("Downloading the firmware eWeLink offers it..."):
-            updates, problems = offered_firmware.fetch(offers, asked.deviceid,
-                                                       skip=frozenset() if beken_whole else answer.held)
+            updates, problems = offered_firmware.fetch(
+                offers, asked.deviceid, skip=frozenset() if beken_whole else answer.held | by_link)
     for problem in problems:
         output.log_only(f"    Offered firmware: {problem}")
-    sent = updates if not beken_whole else [item for item in updates if item.sha256 not in answer.held]
+    sent = [item for item in updates
+            if item.sha256 not in by_link and not (beken_whole and item.sha256 in answer.held)]
     # Each file sent named by its place in the readout, which the website
     # checks it against; each held already, fetched for a Beken device or not,
-    # by its SHA-256 alone.
+    # by its SHA-256 alone; each sent as a link by its path.
     manifest["offered"] = [{"file": f"offered/{item.name}", "version": item.version, "size": len(item.data),
                             "sha256": item.sha256} for item in sent]
     manifest["offered"] += [{"file": None, "version": item.version, "sha256": item.sha256, "held": True}
-                            for item in updates if item not in sent]
-    manifest["offered"] += [{"file": None, "version": version, "sha256": digest, "held": True}
-                            for digest, version in offered_digests(offers, versions=True)
-                            if digest in answer.held and all(item.sha256 != digest for item in updates)]
+                            for item in updates if item not in sent and item.sha256 not in by_link]
+    manifest["offered"] += held_offered(offers, answer.held, [item.sha256 for item in updates])
+    manifest["offered"] += [{"file": None, "version": item["version"], "sha256": item["sha256"],
+                             "link": item["path"]} for item in linked]
+    if linked:
+        manifest["cloud"] = CLOUD
     chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned and whole else None
     beken_stock = (readout_beken.stock_from_offered(updates)
                    if learned and whole and learned.chip.startswith("BK") else None)
@@ -690,6 +702,15 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     ctx.readout.whole, ctx.readout.back = True, back
     begin("save")
     return offer(ctx, manifest, files, sent, back=back, batch=batch, device=device)
+
+
+def held_offered(offers: list[dict[str, Any]], held: frozenset[str],
+                 listed: Iterable[str] = ()) -> list[dict[str, Any]]:
+    """A readout's manifest's entry for each file eWeLink offers that the
+    website holds already, by its SHA-256 alone, but those `listed` already."""
+    return [{"file": None, "version": version, "sha256": digest, "held": True}
+            for digest, version in offered_digests(offers, versions=True)
+            if digest in held and digest not in listed]
 
 
 def runs_now(device: dict[str, Any], ip: str) -> str | None:
@@ -901,12 +922,18 @@ def offered_digests(offers: list[dict[str, Any]], versions: bool = False) -> lis
     return found if versions else [digest for digest, _ in found][:8]
 
 
+def light_proof(body: bytes) -> str:
+    """The lighter work /wanted, /notify and /offers ask of `body`, made here."""
+    return proof(body, bits=LIGHT_PROOF_BITS)
+
+
 def light_post(path: str, value: dict[str, Any], timeout: float = 15.0,
-               waits: tuple[float, ...] = hostsys.SEND_WAITS) -> dict[str, Any]:
+               waits: tuple[float, ...] = hostsys.SEND_WAITS,
+               prove: Callable[[bytes], str] = light_proof) -> dict[str, Any]:
     """POST `value` to the website's `path` beside where readouts go, with the
-    lighter work /wanted and /notify ask, tried again through a blip after
-    each of `waits`; its JSON answer. OSError or ValueError when it cannot
-    say."""
+    lighter work /wanted and /notify ask (`prove` makes it), tried again
+    through a blip after each of `waits`; its JSON answer. OSError or
+    ValueError when it cannot say."""
     url = upload_url()
     if url is None:
         raise OSError("not from a test run")
@@ -919,7 +946,7 @@ def light_post(path: str, value: dict[str, Any], timeout: float = 15.0,
         body = json.dumps({**value, "nonce": secrets.token_hex(8)}).encode()
         request = urllib.request.Request(url.rsplit("/", 1)[0] + path, data=body, method="POST", headers={
             "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}",
-            "X-Proof": proof(body, bits=LIGHT_PROOF_BITS)})
+            "X-Proof": prove(body)})
         with hostsys.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     return hostsys.again_after_passing(attempt, waits, f"Asking the website ({path})", output.log_only)
@@ -977,14 +1004,15 @@ def in_requests(offers: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     return requests
 
 
-def website_sends() -> str:
+def website_sends(prove: Callable[[bytes], str] = light_proof) -> str:
     """How the website takes offers now, asked with none (an empty /offers,
     which it counts nowhere): "links", or "files" - an earlier website, or one
     that cannot say, too. OSError or ValueError when it cannot be asked."""
-    return "links" if light_post(OFFERS, offers_request([])).get("send") == "links" else "files"
+    return "links" if light_post(OFFERS, offers_request([]), prove=prove).get("send") == "links" else "files"
 
 
-def send_offers(offers: list[dict[str, Any]]) -> tuple[str, list[tuple[str, str]]]:
+def send_offers(offers: list[dict[str, Any]],
+                prove: Callable[[bytes], str] = light_proof) -> tuple[str, list[tuple[str, str]]]:
     """Send offers (an_offer) to /offers, as many a request as it takes
     (in_requests), each with the light work /wanted asks: how the website
     takes them ("links" only where every answer said so; with "files" it kept
@@ -994,7 +1022,7 @@ def send_offers(offers: list[dict[str, Any]]) -> tuple[str, list[tuple[str, str]
     results: list[tuple[str, str]] = []
     sends = "links"
     for these in in_requests(offers):
-        answer = light_post(OFFERS, offers_request(these))
+        answer = light_post(OFFERS, offers_request(these), prove=prove)
         if answer.get("send") != "links":
             sends = "files"
         each = answer.get("offers")

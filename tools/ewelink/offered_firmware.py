@@ -117,11 +117,26 @@ def links(offers: list[dict[str, Any]]) -> list[dict[str, str]]:
     found: list[dict[str, str]] = []
     for offer in offers:
         for item in offer.get("binList") or []:
-            digest = str(item.get("digest") or "").lower()
-            path = urllib.parse.urlsplit(str(item.get("downloadUrl", ""))).path
-            if not (SHA256.fullmatch(digest) and LINK_PATH.fullmatch(path)) or len(found) >= MAX_FILES:
+            if not fits(item) or len(found) >= MAX_FILES:
                 continue
+            digest = str(item["digest"]).lower()
             if all(digest != kept["sha256"] for kept in found):
                 found.append({"name": str(item.get("name") or "firmware.bin").rsplit("/", 1)[-1],
-                              "version": str(offer.get("version") or ""), "sha256": digest, "path": path})
+                              "version": str(offer.get("version") or ""), "sha256": digest,
+                              "path": urllib.parse.urlsplit(str(item["downloadUrl"])).path})
     return found
+
+
+def fits(item: dict[str, Any]) -> bool:
+    """Whether links() can pass on this file of an offer: a path of
+    LINK_PATH's shape, a SHA-256 beside it."""
+    path = urllib.parse.urlsplit(str(item.get("downloadUrl", ""))).path
+    return bool(SHA256.fullmatch(str(item.get("digest") or "").lower()) and LINK_PATH.fullmatch(path))
+
+
+def unlinked(offers: list[dict[str, Any]]) -> int:
+    """How many files eWeLink's offers name that links() leaves out, their
+    link of a shape not known here (proven on Espressif devices alone): an
+    offer of links without them names fewer files than it has, so it never
+    agrees with another owner's."""
+    return sum(not fits(item) for offer in offers for item in offer.get("binList") or [])

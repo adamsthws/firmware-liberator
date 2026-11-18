@@ -10,8 +10,11 @@ which would end the run's - and stops if eWeLink ends it. Its calls take
 turns with the run's (get_device_key.CALLS), the run's first; an offer the run
 asked for already is not asked again (account.ASKED_OFFERS). Then one request
 to /offers (readout.send_offers), and only where the website asks for links
-(its `send`, asked first with none: readout.website_sends). Nothing on the screen, one line in the run's log. Dropped
-wherever it is as the run ends (drop): nothing is kept to send later.
+(its `send`, asked first with none: readout.website_sends), each with its
+light work made in a process of its own at the lowest priority (Sender.prove),
+so the screen never stutters for it. Nothing on the screen, one line in the
+run's log. Dropped wherever it is as the run ends (drop), its work under way
+with it: nothing is kept to send later.
 
 Sent where the person lets reports be sent, and only where readouts may go (enabled).
 Each device's offer goes again only OFFER_RESEND_DAYS after this computer
@@ -23,10 +26,12 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import subprocess
 import threading
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import account, output, prompts, readout, report_data, report_upload, runs
+from tools.autoflash import account, output, prompts, proof_of_work, readout, report_data, report_upload, runs
+from tools.ewelink import offered_firmware
 from tools.ewelink.get_device_key import CALLS, EwelinkError, SessionEnded
 from tools.ewelink.query_ota import QUERY_MOST, latest_offers, ota_identity
 
@@ -93,6 +98,10 @@ def remember(keys: list[str], today: dt.date) -> None:
     part.replace(SENT)
 
 
+class NotProven(Exception):
+    """The light work not made: the run ended, or its process failed."""
+
+
 class Sender:
     """One run's offers, sent beside it (start)."""
 
@@ -104,11 +113,34 @@ class Sender:
         self.stop = threading.Event()
         self.done = threading.Event()
         self.log = log
+        # The light work under way (prove), killed as the run ends (drop).
+        self.working: subprocess.Popen[str] | None = None
+        self.lock = threading.Lock()
 
     def say(self, text: str) -> None:
         """The run's log's one line of offers, unless the run has ended."""
         if not self.stop.is_set():
             self.log(f"Offers of the account's devices: {text}")
+
+    def prove(self, body: bytes) -> str:
+        """The light work for `body` (readout.light_post), made in a process of
+        its own at the lowest priority (report_upload.work_beside), as a
+        report's is: in this thread, it would hold the screen's for seconds."""
+        with self.lock:
+            if self.stop.is_set():
+                raise NotProven("the run ended first")
+            self.working = report_upload.work_beside(proof_of_work.body_subject(body), readout.LIGHT_PROOF_BITS)
+        made = report_upload.proof_of(self.working)
+        if made is None:
+            raise NotProven("the run ended first" if self.stop.is_set() else "its work was not made")
+        return made
+
+    def end(self) -> None:
+        """Stopped, with its work under way (drop)."""
+        with self.lock:
+            self.stop.set()
+            if self.working is not None:
+                report_upload.stop(self.working)
 
     def run(self) -> None:
         try:
@@ -126,16 +158,20 @@ class Sender:
             return
         # Asked with no offers before eWeLink is asked anything: not /wanted,
         # whose every question the website counts as a device wanted.
-        if readout.website_sends() != "links":
+        if readout.website_sends(prove=self.prove) != "links":
             self.say("not sent: the website takes files, not links, for now.")
             return
         found = self.latest(todo)
         if found is None:
             return   # stopped, or eWeLink ended the sign-in: said already
-        offers, keys, unsaid = [], [], 0
+        offers, keys, unsaid, unlinked = [], [], 0, 0
         for device in todo:
             latest = found[str(device.get("deviceid") or "")]
-            if "offers" in latest:
+            if "offers" in latest and offered_firmware.unlinked(latest["offers"]):
+                # An offer names all its files: one with a link of a shape not
+                # known here waits for a tool that knows it, unremembered.
+                unlinked += 1
+            elif "offers" in latest:
                 params, extra = device.get("params") or {}, device.get("extra") or {}
                 offers.append(readout.an_offer(str(device.get("productModel") or ""), str(extra.get("model") or ""),
                                                str(params.get("fwVersion") or ""), latest["offers"],
@@ -145,10 +181,12 @@ class Sender:
                 unsaid += 1
         if self.stop.is_set():
             return
+        left = "; ".join(part for part in (unsaid and f"eWeLink said nothing of {unsaid}",
+                                           unlinked and f"{unlinked} not sent: a link of another shape") if part)
         if not offers:
-            self.say(f"none sent: eWeLink said nothing of {unsaid}.")
+            self.say(f"none sent; {left}.")
             return
-        sends, results = readout.send_offers(offers)
+        sends, results = readout.send_offers(offers, prove=self.prove)
         if sends != "links":   # switched to files meanwhile: none kept
             self.say("not sent: the website takes files, not links, for now.")
             return
@@ -157,8 +195,7 @@ class Sender:
         whys = "; ".join(dict.fromkeys(why for result, why in results if result == "refused" and why))
         self.say(f"{len(offers)} sent: {counts['taken']} taken, {counts['have']} held already, "
                  f"{counts['full']} for another day, {counts['refused']} turned down"
-                 + (f" ({whys[:200]})" if whys else "") + (f"; eWeLink said nothing of {unsaid}" if unsaid else "")
-                 + ".")
+                 + (f" ({whys[:200]})" if whys else "") + (f"; {left}" if left else "") + ".")
 
     def latest(self, todo: list[dict[str, Any]]) -> dict[str, dict[str, Any]] | None:
         """eWeLink's latest offer to each device ({"offers"} or {"problem"}), by
@@ -209,4 +246,4 @@ def drop(ctx: Context) -> None:
     sender: Sender | None = getattr(ctx, "offers", None)
     if sender is not None and not sender.done.is_set():
         sender.say("not sent: the run ended first.")
-        sender.stop.set()
+        sender.end()

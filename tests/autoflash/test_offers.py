@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import account, hostsys, offers, output, prompts, readout, report_data
+from tools.autoflash import account, hostsys, offers, output, prompts, proof_of_work, readout, report_data
 from tools.ewelink import get_device_key
 from tools.ewelink.get_device_key import SessionEnded
 from tools.ewelink.query_ota import QUERY_MOST
@@ -33,7 +33,7 @@ PORCH = {"deviceid": "1000fedcba", "name": "Porch", "productModel": "NEWTHING",
 def offer_of(n: int) -> dict:
     return {"offers": [{"version": "1.3.0", "binList": [
         {"name": "user1.bin", "downloadUrl": f"https://example.com/ota/rom/{TOKEN}/user{n}.bin",
-         "digest": f"{n:x}" * 64}]}]}
+         "digest": (f"{n:x}" * 64)[:64]}]}]}
 
 
 def many(n: int) -> list[dict]:
@@ -74,7 +74,7 @@ class World(unittest.TestCase):
         self.sends = mock.Mock(return_value="links")
         # Never asked: the website counts each /wanted question as a device wanted.
         self.wanted = mock.Mock(side_effect=AssertionError("/wanted asked"))
-        self.send_offers = mock.Mock(side_effect=lambda items: self.answers(items))
+        self.send_offers = mock.Mock(side_effect=lambda items, prove: self.answers(items))
         for patch in (mock.patch.object(offers, "SENT", self.sent_path),
                       mock.patch.object(offers, "PAUSE", 0.0),
                       mock.patch.object(offers, "latest_offers", self.latest),
@@ -117,16 +117,17 @@ class SendTests(World):
 
     def test_only_where_the_website_takes_links_asked_before_eWeLink(self):
         self.sends.return_value = "files"
-        self.run_sender()
-        self.sends.assert_called_once_with()
+        sender = self.run_sender()
+        self.sends.assert_called_once_with(prove=sender.prove)
         self.assertEqual(self.asked, [])   # eWeLink not asked either
         self.send_offers.assert_not_called()
         self.assertEqual(self.logged, ["Offers of the account's devices: not sent: the website takes files, "
                                        "not links, for now."])
 
     def test_the_website_asked_first_is_asked_with_no_offers(self):
-        self.run_sender()
-        self.sends.assert_called_once_with()
+        sender = self.run_sender()
+        self.sends.assert_called_once_with(prove=sender.prove)
+        self.assertEqual(self.send_offers.call_args.kwargs, {"prove": sender.prove})
         self.assertLess(self.sends.call_count, self.latest.call_count + 1)
 
     def test_one_switched_to_files_meanwhile_is_not_sent(self):
@@ -188,6 +189,30 @@ class SendTests(World):
         self.latest.side_effect = [{"1000abcdef": {"offers": []}, "1000fedcba": {"offers": []}}]
         self.run_sender()
         self.assertEqual([item["files"] for item in self.sent()], [[], []])
+
+    def test_one_with_a_link_of_another_shape_is_not_sent_nor_remembered(self):
+        def latest(region, token, identities):
+            found = {identity["deviceid"]: offer_of(1) for identity in identities}
+            found["1000fedcba"]["offers"][0]["binList"].append(
+                {"name": "user2.bin", "downloadUrl": "https://example.com/rom/user2.bin", "digest": "2" * 64})
+            return found
+        self.latest.side_effect = latest
+        self.run_sender()
+        self.assertEqual([item["stock_model"] for item in self.sent()], ["PSF-BS60-GL"])
+        self.assertEqual(list(json.loads(self.sent_path.read_text(encoding="utf-8"))),
+                         [offers.key_of(HALL)])
+        self.assertEqual(self.logged, ["Offers of the account's devices: 1 sent: 1 taken, 0 held already, "
+                                       "0 for another day, 0 turned down; 1 not sent: a link of another shape."])
+
+    def test_none_sent_when_every_one_has_a_link_of_another_shape(self):
+        self.latest.side_effect = lambda region, token, identities: {identity["deviceid"]: {"offers": [
+            {"version": "1.3.0", "binList": [{"downloadUrl": "https://example.com/rom/u.bin", "digest": "1" * 64}]}]}
+            for identity in identities}
+        self.run_sender()
+        self.send_offers.assert_not_called()
+        self.assertFalse(self.sent_path.exists())
+        self.assertEqual(self.logged, ["Offers of the account's devices: none sent; 2 not sent: a link of another "
+                                       "shape."])
 
     def test_a_pause_between_two_queries_alone(self):
         for count, pauses in ((2, 0), (QUERY_MOST * 2 + 1, 2)):
@@ -360,6 +385,58 @@ class EnabledTests(unittest.TestCase):
             ctx = SimpleNamespace(ewelink=get_device_key.Account(lambda: ("eu", {"at": "t"})))
             self.assertEqual(context.Context.account_devices(ctx), [HALL])
         started.assert_called_once_with(ctx, [HALL])
+
+
+class WorkTests(unittest.TestCase):
+    """The light work of its posts made in a process of its own at the lowest
+    priority (report_upload.work_beside), never in its thread, and dropped
+    with the run."""
+
+    def test_made_in_a_process_of_its_own(self):
+        process = mock.Mock()
+        with mock.patch.object(offers.report_upload, "work_beside", return_value=process) as beside, \
+                mock.patch.object(offers.report_upload, "proof_of", return_value="1:2") as made, \
+                mock.patch.object(readout, "proof", side_effect=AssertionError("made in this process")):
+            self.assertEqual(offers.Sender(a_ctx(), []).prove(b"body"), "1:2")
+        beside.assert_called_once_with(proof_of_work.body_subject(b"body"), readout.LIGHT_PROOF_BITS)
+        made.assert_called_once_with(process)
+
+    def test_one_not_made_sends_nothing(self):
+        with mock.patch.object(offers.report_upload, "work_beside"), \
+                mock.patch.object(offers.report_upload, "proof_of", return_value=None), \
+                self.assertRaisesRegex(offers.NotProven, "not made"):
+            offers.Sender(a_ctx(), []).prove(b"body")
+
+    def test_dropped_with_the_run_its_process_killed_and_none_begun_after(self):
+        ctx = a_ctx()
+        ctx.offers = sender = offers.Sender(ctx, [HALL], log=lambda _: None)
+        process, inside, killed = mock.Mock(), threading.Event(), threading.Event()
+
+        def proof_of(working):
+            inside.set()
+            killed.wait(2)
+            return None   # as a killed process gives
+        with mock.patch.object(offers.report_upload, "work_beside", return_value=process) as beside, \
+                mock.patch.object(offers.report_upload, "proof_of", side_effect=proof_of), \
+                mock.patch.object(offers.report_upload, "stop", side_effect=lambda _: killed.set()) as stop:
+            failed = []
+            thread = threading.Thread(target=self.prove_raises, args=(sender, failed), daemon=True)
+            thread.start()
+            inside.wait(2)
+            offers.drop(ctx)
+            thread.join(2)
+            stop.assert_called_once_with(process)
+            self.assertEqual(failed, ["the run ended first"])
+            with self.assertRaisesRegex(offers.NotProven, "ended"):
+                sender.prove(b"later")
+        beside.assert_called_once()
+
+    @staticmethod
+    def prove_raises(sender, failed):
+        try:
+            sender.prove(b"body")
+        except offers.NotProven as error:
+            failed.append(str(error))
 
 
 if __name__ == "__main__":
