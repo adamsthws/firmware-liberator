@@ -619,7 +619,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         said = full or NOT_NEEDED
         return f"{said[0].upper()}{said[1:]}"
     manifest = {
-        "format": FORMAT, "tool": __version__, "model": asked.product, "stock_model": asked.model,
+        "format": FORMAT, "tool": __version__, "model": asked.product or "-", "stock_model": asked.model,
         "stock_version": asked.version, "brand": str(device.get("brandName") or ""),
         "uiid": (device.get("extra") or {}).get("uiid"),
         "firmware_name": learned.name if learned else "", "name_from": learned.source if learned else "",
@@ -933,10 +933,10 @@ def ask_wanted(product: str, model: str, version: str, stage: str, firmware: lis
     ahead, and the website decides once it is sent. `device`: its hash, as a
     report's (report_data.device_hash), so the website counts devices asked
     of, not questions."""
-    if upload_url() is None or not product:
+    if upload_url() is None:
         return Wanted(True)
     try:
-        answer = light_post("/wanted", {"format": FORMAT, "model": product, "stock_model": model or "-",
+        answer = light_post("/wanted", {"format": FORMAT, "model": product or "-", "stock_model": model or "-",
                                         "stock_version": version or "-", "stage": stage, "firmware": firmware,
                                         "device_hash": device})
     except (OSError, ValueError) as exc:   # an HTTPError is an OSError
@@ -954,7 +954,7 @@ def an_offer(product: str, model: str, version: str, offers: list[dict[str, Any]
     of it, `device` its hash (report_data.device_hash) or None, and each file
     eWeLink offers it by its link and SHA-256 (offered_firmware.links) - none
     where eWeLink offers nothing, which the website only counts."""
-    return {"model": product, "stock_model": model or "-", "stock_version": version or "-", "device": device,
+    return {"model": product or "-", "stock_model": model or "-", "stock_version": version or "-", "device": device,
             "files": offered_firmware.links(offers)}
 
 

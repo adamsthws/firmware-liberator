@@ -376,6 +376,9 @@ const text = (value, most = 64) => typeof value === "string" && value.length > 0
 // an email or the figures, and keyOf's "|" is never part of one. openapi.json
 // gives the same (test/openapi.test.mjs holds them alike).
 export const MODEL = /^[A-Za-z0-9][A-Za-z0-9-]{0,23}$/;
+// A readout's device by its product model, or "-" where eWeLink names none: its
+// firmware model still says what it is. Not a sign-up's, which names a device.
+const productOf = (value) => value === "-" || fits(value, MODEL);
 export const STOCK_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
 export const STOCK_VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
 // The device, as a report names it (report-schema.json's device_hash).
@@ -707,7 +710,7 @@ export async function wanted(request, env, now = new Date()) {
     return asked;
   }
   const firmware = asked.firmware ?? [];
-  if (!fits(asked.model, MODEL) || !fits(asked.stock_model, STOCK_MODEL) || !fits(asked.stock_version, STOCK_VERSION)
+  if (!productOf(asked.model) || !fits(asked.stock_model, STOCK_MODEL) || !fits(asked.stock_version, STOCK_VERSION)
       || !STAGES.includes(asked.stage)
       || !(asked.device_hash == null || (typeof asked.device_hash === "string" && DEVICE_HASH.test(asked.device_hash)))
       || !Array.isArray(firmware) || firmware.length > MAX_FIRMWARE
@@ -773,7 +776,7 @@ export async function readout(request, env, now = new Date(), context = null, fe
     return answer(403, { error: "the readout's proof of work does not check out" });
   }
   const manifest = manifestOf(body);
-  if (!manifest || !fits(manifest.model, MODEL)) {
+  if (!manifest || !productOf(manifest.model)) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
   const files = filesOf(body);
@@ -918,7 +921,7 @@ async function keep(env, key, body, manifest, id, offered) {
 // /v1/wanted takes it, and each file by a name, the version offered, its
 // SHA-256 and a link of its cloud's shape, each file once.
 function offerProblem(offer, cloud) {
-  if (!fits(offer?.model, MODEL) || !fits(offer.stock_model, STOCK_MODEL) || !fits(offer.stock_version, STOCK_VERSION)) {
+  if (!productOf(offer?.model) || !fits(offer.stock_model, STOCK_MODEL) || !fits(offer.stock_version, STOCK_VERSION)) {
     return "its device is not named as the tool names one";
   }
   if (!(offer.device == null || fits(offer.device, DEVICE_HASH))) {

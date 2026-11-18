@@ -106,6 +106,13 @@ function post(body, headers = {}) {
 
 const send = (request, bindings) => readout.readout(request, bindings, NOW);
 
+test("a device eWeLink names no product model of is asked of, and read out, as \"-\"", async () => {
+  const bindings = env();
+  assert.equal((await ask(fresh({ ...ASKED_WHOLE, model: "-" }), bindings)).wanted, true);
+  assert.equal((await send(post(readoutOf({ ...MANIFEST, model: "-" })), bindings)).status, 201);
+  assert.equal((await ask(fresh({ ...ASKED, model: "" }), bindings)).error, "that is not a question this tool asks");
+});
+
 test("a readout with its work done is kept, under a reference it is given back", async () => {
   const bindings = env();
   const response = await send(post(readoutOf()), bindings);
@@ -1409,6 +1416,7 @@ test("anything but the tool's request to be told is turned away", async () => {
     { ...NOTIFY, readouts: ["not-a-reference"] }, { ...NOTIFY, readouts: "2026-11-07-0123456789ab" },
     { ...NOTIFY, readouts: Array(readout.MAX_READOUTS + 1).fill("2026-11-07-0123456789ab") },
     { ...NOTIFY, devices: [{ model: "NEW\nTHING", stock_model: "x" }] },
+    { ...NOTIFY, devices: [{ model: "-", stock_model: "-" }] },   // names no device
     // Nothing but a model's name: no sentence or link put into the email.
     { ...NOTIFY, devices: [{ model: "URGENT-VERIFY-AT", stock_model: "-" }, { model: "evil.example/login", stock_model: "-" }] },
     { ...NOTIFY, devices: [{ model: "Confirm your account", stock_model: "-" }] },

@@ -934,7 +934,7 @@
             "const": 1
           },
           "model": {
-            "$ref": "#/components/schemas/Model"
+            "$ref": "#/components/schemas/ProductModel"
           },
           "stock_model": {
             "$ref": "#/components/schemas/StockModel"
@@ -1185,7 +1185,7 @@
         ],
         "properties": {
           "model": {
-            "$ref": "#/components/schemas/Model"
+            "$ref": "#/components/schemas/ProductModel"
           },
           "stock_model": {
             "$ref": "#/components/schemas/StockModel"
@@ -1289,6 +1289,17 @@
             "description": "One an offer, in the order sent"
           }
         }
+      },
+      "ProductModel": {
+        "description": "A device's product model (Model), or \"-\" where eWeLink names none: its firmware model still says what it is",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Model"
+          },
+          {
+            "const": "-"
+          }
+        ]
       }
     }
   }

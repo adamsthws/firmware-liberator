@@ -254,7 +254,7 @@ class SendTests(unittest.TestCase):
 class StillWantedTests(unittest.TestCase):
     """Asked before a readout is made: whether the website still wants one."""
 
-    def ask(self, status=200, answer=None, url="set"):
+    def ask(self, status=200, answer=None, url="set", product="BASICR4"):
         got = {}
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -277,7 +277,7 @@ class StillWantedTests(unittest.TestCase):
         try:
             with mock.patch.object(readout, "upload_url", return_value=given), mock.patch.object(output, "log_only"), \
                     mock.patch.object(readout.hostsys.time, "sleep"):   # asked again after a blip (SEND_WAITS)
-                wanted = readout.ask_wanted("BASICR4", "SN-BASICR4-01", "1.1.0", "whole", ["a" * 64, "b" * 64],
+                wanted = readout.ask_wanted(product, "SN-BASICR4-01", "1.1.0", "whole", ["a" * 64, "b" * 64],
                                               report_data.device_hash("12:34:56:ab:cd:ef"))
         finally:
             server.shutdown()
@@ -299,6 +299,12 @@ class StillWantedTests(unittest.TestCase):
         work = hashlib.sha256(f"{stamp}:{hashlib.sha256(got['body']).hexdigest()}:{nonce}".encode()).digest()
         self.assertLess(int.from_bytes(work, "big"), 1 << (256 - readout.LIGHT_PROOF_BITS))
         self.assertLess(readout.LIGHT_PROOF_BITS, readout.PROOF_BITS)
+
+    def test_a_device_eWeLink_names_no_product_model_of_is_asked_of_as_dash(self):
+        # Asked of as any device, so one not wanted is not read out: before,
+        # it was taken as wanted unasked, and its readout refused once sent.
+        _, got = self.ask(answer={"wanted": True}, product="")
+        self.assertEqual(json.loads(got["body"])["model"], "-")
 
     def test_wanted_when_the_website_says_so_or_cannot_say(self):
         cheap = mock.patch.object(readout, "LIGHT_PROOF_BITS", 8)   # asked again after a blip: work each time
@@ -1111,6 +1117,14 @@ class FirstStageTests(unittest.TestCase):
         self.assertEqual((manifest["model"], manifest["stock_model"], manifest["stock_version"], manifest["read"]),
                          ("NEWTHING", "SN-ESP32C3-NEW-01", "1.0.0", False))
 
+    def test_a_device_eWeLink_names_no_product_model_of_is_sent_as_dash(self):
+        nameless = account.Asked("1.0.0", "SN-ESP32C3-NEW-01", "", [], {}, "1000abcdef")
+        with mock.patch.object(account, "ask_account", return_value=nameless), \
+                mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
+                mock.patch.object(readout, "offer", return_value="done") as offered:
+            readout.run(self.ctx, {**DEVICE, "productModel": ""})
+        self.assertEqual(offered.call_args.args[1]["model"], "-")
+
 
 TOKEN = "Ab3" * 10 + "Z9"
 LINKED = {"offers": [{"version": "1.1.0", "binList": [
@@ -1137,6 +1151,9 @@ class LinksTests(unittest.TestCase):
             said = readout.run(self.ctx, device, batch=batch)
         offered.assert_not_called()   # no readout made or uploaded
         return said
+
+    def test_a_device_eWeLink_names_no_product_model_of_is_offered_as_dash(self):
+        self.assertEqual(readout.an_offer("", "SN-NEW-01", "1.0.0", [], None)["model"], "-")
 
     def test_its_offer_goes_to_offers_and_nothing_is_downloaded(self):
         self.assertEqual(self.first_stage(), "")

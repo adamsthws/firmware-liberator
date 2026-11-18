@@ -129,6 +129,10 @@ const XZ_1MIB = Buffer.from("/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj7///ANldAABv/f//o7f
   + "cJ6nI1/sKMuF0ZWYin4qkfIndfcZwAaYTZj92K/VkA/EJVP49ZE2MQWlsO5vwXBNRwzRkRGqrWAdus6xJxhcWYbpZlJYvul2rFnk5VsFCPnH2q38+1Iq"
   + "9+SVJQAAAAAAwva6PqJwa2AAAfUBgIBAAHmXf0exxGf7AgAAAAAEWVo=", "base64");
 
+test("an offer of a device eWeLink names no product model of is taken as \"-\"", async () => {
+  assert.deepEqual(await send(env(), [{ ...OFFER, model: "-" }]), { status: 200, send: "links", offers: [{ result: "taken" }] });
+});
+
 test("an offer sent as links is held as a first stage of its device is, its manifest and links kept", async () => {
   const bindings = env();
   assert.deepEqual(await send(bindings, [OFFER]), { status: 200, send: "links", offers: [{ result: "taken" }] });

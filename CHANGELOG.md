@@ -24,6 +24,9 @@ check.
   ([what the tool sends](docs/what-the-tool-sends.md#what-ewelink-offers-your-devices)).
   A readout's first stage sends the same in place of the files, when the
   website asks for links.
+- A device eWeLink names no product model of is read out as any other: the
+  website is asked first whether it wants it, and takes it. Before, it was
+  read out unasked and its readout turned down once sent.
 - A conversion or a readout asks what next however it ended, not only one that
   finished: unless you stopped it with `q` or Ctrl-C, you can read out or convert
   another device without starting the tool again. After a conversion that
