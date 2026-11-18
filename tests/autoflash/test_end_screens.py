@@ -18,6 +18,7 @@ meant to show, write them again and read the difference in git:
 import difflib
 import io
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -27,7 +28,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.repo.test_report_answers import FIELDS as LONGEST
-from tools.autoflash import hostsys, output, readout, report, runner, runs
+from tools.autoflash import cli, hostsys, output, prompts, readout, report, runner, runs
 from tools.repo import unattended_run
 
 SAVED = Path(__file__).with_name("end_screens")
@@ -153,6 +154,17 @@ class EndScreenTests(unittest.TestCase):
             readout.end(ctx, said, failed=bool(failed_with))
         return draw
 
+    @staticmethod
+    def then_what_next(draw, last, again):
+        """`draw`, then What next asked under it, as the sitting asks it
+        (cli.what_next), and q typed: echoed as a terminal echoes it."""
+        def drawn():
+            draw()
+            with mock.patch.object(prompts, "_read_answer", side_effect=lambda prompt: sys.stdout.write(
+                    prompt + "q\n") and "q"):
+                cli.what_next(last, again=again)
+        return drawn
+
     ENDINGS = {
         "conversion-espressif": (conversion(ESPRESSIF), "hat"),
         "conversion-beken": (conversion(BEKEN), "hat"),
@@ -169,6 +181,11 @@ class EndScreenTests(unittest.TestCase):
         "readout-nothing-read": (readout_end([UNNEEDED], readout.SWITCH_OFF_AND_ON), "hat"),
         "readout-failed": (readout_end([ACCEPTED, FAILED], failed_with=FAILURE), "issue"),
         "readout-failed-alone": (readout_end([FAILED], failed_with=FAILURE), "issue"),
+        # Under each, What next: the device that failed offered again first.
+        "conversion-what-next": (then_what_next(conversion(ESPRESSIF), "run", False), "hat"),
+        "conversion-failed-what-next": (then_what_next(conversion_failed(ESPRESSIF), "run", True), "issue"),
+        "readout-failed-alone-what-next": (then_what_next(readout_end([FAILED], failed_with=FAILURE),
+                                                          "readout", True), "issue"),
     }
     # The longest each answer can be, and a long sitting's readout: checked, not kept.
     LONG = {

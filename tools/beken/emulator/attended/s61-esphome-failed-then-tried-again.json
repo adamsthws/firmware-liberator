@@ -1,0 +1,85 @@
+{
+ "about": "An S61 from Sonoff's firmware to ESPHome, its bootloader refusing the ESPHome image (simulated) each of the six times it is sent in a run: the run fails, then What next tries the device again, which carries on from where it stopped and converts it",
+ "start": "fresh",
+ "minutes": 90,
+ "args": [
+  "--simulate-bad-image",
+  "J2:6"
+ ],
+ "answers": [
+  {
+   "when": "Press any key",
+   "type": "x",
+   "shows": [
+    "^ *-- You'll need:$",
+    "^ *- Keep the device powered and this computer on \\(don't interrupt it\\)\\.$"
+   ]
+  },
+  {
+   "when": "Press any key",
+   "type": "x",
+   "times": 2,
+   "optional": true
+  },
+  {
+   "when": "Which firmware should the device have",
+   "type": "2\r",
+   "never": [
+    "^ *-- You'll need:$"
+   ]
+  },
+  {
+   "when": "What now",
+   "type": "q\r",
+   "optional": true
+  },
+  {
+   "when": "Which device is this run for",
+   "type": "1\r",
+   "optional": true
+  },
+  {
+   "when": "This computer's password \\(for sudo\\)",
+   "type": "autoflash\r",
+   "times": 6,
+   "optional": true
+  },
+  {
+   "when": "Type .+ to go ahead",
+   "type": "PROCEED\r",
+   "times": 3,
+   "optional": true
+  },
+  {
+   "when": "eWeLink account email or phone number",
+   "type": "someone@example.invalid\r"
+  },
+  {
+   "when": "eWeLink password for",
+   "type": "made-up-password\r"
+  },
+  {
+   "when": "What next",
+   "type": "1\r"
+  },
+  {
+   "when": "What next",
+   "type": "q\r"
+  },
+  {
+   "when": "\\[[Yy]/n\\]",
+   "type": "n\r",
+   "optional": true
+  },
+  {
+   "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
+   "type": "y\r",
+   "times": 3,
+   "optional": true
+  }
+ ],
+ "expect": {
+  "exit": 0,
+  "result": "Converted"
+ }
+}
