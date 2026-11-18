@@ -11,6 +11,7 @@ import { downloadDays, DOWNLOADS } from "../api/downloads.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
   from "../api/index.js";
 import { CLOUD_ASNS } from "../api/networks.js";
+import { fetchesOn, linkFigures, OFFER_FETCHES_DAILY, unfetched } from "../api/offered.js";
 import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
@@ -275,7 +276,8 @@ export async function gather(env, now) {
   const all = async (sql, ...values) => (await env.DB.prepare(sql).bind(...values).all()).results;
   const today = dayOf(now);
   const since = (days) => dayOf(new Date(now.getTime() - days * DAY));
-  const names = [`reports:${today}`, `readouts:${today}`, `notify:${today}`, `mail-sent:${today}`, "readouts:all"];
+  const names = [`reports:${today}`, `readouts:${today}`, `notify:${today}`, `mail-sent:${today}`, "readouts:all",
+    fetchesOn(today)];
   const counters = Object.fromEntries((await all(`SELECT name, count, bytes FROM counters WHERE name IN (${names.map(() => "?").join(", ")})`, ...names))
     .map((row) => [row.name, row]));
   const [devices] = await all("SELECT count(*) AS seen, sum(conversions > 0) AS converted, sum(dev) AS dev FROM devices");
@@ -298,6 +300,10 @@ export async function gather(env, now) {
     nearly: await all(NEARLY),
     disputed: await all(DISPUTED),
     offers: await all("SELECT key, offered, day FROM agreed_offers ORDER BY day DESC, key LIMIT 200"),
+    agreed: (await all("SELECT count(*) AS n FROM agreed_offers"))[0]?.n ?? 0,
+    // Offers sent as links, and the files the API fetched from them (api/offered.js).
+    links: await linkFigures(env.DB),
+    unfetched: await unfetched(env.DB),
     networks: await all(`SELECT name, json_array_length(asns) AS asns, previous, taken, problem FROM network_lists
       ORDER BY name`),
     popularity: await modelTrends(all, now),
@@ -460,6 +466,23 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       ${PER_KEY} or more readouts - first stages or whole ones - from ${MIN_NETWORKS} networks agreed on it, newest
       first.</p>`
       + table([["Key", "key"], ["Offered", "offered"], ["Since", "day"]], data.offers, "None yet.")
+      + `</section>`,
+    `<section class="card" id="links"><h2>Offers sent as links</h2><p class="sub">First stages, and whole readouts,
+      that sent the files eWeLink offers their device as links, and the files the API fetched from those links: each
+      on first sight, and again once its offer is agreed. A file missing for an agreed offer is tried again each
+      night.</p><div class="tiles">`
+      + tile("Sent as links", number(data.links.sent))
+      + tile("Offers agreed", number(data.agreed))
+      + tile("Files fetched from links", number(data.links.fetched), bytes(data.links.bytes))
+      + tile("Files missing", number(data.unfetched.reduce((sum, row) => sum + row.files, 0)),
+        `for ${number(data.unfetched.length)} agreed offers`)
+      + tile("Fetches today", number(count(fetchesOn(data.today))), `of ${number(OFFER_FETCHES_DAILY)} a day`)
+      + `</div>`
+      + table([["Key", "key"], ["Sent as links", "sent", "number"], ["Offers agreed", "agreed", "number"],
+        ["Files fetched", "fetched", "number"], ["Bytes", (row) => bytes(row.bytes)]], data.links.keys, "None yet.")
+      + `<h3>Files missing for an agreed offer</h3>`
+      + table([["Key", "key"], ["Offered", "offered"], ["Agreed", "day"], ["Files missing", "files", "number"]],
+        data.unfetched, "None.")
       + `</section>`,
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,

@@ -138,6 +138,37 @@ test("the view lists the offers readouts agreed on", async () => {
   assert.match(html.split('id="offers">')[1], /^[^]*?<td>NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>1\.2\.0<\/td><td>2026-11-09<\/td>/);
 });
 
+test("the view counts offers sent as links, by key, the files fetched from them, and those still missing", async () => {
+  const { bindings, db } = await held();
+  const section = async () => (await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys))
+    .split('id="links">')[1].split("</section>")[0];
+  assert.match(await section(), /<p class="none">None yet\.<\/p>/);
+  const readout = db.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review,
+    offer) VALUES (?, ?, 'first', ?, 'o', 100, 'readouts/x.json', '2026-11-09T10:00:00Z', ?, 'o')`);
+  const link = db.db.prepare("INSERT INTO offer_links (readout, sha, path, cloud, bytes) VALUES (?, ?, '/ota/rom/x/y', 'ewelink', ?)");
+  readout.run("a1", "A|SN-A|1.0", "s1", "pending");
+  readout.run("a2", "A|SN-A|1.0", "s2", "pending");
+  readout.run("b1", "B|SN-B|1.0", "s1", "quorum");
+  link.run("a1", "1".repeat(64), 2048);
+  db.db.prepare("INSERT INTO readout_firmware (readout, sha) VALUES ('a1', ?)").run("1".repeat(64));
+  link.run("a2", "1".repeat(64), null);
+  link.run("b1", "2".repeat(64), null);
+  link.run("b1", "3".repeat(64), null);
+  db.db.prepare("INSERT INTO agreed_offers (key, offer, offered, day) VALUES ('B|SN-B|1.0', 'o', '1.2.0', '2026-11-09')").run();
+  db.db.prepare("INSERT INTO counters (name, day, count) VALUES ('offer-fetches:2026-11-10', '2026-11-10', 7)").run();
+  const html = await section();
+  const tileOf = (label) => html.split(`<div class="tile-label">${label}</div>`)[1].split('<div class="tile">')[0];
+  assert.match(tileOf("Sent as links"), /tile-value">3<\/div><\/div>/);
+  assert.match(tileOf("Offers agreed"), /tile-value">1<\/div><\/div>/);
+  assert.match(tileOf("Files fetched from links"), /tile-value">1<\/div><div class="tile-note">2\.0 KB/);
+  assert.match(tileOf("Files missing"), /tile-value">2<\/div><div class="tile-note">for 1 agreed offers/);
+  assert.match(tileOf("Fetches today"), /tile-value">7<\/div><div class="tile-note">of 50 a day/);
+  assert.match(html, /<td>A\|SN-A\|1\.0<\/td><td class="number">2<\/td><td class="number">0<\/td><td class="number">1<\/td><td>2\.0 KB<\/td>/);
+  assert.match(html, /<td>B\|SN-B\|1\.0<\/td><td class="number">1<\/td><td class="number">1<\/td><td class="number">0<\/td><td>0 B<\/td>/);
+  assert.match(html.split("Files missing for an agreed offer")[1],
+    /<td>B\|SN-B\|1\.0<\/td><td>1\.2\.0<\/td><td>2026-11-09<\/td><td class="number">2<\/td>/);
+});
+
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {
   const { bindings, db } = await held();
   assert.match(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), /Not fetched yet\./);
