@@ -53,6 +53,30 @@ afterwards, within the one permission question. Running the terminal as
 administrator is not needed: the tool asks for administrator rights itself,
 only for its firewall rule.
 
+**"the installer was not delivered" ("Device did not connect")**
+
+Sonoff's firmware took the update and tried to fetch the installer from your
+computer, but none of its connections reached the tool. It goes offline in
+eWeLink as it starts, keeps trying for up to a few minutes, then restarts and is
+back in eWeLink, unchanged, about five minutes after the command. Nothing was
+written: send it again once it is back, after finding what stopped it.
+
+To see whether your computer's firewall dropped the connections on Windows,
+turn on its log of them in an administrator terminal, run the tool, then turn
+it off:
+
+```
+netsh advfirewall set allprofiles logging droppedconnections enable
+netsh advfirewall set allprofiles logging droppedconnections disable
+```
+
+Lines with `DROP TCP` and the device's address in
+`%systemroot%\system32\LogFiles\Firewall\pfirewall.log` mean the firewall, or
+other software in it, turned the device away. With none, the connections never
+arrived (a capture, with Wireshark say, shows none from the device's address),
+so something between them is in the way, such as a router or access point
+filtering traffic between Wi-Fi and wired devices.
+
 What the tool cannot change, it says, before it starts and again if the device
 cannot connect:
 
