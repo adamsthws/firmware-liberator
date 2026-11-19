@@ -1393,8 +1393,11 @@ class DeviceMonitor:
                     steps_from = 0
                 elif now_ended > ended or PAST_THE_CLOUD.search(text, steps_from):
                     break
-                with open(uart, encoding="utf-8", errors="replace") as f:
-                    f.seek(pos); boots = f.read(); pos = f.tell()
+                try:
+                    with open(uart, encoding="utf-8", errors="replace") as f:
+                        f.seek(pos); boots = f.read(); pos = f.tell()
+                except FileNotFoundError:
+                    boots = ""  # a fresh device's emulator, given its turn before it has started
                 if any(m.lastgroup != "sonoff" for m in BOOTS.finditer(boots)):
                     break
                 self.stop.wait(0.5)

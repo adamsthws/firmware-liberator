@@ -149,6 +149,23 @@ class CloudTurnTests(unittest.TestCase):
         sc.ex.assert_not_called()
         self.assertTrue(any("the run goes on" in line for line in said))
 
+    def test_a_turn_given_before_the_devices_emulator_has_started_is_held(self):
+        # Seen on a fresh instance: a fresh device's turn from the start, given
+        # before its emulator had written a serial log, ended at once in an
+        # error, and its run found the device in eWeLink in a later turn.
+        with tempfile.TemporaryDirectory() as state:
+            said = []
+            sc = mock.Mock(n=24, state=Path(state), sc={"step": "C2"}, say=said.append, notes={})
+            monitor = fs.DeviceMonitor(sc)
+            clock = [1000.0]
+            with mock.patch.object(monitor, "run_text", return_value=""), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", return_value=set()), \
+                    mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(monitor.stop, "wait", side_effect=lambda _: clock.__setitem__(0, clock[0] + 5)):
+                monitor.hold("from the start")
+        self.assertIn(f"CLOUD: turn given up after {fs.HOLD_AT_MOST:.0f}s", said)
+
     def test_a_device_whose_connections_cannot_be_read_is_not_switched_blind(self):
         # Seen where the kernel has no /proc/net/nf_conntrack: every fresh device
         # switched off and on a minute into its turn, connected or not.
