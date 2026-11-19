@@ -1052,7 +1052,7 @@ class DeliveryPortTests(unittest.TestCase):
             state.set_input("device_ip", "192.0.2.96")
             state.set_input("stock_version", "1.2.0")
             ctx = SimpleNamespace(state=state, bridge=Path("bridge.ota"), dir=root,
-                                  listen_ip=lambda: "192.0.2.141", email=lambda: "me@example.com",
+                                  args=SimpleNamespace(listen_ip=None), listen_ip=lambda: "192.0.2.141", email=lambda: "me@example.com",
                                   ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "eu",
                                   account_device=SimpleNamespace(device_id="1001234abc"))
             opened = []

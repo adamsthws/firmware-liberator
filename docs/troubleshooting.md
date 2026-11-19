@@ -74,8 +74,12 @@ Lines with `DROP TCP` and the device's address in
 `%systemroot%\system32\LogFiles\Firewall\pfirewall.log` mean the firewall, or
 other software in it, turned the device away. With none, the connections never
 arrived (a capture, with Wireshark say, shows none from the device's address),
-so something between them is in the way, such as a router or access point
-filtering traffic between Wi-Fi and wired devices.
+so something between them is in the way. Most often the device is on a guest
+network that may not reach the computer's addresses, or the router or access
+point has client isolation, which keeps Wi-Fi devices from each other. Your
+computer may still reach the device, so the tool finds it, while the device
+cannot reach back. Put the device on the computer's network, or let that
+network reach the computer, and run again.
 
 What the tool cannot change, it says, before it starts and again if the device
 cannot connect:

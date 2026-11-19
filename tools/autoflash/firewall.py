@@ -147,9 +147,14 @@ def firewall_hint(ctx: Context) -> list[str]:
     """What to say when the device never reached this computer."""
     device_ip = ctx.state.input("device_ip") or "DEVICE_IP"
     lines = [
-        "The device never reached this computer: most often this computer's",
-        "firewall, or a changed address.",
+        "The device never reached this computer, usually because of this",
+        "computer's firewall, the device being on a guest network, or client",
+        "isolation on the router.",
     ]
+    # The address is otherwise worked out afresh each time (Context.listen_ip);
+    # one given is used as it is, and may be wrong.
+    if ctx.args.listen_ip:
+        lines.append(f"Or the device cannot reach {ctx.args.listen_ip}, given with --listen-ip.")
     kind = hostsys.active_firewall()
     ports = firewall_ports(ctx)
     if kind:

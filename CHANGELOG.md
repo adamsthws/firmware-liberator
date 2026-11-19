@@ -123,6 +123,9 @@ check.
   of a run, has its Release line say it "could not be checked", and the checks
   fail, as when the relay could not be checked. Before, it said the device ran
   a release not this project's.
+- When the device never reaches this computer, the message names a guest
+  network or client isolation on the router as a likely cause, beside this
+  computer's firewall.
 
 ## 3.0.0
 

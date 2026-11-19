@@ -132,6 +132,27 @@ class FirewallOutcomeTests(unittest.TestCase):
                           self.outcome(refused=True), self.outcome(ignored=True)],
                          ["none", "added", "there", "failed", "managed"])
 
+
+class FirewallHintTests(unittest.TestCase):
+    """What is said when the device never reached this computer."""
+
+    def hint(self, listen_ip=None):
+        ctx = types.SimpleNamespace(state=FakeState([]), args=types.SimpleNamespace(listen_ip=listen_ip))
+        with mock.patch.object(hostsys, "active_firewall", return_value=None), \
+                mock.patch.object(firewall, "firewall_ports", return_value=[8088]), \
+                mock.patch.object(hostsys, "firewall_advice", return_value=[]):
+            return " ".join(firewall.firewall_hint(ctx))
+
+    def test_the_router_keeping_wi_fi_devices_apart_is_named(self):
+        # Issue #20: the device was on a guest network the router kept from the computer.
+        self.assertIn("guest network", self.hint())
+        self.assertIn("client isolation", self.hint())
+
+    def test_an_address_is_named_only_when_given(self):
+        # Worked out afresh each time, it cannot be stale; one given can be wrong.
+        self.assertNotIn("address", self.hint())
+        self.assertIn("192.0.2.20, given with --listen-ip", self.hint("192.0.2.20"))
+
 if __name__ == "__main__":
     unittest.main()
 
