@@ -988,6 +988,107 @@
       ],
       "minimum": 0,
       "maximum": 604800
+    },
+    "offers": {
+      "type": "object",
+      "properties": {
+        "ran": {
+          "type": "boolean"
+        },
+        "why_not": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "off",
+            "unattended",
+            "no-account",
+            "no-devices",
+            "none-due",
+            "files",
+            "no-sign-in",
+            "session-ended",
+            "none-to-send",
+            "failed",
+            null
+          ]
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "due": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "sent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "taken": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "have": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "full": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "refused": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "review": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "unfit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "session_ended": {
+          "type": "boolean"
+        },
+        "run_session_ended": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ran",
+        "why_not",
+        "done",
+        "due",
+        "requests",
+        "sent",
+        "taken",
+        "have",
+        "full",
+        "refused",
+        "review",
+        "unfit",
+        "session_ended",
+        "run_session_ended"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

@@ -641,10 +641,11 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     # offer must name every file. Nothing else is downloaded - but for a Beken
     # device read in full, as above. A file sent whose link is of another
     # shape names that link too, for review (offered_firmware.for_review),
-    # never one naming the device.
+    # never one naming the device or its owner (own_marks).
     unlinked = offered_firmware.unlinked(offers)
-    own = tuple(str(each) for each in (asked.deviceid, device.get("deviceid"), ctx.readout.mac,
-                                       (device.get("params") or {}).get("staMac")) if each)
+    held = getattr(getattr(ctx, "ewelink", None), "held", None)
+    own = offered_firmware.own_marks(device, held[1] if isinstance(held, tuple) and len(held) == 2 else None,
+                                     macs=(ctx.readout.mac,), ids=(asked.deviceid,))
     review = {str(item["digest"]).lower(): url for offer in offers for item in offer.get("binList") or []
               if (url := offered_firmware.for_review(item, own))}
     links = answer.send == "links" and (whole or not unlinked)
@@ -703,8 +704,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         manifest["read"] = ctx.readout.whole = False
         begin("save")
         if as_links:
-            return sent_links(ctx, an_offer(asked.product, asked.model, asked.version, offers,
-                                            device_hash(ctx.readout.mac)), batch)
+            return sent_links(ctx, an_offer(asked.product, asked.model, asked.version, offers), batch)
         return offer(ctx, manifest, None, sent, batch=batch, device=device)
     ctx.readout.whole, ctx.readout.back = True, back
     begin("save")
@@ -983,13 +983,12 @@ def ask_wanted(product: str, model: str, version: str, stage: str, firmware: lis
 
 
 def an_offer(product: str, model: str, version: str, offers: list[dict[str, Any]],
-             device: str | None, own: tuple[str, ...] | None = None) -> dict[str, Any]:
-    """One device's offer as /offers takes it: the device as /wanted is asked
-    of it, `device` its hash (report_data.device_hash) or None, and each file
-    eWeLink offers it by its link and SHA-256 (offered_firmware.links, given
-    `own`, its id and MAC) - none where eWeLink offers nothing, which the
-    website only counts."""
-    return {"model": product or "-", "stock_model": model or "-", "stock_version": version or "-", "device": device,
+             own: tuple[str, ...] | None = None) -> dict[str, Any]:
+    """One device's offer as /offers takes it: the device's model and
+    firmware, never anything that names it, and each file eWeLink offers it
+    by its link and SHA-256 (offered_firmware.links, given `own`: own_marks)
+    - none where eWeLink offers nothing, which the website only counts."""
+    return {"model": product or "-", "stock_model": model or "-", "stock_version": version or "-",
             "files": offered_firmware.links(offers, own)}
 
 

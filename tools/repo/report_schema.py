@@ -29,7 +29,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import failures, join, kinds, records, report, report_data, report_upload, routes  # noqa: E402
+from tools.autoflash import failures, join, kinds, offers, records, report, report_data, report_upload, routes  # noqa: E402
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -53,10 +53,11 @@ def integer(lowest: int, highest: int) -> dict[str, Any]:
     return {"type": "integer", "minimum": lowest, "maximum": highest}
 
 
-def record(properties: dict[str, Any]) -> dict[str, Any]:
-    """An object with exactly these properties, each present."""
-    return {"type": "object", "properties": properties, "required": list(properties),
-            "additionalProperties": False}
+def record(properties: dict[str, Any], optional: tuple[str, ...] = ()) -> dict[str, Any]:
+    """An object with exactly these properties, each present but those
+    `optional`: one an earlier version of the tool did not send."""
+    return {"type": "object", "properties": properties,
+            "required": [name for name in properties if name not in optional], "additionalProperties": False}
 
 
 def schema() -> dict[str, Any]:
@@ -168,7 +169,13 @@ def schema() -> dict[str, Any]:
             "firmware_name_expected": {"type": ["boolean", "null"]},
             "begun_on": nullable(string(f"^{report_data.TOOL_VERSION.pattern}$", 11)),
             "back_after_power_cycle": nullable(integer(0, report_data.WAIT_LIMIT)),
-        }),
+            # The offers sent beside the run (offers.report_counts): counts and flags alone.
+            "offers": record({"ran": {"type": "boolean"}, "why_not": nullable(words(*offers.NOT_SENT)),
+                              "done": {"type": "boolean"},
+                              **{name: integer(0, offers.COUNT_LIMIT) for name in offers.COUNTS},
+                              "session_ended": {"type": "boolean"},
+                              "run_session_ended": {"type": ["boolean", "null"]}}),
+        }, optional=("offers",)),
     }
 
 

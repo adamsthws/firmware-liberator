@@ -22,8 +22,9 @@ check.
   each device, when the website asks for links. It is sent as a report is,
   and `--no-report` stops it too
   ([what the tool sends](docs/what-the-tool-sends.md#what-ewelink-offers-your-devices)).
-  A readout's first stage sends the same in place of the files, when the
-  website asks for links.
+  The run's report counts how it went, in numbers alone, so the project can
+  see whether asking for offers troubles eWeLink or the run. A readout's first
+  stage sends the same in place of the files, when the website asks for links.
 - A device eWeLink names no product model of is read out as any other: the
   website is asked first whether it wants it, and takes it. Before, it was
   read out unasked and its readout turned down once sent.

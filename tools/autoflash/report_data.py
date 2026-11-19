@@ -333,7 +333,15 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         **firmware_name_info(state, captures),
         "begun_on": begun,
         "back_after_power_cycle": back,
+        "offers": offers_info(ctx),
     }
+
+
+def offers_info(ctx: Context) -> dict[str, Any]:
+    """The offers sent beside the run, as far as they had got: counts and
+    flags alone (offers.report_counts)."""
+    from tools.autoflash import offers   # which reads this module
+    return offers.report_counts(ctx)
 
 
 def firmware_name_info(state: Any, captures: dict[str, Any]) -> dict[str, Any]:

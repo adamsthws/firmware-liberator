@@ -172,6 +172,7 @@ class Context:
         self.last_report_id: str | None = None   # the one sent: on the screen's report, for an issue
         self.last_failed_step = ""  # and which it was: a failure may send earlier steps back
         self.offers: offers.Sender | None = None   # the account's offers, sent beside the run
+        self.offers_not_run: str | None = None   # why they were not (offers.start)
         try:
             output.private(bundle_ssid(self.manifest_path), "wifi-name")
         except (BundleError, OSError, ValueError):

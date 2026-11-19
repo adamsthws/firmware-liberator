@@ -220,6 +220,7 @@ const KEPT = {
       format: "the schema's version, the same for every report kept",
       proof: "checked as the report comes in, then of no use",
       stages: "a row a stage, in report_stages",
+      offers: "a row a report, in report_offers: none from a tool that sent none",
       nth_device: "the device's place, in devices, given once",
     },
     own: ["day", "quarantined"],   // the API's, from no field
@@ -234,6 +235,7 @@ const KEPT = {
     own: ["day", "quarantined"],
   },
   stage: { table: "report_stages", elsewhere: {}, own: ["id", "stage"] },
+  offer: { table: "report_offers", elsewhere: {}, own: ["id"] },
 };
 
 // Each field `rule` has, by its path: a nested one's as "os.arch".
@@ -247,13 +249,14 @@ const columnsOf = (bindings, table) => rows(bindings, `SELECT name FROM pragma_t
 // column, or undefined where the table has none.
 function columnsFor(bindings, rule, kept) {
   const columns = columnsOf(bindings, kept.table);
-  return new Map(fields(rule).filter((field) => !(field in kept.elsewhere)).map((field) => [field,
+  return new Map(fields(rule).filter((field) => !(field.split(".")[0] in kept.elsewhere)).map((field) => [field,
     [field.replaceAll(".", "_"), field.split(".").at(-1)].find((name) => columns.includes(name))]));
 }
 
 test("each field of a report has a column of its own, and each column a field", () => {
   const bindings = env();
-  const rules = { run: SCHEMA, readout: SCHEMA.readout, stage: SCHEMA.properties.stages.additionalProperties };
+  const rules = { run: SCHEMA, readout: SCHEMA.readout, stage: SCHEMA.properties.stages.additionalProperties,
+    offer: SCHEMA.properties.offers };
   for (const [what, rule] of Object.entries(rules)) {
     const kept = KEPT[what];
     const mapped = columnsFor(bindings, rule, kept);
@@ -296,6 +299,27 @@ test("each field of a report is kept, as the report gave it", async () => {
     .map(([stage, values]) => ({ ...values, id: made.id, stage })));
   check("stage", SCHEMA.properties.stages.additionalProperties, stages,
     (made) => rows(bindings, "SELECT * FROM report_stages WHERE id = ? AND stage = ?", made.id, made.stage)[0]);
+  const offers = sent.run.filter((made) => made.offers).map((made) => ({ ...made.offers, id: made.id }));
+  check("offer", SCHEMA.properties.offers, offers, byId("report_offers"));
+  assert.equal(rows(bindings, "SELECT count(*) AS n FROM report_offers")[0].n, offers.length,
+    "none for a report from a tool that sent none");
+});
+
+test("offers' counts are held to the schema: out of range, or a word the tool never gives, turned away", async () => {
+  const bindings = env();
+  const { offers } = SAMPLES.valid.find((sample) => sample.offers);
+  const cases = [
+    [report({ offers: { ...offers, requests: 10000 } }), /offers\.requests: out of range/],
+    [report({ offers: { ...offers, sent: -1 } }), /offers\.sent: out of range/],
+    [report({ offers: { ...offers, why_not: "bored" } }), /offers\.why_not: not one of the allowed words/],
+    [report({ offers: { ...offers, account: "owner@example.com" } }), /offers\.account: not allowed/],
+  ];
+  const older = report();   // from a tool that sent none
+  const answer = await send(bindings, [older, report({ offers }), ...cases.map(([value]) => value)]);
+  assert.equal(answer.accepted.length, 2);
+  assert.ok(answer.accepted.includes(older.id));
+  answer.rejected.forEach((rejected, index) => assert.match(rejected.why, cases[index][1]));
+  assert.equal(answer.rejected.length, cases.length);
 });
 
 test("a report with no device is kept, with no device record", async () => {

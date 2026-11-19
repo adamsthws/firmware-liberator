@@ -271,12 +271,15 @@ class Account:
     for everything after: each sign-in ends the one before it, and eWeLink
     turns away an account signing in too often. `sign_in` gives the region
     and session (login_session's); it is called again only once eWeLink has
-    ended the last."""
+    ended the last. `ended`: how many times eWeLink had ended it as a call
+    of the run's here was made (use), for the run's report to tell whether
+    the offers sent beside it came before one (offers.Sender.counts)."""
 
     def __init__(self, sign_in: Callable[[], tuple[str, dict[str, Any]]],
                  held: tuple[str, dict[str, Any]] | None = None):
         self._sign_in = sign_in
         self.held = held
+        self.ended = 0
 
     def session(self) -> tuple[str, dict[str, Any]]:
         if self.held is None:
@@ -290,6 +293,7 @@ class Account:
             try:
                 return work(*self.session())
             except SessionEnded:
+                self.ended += 1
                 self.held = None
                 return work(*self.session())
 

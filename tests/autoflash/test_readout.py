@@ -1161,7 +1161,7 @@ class LinksTests(unittest.TestCase):
         offered_firmware.fetch.assert_not_called()
         (sent,), = readout.send_offers.call_args.args
         self.assertEqual(sent, {"model": "NEWTHING", "stock_model": "SN-NEW-01", "stock_version": "1.0.0",
-                                "device": report_data.device_hash("12:34:56:ab:cd:ef"), "files": [
+                                "files": [
                                     {"name": "user1.bin", "version": "1.1.0", "sha256": "a" * 64,
                                      "path": f"/ota/rom/{TOKEN}/user1.bin"},
                                     {"name": "user2.bin", "version": "1.1.0", "sha256": "b" * 64,
@@ -1314,9 +1314,16 @@ class LinksTests(unittest.TestCase):
 
     def test_a_link_naming_the_device_goes_as_a_file_alone(self):
         two = offered_firmware.Offered("user2.bin", "1.1.0", b"\xe9two")
+        # The run's sign-in, as own_marks reads it: a link holding any of it is its owner's.
+        self.ctx.ewelink = SimpleNamespace(held=("eu", {"at": "a7" * 20, "rt": "b8" * 20,
+                                                        "user": {"apikey": "12345678-1234-4abc-8def-123456789abc"}}))
         for link in ("https://cn-otadl.coolkit.cn/rom/1000ABCDEF/user2.bin",
                      "https://cn-otadl.coolkit.cn/rom/user2.bin?mac=12-34-56-ab-cd-ef",
-                     "https://cn-otadl.coolkit.cn/rom/123456abcdef.bin"):
+                     "https://cn-otadl.coolkit.cn/rom/123456abcdef.bin",
+                     "https://cn-otadl.coolkit.cn/rom/123456abcdf0.bin",
+                     f"https://cn-otadl.coolkit.cn/rom/{'a7' * 20}/user2.bin",
+                     f"https://cn-otadl.coolkit.cn/rom/{'B8' * 20}/user2.bin",
+                     "https://cn-otadl.coolkit.cn/rom/123456781234_4ABC_8DEF_123456789ABC/user2.bin"):
             with self.subTest(link=link):
                 offers = {"offers": [{"version": "1.1.0", "binList": [
                     {"name": "user2.bin", "downloadUrl": link, "digest": two.sha256}]}]}

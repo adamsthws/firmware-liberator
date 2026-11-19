@@ -241,6 +241,20 @@ class PayloadTests(RouteTestCase):
         data = self.payload(ctx)
         self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (None, False, True))
 
+    def test_the_offers_sent_beside_it_are_counted_in_every_word_the_schema_allows(self):
+        from tools.autoflash import offers
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        self.assertEqual(self.payload(ctx)["offers"]["why_not"], "no-account", "no account's devices listed")
+        ctx.offers = sender = offers.Sender(ctx, [])
+        sender.note(due=3, requests=1, sent=2, taken=1, full=1)
+        sent = self.payload(ctx)["offers"]
+        self.assertEqual((sent["ran"], sent["done"], sent["due"], sent["sent"], sent["taken"], sent["full"]),
+                         (True, False, 3, 2, 1, 1))
+        for word in offers.NOT_SENT:
+            with self.subTest(why_not=word):
+                sender.note(word)
+                self.assertEqual(self.payload(ctx)["offers"]["why_not"], word)
+
     def test_dev_runs_are_tagged(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         with mock.patch.dict("os.environ", {"AUTOFLASH_REPORT_TAG": "dev"}):

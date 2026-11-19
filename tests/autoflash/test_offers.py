@@ -103,17 +103,17 @@ class SendTests(World):
         self.send_offers.assert_called_once()
         hall, porch = self.sent()
         self.assertEqual(hall, {"model": "S60TPG", "stock_model": "PSF-BS60-GL", "stock_version": "1.2.0",
-                                "device": report_data.device_hash("12:34:56:ab:cd:ef"),
                                 "files": [{"name": "user1.bin", "version": "1.3.0", "sha256": "1" * 64,
                                            "path": f"/ota/rom/{TOKEN}/user1.bin"}]})
-        self.assertIsNone(porch["device"])   # no MAC: no device hash
+        self.assertNotIn("device", porch)   # nothing that names it
         self.assertEqual(self.logged, ["Offers of the account's devices: 2 sent: 2 taken, 0 held already, "
                                        "0 for another day, 0 turned down."])
 
-    def test_no_device_id_goes_to_the_website(self):
+    def test_nothing_that_names_a_device_goes_to_the_website_or_is_kept(self):
         self.run_sender()
-        self.assertNotIn("1000abcdef", json.dumps(self.sent()))
-        self.assertNotIn("1000abcdef", self.sent_path.read_text(encoding="utf-8"))
+        for named in ("1000abcdef", "123456abcdef", report_data.device_hash("12:34:56:ab:cd:ef")):
+            self.assertNotIn(named, json.dumps(self.sent()).replace(":", "").lower())
+            self.assertNotIn(named, self.sent_path.read_text(encoding="utf-8"))
 
     def test_only_where_the_website_takes_links_asked_before_eWeLink(self):
         self.sends.return_value = "files"
@@ -133,7 +133,7 @@ class SendTests(World):
     def test_one_switched_to_files_meanwhile_is_not_sent(self):
         self.answers = lambda items: ("files", [("full", "")] * len(items))
         self.run_sender()
-        self.assertFalse(self.sent_path.exists())   # nothing remembered: sent again next run
+        self.assertEqual(offers.sent_before(), {})   # nothing remembered: sent again next run
         self.assertIn("takes files", self.logged[-1])
 
     def test_without_a_sign_in_held_nothing_is_asked_and_none_made(self):
@@ -199,8 +199,7 @@ class SendTests(World):
         self.latest.side_effect = latest
         self.run_sender()
         self.assertEqual([item["stock_model"] for item in self.sent()], ["PSF-BS60-GL"])
-        self.assertEqual(list(json.loads(self.sent_path.read_text(encoding="utf-8"))),
-                         [offers.key_of(HALL)])
+        self.assertEqual(list(offers.sent_before()), [offers.key_of(HALL)])
         self.assertEqual(self.logged, ["Offers of the account's devices: 1 sent: 1 taken, 0 held already, "
                                        "0 for another day, 0 turned down; 1 not sent: a link of another shape, "
                                        "unfit for review."])
@@ -211,7 +210,7 @@ class SendTests(World):
             for identity in identities}
         self.run_sender()
         self.send_offers.assert_not_called()
-        self.assertFalse(self.sent_path.exists())
+        self.assertEqual(offers.sent_before(), {})
         self.assertEqual(self.logged, ["Offers of the account's devices: none sent; 2 not sent: a link of another "
                                        "shape, unfit for review."])
 
@@ -226,7 +225,7 @@ class SendTests(World):
         self.run_sender()
         self.assertEqual(self.sent()[1]["files"][1], {"name": "user2.bin", "version": "1.3.0", "sha256": "2" * 64,
                                                        "url": "http://eu-otadl.coolkit.cc:8088/rom/user2.bin"})
-        self.assertEqual(len(json.loads(self.sent_path.read_text(encoding="utf-8"))), 2)
+        self.assertEqual(len(offers.sent_before()), 2)
         self.assertEqual(self.logged, ["Offers of the account's devices: 2 sent: 2 taken, 0 held already, "
                                        "0 for another day, 0 turned down; 1 of their files by a link of another "
                                        "shape, for review."])
@@ -251,6 +250,27 @@ class SendTests(World):
                 self.assertNotIn("user2.bin", json.dumps(self.sent()))
                 self.assertIn("1 not sent: a link of another shape, unfit for review", self.logged[-1])
 
+    def test_a_link_holding_the_sign_in_or_a_key_or_a_neighbouring_mac_is_not_sent_for_review(self):
+        ctx = a_ctx()
+        ctx.ewelink.held = ("eu", {"at": "run-token", "rt": "refresh-token", "user": {"apikey": "owner-apikey-1"}})
+        hall = {**HALL, "devicekey": "device-key-1", "apikey": "owner-apikey-1"}
+        for named in ("run-token", "REFRESH-TOKEN", "owner-apikey-1", "device-key-1", "12-34-56-ab-cd-f0",
+                      "123456abcdec"):
+            with self.subTest(named=named):
+                self.sent_path.unlink(missing_ok=True)
+                self.send_offers.reset_mock()
+
+                def latest(region, token, identities, named=named):
+                    found = {identity["deviceid"]: offer_of(1) for identity in identities}
+                    found["1000abcdef"]["offers"][0]["binList"].append(
+                        {"name": "user2.bin", "downloadUrl": f"http://eu-otadl.coolkit.cc/rom/{named}/user2.bin",
+                         "digest": "2" * 64})
+                    return found
+                self.latest.side_effect = latest
+                self.run_sender(ctx, devices=[hall, PORCH])
+                self.assertEqual([item["model"] for item in self.sent()], ["NEWTHING"])   # the other device's
+                self.assertNotIn(named.lower(), json.dumps(self.sent()).lower())
+
     def test_a_pause_between_two_queries_alone(self):
         for count, pauses in ((2, 0), (QUERY_MOST * 2 + 1, 2)):
             with self.subTest(devices=count):
@@ -264,7 +284,10 @@ class SendTests(World):
     def test_a_problem_is_logged_never_raised(self):
         self.send_offers.side_effect = OSError("down")
         self.run_sender()
-        self.assertEqual(self.logged, ["Offers of the account's devices: not sent (OSError: down)."])
+        self.send_offers.side_effect = OSError("owner@example.com refused")
+        self.run_sender()
+        # Its type alone, as the rest of the tool logs one: its words may name the account.
+        self.assertEqual(self.logged, ["Offers of the account's devices: not sent (OSError)."] * 2)
 
     def test_nothing_is_said_on_the_screen(self):
         screen = io.StringIO()
@@ -277,6 +300,118 @@ class SendTests(World):
         self.assertEqual(screen.getvalue(), "")
         for name, said in shown.items():
             self.assertEqual(said.call_count, 0, name)
+
+
+
+class CountTests(World):
+    """What the run's report counts of it (Sender.counts, report_counts):
+    counts and flags alone, as far as it had got."""
+
+    def counted(self, ctx=None, devices=(HALL, PORCH)) -> dict:
+        return self.run_sender(ctx, devices).counts()
+
+    def test_each_answer_and_every_count_of_offers_sent(self):
+        def latest(region, token, identities):
+            found = {identity["deviceid"]: offer_of(1) for identity in identities}
+            found["1000fedcba"]["offers"][0]["binList"].append(
+                {"name": "user2.bin", "downloadUrl": "http://eu-otadl.coolkit.cc:8088/rom/user2.bin", "digest": "2" * 64})
+            found["1000000001"]["offers"][0]["binList"].append(
+                {"name": "user2.bin", "downloadUrl": "https://example.com/rom/user2.bin", "digest": "2" * 64})
+            return found
+        self.latest.side_effect = latest
+        self.answers = lambda items: ("links", [("taken", ""), ("have", ""), ("full", ""), ("refused", "why")])
+        devices = [HALL, PORCH, *[{**PORCH, "deviceid": f"100000000{n}"} for n in range(3)]]
+        self.assertEqual(self.counted(devices=devices),
+                         {"ran": True, "why_not": None, "done": True, "due": 5, "requests": 1, "sent": 4,
+                          "taken": 1, "have": 1, "full": 1, "refused": 1, "review": 1, "unfit": 1,
+                          "session_ended": False, "run_session_ended": False})
+
+    def test_each_query_asked_of_eWeLink_is_counted(self):
+        self.assertEqual(self.counted(devices=many(QUERY_MOST * 2 + 1))["requests"], 3)
+
+    def test_why_none_went_once_it_had_begun(self):
+        for why, change in (("none-due", lambda: offers.remember([offers.key_of(HALL), offers.key_of(PORCH)], TODAY)),
+                            ("files", lambda: setattr(self.sends, "return_value", "files")),
+                            ("none-to-send", lambda: setattr(self.latest, "side_effect", lambda r, t, ids: {
+                                identity["deviceid"]: {"problem": "EwelinkError"} for identity in ids})),
+                            ("failed", lambda: setattr(self.send_offers, "side_effect", OSError("down")))):
+            with self.subTest(why=why):
+                self.setUp()
+                change()
+                found = self.counted()
+                self.assertEqual((found["ran"], found["why_not"], found["done"], found["sent"]), (True, why, True, 0))
+
+    def test_switched_to_files_as_they_were_sent_counts_none_sent(self):
+        self.answers = lambda items: ("files", [("full", "")] * len(items))
+        found = self.counted()
+        self.assertEqual((found["why_not"], found["sent"], found["requests"]), ("files", 0, 1))
+
+    def test_no_sign_in_held_asks_nothing(self):
+        ctx = a_ctx()
+        ctx.ewelink.held = None
+        found = self.counted(ctx)
+        self.assertEqual((found["why_not"], found["requests"], found["run_session_ended"]), ("no-sign-in", 0, None))
+
+    def test_eWeLink_ending_the_sign_in_is_flagged(self):
+        self.latest.side_effect = [{}, SessionEnded("eWeLink ended the sign-in")]
+        found = self.counted(devices=many(QUERY_MOST + 1))
+        self.assertEqual((found["why_not"], found["session_ended"], found["requests"]), ("session-ended", True, 2))
+
+    def test_the_run_s_own_sign_in_ended_after_it_had_asked(self):
+        ctx = a_ctx()
+        sender = self.run_sender(ctx)
+        self.assertFalse(sender.counts()["run_session_ended"])
+        ctx.ewelink.ended += 1   # as Account.use counts it, once eWeLink had ended it
+        self.assertTrue(sender.counts()["run_session_ended"])
+
+    def test_the_run_s_own_sign_in_ended_before_it_asked_is_not_counted(self):
+        ctx = a_ctx()
+        ctx.ewelink.ended = 2
+        self.assertFalse(self.counted(ctx)["run_session_ended"])
+
+    def test_dropped_mid_way_counts_what_was_done_so_far(self):
+        ctx = a_ctx()
+        inside, gate = threading.Event(), threading.Event()
+
+        def latest(region, token, identities):
+            inside.set()
+            gate.wait(2)
+            return {}
+        self.latest.side_effect = latest
+        sender = offers.Sender(ctx, many(QUERY_MOST + 1), TODAY, log=self.logged.append)
+        ctx.offers = sender
+        thread = threading.Thread(target=sender.run, daemon=True)
+        thread.start()
+        inside.wait(2)
+        found = offers.report_counts(ctx)   # as the report is made, before the run drops it
+        offers.drop(ctx)
+        gate.set()
+        thread.join(2)
+        self.assertEqual((found["ran"], found["done"], found["why_not"], found["due"], found["requests"], found["sent"]),
+                         (True, False, None, QUERY_MOST + 1, 1, 0))
+
+    def test_every_count_is_bounded(self):
+        sender = offers.Sender(a_ctx(), [])
+        sender.note(due=offers.COUNT_LIMIT + 5)
+        self.assertEqual(sender.counts()["due"], offers.COUNT_LIMIT)
+
+    def test_never_begun_says_why(self):
+        with mock.patch.dict(os.environ, {"AUTOFLASH_NO_REPORT": "", "AUTOFLASH_READOUT_URL": "http://127.0.0.1:9/r"}), \
+                mock.patch.object(offers.threading, "Thread"):
+            for why, ctx, devices, unattended in (("off", a_ctx(no_report=True), [HALL], False),
+                                                  ("unattended", a_ctx(), [HALL], True),
+                                                  ("no-devices", a_ctx(), [], False)):
+                with self.subTest(why=why), mock.patch.object(prompts, "UNATTENDED", unattended):
+                    self.assertIsNone(offers.start(ctx, devices))
+                    self.assertEqual(offers.report_counts(ctx),
+                                     {"ran": False, "why_not": why, "done": True, **dict.fromkeys(offers.COUNTS, 0),
+                                      "session_ended": False, "run_session_ended": None})
+        self.assertEqual(offers.report_counts(a_ctx())["why_not"], "no-account")   # no devices ever listed
+
+    def test_nothing_of_the_account_or_its_devices_is_counted(self):
+        found = json.dumps(self.counted())
+        for private in ("1000abcdef", "1000fedcba", "Hall", "run-token", "S60TPG", "12:34:56"):
+            self.assertNotIn(private, found)
 
 
 class StopTests(World):
@@ -301,7 +436,7 @@ class StopTests(World):
         self.assertEqual(self.latest.call_count, 1)
         self.send_offers.assert_not_called()
         self.assertEqual(logged, ["Offers of the account's devices: not sent: the run ended first."])
-        self.assertFalse(self.sent_path.exists())   # nothing kept to send later
+        self.assertEqual(offers.sent_before(), {})   # nothing kept to send later
 
     def test_it_waits_for_the_run_s_eWeLink_calls(self):
         ctx = a_ctx()
@@ -343,24 +478,37 @@ class ResendTests(World):
         self.run_sender(today=TODAY + dt.timedelta(days=offers.OFFER_RESEND_DAYS))
         self.assertEqual(self.asked, ["1000abcdef", "1000fedcba"])
 
-    def test_kept_by_device_hash_or_its_id_hashed_never_the_id(self):
+    def test_kept_by_a_code_of_this_computer_s_own_never_the_device_s_hash_or_id(self):
         self.run_sender()
-        kept = json.loads(self.sent_path.read_text(encoding="utf-8"))
-        self.assertEqual(sorted(kept), sorted([report_data.device_hash("12:34:56:ab:cd:ef"), offers.key_of(PORCH)]))
+        kept = offers.sent_before()
+        self.assertEqual(sorted(kept), sorted([offers.key_of(HALL), offers.key_of(PORCH)]))
+        self.assertNotIn(report_data.device_hash("12:34:56:ab:cd:ef"), kept)
         self.assertRegex(offers.key_of(PORCH), r"^[0-9a-f]{64}$")
         self.assertEqual(set(kept.values()), {TODAY.isoformat()})
+
+    def test_another_computer_s_codes_are_not_these(self):
+        mine = offers.key_of(HALL)
+        self.sent_path.unlink()   # its secret with it: as on another computer
+        self.assertNotEqual(offers.key_of(HALL), mine)
+        self.assertEqual(offers.key_of(HALL), offers.key_of(HALL), "the same on one computer")
+
+    def test_kept_before_it_had_a_secret_sends_them_all(self):
+        self.sent_path.write_text(json.dumps({report_data.device_hash("12:34:56:ab:cd:ef"): TODAY.isoformat()}),
+                                  encoding="utf-8")
+        self.run_sender()
+        self.assertEqual(len(self.sent()), 2)
 
     def test_one_the_website_had_no_room_for_goes_again_next_run(self):
         self.answers = lambda items: ("links", [("full", ""), ("have", "")])
         self.run_sender()
-        self.assertEqual(list(json.loads(self.sent_path.read_text(encoding="utf-8"))), [offers.key_of(PORCH)])
+        self.assertEqual(list(offers.sent_before()), [offers.key_of(PORCH)])
         self.assertIn("1 for another day", self.logged[-1])
 
     def test_those_sent_long_ago_are_forgotten(self):
         old = (TODAY - dt.timedelta(days=offers.OFFER_RESEND_DAYS)).isoformat()
-        self.sent_path.write_text(json.dumps({"f" * 64: old}), encoding="utf-8")
+        offers.save(offers.secret(), {"f" * 64: old})
         self.run_sender()
-        self.assertNotIn("f" * 64, json.loads(self.sent_path.read_text(encoding="utf-8")))
+        self.assertNotIn("f" * 64, offers.sent_before())
 
     def test_a_broken_file_sends_them_all(self):
         self.sent_path.write_text("not json", encoding="utf-8")

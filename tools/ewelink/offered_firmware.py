@@ -172,9 +172,9 @@ def for_review(item: dict[str, Any], own: tuple[str, ...]) -> str | None:
 def review_url(link: str, own: tuple[str, ...]) -> str | None:
     """`link` as scheme://host[:port]/path, its query and fragment dropped,
     or None unless each part is as the REVIEW_ patterns allow - or where it
-    names the device anywhere: `own`, its id and MAC, are looked for in any
-    case and without separators, as a link of an unseen shape may be one
-    device's own."""
+    names the device or its owner anywhere: `own` (own_marks) is looked for
+    in any case and without separators, as a link of an unseen shape may be
+    one device's or one account's own."""
     plain = re.sub(r"[^a-z0-9]", "", link.lower())
     if any(mark and mark in plain for mark in (re.sub(r"[^a-z0-9]", "", str(each).lower()) for each in own)):
         return None
@@ -188,6 +188,30 @@ def review_url(link: str, own: tuple[str, ...]) -> str | None:
     if not REVIEW_PATH.fullmatch(path) or ".." in path or "//" in path:
         return None
     return f"{whole[1].lower()}://{netloc[1]}{f':{port}' if port else ''}{path}"
+
+
+# How far either side of a device's MAC review_url looks too: an ESP32 takes
+# the next few for its access point, Bluetooth and Ethernet.
+MAC_NEIGHBOURS = 3
+
+
+def own_marks(device: dict[str, Any], session: dict[str, Any] | None = None,
+              macs: tuple[str | None, ...] = (), ids: tuple[str | None, ...] = ()) -> tuple[str, ...]:
+    """What review_url looks for in a link, as naming the device or its
+    owner: everything the run knows of either - the device's id, devicekey,
+    apikey and MAC (and `ids`, `macs` it learned elsewhere), each MAC's
+    MAC_NEIGHBOURS either side, and from the run's eWeLink sign-in
+    (`session`, login_session's), its access and refresh tokens and the
+    owner's apikey. Only ever compared; never logged or kept."""
+    params, user = device.get("params") or {}, (session or {}).get("user") or {}
+    marks = [device.get("deviceid"), device.get("devicekey"), device.get("apikey"), *ids,
+             (session or {}).get("at"), (session or {}).get("rt"), user.get("apikey")]
+    for mac in (params.get("staMac"), *macs):
+        digits = re.sub(r"[^0-9a-f]", "", str(mac or "").lower())
+        if len(digits) == 12:
+            value = int(digits, 16)
+            marks += [f"{(value + step) % (1 << 48):012x}" for step in range(-MAC_NEIGHBOURS, MAC_NEIGHBOURS + 1)]
+    return tuple(dict.fromkeys(str(mark) for mark in marks if mark))
 
 
 def public_host(host: str) -> bool:

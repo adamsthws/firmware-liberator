@@ -74,6 +74,16 @@ stages people choose to stop at, and which devices people want supported next: s
   one included; for a readout, how many it has converted there so far:
   counted from its own records there, so deleting them starts the count
   again. Nothing that names your computer is sent.
+- **The offers sent beside the run** ([below](#what-ewelink-offers-your-devices)),
+  in counts and yes-or-no answers alone: whether they were sent, and if not,
+  why, in a word (such as reports turned off, an unattended run, all sent
+  recently, or no sign-in held); how many devices were due, how many
+  questions eWeLink was asked, how many offers were sent and how the
+  project answered them, how many files went by a link for review and how
+  many devices were left out for a link unfit for it; whether eWeLink ended
+  the sign-in while they were asked for, and whether the run's own sign-in
+  was ended after. If the run ends first, what was done by then. Never
+  which devices, nor anything of your account.
 - **For counting:** a random number, so a report sent twice counts once, and
   a mark telling a maintainer's test run from everyone else's. The number is
   the report's ID: when a run fails, the tool shows it where it says to open
@@ -87,9 +97,9 @@ Once a conversion or a readout has signed in to your eWeLink account, the tool
 also asks eWeLink, in the background, which firmware it offers each device in
 the account, and sends the project that offer, so the project has the
 firmware devices are given, to test the tool against. An offer holds, for each
-device, its model, the name and version of its Sonoff firmware, the device as
-a report names it (below), and for each file eWeLink offers, its name,
-version, SHA-256 and path on eWeLink's server. The project then fetches those
+device, its model and the name and version of its Sonoff firmware, and for
+each file eWeLink offers, its name, version, SHA-256 and path on eWeLink's
+server. Nothing in it says which device it is. The project then fetches those
 files from eWeLink itself.
 
 - **An offer never holds** your eWeLink account or its sign-in, a device's
@@ -99,8 +109,10 @@ files from eWeLink itself.
   for the project to check before it fetches anything from it: eWeLink's
   server and the path, without the part after `?` or `#`. It is sent only if
   it is plain (an eWeLink file server or a public address, and a path of
-  letters, digits and `. _ - /` alone) and never if it names the device
-  anywhere - its eWeLink ID or its MAC address, in any form. A readout you
+  letters, digits and `. _ - /` alone) and never if it holds anything the
+  tool knows of the device or your account, in any form: the device's
+  eWeLink ID, its keys, its MAC address or the next few either side of it
+  (which the device uses too), or your account's key or sign-in. A readout you
   send still carries the file itself beside such a link
   ([readouts](readouts.md#a-link-of-another-shape)).
 - **It is sent unasked**, as a report is, and only while the website asks for
@@ -114,8 +126,10 @@ files from eWeLink itself.
 - **Each device's offer goes at most once a week** from your computer
   (`OFFER_RESEND_DAYS` in
   [`tools/autoflash/offers.py`](../tools/autoflash/offers.py)): the day it
-  last went is kept in `captures/offers-sent.json`, by the device's code,
-  never its ID.
+  last went is kept in `captures/offers-sent.json`, by a code made from the
+  device's address with a secret kept there, never its ID or address: the
+  code leads back to no device without that secret, which never leaves your
+  computer.
 - **It is turned off as reports are** ([below](#turning-it-off)), and a dry
   run, the emulator and an unattended run never send one.
 

@@ -82,9 +82,11 @@ still sent whole with a readout. Its link is sent beside it, for the project
 to check before the website ever fetches from it, and only if it is plain:
 an eWeLink file server or a public address, one of the ports eWeLink's links
 use, and a path of letters, digits and `. _ - /` alone. The part after `?` or
-`#` is left out. A link that names your device anywhere - its eWeLink ID or
-its MAC address, in any form - is never sent; nor is one that is not plain.
-The rules are `review_url` in
+`#` is left out. A link that holds anything the tool knows of your device or
+your account, in any form - the device's eWeLink ID, its keys, its MAC
+address or the next few either side of it, or your account's key or sign-in -
+is never sent; nor is one that is not plain. The rules are `own_marks` and
+`review_url` in
 [`tools/ewelink/offered_firmware.py`](../tools/ewelink/offered_firmware.py).
 
 ### Every device at once

@@ -94,6 +94,26 @@
       "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "git",
       "firmware_name": "FWSW-E32S60-S60-ESP32C3FN4", "firmware_name_expected": true,
       "begun_on": null, "back_after_power_cycle": null
+    },
+    {
+      "format": 1, "id": "abababababababab", "proof": "1794000000:12", "tag": "user",
+      "tool": "3.1.0", "kind": "run", "result": "converted", "stopped": null, "family": "espressif",
+      "device": "sonoff-s60", "model": "S60TPG", "stock_version": "1.2.0",
+      "device_hash": "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2", "firmware": "tasmota",
+      "source": "sonoff", "backup": "saved", "identity": null,
+      "os": {"family": "linux", "version": "Ubuntu 24.04", "arch": "x86-64"},
+      "python": {"version": "3.12.4", "source": "portable"}, "seconds": 240, "resumed": false,
+      "stages": {"A1": {"seconds": 20, "busy": 0, "tries": 1, "wait": 0, "setup_network": null, "power_cycles": 0}},
+      "signal": -55, "wifi_typed": false, "setup_network": false, "power_cycled": false,
+      "checks": "passed", "meter": null, "nth_device": 1,
+      "chip": {"revision": "0.4", "flash_id": "204016", "flash_mb": 4},
+      "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "none",
+        "admin": false},
+      "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "download",
+      "firmware_name": null, "firmware_name_expected": null,
+      "begun_on": null, "back_after_power_cycle": null,
+      "offers": {"ran": true, "why_not": "files", "done": true, "due": 3, "requests": 1, "sent": 0, "taken": 0, "have": 0,
+        "full": 0, "refused": 0, "review": 0, "unfit": 1, "session_ended": false, "run_session_ended": false}
     }
   ],
   "invalid": [
@@ -133,6 +153,14 @@
     {"why": "a version begun on not x.y.z", "set": {"begun_on": "2.4"}},
     {"why": "a firmware name not as Sonoff writes one", "set": {"firmware_name": "fwsw-e32s60"}},
     {"why": "whether the name is expected, as a word", "set": {"firmware_name_expected": "yes"}}
+,
+    {"why": "offers' count past the most a report says", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 10000, "sent": 3, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false}}},
+    {"why": "offers' count below zero", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "sent": 3, "taken": -1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false}}},
+    {"why": "why no offers went, in a word the tool never gives", "set": {"offers": {"ran": true, "why_not": "bored", "done": true, "due": 3, "requests": 1, "sent": 3, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false}}},
+    {"why": "offers with a key the schema does not name", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "sent": 3, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false, "account": "owner@example.com"}}},
+    {"why": "offers missing a count", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false}}},
+    {"why": "offers' flag as a number", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "sent": 3, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": 1, "run_session_ended": false}}},
+    {"why": "offers given as null", "set": {"offers": null}}
   ],
   "readoutValid": [
     {

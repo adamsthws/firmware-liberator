@@ -240,6 +240,40 @@ class ReviewUrlTests(unittest.TestCase):
                          "http://eu-otadl.coolkit.cc/fw/x.bin")   # an identity not known matches nothing
 
 
+class OwnMarksTests(unittest.TestCase):
+    """Everything the run knows that names the device or its owner, looked
+    for in a link sent for review."""
+
+    DEVICE = {"deviceid": "1000abcdef", "devicekey": "00000000-1111-2222-3333-444444444444",
+              "apikey": "12345678-1234-4abc-8def-123456789abc", "params": {"staMac": "12:34:56:AB:CD:EF"}}
+    SESSION = {"at": "f00dfeedcafe" * 3, "rt": "beadfacebead" * 3, "user": {"apikey": "10000000-0000-0000-0000-000000000000"}}
+
+    def refused(self, named, **more):
+        own = offered_firmware.own_marks(self.DEVICE, self.SESSION, **more)
+        return offered_firmware.review_url(f"http://eu-otadl.coolkit.cc/fw/{named}/user1.bin", own) is None
+
+    def test_the_account_s_sign_in_and_the_device_s_keys_are_never_sent(self):
+        for named in (self.SESSION["at"], self.SESSION["rt"].upper(), self.SESSION["user"]["apikey"],
+                      self.SESSION["user"]["apikey"].replace("-", ""), self.DEVICE["devicekey"],
+                      self.DEVICE["apikey"], "1000ABCDEF"):
+            with self.subTest(named=named):
+                self.assertTrue(self.refused(named))
+
+    def test_the_mac_s_neighbours_are_its_own_too(self):
+        for named in ("123456abcdec", "12-34-56-ab-cd-f0", "123456ABCDF2", "123456abcdee"):
+            with self.subTest(named=named):
+                self.assertTrue(self.refused(named))
+        self.assertFalse(self.refused("123456abcdf3"), "MAC_NEIGHBOURS on, another device's")
+        self.assertFalse(self.refused("123456abcdeb"), "MAC_NEIGHBOURS before it, another device's")
+        self.assertTrue(self.refused("000000000001", macs=("ff:ff:ff:ff:ff:fe",)), "across the top")
+        self.assertTrue(self.refused("0200aa000003", macs=("02:00:aa:00:00:00",)), "one learned elsewhere")
+
+    def test_an_id_learned_elsewhere_and_nothing_unknown(self):
+        self.assertTrue(self.refused("1000999999", ids=("1000999999",)))
+        self.assertFalse(self.refused("deadbeef00112233"), "a token of a shape not known is what review is for")
+        self.assertEqual(offered_firmware.own_marks({}), ())
+
+
 class ForReviewTests(unittest.TestCase):
     def item(self, url, digest=SHA):
         return {"name": "user2.bin", "downloadUrl": url, "digest": digest}

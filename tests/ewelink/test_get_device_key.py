@@ -62,6 +62,19 @@ class AccountTests(unittest.TestCase):
             account.use(ended)
         self.assertEqual((sign_in.call_count, ended.call_count), (2, 2))
 
+    def test_each_time_eWeLink_had_ended_it_is_counted(self):
+        sign_in = mock.Mock(side_effect=[("eu", {"at": "a"}), ("eu", {"at": "b"})])
+        account = get_device_key.Account(sign_in)
+        self.assertEqual(account.use(lambda region, session: session["at"]), "a")
+        self.assertEqual(account.ended, 0)
+
+        def refused_once(region, session):
+            if session["at"] == "a":
+                raise get_device_key.SessionEnded("ended")
+            return session["at"]
+        self.assertEqual(account.use(refused_once), "b")
+        self.assertEqual(account.ended, 1)
+
     def test_ended_signs_in_again_next_time(self):
         sign_in = mock.Mock(side_effect=[("eu", {"at": "a"}), ("us", {"at": "b"})])
         account = get_device_key.Account(sign_in)

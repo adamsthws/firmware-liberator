@@ -142,6 +142,15 @@ const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, resu
   converted_here, quarantined)
   VALUES (${Array(21).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
+// What a run's report says of the offers sent beside it (its "offers",
+// counts and flags alone; none from a tool that sent none), one row a
+// report: whether they load eWeLink or come before the run's sign-in ended,
+// and whether offers come in from people's runs (snapshot.js).
+const OFFER_COLUMNS = ["ran", "why_not", "done", "due", "requests", "sent", "taken", "have", "full", "refused",
+  "review", "unfit", "session_ended", "run_session_ended"];
+const OFFERS = `INSERT OR IGNORE INTO report_offers (id, ${OFFER_COLUMNS.join(", ")})
+  VALUES (${Array(OFFER_COLUMNS.length + 1).fill("?").join(", ")})`;
+const offerValue = (value) => (typeof value === "boolean" ? Number(value) : value);
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -191,6 +200,9 @@ export function writes(db, report, hash, day, held = null) {
       Number(backToSonoff), report.firmware, report.stock_version, Number(report.tag === "dev"), report.nth_device));
   }
   statements.push(db.prepare(STAGES).bind(report.id, JSON.stringify(report.stages)));
+  if (report.offers) {
+    statements.push(db.prepare(OFFERS).bind(report.id, ...OFFER_COLUMNS.map((name) => offerValue(report.offers[name]))));
+  }
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }
 
