@@ -13,7 +13,9 @@ import { downloadDays, DOWNLOADS } from "../api/downloads.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, READOUT_ID, STAGES,
   TOTAL_BYTES } from "../api/index.js";
 import { CLOUD_ASNS } from "../api/networks.js";
-import { approveLink, everyLink, fetchedFrom, fetchesOn, linkFigures, linksToReview, OFFER_FETCHES_DAILY, PEEK_BYTES,
+import { COUNTER_DAYS } from "../api/nightly.js";
+import { approveLink, everyLink, fetchedFrom, fetchesOn, FIRST_SIGHT_DAILY, firstSightsOn, linkFigures, linksNotKeptOn,
+  linksToReview, OFFER_FETCHES_DAILY, PEEK_BYTES, PENDING_LINK_DAYS, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER,
   rejectLink, sentAs, unfetched } from "../api/offered.js";
 import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
@@ -241,6 +243,7 @@ export const remove = (db, id) => [
     AND id IN (SELECT id FROM held_reports)) AND NOT EXISTS (SELECT 1 FROM reports
     WHERE device_hash = devices.device_hash AND id != ?1)`).bind(id),
   db.prepare("DELETE FROM report_stages WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
+  db.prepare("DELETE FROM report_offers WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
 ];
@@ -320,7 +323,7 @@ export async function gather(env, now) {
   const today = dayOf(now);
   const since = (days) => dayOf(new Date(now.getTime() - days * DAY));
   const names = [`reports:${today}`, `readouts:${today}`, `notify:${today}`, `mail-sent:${today}`, "readouts:all",
-    fetchesOn(today)];
+    fetchesOn(today), firstSightsOn(today)];
   const counters = Object.fromEntries((await all(`SELECT name, count, bytes FROM counters WHERE name IN (${names.map(() => "?").join(", ")})`, ...names))
     .map((row) => [row.name, row]));
   const [devices] = await all("SELECT count(*) AS seen, sum(conversions > 0) AS converted, sum(dev) AS dev FROM devices");
@@ -348,7 +351,10 @@ export async function gather(env, now) {
     links: await linkFigures(env.DB),
     unfetched: await unfetched(env.DB),
     review: await linksToReview(env.DB),
+    // Links to review not kept, the queue being full, over the days the counts are kept.
+    notKept: (await all("SELECT coalesce(sum(count), 0) AS n FROM counters WHERE name GLOB ?", linksNotKeptOn("*")))[0].n,
     every: await everyLink(env.DB),
+    offerRuns: await all(OFFER_RUNS, since(OFFER_DAYS - 1)),
     networks: await all(`SELECT name, json_array_length(asns) AS asns, previous, taken, problem FROM network_lists
       ORDER BY name`),
     popularity: await modelTrends(all, now),
@@ -376,6 +382,25 @@ const NEEDED = `SELECT s.stage, count(*) AS runs, sum(s.setup_network IS NOT NUL
   WHERE r.day >= ? AND r.tag = 'user' AND r.quarantined = 0
   GROUP BY s.stage HAVING sum(s.setup_network IS NOT NULL) + sum(s.power_cycles > 0) > 0
   ORDER BY sum(s.setup_network IS NOT NULL) + sum(s.power_cycles > 0) DESC, s.stage`;
+
+// The offers runs send beside them (tools/autoflash/offers.py), as their
+// reports count them (report_offers), day by day over the last OFFER_DAYS:
+// the runs that asked eWeLink anything, the offers they sent and the website
+// took, and how many saw eWeLink end the sign-in as they asked, and how many
+// had the run's own sign-in ended after (of those that could tell): whether
+// offers come in from people's runs, and whether asking for them loads
+// eWeLink. The maintainer's own testing, and quarantined and held reports,
+// left out. Private, so every day is shown, however few its runs.
+export const OFFER_DAYS = 30;
+const OFFER_RUNS = `SELECT r.day, count(*) AS runs, sum(o.sent) AS sent, sum(o.taken) AS taken,
+    sum(o.session_ended) AS ended, sum(o.run_session_ended) AS runEnded, sum(o.run_session_ended IS NOT NULL) AS runKnown
+  FROM report_offers AS o JOIN reports AS r ON r.id = o.id
+  WHERE r.day >= ? AND r.tag = 'user' AND r.quarantined = 0 AND r.id NOT IN (SELECT id FROM held_reports)
+    AND o.requests > 0
+  GROUP BY r.day ORDER BY r.day DESC`;
+// The rows' `key` added up, and a share as a percentage to one decimal, "-" of none.
+const total = (rows, key) => rows.reduce((sum, row) => sum + (row[key] ?? 0), 0);
+const share = (part, whole) => (whole ? `${Math.round((1000 * part) / whole) / 10}%` : "-");
 
 // How many months the popularity charts go back, and how many models they show.
 export const POPULAR_MONTHS = 24;
@@ -533,7 +558,11 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
     `<section class="card" id="review"><h2>Links to review</h2><p class="sub">Links of a shape not seen before, as
       sent, never fetched until you approve one; approving fetches its file by it (a server named by address never:
       its path from each of eWeLink's servers by name), kept only if it is the SHA-256 given. Its first ${PEEK_BYTES}
-      bytes were asked for once, when first sent. Approved ones whose file is not held are listed until it is.</p>`
+      bytes were asked for once, when first sent. Approved ones whose file is not held are listed until it is.
+      ${number(PENDING_LINKS_MOST)} wait at most; one not settled is deleted ${PENDING_LINK_DAYS} days after it was
+      sent, and comes back if sent again. Those sent from the most networks first, then the longest waiting.</p>`
+      + (data.notKept ? `<p class="sub"><strong>${number(data.notKept)} not kept in the last ${COUNTER_DAYS} days: the
+      queue was full, or their sender had sent ${PENDING_LINKS_PER_SENDER} that day.</strong></p>` : "")
       + table([["Device", (row) => String(row.key ?? "").split("|").slice(0, 3).join(" · ")],
         ["SHA-256", "sha", "text"], ["Networks", "networks", "number"],
         ["First seen", (row) => String(row.first ?? "").slice(0, 10)],
@@ -557,6 +586,7 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + tile("Files missing", number(data.unfetched.reduce((sum, row) => sum + row.files, 0)),
         `for ${number(data.unfetched.length)} agreed offers`)
       + tile("Fetches today", number(count(fetchesOn(data.today))), `of ${number(OFFER_FETCHES_DAILY)} a day`)
+      + tile("First sights today", number(count(firstSightsOn(data.today))), `of ${number(FIRST_SIGHT_DAILY)} a day`)
       + `</div>`
       + table([["Key", "key"], ["Sent as links", "sent", "number"], ["Offers agreed", "agreed", "number"],
         ["Files fetched", "fetched", "number"], ["Bytes", (row) => bytes(row.bytes)]], data.links.keys, "None yet.")
@@ -569,6 +599,22 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
         ["File", (row) => (row.held ? "held" : "not held")], ["Sent", "sent", "number"],
         ["Link", (row) => (["auto", "approved"].includes(row.review) ? fetchedFrom(row) : [sentAs(row)]).map(copy)
           .join(""), "html"]], data.every, "None yet.")
+      + `</section>`,
+    `<section class="card" id="offer-runs"><h2>Offers sent beside runs</h2><p class="sub">Runs that asked eWeLink which
+      firmware it offers the devices in their account, the last ${OFFER_DAYS} days, by their reports: the offers
+      they sent and the website took, how many saw eWeLink end the sign-in as they asked, and how many had the run's
+      own sign-in ended after they had (of those that could tell). Your own testing, and held reports, left out.</p>`
+      + `<div class="tiles">`
+      + tile("Runs that asked", number(total(data.offerRuns, "runs")))
+      + tile("Offers sent", number(total(data.offerRuns, "sent")), `${number(total(data.offerRuns, "taken"))} taken`)
+      + tile("Sign-in ended as they asked", share(total(data.offerRuns, "ended"), total(data.offerRuns, "runs")),
+        `${number(total(data.offerRuns, "ended"))} of ${number(total(data.offerRuns, "runs"))} runs`)
+      + tile("Run's sign-in ended after", share(total(data.offerRuns, "runEnded"), total(data.offerRuns, "runKnown")),
+        `${number(total(data.offerRuns, "runEnded"))} of ${number(total(data.offerRuns, "runKnown"))} runs`)
+      + `</div>`
+      + table([["Day", "day"], ["Runs that asked", "runs", "number"], ["Offers sent", "sent", "number"],
+        ["Taken", "taken", "number"], ["Sign-in ended", (row) => share(row.ended, row.runs)],
+        ["Run's sign-in ended after", (row) => share(row.runEnded, row.runKnown)]], data.offerRuns, "None yet.")
       + `</section>`,
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,

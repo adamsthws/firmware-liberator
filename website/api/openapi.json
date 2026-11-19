@@ -130,7 +130,6 @@
                     "model": "NEWTHING",
                     "stock_model": "SN-NEW-01",
                     "stock_version": "1.0.0",
-                    "device": null,
                     "files": [
                       {
                         "name": "user1.bin",
@@ -1210,14 +1209,6 @@
           },
           "stock_version": {
             "$ref": "#/components/schemas/StockVersion"
-          },
-          "device": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^[0-9a-f]{64}$",
-            "description": "The device, as a report names it (device_hash); null where the tool cannot tell. Checked, and not kept"
           },
           "files": {
             "type": "array",

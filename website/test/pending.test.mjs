@@ -4,12 +4,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { read, reserve } from "../api/counters.js";
+import { DAILY_COUNT, OFFERS_DAILY } from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
-import { PENDING, PENDING_DAYS, READOUTS_EVER, SIGNUP_DAYS, prunePending } from "../api/pending.js";
+import { PENDING, PENDING_DAYS, PRUNE_EACH_NIGHT, R2_DELETE_MOST, READOUTS_EVER, SIGNUP_DAYS, prunePending }
+  from "../api/pending.js";
 
 function bucket() {
   const objects = new Map();
-  return { objects, delete: async (key) => { objects.delete(key); } };
+  // R2's delete takes a key or a list of them, R2_DELETE_MOST at most.
+  const deleted = [];
+  return { objects, deleted, delete: async (keys) => {
+    assert.ok(!Array.isArray(keys) || keys.length <= R2_DELETE_MOST);
+    deleted.push(keys);
+    for (const key of [keys].flat()) {
+      objects.delete(key);
+    }
+  } };
 }
 
 async function kept(env, id, review, received, bytes = 100, marks = []) {
@@ -42,6 +52,16 @@ test("a readout never taken as right is deleted after its days, with its marks, 
   assert.equal((await env.DB.prepare("SELECT count(*) AS n FROM readout_firmware").first()).n, 0);
   assert.equal((await read(env.DB, READOUTS_EVER)).bytes, 100);
   assert.equal((await read(env.DB, PENDING)).bytes, 30);
+});
+
+test("a file another readout kept marks too stays when one marking it is deleted", async () => {
+  const env = { DB: d1(), READOUTS: bucket() };
+  await kept(env, "old-pending", "pending", "2026-05-01T10:00:00Z", 100, ["a".repeat(64), "b".repeat(64)]);
+  await kept(env, "old-right", "quorum", "2026-05-01T10:00:00Z", 70, ["a".repeat(64)]);
+  await prunePending(env, "2026-11-09");
+  assert.deepEqual([...env.READOUTS.objects.keys()].sort(), [`readouts/firmware/${"a".repeat(64)}`, "readouts/x/old-right.tar"]);
+  assert.deepEqual((await env.DB.prepare("SELECT readout, sha FROM readout_firmware").all()).results,
+    [{ readout: "old-right", sha: "a".repeat(64) }]);
 });
 
 test("a readout deleted takes the links it gave with it", async () => {
@@ -80,4 +100,24 @@ test("a readout disputing those taken as right is kept until it is settled", asy
   assert.equal((await prunePending(env, "2026-11-09")).readouts, 1);
   const left = (await env.DB.prepare("SELECT id FROM readouts").all()).results.map((row) => row.id);
   assert.deepEqual(left, ["old-dispute"], "one rejected goes as any other");
+});
+
+test("a night deletes more than a day takes in, R2's objects R2_DELETE_MOST a call, so a backlog clears", async () => {
+  assert.ok(PRUNE_EACH_NIGHT >= DAILY_COUNT + OFFERS_DAILY);
+  const env = { DB: d1(), READOUTS: bucket() };
+  const backlog = PRUNE_EACH_NIGHT + 10;
+  const insert = env.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received,
+    review) VALUES (?1, 'NEWTHING|SN-NEW-01|1.0.0', 'first', ?1, 'f', 10, ?2, '2026-05-01T10:00:00Z', 'pending')`);
+  for (let n = 0; n < backlog; n += 1) {
+    insert.run(`old-${n}`, `readouts/x/old-${n}.json`);
+    env.READOUTS.objects.set(`readouts/x/old-${n}.json`, {});
+  }
+  await reserve(env.DB, READOUTS_EVER, null, { by: backlog, bytes: 10 * backlog });
+  await reserve(env.DB, PENDING, null, { by: backlog, bytes: 10 * backlog });
+  assert.equal((await prunePending(env, "2026-11-09")).readouts, PRUNE_EACH_NIGHT);
+  assert.ok(env.READOUTS.deleted.length <= Math.ceil(PRUNE_EACH_NIGHT / R2_DELETE_MOST), "a few calls");
+  assert.equal((await prunePending(env, "2026-11-10")).readouts, 10, "the rest the next night");
+  assert.equal(env.READOUTS.objects.size, 0);
+  assert.deepEqual([await read(env.DB, READOUTS_EVER), await read(env.DB, PENDING)],
+    [{ count: 0, bytes: 0 }, { count: 0, bytes: 0 }]);
 });

@@ -22,14 +22,25 @@
 //   towards the store's limit (TOTAL_BYTES) and its readout's.
 // - A link of a shape not seen before (`url`, linkParts) is kept for review
 //   and never fetched until the admin view approves it (approveLink), only
-//   peeked at once when first taken (peekNamed); rejected, never.
-// - OFFER_FETCHES_DAILY fetches a day at most, of every kind. A file still
-//   missing OFFER_FETCH_ALERT_DAYS after its offer was taken as right is told
-//   to the maintainer (alerts.js): the sign to set OFFERED_SEND back to
-//   "files" (wrangler.jsonc, .github/readouts.md).
+//   peeked at once when first taken (peekNamed); rejected, never. At most
+//   PENDING_LINKS_MOST wait at once; one past it is not kept (index.js LINKS).
+// - Nothing of the links grows without bound (linkPruning, nightly.js): a link
+//   pending review goes PENDING_LINK_DAYS after the readout that sent it,
+//   with its peek; a peek or a failure goes once no readout gives its link,
+//   a failure FAILURE_DAYS after its last try; the newest REJECTED_LINKS_MOST
+//   rejections are kept, apart from the readouts, so a link rejected stays so.
+// - Two budgets a day: FIRST_SIGHT_DAILY for first sight and peeks, whose
+//   links no one has agreed on yet, and OFFER_FETCHES_DAILY for offers taken
+//   as right and links approved, so made-up links can never use up the
+//   fetches owners' agreed offers need. A file still missing
+//   OFFER_FETCH_ALERT_DAYS after its offer was taken as right is told to the
+//   maintainer (alerts.js): the sign to set OFFERED_SEND back to "files"
+//   (wrangler.jsonc, .github/readouts.md).
 import { release, reserve } from "./counters.js";
-import { READOUTS_EVER } from "./pending.js";
+import { PENDING, PENDING_DAYS, READOUTS_EVER } from "./pending.js";
 import { hex, sha256 } from "./proof-of-work.js";
+
+const DAY = 24 * 60 * 60 * 1000;
 
 // eWeLink's file servers, one a region, by name (docs/espressif-research.md,
 // "Learning the firmware name"): the first is where a link of its shape is
@@ -59,6 +70,39 @@ export const CLOUDS = {
     hosts: /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+coolkit\.c[cn]$/,
   },
 };
+
+// Links to review waiting at most, each counted once however many sent it:
+// the admin view lists each with its first bytes for a person to look at, and
+// a hundred is an evening's review; a genuine new shape of link is eWeLink
+// changing its servers, which all its devices share, so owners' links come
+// to a few, and only made-up ones would fill it. Past it, a link to review
+// not already waiting is not kept (index.js LINKS), nor peeked at, and its
+// readout or offer is taken as it would be; each counted a day
+// (linksNotKeptOn), for the admin view. A readout's own links, MAX_FIRMWARE
+// at most (index.js), are weighed together, so may pass it by as many less one.
+export const PENDING_LINKS_MOST = 100;
+export const linksNotKeptOn = (day) => `links-not-kept:${day}`;
+// Links to review one sender may put in the queue a day, counted as
+// first sight's fetches are (index.js firstSightSender): an account's devices
+// offered a link of a new shape come to a file or two each, so this is a few
+// kinds of device; more from one sender wait for the next day, or for an
+// owner elsewhere to send them. One /24 cannot fill the queue alone.
+export const PENDING_LINKS_PER_SENDER = 5;
+export const reviewLinksOf = (hash, day) => `review-links:${hash}:${day}`;
+// A link pending review is deleted this long after the readout that sent it,
+// as a readout waiting for review is (pending.js): it is sent again by the
+// next owner whose device is offered it.
+export const PENDING_LINK_DAYS = PENDING_DAYS;
+// A link's failure (offer_fetch_failures) is forgotten this long after it was
+// last tried, as long as its readout may wait: after it, one more try of a
+// made-up link costs one fetch, within the day's.
+export const FAILURE_DAYS = PENDING_DAYS;
+// Rejections kept (rejected_links), the newest: each is the maintainer's
+// click on the admin view, with PENDING_LINKS_MOST waiting at most, so this
+// many is years of reviewing, and some 4 MB. Kept by count, not age, so a
+// made-up link sent again and again never comes back for review while
+// reviewing goes on.
+export const REJECTED_LINKS_MOST = 10_000;
 
 // A link of a shape not seen before (`url` in /v1/offers' files and a
 // readout's offered entries, .github/readouts.md), kept for review: the
@@ -123,7 +167,7 @@ export function linkParts(url, cloud = CLOUDS.ewelink) {
 export const sentAs = (link) => (link.host == null ? link.path
   : `${link.scheme}://${link.host}${link.port == null ? "" : `:${link.port}`}${link.path}`);
 // The same, in SQL, of table `t`'s row.
-const SENT_AS = (t) => `CASE WHEN ${t}.host IS NULL THEN ${t}.path ELSE ${t}.scheme || '://' || ${t}.host
+export const SENT_AS = (t) => `CASE WHEN ${t}.host IS NULL THEN ${t}.path ELSE ${t}.scheme || '://' || ${t}.host
   || coalesce(':' || ${t}.port, '') || ${t}.path END`;
 
 // Where a link is fetched from, each tried in turn, `query` added to each
@@ -142,17 +186,29 @@ export function fetchedFrom(link, cloud = CLOUDS[link.cloud] ?? CLOUDS.ewelink) 
   return [`${sentAs(link)}?${cloud.query}`];
 }
 
-// Fetches a day at most, across everyone, first sight's and agreement's:
-// each file is fetched once, and each link that fails is not tried again on
-// first sight, so this is room for a day's new releases many times over.
+// Fetches a day at most for offers taken as right (on agreement and each
+// night after) and for links approved, across everyone: each file is fetched
+// once, so this is room for a day's new releases many times over. Apart from
+// first sight's, so no number of made-up links can use it up.
 export const OFFER_FETCHES_DAILY = 50;
-// First-sight fetches a day from one sender's offers and readouts (counted
-// by a keyed hash of its address, as index.js SENDER_OFFERS_DAILY is): so one
-// sender's made-up links can never use up the day's OFFER_FETCHES_DAILY
-// before the real owners' files are tried. One past it is no failure: its
-// offer's agreement, or the nightly retry, fetches it. Fetches for offers
-// taken as right are not held to it.
+// Fetches a day at most on first sight, peeks included, across everyone:
+// what a file fetched before its offer agrees, or a peek, may cost. One past
+// it is no failure: its offer's agreement, or the nightly retry, fetches it.
+export const FIRST_SIGHT_DAILY = 50;
+// Of those, what senders on a network that counts as none (networks.js: a
+// host's, a VPN's) may take: index.js RENTED_SHARE of FIRST_SIGHT_DAILY (a
+// test holds the two alike), so rented servers cannot use up owners' day.
+export const FIRST_SIGHT_RENTED_DAILY = 5;
+// First-sight fetches a day from one sender's offers and readouts, counted by
+// a keyed hash of its address, an IPv4 one by its /24 (index.js
+// firstSightSender): so one sender's made-up links, even from a rented block
+// of addresses, cannot use up FIRST_SIGHT_DAILY before the real owners' files
+// are tried. Fetches for offers taken as right are not held to it.
 export const OFFER_FIRST_SIGHT_PER_SENDER = 5;
+// The longest one fetch may take, its body read included: a server that
+// answers slowly, or never ends its body, holds up the Worker no longer.
+// Ample for OFFER_FETCH_MAX_BYTES from eWeLink's servers.
+export const OFFER_FETCH_TIMEOUT_MS = 20_000;
 // The most a file fetched may be: as tools/ewelink/offered_firmware.py's
 // MAX_SIZE, more than any Sonoff update file.
 export const OFFER_FETCH_MAX_BYTES = 8 * 1024 * 1024;
@@ -160,8 +216,15 @@ export const OFFER_FETCH_MAX_BYTES = 8 * 1024 * 1024;
 // given for it.
 export const OFFER_FETCH_PATHS = 3;
 // Offers tried again a night at most (retryOffers): with OFFER_FETCHES_DAILY,
-// what holds the night's queries to a few dozen; any more the next night.
+// what holds the night's queries to a few dozen; any more the next night,
+// those tried longest ago first, so offers whose files never come cannot keep
+// the rest from being tried.
 export const OFFER_RETRY_EACH_NIGHT = 5;
+// Days a link that gives nothing is tried, from its first failure: a month of
+// a file missing is eWeLink no longer giving it, not an outage, and the
+// nightly email has named it every OFFER_FETCH_ALERT_DAYS since. Its failure
+// forgotten (FAILURE_DAYS after its last try), it is tried again.
+export const OFFER_RETRY_DAYS = 30;
 // Days after its offer was taken as right that a file still not fetched is
 // told to the maintainer, and each as many days after.
 export const OFFER_FETCH_ALERT_DAYS = 3;
@@ -179,6 +242,23 @@ const RECORDS_AT = 0x18;
 const RECORD_SIZE = 76;
 const NAME_SIZE = 32;
 const A_NAME = /^[A-Z][A-Z0-9_]*(-[A-Z0-9_]+)*$/;
+
+// The most of a file's firmware names kept, joined by "+": R2 holds 2 KB of
+// an object's custom metadata in all, and a wrapper may list up to 255 names
+// of 32 bytes. Whole names only, in order, up to this many characters.
+export const NAMES_KEPT_MOST = 1024;
+// The names as kept, or null for none.
+export function namesKept(names) {
+  let kept = "";
+  for (const name of names) {
+    const longer = kept ? `${kept}+${name}` : name;
+    if (longer.length > NAMES_KEPT_MOST) {
+      break;
+    }
+    kept = longer;
+  }
+  return kept || null;
+}
 
 // The firmware names in a file's wrapper, in its order: none for a file
 // without one. Kept with the file for review; nothing is refused on them.
@@ -203,8 +283,11 @@ export function firmwareNames(bytes) {
   return names;
 }
 
-// The day's count of files fetched (counters.js).
+// The day's counts of files fetched (counters.js): for offers taken as right
+// and links approved; on first sight; on first sight from rented networks.
 export const fetchesOn = (day) => `offer-fetches:${day}`;
+export const firstSightsOn = (day) => `first-sights:${day}`;
+export const rentedFirstSightsOn = (day) => `rented-first-sights:${day}`;
 // A sender's day count of first-sight fetches (counters.js), by the keyed
 // hash index.js names it with.
 export const firstSightOf = (hash, day) => `first-sight:${hash}:${day}`;
@@ -212,10 +295,10 @@ const firmwareKey = (sha) => `readouts/firmware/${sha}`;
 
 // What `url` gave: {bytes}, or {why}: "none", nothing given, or "other",
 // more than OFFER_FETCH_MAX_BYTES, which no file of the cloud's is.
-async function download(fetcher, url, init) {
+async function download(fetcher, url, init = {}) {
   let response;
   try {
-    response = await (init ? fetcher(url, init) : fetcher(url));
+    response = await fetcher(url, { ...init, signal: AbortSignal.timeout(OFFER_FETCH_TIMEOUT_MS) });
   } catch {
     return { why: "none" };
   }
@@ -255,8 +338,9 @@ async function download(fetcher, url, init) {
   return { bytes };
 }
 
-// A link that did not give its file, noted (offer_fetch_failures).
-const FAILED = `INSERT INTO offer_fetch_failures (sha, cloud, path, why, day) VALUES (?1, ?2, ?3, ?4, ?5)
+// A link that did not give its file, noted (offer_fetch_failures), the day
+// it first failed kept.
+const FAILED = `INSERT INTO offer_fetch_failures (sha, cloud, path, why, day, since) VALUES (?1, ?2, ?3, ?4, ?5, ?5)
   ON CONFLICT DO UPDATE SET why = excluded.why, day = excluded.day`;
 
 // Whether a link may be fetched: one of its cloud's shape, or one to review
@@ -269,17 +353,24 @@ function fetchable(link, cloud) {
   return link.review === "approved" && linkParts(sentAs(link), cloud) !== null;
 }
 
-// One fetch counted against the day's (and on first sight the sender's,
-// `sender`): whether there was room.
-async function counted(env, day, sender) {
-  if (sender && !(await reserve(env.DB, sender, day, { most: OFFER_FIRST_SIGHT_PER_SENDER }))) {
-    return false;
-  }
-  if (!(await reserve(env.DB, fetchesOn(day), day, { most: OFFER_FETCHES_DAILY }))) {
-    if (sender) {
-      await release(env.DB, sender);
+// One fetch counted: on first sight (`sight`, {sender, rented}: the name of
+// the sender's day count, firstSightOf, and whether it is on a network that
+// counts as none) against the sender's, the day's first sights and, rented,
+// their share; else against OFFER_FETCHES_DAILY. Whether there was room: if
+// not, nothing is counted.
+async function counted(env, day, sight) {
+  const limits = sight ? [[sight.sender, OFFER_FIRST_SIGHT_PER_SENDER], [firstSightsOn(day), FIRST_SIGHT_DAILY],
+    ...(sight.rented ? [[rentedFirstSightsOn(day), FIRST_SIGHT_RENTED_DAILY]] : [])]
+    : [[fetchesOn(day), OFFER_FETCHES_DAILY]];
+  const taken = [];
+  for (const [name, most] of limits) {
+    if (!(await reserve(env.DB, name, day, { most }))) {
+      for (const each of taken) {
+        await release(env.DB, each);
+      }
+      return false;
     }
-    return false;
+    taken.push(name);
   }
   return true;
 }
@@ -287,11 +378,11 @@ async function counted(env, day, sender) {
 // One link of a file tried: {sha, cloud, path, readout, and for a link to
 // review scheme, host, port, review}, the readout it is kept under if it
 // gives the file; from each place it is fetched from (fetchedFrom) in turn,
-// each fetch counted. "kept"; "held", kept meanwhile by another; "failed";
-// or "capped", where the day's fetches, the sender's (`sender`, a counter's
-// name, on first sight), or the store ran out. A link to review is fetched
-// with no redirect followed: only the server approved answers.
-async function tryLink(env, link, day, { totalBytes, fetcher, sender = null }) {
+// each fetch counted (counted; `sight` on first sight). "kept"; "held", kept
+// meanwhile by another; "failed"; or "capped", where the day's fetches, or the
+// store, ran out. A link to review is fetched with no redirect followed: only
+// the server approved answers.
+async function tryLink(env, link, day, { totalBytes, fetcher, sight = null }) {
   const cloud = Object.hasOwn(CLOUDS, link.cloud) ? CLOUDS[link.cloud] : null;
   if (!cloud || !fetchable(link, cloud)) {
     return "failed";
@@ -299,10 +390,10 @@ async function tryLink(env, link, day, { totalBytes, fetcher, sender = null }) {
   let bytes = null;
   let failed = "none";
   for (const url of fetchedFrom(link, cloud)) {
-    if (!(await counted(env, day, sender))) {
+    if (!(await counted(env, day, sight))) {
       return "capped";
     }
-    const got = await download(fetcher, url, link.host == null ? undefined : { redirect: "manual" });
+    const got = await download(fetcher, url, link.host == null ? {} : { redirect: "manual" });
     if (got.bytes && hex(await sha256(got.bytes)) === link.sha) {
       bytes = got.bytes;
       break;
@@ -329,10 +420,9 @@ const FOUND = new Set(["kept", "held"]);
 
 // Each file a readout `readout` kept gives a link for, not held, and whose
 // link has not failed for it before, fetched by that link: first sight.
-// `totalBytes`: the store's limit (index.js TOTAL_BYTES); `sender`, the name
-// of the readout's sender's day count (firstSightOf). What it did:
-// {fetched, missing, capped}.
-export async function fetchNamed(env, readout, now, { totalBytes, sender, fetcher = fetch }) {
+// `totalBytes`: the store's limit (index.js TOTAL_BYTES); `sight`, its sender
+// as counted takes it. What it did: {fetched, missing, capped}.
+export async function fetchNamed(env, readout, now, { totalBytes, sight, fetcher = fetch }) {
   const day = now.toISOString().slice(0, 10);
   const done = { fetched: [], missing: [], capped: false };
   const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, readout, review FROM offer_links
@@ -343,7 +433,7 @@ export async function fetchNamed(env, readout, now, { totalBytes, sender, fetche
     if ((await env.READOUTS.head(firmwareKey(link.sha))) !== null) {
       continue;
     }
-    const outcome = await tryLink(env, link, day, { totalBytes, fetcher, sender });
+    const outcome = await tryLink(env, link, day, { totalBytes, fetcher, sight });
     if (outcome === "capped") {
       done.capped = true;
       break;
@@ -373,7 +463,8 @@ export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = f
     }
     // The link most networks gave first: a file's link is the same for every
     // device, so made-up ones from one network come after the owners'. None
-    // that gave another file, or gave nothing today; none pending or rejected.
+    // that gave another file, or gave nothing today or for OFFER_RETRY_DAYS;
+    // none pending or rejected.
     const { results: links } = await env.DB.prepare(`SELECT offer_links.sha, offer_links.cloud, offer_links.path,
       offer_links.scheme, offer_links.host, offer_links.port, offer_links.review,
       min(offer_links.readout) AS readout FROM offer_links JOIN readouts ON readouts.id = offer_links.readout
@@ -382,10 +473,10 @@ export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = f
         AND offer_links.review IN ${FETCHABLE}
         AND NOT EXISTS (SELECT 1 FROM offer_fetch_failures AS failed WHERE failed.sha = offer_links.sha
           AND failed.cloud = offer_links.cloud AND failed.path = ${SENT_AS("offer_links")}
-          AND (failed.why = 'other' OR failed.day = ?5))
+          AND (failed.why = 'other' OR failed.day = ?5 OR failed.since < ?6))
       GROUP BY offer_links.cloud, ${SENT_AS("offer_links")}
       ORDER BY count(DISTINCT readout_networks.network) DESC, min(readouts.received) LIMIT ?4`)
-      .bind(key, offer, sha, OFFER_FETCH_PATHS, day).all();
+      .bind(key, offer, sha, OFFER_FETCH_PATHS, day, retrySince(day)).all();
     let outcome = "failed";
     for (const link of links) {
       outcome = await tryLink(env, link, day, { totalBytes, fetcher });
@@ -407,8 +498,10 @@ export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = f
 // unless another holds it already: listed first, and only where none lists
 // it, so a mark is never written that its readout does not list and two
 // fetched at once are not both kept; its bytes added to the readout's, and to
-// its link's, so deleting the readout gives them back. Whether it was kept:
-// if not, the store's bytes reserved for it are given back.
+// its link's, so deleting the readout gives them back, and to those of
+// readouts waiting for review (PENDING) while its readout is one, as taking
+// it as right or deleting it gives back its bytes from there. Whether it was
+// kept: if not, the store's bytes reserved for it are given back.
 async function keepFile(env, { readout, sha }, bytes) {
   const size = bytes.byteLength;
   const claimed = await env.DB.prepare(`INSERT INTO readout_firmware (readout, sha) SELECT ?1, ?2
@@ -418,17 +511,21 @@ async function keepFile(env, { readout, sha }, bytes) {
     return false;
   }
   const object = await env.DB.prepare("SELECT object FROM readouts WHERE id = ?").bind(readout).first("object");
+  const waiting = (sign) => env.DB.prepare(`UPDATE counters SET bytes = max(bytes ${sign} ?2, 0) WHERE name = ?3
+    AND EXISTS (SELECT 1 FROM readouts WHERE id = ?1 AND review = 'pending')`).bind(readout, size, PENDING);
   await env.DB.batch([
+    waiting("+"),
     env.DB.prepare("UPDATE readouts SET bytes = bytes + ?2 WHERE id = ?1").bind(readout, size),
     env.DB.prepare("UPDATE offer_links SET bytes = ?3 WHERE readout = ?1 AND sha = ?2").bind(readout, sha, size),
     env.DB.prepare("DELETE FROM offer_fetch_failures WHERE sha = ?").bind(sha),
   ]);
-  const names = firmwareNames(bytes);
+  const names = namesKept(firmwareNames(bytes));
   try {
     await env.READOUTS.put(firmwareKey(sha), bytes, { customMetadata: { readout: object ?? "", fetched: "true",
-      ...(names.length ? { names: names.join("+") } : {}) } });
+      ...(names ? { names } : {}) } });
   } catch (error) {
     await env.DB.batch([
+      waiting("-"),
       env.DB.prepare("DELETE FROM readout_firmware WHERE readout = ?1 AND sha = ?2").bind(readout, sha),
       env.DB.prepare("UPDATE readouts SET bytes = bytes - ?2 WHERE id = ?1").bind(readout, size),
       env.DB.prepare("UPDATE offer_links SET bytes = NULL WHERE readout = ?1 AND sha = ?2").bind(readout, sha),
@@ -439,18 +536,32 @@ async function keepFile(env, { readout, sha }, bytes) {
   return true;
 }
 
-// The offers taken as right with a file linked and not held: of first stages
-// and whole readouts taken as right, agreed (quorum) or approved.
-const UNFETCHED = `SELECT DISTINCT readouts.key, readouts.offer FROM offer_links
+// The day before which a link's first failure means it is tried no more
+// (OFFER_RETRY_DAYS).
+const retrySince = (day) => new Date(Date.parse(`${day}T00:00:00Z`) - OFFER_RETRY_DAYS * DAY).toISOString()
+  .slice(0, 10);
+
+// The offers taken as right with a file linked and not held, of first stages
+// and whole readouts taken as right, agreed (quorum) or approved, that a link
+// is still tried for: none that gave another file, nor one first failing
+// before ?2 (retrySince). ?1 at most, those tried longest ago first: by the
+// last day a link of theirs failed, never first.
+const UNFETCHED = `SELECT readouts.key, readouts.offer, max(failed.day) AS tried FROM offer_links
   JOIN readouts ON readouts.id = offer_links.readout
+  LEFT JOIN offer_fetch_failures AS failed ON failed.sha = offer_links.sha AND failed.cloud = offer_links.cloud
+    AND failed.path = ${SENT_AS("offer_links")}
   WHERE readouts.review IN ('quorum', 'approved') AND offer_links.review IN ${FETCHABLE}
-    AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)`;
+    AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)
+    AND (failed.why IS NULL OR (failed.why = 'none' AND failed.since >= ?2))
+  GROUP BY readouts.key, readouts.offer
+  ORDER BY tried IS NOT NULL, tried, readouts.key, readouts.offer LIMIT ?1`;
 
 // The nightly job's part (nightly.js): each offer taken as right whose files
 // are not all held, tried again within the day's fetches, OFFER_RETRY_EACH_NIGHT
-// at most. What it did: {offers, fetched, missing}.
+// at most (UNFETCHED). What it did: {offers, fetched, missing}.
 export async function retryOffers(env, now, { totalBytes, fetcher = fetch }) {
-  const { results } = await env.DB.prepare(`${UNFETCHED} LIMIT ?1`).bind(OFFER_RETRY_EACH_NIGHT).all();
+  const { results } = await env.DB.prepare(UNFETCHED)
+    .bind(OFFER_RETRY_EACH_NIGHT, retrySince(now.toISOString().slice(0, 10))).all();
   const tried = { offers: results.length, fetched: 0, missing: 0 };
   for (const { key, offer } of results) {
     const done = await fetchOffer(env, key, offer, now, { totalBytes, fetcher });
@@ -562,10 +673,10 @@ const PEEK_KEPT = `UPDATE link_peeks SET outcome = ?3, status = ?4, size = ?5, s
 // Each link to review readout `readout` gave, never peeked at, peeked at
 // once: from where approving it would fetch it (fetchedFrom), so a server
 // named by address is never connected to, the first of them that answers
-// 2xx kept, or the last's answer. Each request counted as a fetch, against
-// the day's and the sender's (`sender`, as fetchNamed takes it); a link the
-// day has no room for is peeked at when next sent. What it did: {peeked, capped}.
-export async function peekNamed(env, readout, now, { sender, fetcher = fetch }) {
+// 2xx kept, or the last's answer. Each request counted as a first-sight
+// fetch (`sight`, as fetchNamed takes it); a link the day has no room for is
+// peeked at when next sent. What it did: {peeked, capped}.
+export async function peekNamed(env, readout, now, { sight, fetcher = fetch }) {
   const day = now.toISOString().slice(0, 10);
   const done = { peeked: 0, capped: false };
   const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, scheme, host, port FROM offer_links
@@ -582,7 +693,7 @@ export async function peekNamed(env, readout, now, { sender, fetcher = fetch }) 
     }
     let seen = null;
     for (const url of fetchedFrom(link, cloud)) {
-      if (!(await counted(env, day, sender))) {
+      if (!(await counted(env, day, sight))) {
         done.capped = true;
         break;
       }
@@ -596,9 +707,9 @@ export async function peekNamed(env, readout, now, { sender, fetcher = fetch }) 
       break;
     }
     const bytes = seen.bytes ?? null;
-    const names = bytes ? firmwareNames(bytes) : [];
+    const names = bytes ? namesKept(firmwareNames(bytes)) : null;
     await env.DB.prepare(PEEK_KEPT).bind(link.cloud, sentAs(link), seen.outcome, seen.status ?? null, seen.size ?? null,
-      seen.server, seen.location ?? null, bytes ? kindOf(bytes) : null, names.length ? names.join("+") : null,
+      seen.server, seen.location ?? null, bytes ? kindOf(bytes) : null, names,
       bytes ? hex(bytes) : null).run();
     done.peeked += 1;
     if (done.capped) {
@@ -613,10 +724,17 @@ export async function peekNamed(env, readout, now, { sender, fetcher = fetch }) 
 const SAME_LINK = `sha = ?2 AND (cloud, path, scheme, host, port IS NULL, coalesce(port, 0)) = (SELECT cloud, path,
   scheme, host, port IS NULL, coalesce(port, 0) FROM offer_links WHERE readout = ?1 AND sha = ?2 AND host IS NOT NULL)`;
 
-// A link to review rejected, wherever it was sent: never fetched. Whether one was.
-export async function rejectLink(db, readout, sha) {
+// A link to review rejected, wherever it was sent: never fetched, and noted
+// apart from the readouts that sent it (rejected_links), so sent again after
+// they are deleted it is still taken as rejected. Whether one was.
+export async function rejectLink(db, readout, sha, now = new Date()) {
   const { results } = await db.prepare(`UPDATE offer_links SET review = 'rejected'
     WHERE review = 'pending' AND ${SAME_LINK} RETURNING readout`).bind(readout, sha).all();
+  if (results.length) {
+    await db.prepare(`INSERT OR REPLACE INTO rejected_links (sha, cloud, link, day)
+      SELECT sha, cloud, ${SENT_AS("offer_links")}, ?3 FROM offer_links WHERE readout = ?1 AND sha = ?2 AND host IS NOT NULL`)
+      .bind(readout, sha, now.toISOString().slice(0, 10)).run();
+  }
   return results.length > 0;
 }
 
@@ -638,13 +756,16 @@ export async function approveLink(env, readout, sha, now, { totalBytes, fetcher 
   return tryLink(env, link, now.toISOString().slice(0, 10), { totalBytes, fetcher });
 }
 
-// Links to review the admin view lists at most, newest first.
-const REVIEW_SHOWN = 100;
+// Links to review the admin view lists at most: every one pending first
+// (PENDING_LINKS_MOST, passed only by one readout's own links), then those
+// approved and not held; each those sent from the most networks first, then
+// the longest waiting, so one network's flood comes after owners' links.
+const REVIEW_SHOWN = 2 * PENDING_LINKS_MOST;
 
-// The links to review the admin view lists: each pending one, or approved
-// and its file not held, once however many sent it, with what its readouts
-// say of the device (`key`), how many networks sent it, when it was first
-// seen, its peek (link_peeks) and whether a fetch of it failed.
+// The links to review the admin view lists (REVIEW_SHOWN): each pending one,
+// or approved and its file not held, once however many sent it, with what its
+// readouts say of the device (`key`), how many networks sent it, when it was
+// first seen, its peek (link_peeks) and whether a fetch of it failed.
 export async function linksToReview(db) {
   const { results } = await db.prepare(`SELECT offer_links.sha, offer_links.cloud, offer_links.path,
       offer_links.scheme, offer_links.host, offer_links.port, offer_links.review, min(offer_links.readout) AS readout,
@@ -659,7 +780,7 @@ export async function linksToReview(db) {
     WHERE offer_links.host IS NOT NULL AND (offer_links.review = 'pending'
       OR (offer_links.review = 'approved' AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)))
     GROUP BY offer_links.sha, offer_links.cloud, ${SENT_AS("offer_links")}
-    ORDER BY offer_links.review DESC, first DESC LIMIT ?`).bind(REVIEW_SHOWN).all();
+    ORDER BY offer_links.review DESC, networks DESC, first LIMIT ?`).bind(REVIEW_SHOWN).all();
   return results;
 }
 
@@ -677,4 +798,25 @@ export async function everyLink(db) {
     GROUP BY offer_links.sha, offer_links.cloud, ${SENT_AS("offer_links")}, offer_links.review
     ORDER BY last DESC LIMIT ?`).bind(LINKS_SHOWN).all();
   return results;
+}
+
+// The nightly job's part (nightly.js), in its batch after pending.js has
+// deleted the readouts kept too long, taking their links: the statements
+// deleting each link pending review sent PENDING_LINK_DAYS ago by a readout
+// still kept (one taken as right, or disputing); each peek and failure no
+// link left gives, and each failure last tried FAILURE_DAYS ago; and the
+// rejections past the newest REJECTED_LINKS_MOST. By what each deletes.
+export function linkPruning(db, today) {
+  const before = (days) => new Date(Date.parse(`${today}T00:00:00Z`) - days * DAY).toISOString();
+  return {
+    links: db.prepare(`DELETE FROM offer_links WHERE review = 'pending'
+      AND readout IN (SELECT id FROM readouts WHERE received < ?)`).bind(before(PENDING_LINK_DAYS)),
+    peeks: db.prepare(`DELETE FROM link_peeks WHERE (cloud, link) NOT IN
+      (SELECT cloud, ${SENT_AS("offer_links")} FROM offer_links WHERE host IS NOT NULL)`),
+    failures: db.prepare(`DELETE FROM offer_fetch_failures WHERE day < ?
+      OR (sha, cloud, path) NOT IN (SELECT sha, cloud, ${SENT_AS("offer_links")} FROM offer_links)`)
+      .bind(before(FAILURE_DAYS).slice(0, 10)),
+    rejected: db.prepare(`DELETE FROM rejected_links WHERE (sha, cloud, link) IN (SELECT sha, cloud, link
+      FROM rejected_links ORDER BY day DESC, sha, cloud, link LIMIT -1 OFFSET ?)`).bind(REJECTED_LINKS_MOST),
+  };
 }

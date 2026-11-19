@@ -191,7 +191,8 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { SITE, page as shellPage } from "../src/shell.mjs";
 import { nightly } from "./nightly.js";
-import { CLOUDS, fetchNamed, fetchOffer, firstSightOf, linkParts, peekNamed } from "./offered.js";
+import { CLOUDS, fetchNamed, fetchOffer, firstSightOf, linkParts, linksNotKeptOn, peekNamed, PENDING_LINKS_MOST,
+  PENDING_LINKS_PER_SENDER, reviewLinksOf, SENT_AS } from "./offered.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
 export { work };
@@ -525,6 +526,13 @@ async function keyedHash(env, what) {
 
 // A sender's address, as senders are counted: IPv6 by its /48 (sender.js).
 const addressOf = senderAddress;
+// A sender as first sight's fetches and links to review are counted
+// (offered.js OFFER_FIRST_SIGHT_PER_SENDER, PENDING_LINKS_PER_SENDER): an
+// IPv4 address by its /24 too, as a rented server is as easily given many
+// addresses of one block as an IPv6 one many /64s. Owners sharing a /24 at
+// once wait at most for their offers to agree, which no sender's count holds.
+const IPV4 = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/;
+export const firstSightSender = (request) => addressOf(request).replace(IPV4, "$1.0/24");
 // The sender of a readout of `key`, as its row names it: one hash a key, so
 // nothing ties one sender's readouts of different keys together.
 const senderOf = (env, request, key) => keyedHash(env, `${key}|${addressOf(request)}`);
@@ -924,7 +932,7 @@ export async function readout(request, env, now = new Date(), context = null, fe
   }
   try {
     if (links.length) {
-      await env.DB.prepare(LINKS).bind(id, LINKED_CLOUD, JSON.stringify(links)).run();
+      await keepLinks(env, request, id, LINKED_CLOUD, links, now);
     }
     await keep(env, key, body, manifest, id, offered);
   } catch (error) {
@@ -955,15 +963,18 @@ async function unkeep(env, id, object) {
 // each readout just kept (`named`, their ids) not held, on first sight, and
 // a peek at each of its links to review (peekNamed), then
 // those of each offer newly taken as right (`agreed`, each [key, offer]) still
-// not held, first sight's held to the sender's day (OFFER_FIRST_SIGHT_PER_SENDER).
+// not held, first sight's held to the sender's day (OFFER_FIRST_SIGHT_PER_SENDER,
+// by firstSightSender) and, from a network that counts as none, to rented
+// networks' share (offered.js FIRST_SIGHT_RENTED_DAILY).
 // After the answer, where the Worker gives a `context` to wait on, else before it.
 async function fetchFiles(env, request, named, agreed, now, context, fetcher) {
   const day = now.toISOString().slice(0, 10);
-  const sender = named.length ? firstSightOf(await keyedHash(env, `first-sight|${addressOf(request)}`), day) : null;
+  const sight = named.length ? { sender: firstSightOf(await keyedHash(env, `first-sight|${firstSightSender(request)}`),
+    day), rented: (await countedNetwork(env, request)) === null } : null;
   const fetching = (async () => {
     for (const id of named) {
-      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sender, fetcher })).capped
-          || (await peekNamed(env, id, now, { sender, fetcher })).capped) {
+      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sight, fetcher })).capped
+          || (await peekNamed(env, id, now, { sight, fetcher })).capped) {
         break;
       }
     }
@@ -1006,9 +1017,6 @@ function offerProblem(offer, cloud) {
   if (!productOf(offer?.model) || !fits(offer.stock_model, STOCK_MODEL) || !fits(offer.stock_version, STOCK_VERSION)) {
     return "its device is not named as the tool names one";
   }
-  if (!(offer.device == null || fits(offer.device, DEVICE_HASH))) {
-    return "its device is not a device_hash";
-  }
   const files = offer.files;
   if (!Array.isArray(files) || files.length > MAX_FIRMWARE) {
     return `its files are not a list of at most ${MAX_FIRMWARE}`;
@@ -1031,15 +1039,48 @@ function offerProblem(offer, cloud) {
 // The links of an offer's files, as offer_links keeps them: ?1 the readout,
 // ?2 the cloud, ?3 its files as JSON, each as linkRow gives it - bound, and
 // read out of the JSON by the database, never written into the SQL. A link
-// to review already approved or rejected, sent again, is taken as decided.
+// to review already approved or rejected, sent again, is taken as decided:
+// rejected too where only its rejection is left (rejected_links). One still
+// to review is kept only if it is waiting already, or fewer than ?4
+// (offered.js PENDING_LINKS_MOST) are. The SHA-256 of each kept.
 const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
-  SELECT ?1, sha, path, ?2, scheme, host, port, coalesce((SELECT decided.review FROM offer_links AS decided
+  SELECT ?1, sha, path, ?2, scheme, host, port, kept_as FROM (SELECT given.*,
+    CASE WHEN EXISTS (SELECT 1 FROM rejected_links WHERE rejected_links.sha = given.sha AND rejected_links.cloud = ?2
+      AND rejected_links.link = ${SENT_AS("given")}) THEN 'rejected'
+    ELSE coalesce((SELECT decided.review FROM offer_links AS decided
       WHERE decided.sha = given.sha AND decided.cloud = ?2 AND decided.path = given.path
         AND decided.scheme = given.scheme AND decided.host = given.host AND decided.port IS given.port
-        AND decided.review IN ('approved', 'rejected') LIMIT 1), review)
-  FROM (SELECT json_extract(value, '$.sha256') AS sha, json_extract(value, '$.path') AS path,
-    json_extract(value, '$.scheme') AS scheme, json_extract(value, '$.host') AS host,
-    json_extract(value, '$.port') AS port, json_extract(value, '$.review') AS review FROM json_each(?3)) AS given`;
+        AND decided.review IN ('approved', 'rejected') LIMIT 1), given.review) END AS kept_as
+    FROM (SELECT json_extract(value, '$.sha256') AS sha, json_extract(value, '$.path') AS path,
+      json_extract(value, '$.scheme') AS scheme, json_extract(value, '$.host') AS host,
+      json_extract(value, '$.port') AS port, json_extract(value, '$.review') AS review FROM json_each(?3)) AS given) AS link
+  WHERE kept_as != 'pending'
+    OR EXISTS (SELECT 1 FROM offer_links AS waiting WHERE waiting.review = 'pending' AND waiting.sha = link.sha
+      AND waiting.cloud = ?2 AND waiting.path = link.path AND waiting.scheme = link.scheme AND waiting.host = link.host
+      AND waiting.port IS link.port)
+    OR (SELECT count(*) FROM (SELECT DISTINCT sha, cloud, path, scheme, host, port FROM offer_links
+      WHERE review = 'pending')) < ?4
+  RETURNING sha`;
+
+// Readout `id`'s links of `cloud`, sent by `request`, kept (LINKS, each as
+// linkRow gives it): of its links to review, as many as its sender has left
+// of PENDING_LINKS_PER_SENDER today. Each link to review not kept, the queue
+// being full or its sender's day, counted for the day (offered.js
+// linksNotKeptOn) for the admin view.
+async function keepLinks(env, request, id, cloud, links, now) {
+  const day = now.toISOString().slice(0, 10);
+  const toReview = links.filter((link) => link.review === "pending");
+  const allowed = toReview.length ? await reserveUpTo(env.DB,
+    reviewLinksOf(await keyedHash(env, `review-links|${firstSightSender(request)}`), day), day, toReview.length,
+    PENDING_LINKS_PER_SENDER) : 0;
+  const given = [...links.filter((link) => link.review !== "pending"), ...toReview.slice(0, allowed)];
+  const { results } = given.length
+    ? await env.DB.prepare(LINKS).bind(id, cloud, JSON.stringify(given), PENDING_LINKS_MOST).all() : { results: [] };
+  const left = toReview.length - allowed + new Set(given.map((link) => link.sha256)).size - results.length;
+  if (left > 0) {
+    await reserve(env.DB, linksNotKeptOn(day), day, { by: left });
+  }
+}
 
 // The day's count of offers kept (counters.js).
 const offersOn = (day) => `offers:${day}`;
@@ -1047,7 +1088,7 @@ const rentedOffersOn = (day) => `rented-offers:${day}`;
 
 // First stages sent as links, in place of their files (.github/readouts.md):
 // {"format": 1, "tool_version", "cloud": one of CLOUDS, "offers": [{"model",
-// "stock_model", "stock_version", "device", "files": [{"name", "version",
+// "stock_model", "stock_version", "files": [{"name", "version",
 // "sha256", "path" or "url"}]}]}, every device's in an account, sent unasked: a
 // `url`, a link of a shape not seen before, is kept for review and fetched
 // only once the admin view approves it (offered.js approveLink). Each offer
@@ -1182,8 +1223,7 @@ export async function offers(request, env, now = new Date(), context = null, fet
       continue;
     }
     try {
-      await env.DB.prepare(LINKS).bind(id, asked.cloud, JSON.stringify(each.offer.files.map((file) => linkRow(file, cloud))))
-        .run();
+      await keepLinks(env, request, id, asked.cloud, each.offer.files.map((file) => linkRow(file, cloud)), now);
       await env.READOUTS.put(object, each.body, { httpMetadata: { contentType: "application/json" },
         customMetadata: { tool: each.manifest.tool.slice(0, 16), model: each.offer.model, read: "false" } });
     } catch (error) {

@@ -7,6 +7,8 @@ import { test } from "node:test";
 import { verified } from "../admin/access.js";
 import worker, * as admin from "../admin/index.js";
 import { d1 } from "../api/local-d1.mjs";
+import { COUNTER_DAYS } from "../api/nightly.js";
+import { linksNotKeptOn, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER } from "../api/offered.js";
 import { writes } from "../api/reports.js";
 import { SITE, THEME_SCRIPT } from "../src/shell.mjs";
 
@@ -167,6 +169,49 @@ test("the view counts offers sent as links, by key, the files fetched from them,
   assert.match(html, /<td>B\|SN-B\|1\.0<\/td><td class="number">1<\/td><td class="number">1<\/td><td class="number">0<\/td><td>0 B<\/td>/);
   assert.match(html.split("Files missing for an agreed offer")[1],
     /<td>B\|SN-B\|1\.0<\/td><td>1\.2\.0<\/td><td>2026-11-09<\/td><td class="number">2<\/td>/);
+});
+
+// A run's report with the offers sent beside it, as /reports writes it, on `day`.
+const WITH_OFFERS = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).valid
+  .find((report) => report.offers);
+async function offered(db, day, offers = {}, changes = {}, held = null) {
+  const report = { ...structuredClone(WITH_OFFERS), ...changes, id: randomBytes(8).toString("hex") };
+  report.offers = { ...report.offers, ...offers };
+  await db.batch(writes(db, report, null, day, held));
+  return report.id;
+}
+
+test("the view shows the offers sent beside runs, day by day: sent, taken, and the sign-in ended", async () => {
+  const bindings = env();
+  const db = bindings.DB;
+  const view = async () => (await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys))
+    .split('id="offer-runs">')[1].split("</section>")[0];
+  assert.match(await view(), /None yet\./);
+  for (let n = 0; n < 4; n += 1) {
+    await offered(db, "2026-11-08", { sent: 3, taken: 2, session_ended: n === 0, run_session_ended: n < 2 });
+  }
+  await offered(db, "2026-11-09", { sent: 1, taken: 1, session_ended: false, run_session_ended: null });
+  await offered(db, "2026-11-09", { requests: 0, sent: 0, taken: 0, why_not: "none-due" });   // asked nothing
+  await offered(db, "2026-11-09", { sent: 50, taken: 50 }, { tag: "dev" });   // your own testing
+  await offered(db, "2026-11-09", { sent: 50, taken: 50 }, {}, "held for review");
+  await offered(db, "2026-10-01", { sent: 50, taken: 50 });   // before the last OFFER_DAYS
+  const section = await view();
+  assert.ok(section.includes('<div class="tile-label">Runs that asked</div><div class="tile-value">5</div>'), section);
+  assert.ok(section.includes('<div class="tile-label">Offers sent</div><div class="tile-value">13</div>'
+    + '<div class="tile-note">9 taken</div>'), section);
+  assert.ok(section.includes('<div class="tile-value">20%</div><div class="tile-note">1 of 5 runs</div>'));
+  assert.ok(section.includes('<div class="tile-value">50%</div><div class="tile-note">2 of 4 runs</div>'),
+    "of those whose run could tell");
+  assert.ok(section.includes('<tr><td>2026-11-09</td><td class="number">1</td><td class="number">1</td>'
+    + '<td class="number">1</td><td>0%</td><td>-</td></tr><tr><td>2026-11-08</td><td class="number">4</td>'
+    + '<td class="number">12</td><td class="number">8</td><td>25%</td><td>50%</td></tr>'), "newest first, every day");
+});
+
+test("a held report deleted takes what it said of its offers with it", async () => {
+  const db = env().DB;
+  const id = await offered(db, "2026-11-09", {}, {}, "held for review");
+  await db.batch(admin.remove(db, id));
+  assert.deepEqual(rows(db, "SELECT id FROM report_offers"), []);
 });
 
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {
@@ -493,6 +538,20 @@ test("links to review are listed with their device, networks, first bytes and a 
   // Every link, copyable as the API fetches it.
   assert.deepEqual(copyValues(sectionOf(html, "links")), ["http://1.2.3.4:8088/ota/s61/user_ota.rbl"],
     "pending: as sent");
+});
+
+test("links to review not kept, the queue full, are counted over the days the counts are kept", async () => {
+  const bindings = env();
+  linked(bindings);
+  const before = sectionOf(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), "review");
+  assert.ok(!before.includes("not kept"), "none: nothing said");
+  assert.match(before, new RegExp(`${PENDING_LINKS_MOST} wait at most`));
+  for (const [day, count] of [["2026-11-08", 2], ["2026-11-09", 3]]) {
+    bindings.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)").run(linksNotKeptOn(day), day, count);
+  }
+  const review = sectionOf(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), "review");
+  assert.match(review, new RegExp(`5 not kept in the last ${COUNTER_DAYS} days: the\\s+queue was full, `
+    + `or their sender had sent ${PENDING_LINKS_PER_SENDER} that day\\.`));
 });
 
 test("a link a test makes from markup-looking parts is escaped wherever it is shown", async () => {

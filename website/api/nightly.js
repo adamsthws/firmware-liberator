@@ -18,7 +18,9 @@
 //   enough senders gave it over enough days (vouching; snapshot.js).
 // - The files of offers taken as right that only links were sent for, and
 //   the cloud has not given yet, are fetched again (offered.js retryOffers),
-//   within the day's fetches.
+//   within the day's fetches; and what is kept of links to review, their
+//   peeks and the failures of links is held to its bounds (offered.js
+//   linkPruning).
 // - The maintainer's emulator runs are folded by day too (emulator_days,
 //   emulator.js), each day a run came in for since the last night.
 // - Before a day is folded, a device's reports that day far above its usual
@@ -35,7 +37,7 @@
 import { alert } from "./alerts.js";
 import { ready } from "./database.js";
 import { emulatorFolding } from "./emulator.js";
-import { retryOffers } from "./offered.js";
+import { linkPruning, retryOffers } from "./offered.js";
 import { prunePending } from "./pending.js";
 import { snapshot } from "./snapshot.js";
 
@@ -208,12 +210,16 @@ export async function nightly(env, now = new Date(), limits = null, fetcher = fe
   const held = await spikes(env.DB, today);
   await env.DB.batch([...holding(env.DB, held), ...folding(env.DB, today), ...remaking(env.DB, months, today)]);
   // Readouts never taken as right, and addresses never confirmed, gone after
-  // their days (pending.js) - before the store's size is noted below.
-  const pruned = await prunePending(env, today);
-  await env.DB.batch([...pruning(env.DB, today), ...vouching(env.DB, today), ...emulatorFolding(env.DB, today),
+  // their days (pending.js) - before the store's size is noted below; then
+  // the links' records past their bounds, those of the readouts gone too.
+  const pending = await prunePending(env, today);
+  const links = Object.entries(linkPruning(env.DB, today));
+  const done = await env.DB.batch([...links.map(([, statement]) => statement), ...pruning(env.DB, today),
+    ...vouching(env.DB, today), ...emulatorFolding(env.DB, today),
     env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
       SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
       ON CONFLICT (day) DO UPDATE SET readouts = excluded.readouts, bytes = excluded.bytes`).bind(today, READOUTS_EVER)]);
+  const pruned = { ...pending, links: Object.fromEntries(links.map(([name], at) => [name, done[at].meta?.changes ?? 0])) };
   const offers = limits ? await retryOffers(env, now, { totalBytes: limits.TOTAL_BYTES, fetcher }) : null;
   const alerted = limits ? await alert(env, today, limits) : { sent: false, lines: [], why: "no limits given" };
   const figures = await snapshot(env.DB, now);

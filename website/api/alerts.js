@@ -18,7 +18,7 @@ import { read } from "./counters.js";
 import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "./downloads.js";
 import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "./networks.js";
-import { OFFER_FETCH_ALERT_DAYS, OFFER_FETCHES_DAILY, unfetched } from "./offered.js";
+import { OFFER_FETCH_ALERT_DAYS, OFFER_FETCHES_DAILY, OFFER_RETRY_DAYS, unfetched } from "./offered.js";
 
 export const STORE_WARN = 0.75;
 
@@ -113,7 +113,8 @@ export async function alertLines(db, today, limits) {
       + `been fetched from the cloud ${OFFER_FETCH_ALERT_DAYS} or more days after: `
       + `${missing.slice(0, OFFERS_NAMED).map((row) => `${row.key} (offered ${row.offered}, ${row.days} days)`).join(", ")}`
       + `${missing.length > OFFERS_NAMED ? ", and more" : ""}. Each night tries again, ${OFFER_FETCHES_DAILY} files a `
-      + "day at most (website/api/offered.js). If eWeLink no longer gives a file by its link, set OFFERED_SEND to "
+      + `day at most, each link until ${OFFER_RETRY_DAYS} days after it first gave nothing, never one that gave `
+      + "another file (website/api/offered.js). If eWeLink no longer gives a file by its link, set OFFERED_SEND to "
       + "\"files\" in website/api/wrangler.jsonc, and tools send the files again (.github/readouts.md).");
   }
   return lines;

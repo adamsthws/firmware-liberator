@@ -117,8 +117,12 @@ let past, and only a readout that adds something is kept:
   them under Nearly agreed, with a button to approve them (or
   `readouts.py approve` one at a time). Any other
   waits for review, in room set aside for it, and is deleted after half a
-  year if it is never settled. So made-up readouts can neither fill the store
-  nor hold a key's places for long.
+  year if it is never settled, `PRUNE_EACH_NIGHT` a night (`pending.js`),
+  more than a day takes in. A file it fetched by its link that a readout
+  taken as right links too is not deleted with it: it moves to that
+  readout, so a stranger naming a real file under a made-up model cannot
+  take it from the owners whose offer agreed. So made-up readouts can
+  neither fill the store nor hold a key's places for long.
 - First stages are kept and agree each offer apart: the firmware eWeLink
   offers a device changes with each Sonoff release while the version it runs
   does not, so each new offer has its own three places, which an owner who
@@ -196,22 +200,34 @@ one released before it, sends files, so the file path always stays.
   so however many offers are made up the store holds no more than those. A
   link that does not give its file is noted (`offer_fetch_failures`) and not
   tried again for that SHA-256 on first sight, so the same made-up link sent
-  again costs nothing. A file kept is its mark under `readouts/firmware/`,
+  again costs nothing. Each fetch is given up after
+  `OFFER_FETCH_TIMEOUT_MS`. A file kept is its mark under `readouts/firmware/`,
   listed under the readout whose link fetched it, with the firmware names its
   Sonoff wrapper gives (custom metadata `names`, joined by `+`; none for an
-  ESP8266 file), for you to review; nothing is refused on them.
+  ESP8266 file, and only as many whole names as fit `NAMES_KEPT_MOST`, as
+  R2 holds 2 KB of an object's metadata), for you to review; nothing is
+  refused on them.
 - **Agreement still says whose offer it is.** Once an offer is taken as
   right, each of its files still not held is tried by the links given for
   it, `OFFER_FETCH_PATHS` at most, those from the most networks first. A link that gave another file is
   never tried again for it; one that gave nothing is, once a day.
-  `OFFER_FETCHES_DAILY` files are fetched a day at most, across everyone,
-  first sight's and agreement's alike. Of those, one sender's offers and
-  readouts get `OFFER_FIRST_SIGHT_PER_SENDER` first-sight fetches a day, so
-  one sender's made-up links cannot use up the day before owners' files are
-  tried; a file past it is fetched once its offer agrees, which no sender's
-  count holds.
-- **A file not given** is tried again each night. One still missing
-  `OFFER_FETCH_ALERT_DAYS` after its offer agreed is in the nightly email.
+- **Two budgets a day.** First sight and peeks, whose links nobody has
+  agreed on, take `FIRST_SIGHT_DAILY` fetches a day across everyone; offers
+  taken as right, each night's retries and your approvals take
+  `OFFER_FETCHES_DAILY` of their own, so no number of made-up links can
+  leave an agreed offer's file unfetched. Of first sight's, senders on a
+  network that counts as none take `FIRST_SIGHT_RENTED_DAILY` at most, as
+  `RENTED_SHARE` holds their readouts, and one sender
+  `OFFER_FIRST_SIGHT_PER_SENDER`, an IPv4 address counted by its /24 (as an
+  IPv6 one by its /48), as a rented server is given a block as easily as one
+  address. A file past these is fetched once its offer agrees.
+- **A file not given** is tried again each night, `OFFER_RETRY_EACH_NIGHT`
+  offers a night, those tried longest ago first, so offers whose files never
+  come cannot keep the rest from their turn. A link is tried until
+  `OFFER_RETRY_DAYS` after it first gave nothing, never once it gave another
+  file; its failure is forgotten `FAILURE_DAYS` after its last try, and it is
+  tried again. One still missing `OFFER_FETCH_ALERT_DAYS` after its offer
+  agreed is in the nightly email.
 - **A link of a shape not seen before** is sent whole as `url`, in a
   `/v1/offers` file in place of `path`, or in a whole readout's `offered`
   entry beside its file, which the readout still carries. Its rules are
@@ -222,6 +238,13 @@ one released before it, sends files, so the file path always stays.
   request's offer, or the readout, away. It is kept in `offer_links` as its
   parts, `review` `pending`, and never fetched, on first sight or at night,
   until you approve it.
+- **The queue is bounded.** `PENDING_LINKS_MOST` links wait at most, each
+  once however many sent it, so the list stays one you can read through;
+  one sender (by /24, as first sight counts it) adds
+  `PENDING_LINKS_PER_SENDER` a day. A link to review past either is not
+  kept and not peeked at; its offer or readout is taken as ever, and the
+  admin view counts those not kept over the last week. A link one more
+  network sends that is waiting already is always kept.
 - **A peek at it, once.** When a link to review is first taken, its first
   `PEEK_BYTES` are asked for once (a Range, no redirect followed,
   `PEEK_TIMEOUT_MS` a server), from where approving it would fetch it, each
@@ -234,7 +257,9 @@ one released before it, sends files, so the file path always stays.
 - **Approving or rejecting it** is the admin view's Links to review. Each
   link pending is there once, however many sent it, with its device, its
   SHA-256, how many networks sent it, when it was first seen, its peek, and
-  the link as sent with a copy button. Look at the link and its first
+  the link as sent with a copy button, those sent from the most networks
+  first, then those waiting longest, so one network's flood comes after
+  owners' links. Look at the link and its first
   bytes; approve it if it is eWeLink's file server giving a firmware file.
   Approving fetches the file at once, within `OFFER_FETCHES_DAILY`, with
   `CLOUDS`' `query` added, as eWeLink's servers answer a request without
@@ -245,11 +270,21 @@ one released before it, sends files, so the file path always stays.
   if it is the SHA-256 given. Approved and not yet held, it stays listed,
   saying whether a server was tried and gave nothing, with Try again; once
   approved, it is also tried as an agreed offer's links are. Rejecting it
-  means it is never fetched.
+  means it is never fetched, and is kept apart from the readouts that sent
+  it (`rejected_links`), so it never comes back for review once they are
+  deleted; the newest `REJECTED_LINKS_MOST` rejections are kept, years of
+  reviewing, by count rather than age so a made-up link sent again and again
+  stays rejected.
+- **Nothing of them grows without bound** (`linkPruning`, each night). A
+  link not settled is deleted `PENDING_LINK_DAYS` after the readout that
+  sent it, as a readout waiting is, and comes back if sent again; a peek or
+  a failure is deleted once no readout gives its link, and a failure
+  `FAILURE_DAYS` after its last try.
 - **The admin view's Offers sent as links** counts the readouts that sent
   links, by key beside each key's offers agreed, the files fetched from
   links and their bytes, the files still missing for an agreed offer, and
-  the day's fetches against `OFFER_FETCHES_DAILY`. Its Every link lists each
+  the day's fetches against `OFFER_FETCHES_DAILY` and first sights against
+  `FIRST_SIGHT_DAILY`. Its Every link lists each
   file's link, as the API fetches it (a link to review not approved, as
   sent), each with a copy button.
 
@@ -333,8 +368,11 @@ with that readout's object.
 - **Making room**, should the store fill (the nightly alert and the usage
   check warn long before): delete readouts no longer needed, each with its
   row in the `readouts` table, its offered files' `readouts/firmware/...`
-  marks and its `offer_links` rows. Then take their bytes off the store's
-  count, from `website/`:
+  marks and its `offer_links` rows; the nightly job then deletes the peeks
+  and failures of links no readout gives any more. Keep `rejected_links`,
+  so a rejected link stays rejected. Then take their bytes off the store's
+  count (and those of readouts waiting for review off `readouts:pending`
+  the same way), from `website/`:
 
   ```sh
   npx wrangler d1 execute firmware-liberator-api --config api/wrangler.jsonc --remote \

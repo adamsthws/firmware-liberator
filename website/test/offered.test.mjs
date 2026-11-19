@@ -11,10 +11,12 @@ import { test } from "node:test";
 import { read } from "../api/counters.js";
 import worker, * as api from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
-import { CLOUDS, OFFER_FETCH_MAX_BYTES, OFFER_FETCH_PATHS, OFFER_FETCHES_DAILY, OFFER_FIRST_SIGHT_PER_SENDER, PEEK_BYTES,
-  URL_MOST, URL_PATH_MOST, approveLink, fetchOffer, firmwareNames, isPublicAddress, kindOf, linkParts, rejectLink,
-  retryOffers } from "../api/offered.js";
-import { PENDING, READOUTS_EVER } from "../api/pending.js";
+import { CLOUDS, FIRST_SIGHT_DAILY, FIRST_SIGHT_RENTED_DAILY, OFFER_FETCH_MAX_BYTES, OFFER_FETCH_PATHS,
+  OFFER_FETCH_TIMEOUT_MS, OFFER_FETCHES_DAILY, OFFER_FIRST_SIGHT_PER_SENDER, OFFER_RETRY_DAYS, OFFER_RETRY_EACH_NIGHT,
+  NAMES_KEPT_MOST, PEEK_BYTES, PENDING_LINK_DAYS, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER, REJECTED_LINKS_MOST,
+  URL_MOST, URL_PATH_MOST, approveLink, fetchOffer, firmwareNames, firstSightsOn, isPublicAddress, kindOf, linkParts,
+  linkPruning, linksNotKeptOn, linksToReview, namesKept, rejectLink, rentedFirstSightsOn, retryOffers } from "../api/offered.js";
+import { PENDING, READOUTS_EVER, prunePending } from "../api/pending.js";
 import { work } from "../api/proof-of-work.js";
 
 // Nothing reaches the internet: a fetch no test gave fails.
@@ -53,7 +55,7 @@ function bucket() {
     objects,
     head: async (key) => (objects.has(key) ? { key } : null),
     put: async (key, body, options) => objects.set(key, { body, options }),
-    delete: async (key) => { objects.delete(key); },
+    delete: async (keys) => { for (const key of [keys].flat()) objects.delete(key); },
   };
 }
 
@@ -97,7 +99,7 @@ const results = async (...args) => (await send(...args)).offers.map((each) => ea
 const rows = (bindings, sql, ...values) => bindings.DB.db.prepare(sql).all(...values).map((row) => ({ ...row }));
 
 // Three senders, each on a network of its own: enough for an offer to agree.
-const SENDERS = [["192.0.2.1", 64501], ["192.0.2.2", 64502], ["192.0.2.3", 64503]];
+const SENDERS = [["192.0.2.1", 64501], ["198.51.100.2", 64502], ["203.0.113.3", 64503]];
 async function agree(bindings, offer = OFFER, fetcher = cloud(), senders = SENDERS, on = NOW) {
   for (const [index, [address, asn]] of senders.entries()) {
     const now = new Date(on.getTime() + index * 1000);
@@ -211,11 +213,11 @@ test("three from three networks agree, and each file is fetched, by name, and ke
 test("links and file-bearing first stages agree on an offer together, each sender once", async () => {
   const bindings = env();
   assert.equal(await readout(bindings, "192.0.2.1", 64501), 201);
-  assert.equal(await readout(bindings, "192.0.2.2", 64502), 201);
+  assert.equal(await readout(bindings, "198.51.100.2", 64502), 201);
   assert.deepEqual(await results(bindings, [OFFER], { address: "192.0.2.1", asn: 64501 }), ["have"],
     "the same sender's first stage again, as links");
   const fetcher = cloud();
-  assert.deepEqual(await results(bindings, [OFFER], { address: "192.0.2.3", asn: 64503, fetcher }), ["taken"]);
+  assert.deepEqual(await results(bindings, [OFFER], { address: "203.0.113.3", asn: 64503, fetcher }), ["taken"]);
   assert.equal(rows(bindings, "SELECT * FROM agreed_offers").length, 1, "the third, as links, agrees with the two");
   assert.deepEqual(fetcher.asked, [], "the files held already, from the first stages that carried them");
 });
@@ -224,9 +226,9 @@ test("a readout that takes an offer sent as links as right fetches its files", a
   const bindings = env();
   // Not given on first sight, the day before.
   await send(bindings, [OFFER], { address: "192.0.2.1", asn: 64501, fetcher: cloud({}), now: YESTERDAY });
-  await send(bindings, [OFFER], { address: "192.0.2.2", asn: 64502, fetcher: cloud({}), now: YESTERDAY });
+  await send(bindings, [OFFER], { address: "198.51.100.2", asn: 64502, fetcher: cloud({}), now: YESTERDAY });
   const fetcher = cloud();
-  assert.equal(await readout(bindings, "192.0.2.3", 64503, { read: true, withFile: false }, fetcher), 201,
+  assert.equal(await readout(bindings, "203.0.113.3", 64503, { read: true, withFile: false }, fetcher), 201,
     "a whole readout naming the offer, its file left out");
   assert.equal(rows(bindings, "SELECT * FROM agreed_offers").length, 1);
   assert.deepEqual(fetcher.asked, [URL_OF(PATH)]);
@@ -256,7 +258,7 @@ test("links from one network, however many, are tried after those from more", as
   const bindings = env();
   const wrong = `/ota/rom/${"x".repeat(32)}/user1.bin`;
   const fetcher = cloud({ [URL_OF(wrong)]: Buffer.from("another file"), [URL_OF(PATH)]: APP });
-  const oneNetwork = [["198.51.100.1", 64510], ["198.51.100.2", 64510], ["198.51.100.3", 64510]];
+  const oneNetwork = [["198.51.100.11", 64510], ["198.51.100.12", 64510], ["198.51.100.13", 64510]];
   // Neither link gives anything on first sight, the day before.
   await agree(bindings, { ...OFFER, files: [{ ...FILE, path: wrong }] }, cloud({}), oneNetwork, YESTERDAY);
   assert.deepEqual(rows(bindings, "SELECT * FROM agreed_offers"), [], "from one network");
@@ -314,11 +316,14 @@ test("a file larger than any update file is not kept, said so or not", async () 
   }
 });
 
-test("files are fetched OFFER_FETCHES_DAILY a day at most, across everyone", async () => {
+test("files are fetched OFFER_FETCHES_DAILY a day at most for offers taken as right, across everyone", async () => {
   assert.equal(OFFER_FETCHES_DAILY, 50);
   const bindings = env();
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)")
     .run(`offer-fetches:${DAY}`, DAY, OFFER_FETCHES_DAILY - 1);
+  // First sight's budget used up, so agreement alone fetches.
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)")
+    .run(firstSightsOn(DAY), DAY, FIRST_SIGHT_DAILY);
   const twoFiles = { ...OFFER, files: [FILE, { ...FILE, name: "user2.bin", sha256: sha("user2"),
     path: `/ota/rom/${TOKEN}/user2.bin` }] };
   const fetcher = cloud({ [URL_OF(PATH)]: APP, [URL_OF(`/ota/rom/${TOKEN}/user2.bin`)]: Buffer.from("user2") });
@@ -370,7 +375,6 @@ test("each offer not as the tool sends one is refused, and the rest taken, answe
   const offers = [
     { ...OFFER, model: "NEW|THING" },
     { ...OFFER, stock_version: "1.0 beta" },
-    { ...OFFER, device: "not a hash" },
     { ...OFFER, files: "user1.bin" },
     { ...OFFER, files: Array.from({ length: api.MAX_FIRMWARE + 1 }, (_, n) => ({ ...FILE, sha256: sha(String(n)) })) },
     { ...OFFER, files: [{ ...FILE, sha256: "A".repeat(64) }] },
@@ -461,7 +465,7 @@ test("through the Worker, the files are fetched after the answer, waited on", as
     const now = Date.now() / 1000;
     const body = Buffer.from(JSON.stringify({ format: 1, cloud: "ewelink", offers: [OFFER], nonce: "x" }));
     const asking = new Request("https://api.firmwareliberator.com/v1/offers", { method: "POST", body, headers: {
-      "Content-Type": "application/json", "Content-Length": String(body.length), "CF-Connecting-IP": "192.0.2.3",
+      "Content-Type": "application/json", "Content-Length": String(body.length), "CF-Connecting-IP": "203.0.113.3",
       "X-Proof": proofFor(body, Math.floor(now)) } });
     Object.defineProperty(asking, "cf", { value: { asn: 64503 } });
     const response = await worker.fetch(asking, bindings, { waitUntil: (promise) => waited.push(promise) });
@@ -546,9 +550,9 @@ test("one sender's first stage and whole readout count once towards their offer"
   const bindings = env();
   await send(bindings, [OFFER], { address: "192.0.2.1", asn: 64501 });
   await readout(bindings, "192.0.2.1", 64501, { read: true });
-  await send(bindings, [OFFER], { address: "192.0.2.2", asn: 64502 });
+  await send(bindings, [OFFER], { address: "198.51.100.2", asn: 64502 });
   assert.deepEqual(rows(bindings, "SELECT * FROM agreed_offers"), [], "two senders, not three");
-  await send(bindings, [OFFER], { address: "192.0.2.3", asn: 64503 });
+  await send(bindings, [OFFER], { address: "203.0.113.3", asn: 64503 });
   assert.equal(rows(bindings, "SELECT * FROM agreed_offers").length, 1);
 });
 
@@ -563,8 +567,8 @@ test("a sender's whole readout twice, or first stage twice, as links or files, i
   assert.equal(await readout(firsts, "192.0.2.1", 64501), 201);
   assert.equal(await readout(firsts, "192.0.2.1", 64501, { again: 1 }), 200, "files, again");
   assert.deepEqual(await results(firsts, [OFFER], { address: "192.0.2.1", asn: 64501 }), ["have"], "then as links");
-  assert.deepEqual(await results(firsts, [OFFER], { address: "192.0.2.2", asn: 64502 }), ["taken"]);
-  assert.deepEqual(await results(firsts, [OFFER], { address: "192.0.2.2", asn: 64502 }), ["have"], "links, again");
+  assert.deepEqual(await results(firsts, [OFFER], { address: "198.51.100.2", asn: 64502 }), ["taken"]);
+  assert.deepEqual(await results(firsts, [OFFER], { address: "198.51.100.2", asn: 64502 }), ["have"], "links, again");
   assert.equal(rows(firsts, "SELECT * FROM readouts").length, 2);
 });
 
@@ -583,7 +587,7 @@ test("an offer's file is fetched on first sight, held before its offer is taken 
   assert.deepEqual(mark.options.customMetadata, { readout: row.object, fetched: "true" }, "no wrapper, no names");
   assert.equal((await read(bindings.DB, READOUTS_EVER)).bytes, row.bytes, "the file's bytes its readout's");
   // Another sender's offer of it fetches nothing: it is held.
-  assert.deepEqual(await results(bindings, [OFFER], { address: "192.0.2.2", asn: 64502, fetcher }), ["taken"]);
+  assert.deepEqual(await results(bindings, [OFFER], { address: "198.51.100.2", asn: 64502, fetcher }), ["taken"]);
   assert.equal(fetcher.asked.length, 1);
 });
 
@@ -621,15 +625,16 @@ test("a link that gave another file is never tried again for that SHA-256, night
     assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(other)}`));
   });
 
-test("first sight fetches within OFFER_FETCHES_DAILY, and notes no failure past it", async () => {
+test("first sight fetches within FIRST_SIGHT_DAILY, and notes no failure past it", async () => {
+  assert.equal(FIRST_SIGHT_DAILY, 50);
   const bindings = env();
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)")
-    .run(`offer-fetches:${DAY}`, DAY, OFFER_FETCHES_DAILY);
+    .run(firstSightsOn(DAY), DAY, FIRST_SIGHT_DAILY);
   const fetcher = cloud();
   assert.deepEqual(await results(bindings, [OFFER], { fetcher }), ["taken"]);
   assert.deepEqual(fetcher.asked, []);
   assert.deepEqual(rows(bindings, "SELECT * FROM offer_fetch_failures"), []);
-  assert.deepEqual(await results(bindings, [OFFER], { address: "192.0.2.2", fetcher, now: TOMORROW }), ["taken"]);
+  assert.deepEqual(await results(bindings, [OFFER], { address: "198.51.100.2", fetcher, now: TOMORROW }), ["taken"]);
   assert.deepEqual(fetcher.asked, [URL_OF(PATH)], "the next day's offer of it, as its link was never tried");
 });
 
@@ -730,7 +735,7 @@ test("one sender's first-sight fetches are OFFER_FIRST_SIGHT_PER_SENDER a day; a
     const other = env();
     const theirs = cloud({ [URL_OF(pathOf(5))]: fileOf(5) });
     await results(other, six, { address: "192.0.2.1", asn: 64501, fetcher: cloud({}) });
-    assert.deepEqual(await results(other, [six[5]], { address: "192.0.2.2", asn: 64502, fetcher: theirs }), ["taken"]);
+    assert.deepEqual(await results(other, [six[5]], { address: "198.51.100.2", asn: 64502, fetcher: theirs }), ["taken"]);
     assert.ok(other.READOUTS.objects.has(`readouts/firmware/${sha(fileOf(5))}`));
     // Agreement fetches it, though every sender of it has used its first sights.
     for (const [at, [address, asn]] of SENDERS.slice(1).entries()) {
@@ -932,7 +937,8 @@ test("approving a link by eWeLink's name fetches it as given, with the query; on
 test("approving is within OFFER_FETCHES_DAILY; a link rejected is never fetched, nor approved after", async () => {
   const bindings = env();
   const id = await pending(bindings);
-  bindings.DB.db.prepare("UPDATE counters SET count = ? WHERE name = ?").run(OFFER_FETCHES_DAILY, `offer-fetches:${DAY}`);
+  bindings.DB.db.prepare("INSERT OR REPLACE INTO counters (name, day, count) VALUES (?, ?, ?)")
+    .run(`offer-fetches:${DAY}`, DAY, OFFER_FETCHES_DAILY);
   const fetcher = server(() => new Response(APP));
   assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher }), "capped");
   assert.deepEqual(fetcher.asked, []);
@@ -1024,15 +1030,302 @@ test("peeks count against the day's fetches and the sender's first sights; one w
     assert.equal(fetcher.asked.length, OFFER_FIRST_SIGHT_PER_SENDER);
     assert.deepEqual(peeks(bindings), [], "no room: not peeked, nor marked as peeked");
     await results(bindings, [{ ...URL_OFFER, files: [{ ...URL_FILE, url: BY_NAME }] }],
-      { address: "192.0.2.2", asn: 64502, fetcher });
+      { address: "198.51.100.2", asn: 64502, fetcher });
     assert.equal(peeks(bindings).length, 1);
-    assert.equal((await read(bindings.DB, `offer-fetches:${DAY}`)).count, OFFER_FIRST_SIGHT_PER_SENDER + 1);
-    // With the day's fetches used, none.
+    assert.equal((await read(bindings.DB, firstSightsOn(DAY))).count, OFFER_FIRST_SIGHT_PER_SENDER + 1);
+    assert.equal((await read(bindings.DB, `offer-fetches:${DAY}`)).count, 0, "none of agreement's");
+    // With the day's first sights used, none.
     const full = env();
     await results(full, [], {});
-    full.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)").run(`offer-fetches:${DAY}`, DAY,
-      OFFER_FETCHES_DAILY);
+    full.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)").run(firstSightsOn(DAY), DAY,
+      FIRST_SIGHT_DAILY);
     const none = server();
     await results(full, [URL_OFFER], { fetcher: none });
     assert.deepEqual([none.asked, peeks(full)], [[], []]);
   });
+
+// What is kept of links to review, their peeks and failures, held to bounds.
+// Link `n` to review, of a file of its own, by a public address made up here.
+const reviewUrl = (n) => `http://1.2.3.4:8088/ota/s61/r${n}.rbl`;
+const reviewOffer = (n) => ({ ...OFFER, stock_version: `7.0.${n}`,
+  files: [{ ...URL_FILE, sha256: sha(`review ${n}`), url: reviewUrl(n) }] });
+// The links to review waiting, each once however many sent it.
+const waiting = (bindings) => rows(bindings, `SELECT DISTINCT sha, host, path FROM offer_links
+  WHERE review = 'pending'`).length;
+
+test("past PENDING_LINKS_MOST links waiting, a new one is neither kept nor peeked, its offer taken, and counted",
+  async () => {
+    assert.equal(PENDING_LINKS_MOST, 100);
+    const bindings = env();
+    const fill = bindings.DB.db.prepare(`INSERT INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
+      VALUES ('2026-11-01-000000000000', ?, ?, 'ewelink', 'http', '5.6.7.8', NULL, 'pending')`);
+    for (let n = 0; n < PENDING_LINKS_MOST - 1; n += 1) {
+      fill.run(sha(`filler ${n}`), `/f${n}.bin`);
+    }
+    const fetcher = server();
+    assert.deepEqual(await results(bindings, [reviewOffer(1)], { fetcher }), ["taken"], "the last place");
+    assert.equal(waiting(bindings), PENDING_LINKS_MOST);
+    const asked = fetcher.asked.length;
+    assert.deepEqual(await results(bindings, [reviewOffer(2)], { address: "198.51.100.2", fetcher }), ["taken"]);
+    assert.equal(waiting(bindings), PENDING_LINKS_MOST, "not kept");
+    assert.equal(rows(bindings, "SELECT * FROM offer_links WHERE path = '/ota/s61/r2.rbl'").length, 0);
+    assert.equal(fetcher.asked.length, asked, "nor peeked");
+    assert.equal(rows(bindings, "SELECT * FROM readouts WHERE offered = '1.2.0'").length, 2, "its offer taken");
+    assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 1);
+    // One waiting already, sent again, is kept: another network for it.
+    assert.deepEqual(await results(bindings, [reviewOffer(1)], { address: "203.0.113.3", asn: 64503, fetcher }),
+      ["taken"]);
+    assert.equal(rows(bindings, "SELECT * FROM offer_links WHERE path = '/ota/s61/r1.rbl'").length, 2);
+    assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 1);
+  });
+
+test("one sender puts PENDING_LINKS_PER_SENDER links to review in the queue a day, counted by its /24", async () => {
+  assert.equal(PENDING_LINKS_PER_SENDER, 5);
+  const bindings = env();
+  const six = [0, 1, 2, 3, 4, 5].map(reviewOffer);
+  assert.deepEqual(await results(bindings, six.slice(0, 4), { address: "198.51.100.7", fetcher: server() }),
+    Array(4).fill("taken"));
+  assert.deepEqual(await results(bindings, six.slice(4), { address: "198.51.100.8", fetcher: server() }),
+    ["taken", "taken"], "another address of the /24, its offers taken all the same");
+  assert.equal(waiting(bindings), PENDING_LINKS_PER_SENDER);
+  assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 1);
+  assert.deepEqual(await results(bindings, [reviewOffer(6)], { address: "198.51.100.8", fetcher: server(),
+    now: TOMORROW }), ["taken"], "the next day");
+  assert.equal(waiting(bindings), PENDING_LINKS_PER_SENDER + 1);
+});
+
+// Each of linkPruning's statements run as the nightly job runs them: how many each deleted.
+async function prune(bindings, today) {
+  const named = Object.entries(linkPruning(bindings.DB, today));
+  const done = await bindings.DB.batch(named.map(([, statement]) => statement));
+  return Object.fromEntries(named.map(([name], at) => [name, done[at].meta.changes]));
+}
+
+test("a rejected link stays rejected after the readouts that sent it are gone, the newest REJECTED_LINKS_MOST kept",
+  async () => {
+    assert.equal(REJECTED_LINKS_MOST, 10_000);
+    const bindings = env();
+    const id = await pending(bindings);
+    assert.equal(await rejectLink(bindings.DB, id, sha(APP), NOW), true);
+    assert.deepEqual(rows(bindings, "SELECT sha, cloud, link, day FROM rejected_links"),
+      [{ sha: sha(APP), cloud: "ewelink", link: BY_ADDRESS, day: DAY }]);
+    // Its readout gone, as pending.js deletes one, and the link sent again.
+    for (const table of ["offer_links", "readout_networks", "readouts"]) {
+      bindings.DB.db.prepare(`DELETE FROM ${table}`).run();
+    }
+    const fetcher = server();
+    assert.deepEqual(await results(bindings, [URL_OFFER], { address: "198.51.100.2", fetcher, now: TOMORROW }),
+      ["taken"]);
+    assert.deepEqual(linkRows(bindings).map((row) => row.review), ["rejected"], "never back for review");
+    assert.deepEqual(fetcher.asked, [], "nor peeked");
+    // Bounded: past the newest REJECTED_LINKS_MOST, the oldest goes.
+    const newer = bindings.DB.db.prepare("INSERT INTO rejected_links (sha, cloud, link, day) VALUES (?, 'ewelink', ?, ?)");
+    for (let n = 0; n < REJECTED_LINKS_MOST; n += 1) {
+      newer.run(sha(`newer ${n}`), reviewUrl(n), "2026-11-08");
+    }
+    assert.equal((await prune(bindings, "2026-11-09")).rejected, 1);
+    assert.equal(rows(bindings, "SELECT * FROM rejected_links WHERE sha = ?", sha(APP)).length, 0, "the oldest");
+    assert.equal(rows(bindings, "SELECT count(*) AS n FROM rejected_links")[0].n, REJECTED_LINKS_MOST);
+  });
+
+test("a link pending PENDING_LINK_DAYS is deleted with its peek; peeks and failures of links gone, and old failures, too",
+  async () => {
+    assert.equal(PENDING_LINK_DAYS, 180);
+    const bindings = env();
+    // A link to review sent by an offer that was then taken as right: kept for good, its link not.
+    await agree(bindings, URL_OFFER, server(), SENDERS, new Date("2026-05-01T12:00:00Z"));
+    await results(bindings, [{ ...OFFER, stock_version: "8.0.0", files: [{ ...URL_FILE, url: BY_NAME }] }],
+      { fetcher: server() });
+    assert.equal(peeks(bindings).length, 2);
+    const failed = bindings.DB.db.prepare(`INSERT INTO offer_fetch_failures (sha, cloud, path, why, day, since)
+      VALUES (?, 'ewelink', ?, ?, ?, ?)`);
+    failed.run(sha(APP), BY_NAME, "none", "2026-11-06", "2026-11-01");   // its link still sent
+    failed.run(sha(APP), "/ota/rom/gone/user1.bin", "other", "2026-11-06", "2026-11-06");   // no link gives it
+    failed.run(sha("old"), PATH, "none", "2026-05-01", "2026-05-01");   // last tried long ago
+    bindings.DB.db.prepare("INSERT INTO offer_links (readout, sha, path, cloud) VALUES (?, ?, ?, 'ewelink')")
+      .run(rows(bindings, "SELECT id FROM readouts WHERE key = ? LIMIT 1", KEY)[0].id, sha("old"), PATH);
+    assert.deepEqual(await prune(bindings, DAY), { links: 3, peeks: 1, failures: 2, rejected: 0 });
+    assert.deepEqual(rows(bindings, "SELECT DISTINCT host, review FROM offer_links WHERE host IS NOT NULL"),
+      [{ host: "global-otadl2bsy.coolkit.cc", review: "pending" }], "the one sent this month kept");
+    assert.deepEqual(peeks(bindings).map((peek) => peek.link), [BY_NAME]);
+    assert.deepEqual(rows(bindings, "SELECT path FROM offer_fetch_failures"), [{ path: BY_NAME }]);
+    assert.equal(rows(bindings, "SELECT * FROM readouts").length, 4, "the readouts themselves stay");
+  });
+
+test("first sights have a day of their own, rented networks a share of it, and agreement its own", async () => {
+  assert.equal(FIRST_SIGHT_RENTED_DAILY, Math.floor((FIRST_SIGHT_DAILY * api.RENTED_SHARE) / 100));
+  const bindings = env();
+  const junk = cloud({});
+  // Made-up links from many addresses of a host's network (Amazon's, which counts as none).
+  for (let n = 0; n < 10; n += 1) {
+    const offers = [0, 1, 2, 3, 4].map((m) => ({ ...OFFER, stock_model: `X${n}-${m}`,
+      files: [{ ...FILE, sha256: sha(`junk ${n} ${m}`), path: `/ota/rom/${TOKEN}/j${n}${m}.bin` }] }));
+    await results(bindings, offers, { address: `100.${n}.0.1`, asn: 16509, fetcher: junk });
+  }
+  assert.equal(junk.asked.length, FIRST_SIGHT_RENTED_DAILY, "rented networks' share, and no more");
+  assert.equal((await read(bindings.DB, rentedFirstSightsOn(DAY))).count, FIRST_SIGHT_RENTED_DAILY);
+  // Owners' first sights use the rest; agreement still fetches once those are gone.
+  bindings.DB.db.prepare("UPDATE counters SET count = ? WHERE name = ?").run(FIRST_SIGHT_DAILY, firstSightsOn(DAY));
+  const real = cloud();
+  await agree(bindings, OFFER, real);
+  assert.deepEqual(real.asked, [URL_OF(PATH)], "fetched by agreement");
+  assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(APP)}`));
+});
+
+test("a sender's addresses in one IPv4 /24 share its first sights", async () => {
+  const bindings = env();
+  const fetcher = cloud({});
+  for (const [at, address] of ["198.51.100.20", "198.51.100.21"].entries()) {
+    const offers = [0, 1, 2, 3, 4].map((m) => ({ ...OFFER, stock_model: `Y${at}-${m}`,
+      files: [{ ...FILE, sha256: sha(`y ${at} ${m}`), path: `/ota/rom/${TOKEN}/y${at}${m}.bin` }] }));
+    await results(bindings, offers, { address, asn: 64501, fetcher });
+  }
+  assert.equal(fetcher.asked.length, OFFER_FIRST_SIGHT_PER_SENDER);
+});
+
+// Every row's bytes in the counters the limits are held to: the store's, and
+// those of readouts waiting for review.
+async function countersMatch(bindings) {
+  const [{ all, waiting: left }] = rows(bindings, `SELECT coalesce(sum(bytes), 0) AS "all",
+    coalesce(sum(CASE WHEN review = 'pending' THEN bytes END), 0) AS waiting FROM readouts`);
+  assert.equal((await read(bindings.DB, READOUTS_EVER)).bytes, all, "the store's count");
+  assert.equal((await read(bindings.DB, PENDING)).bytes, left, "the pending count");
+}
+
+test("a file fetched for a readout waiting for review counts towards those waiting, until it is taken as right",
+  async () => {
+    const bindings = env();
+    await results(bindings, [{ ...OFFER, stock_model: "OTHER", files: [{ ...FILE, sha256: sha("other"),
+      path: `/ota/rom/${TOKEN}/other.bin` }] }], { address: "192.0.2.9", fetcher: cloud({}) });
+    await results(bindings, [OFFER], { address: "192.0.2.1", asn: 64501 });
+    assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(APP)}`), "fetched on first sight");
+    await countersMatch(bindings);
+    await agree(bindings, OFFER, cloud(), SENDERS.slice(1));
+    assert.equal(rows(bindings, "SELECT * FROM agreed_offers").length, 1);
+    await countersMatch(bindings);
+  });
+
+test("a made-up readout's file that an offer taken as right links is kept when the readout is deleted", async () => {
+  const bindings = env();
+  // A stranger names the real file under a made-up model: first sight fetches it under theirs.
+  await results(bindings, [{ ...OFFER, model: "S61", stock_model: "MADEUP" }], { address: "192.0.2.50", asn: 64999 });
+  const [{ id: theirs }] = rows(bindings, "SELECT id FROM readouts");
+  assert.equal(rows(bindings, "SELECT readout FROM readout_firmware")[0].readout, theirs);
+  const fetcher = cloud();
+  await agree(bindings, OFFER, fetcher);
+  assert.deepEqual(fetcher.asked, [], "held: not fetched again");
+  const pruned = await prunePending(bindings, "2027-06-01");
+  assert.equal(pruned.readouts, 1);
+  assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(APP)}`), "the file stays");
+  const [mark] = rows(bindings, `SELECT readouts.key, readouts.review FROM readout_firmware
+    JOIN readouts ON readouts.id = readout_firmware.readout`);
+  assert.deepEqual(mark, { key: KEY, review: "quorum" }, "listed under a readout of the offer agreed");
+  assert.equal(rows(bindings, "SELECT count(*) AS n FROM offer_links WHERE bytes IS NOT NULL")[0].n, 1);
+  await countersMatch(bindings);
+});
+
+test("a file's mark moves alone, beside others' marks of it, and a failed night deletes nothing from the store",
+  async () => {
+    const bindings = env();
+    await results(bindings, [{ ...OFFER, model: "S61", stock_model: "MADEUP" }], { address: "192.0.2.50", asn: 64999 });
+    const [{ id: theirs }] = rows(bindings, "SELECT id FROM readouts");
+    await agree(bindings, OFFER, cloud());
+    // Every readout agreed marks the file too, as whole readouts sent together may, and one more.
+    const agreed = rows(bindings, "SELECT id FROM readouts WHERE review = 'quorum'").map((row) => row.id);
+    for (const id of [...agreed, "another"]) {
+      await bindings.DB.prepare("INSERT OR IGNORE INTO readout_firmware (readout, sha) VALUES (?1, ?2)").bind(id, sha(APP)).run();
+    }
+    const objects = [...bindings.READOUTS.objects.keys()];
+    const batch = bindings.DB.batch;
+    bindings.DB.batch = async () => { throw new Error("D1 is down"); };
+    await assert.rejects(prunePending(bindings, "2027-06-01"));
+    assert.deepEqual([...bindings.READOUTS.objects.keys()], objects, "nothing deleted that its rows still name");
+    bindings.DB.batch = batch;
+    assert.equal((await prunePending(bindings, "2027-06-01")).readouts, 1);
+    assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(APP)}`), "the file stays");
+    const marks = rows(bindings, "SELECT readout FROM readout_firmware ORDER BY readout").map((row) => row.readout);
+    assert.deepEqual(marks, [...agreed, "another"].sort(), "each other readout keeps its own mark");
+    assert.ok(!marks.includes(theirs));
+  });
+
+test("each night tries the offers tried longest ago first, and a link no more once it has given nothing a month",
+  async () => {
+    assert.equal(OFFER_RETRY_DAYS, 30);
+    const bindings = env();
+    const none = cloud({});
+    // More offers whose files never come than a night tries, then one whose file will.
+    const dead = (n) => ({ ...OFFER, stock_model: `DEAD${n}`, files: [{ ...FILE, sha256: sha(`gone ${n}`),
+      path: `/ota/rom/${TOKEN}/g${n}.bin` }] });
+    for (let n = 0; n < OFFER_RETRY_EACH_NIGHT; n += 1) {
+      await agree(bindings, dead(n), none);
+    }
+    const real = { ...OFFER, stock_model: "ZREAL" };
+    await agree(bindings, real, none);
+    const night = (days) => new Date(NOW.getTime() + days * 86_400_000);
+    const fetcher = cloud();
+    await retryOffers(bindings, night(1), { totalBytes: api.TOTAL_BYTES, fetcher });
+    await retryOffers(bindings, night(2), { totalBytes: api.TOTAL_BYTES, fetcher });
+    assert.equal(fetcher.asked.filter((url) => url === URL_OF(PATH)).length, 1, "the second night at the latest");
+    assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(APP)}`));
+    // A month on, the dead links are tried no more.
+    const late = cloud({});
+    assert.equal((await retryOffers(bindings, night(OFFER_RETRY_DAYS + 1), { totalBytes: api.TOTAL_BYTES,
+      fetcher: late })).offers, 0);
+    assert.deepEqual(late.asked, []);
+  });
+
+test("a link that gave another file is not retried, and takes no night's place", async () => {
+  const bindings = env();
+  const wrong = cloud({ [URL_OF(PATH)]: Buffer.from("another file") });
+  await agree(bindings, OFFER, wrong);
+  assert.deepEqual(rows(bindings, "SELECT why FROM offer_fetch_failures"), [{ why: "other" }]);
+  assert.equal((await retryOffers(bindings, TOMORROW, { totalBytes: api.TOTAL_BYTES, fetcher: wrong })).offers, 0);
+});
+
+test("a fetch is given up after OFFER_FETCH_TIMEOUT_MS, and a timeout keeps nothing", async () => {
+  assert.equal(OFFER_FETCH_TIMEOUT_MS, 20_000);
+  const bindings = env();
+  const signals = [];
+  const slow = async (url, init = {}) => {
+    signals.push(init.signal);
+    throw new DOMException("timed out", "TimeoutError");
+  };
+  assert.deepEqual(await results(bindings, [OFFER], { fetcher: slow }), ["taken"]);
+  assert.equal(signals.length, 1);
+  assert.ok(signals[0] instanceof AbortSignal, "every fetch has a deadline");
+  assert.deepEqual(rows(bindings, "SELECT why FROM offer_fetch_failures"), [{ why: "none" }]);
+});
+
+test("a file's names are kept whole, NAMES_KEPT_MOST characters at most, within R2's 2 KB of metadata", async () => {
+  assert.equal(NAMES_KEPT_MOST, 1024);
+  const many = Array.from({ length: 200 }, (_, n) => `FWSW-${String(n).padStart(3, "0")}-${"X".repeat(20)}`);
+  const kept = namesKept(many);
+  assert.ok(kept.length <= NAMES_KEPT_MOST);
+  assert.deepEqual(kept.split("+"), many.slice(0, kept.split("+").length), "whole names, in order");
+  assert.equal(namesKept([]), null);
+  const file = Buffer.concat([wrapped(many), Buffer.from("the app")]);
+  const bindings = env();
+  const fetcher = cloud({ [URL_OF(PATH)]: file });
+  await results(bindings, [{ ...OFFER, files: [{ ...FILE, sha256: sha(file) }] }], { fetcher });
+  const { customMetadata } = bindings.READOUTS.objects.get(`readouts/firmware/${sha(file)}`).options;
+  assert.equal(customMetadata.names, kept);
+  assert.ok(JSON.stringify(customMetadata).length < 2048);
+});
+
+test("an offer's device, if a tool sends one, is neither checked nor kept", async () => {
+  const bindings = env();
+  assert.deepEqual(await results(bindings, [{ ...OFFER, device: "anything at all" }]), ["taken"]);
+  const [{ object }] = rows(bindings, "SELECT object FROM readouts");
+  assert.ok(!bindings.READOUTS.objects.get(object).body.includes("anything at all"));
+});
+
+test("links to review are listed those from the most networks first, then the longest waiting", async () => {
+  const bindings = env();
+  // One from two networks, the day before; one from one network, today.
+  for (const [address, asn] of SENDERS.slice(0, 2)) {
+    await results(bindings, [reviewOffer(1)], { address, asn, fetcher: server(), now: YESTERDAY });
+  }
+  await results(bindings, [reviewOffer(2)], { address: "203.0.113.3", asn: 64503, fetcher: server() });
+  assert.deepEqual((await linksToReview(bindings.DB)).map((row) => [row.path, row.networks]),
+    [["/ota/s61/r1.rbl", 2], ["/ota/s61/r2.rbl", 1]]);
+});
