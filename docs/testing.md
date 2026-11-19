@@ -730,7 +730,9 @@ eWeLink.
 #### Reading its results (Espressif)
 
 Everything is kept in `captures/emulation/suite/`: the results
-(`results.jsonl`), and in `logs/` a folder for each scenario, laid out as the
+(`results.jsonl`, a row a scenario run, its verdict under `verdict` as both
+suites write it; a Beken row from before 2026-11-19 has it under `result`,
+which every reader still takes: `fault_verdicts.verdict`), and in `logs/` a folder for each scenario, laid out as the
 Beken suite's (`fault_verdicts.scenario_folder`):
 
 - `tool.log`: what the suite did and each run's last screen;

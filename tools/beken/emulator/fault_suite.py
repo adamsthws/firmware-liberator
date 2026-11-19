@@ -1105,7 +1105,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     instance.account(sc, folder)
     if not instance.start(source):
         notes["memory"] = memory.note()
-        return dict(result="NOT-READY", notes=notes)
+        return dict(verdict="NOT-READY", notes=notes)
     person = Person(instance, notes)
     person.start()
     if target == "readout":
@@ -1128,14 +1128,14 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     target = route.split(">")[1]
     person.done.set()
     person.join(10)
-    if outcome["result"] in ("PASS", "FAIL") and fault_verdicts.unexpected(
+    if outcome["verdict"] in ("PASS", "FAIL") and fault_verdicts.unexpected(
             instance.run_texts(), fault_verdicts.run_outcomes(instance.state / "work/captures", began)):
         # As the Espressif suite: a run stopped by an error the tool did not see
         # coming is a bug, whatever the fault, though the next run converts.
-        outcome = dict(outcome, result="FAIL-UNEXPECTED")
+        outcome = dict(outcome, verdict="FAIL-UNEXPECTED")
     # Asked while it runs: a route through J2 stops it below, for its flash.
-    release = release_of(instance, target) if outcome["result"] == "PASS" and target in LATEST else None
-    if outcome["result"] == "PASS" and target not in READOUTS:
+    release = release_of(instance, target) if outcome["verdict"] == "PASS" and target in LATEST else None
+    if outcome["verdict"] == "PASS" and target not in READOUTS:
         names = instance.dhcp_names()
         flash = None
         if "J2" in route_steps(route):
@@ -1144,22 +1144,22 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         notes["dhcp_names"] = names
         problems = interim_problems(route, names, flash)
         if problems:
-            outcome = dict(outcome, result="FAIL")
+            outcome = dict(outcome, verdict="FAIL")
             notes["interim"] = problems
         checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()),
                                                instance.last_outcome(began))
         if checks and not problems:
-            outcome = dict(outcome, result="FAIL-CHECKS")
+            outcome = dict(outcome, verdict="FAIL-CHECKS")
             notes["checks"] = checks
-        if target in LATEST and release != LATEST[target] and outcome["result"] == "PASS":
+        if target in LATEST and release != LATEST[target] and outcome["verdict"] == "PASS":
             # Converted, but not on this checkout's release: an update from an
             # earlier one, or a conversion that release began, left behind.
-            outcome = dict(outcome, result="FAIL-NOT-LATEST")
+            outcome = dict(outcome, verdict="FAIL-NOT-LATEST")
             notes["release"] = f"{target} {release}"
-    if outcome["result"] == "PASS" and log.exists():
+    if outcome["verdict"] == "PASS" and log.exists():
         screen = fault_verdicts.screen_problems(log.read_text(encoding="utf-8", errors="replace"))
         if screen:
-            outcome = dict(outcome, result="FAIL-SCREEN")
+            outcome = dict(outcome, verdict="FAIL-SCREEN")
             notes["screen"] = screen
     fault_verdicts.keep_runs(instance.runs(), folder)
     fault_verdicts.keep_dhcp_log(instance.dhcp_log(), folder)
@@ -1170,7 +1170,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         shutil.copy(instance.state / "serial.log", folder / "serial.log")
     except OSError:
         pass
-    if outcome["result"] != "PASS":
+    if outcome["verdict"] != "PASS":
         fault_verdicts.keep_evidence(instance.records(), folder)
     notes["memory"] = memory.note()
     notes["waits"] = fault_verdicts.waits(instance.all_events(), began)
@@ -1213,8 +1213,8 @@ def apply_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: 
         cut.join(5)
     notes["cut_at"] = cut.fired
     if cut.fired is None:
-        return dict(result="NOT-FIRED", runs=runs)
-    return dict(result="PASS" if converted(instance.last_state(), sc["route"]) else "FAIL", runs=runs)
+        return dict(verdict="NOT-FIRED", runs=runs)
+    return dict(verdict="PASS" if converted(instance.last_state(), sc["route"]) else "FAIL", runs=runs)
 
 
 def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
@@ -1239,7 +1239,7 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
         # Converted by the run that restarted the device, not by a person's run after.
         notes["restarted"] = any(item.get("restarted") for item in again)
         ok = ok and notes["restarted"] and runs == 1
-    return dict(result="PASS" if ok else "FAIL", runs=runs)
+    return dict(verdict="PASS" if ok else "FAIL", runs=runs)
 
 
 def ports_open(host: str | None, *ports: int) -> set[int]:
@@ -1273,7 +1273,7 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
         while service not in ports_open(instance.lease(), service):
             if time.monotonic() > deadline:
                 notes["safemode_cuts"] = cuts
-                return dict(result="NOT-FIRED", runs=0)   # its update service never came up
+                return dict(verdict="NOT-FIRED", runs=0)   # its update service never came up
             time.sleep(0.5)
         time.sleep(3)   # a normal start has its page up by now (seen: 3 s after)
         if 80 in ports_open(instance.lease(), 80):
@@ -1283,7 +1283,7 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
             break
     else:
         notes["safemode_cuts"] = SAFE_MODE_CUTS
-        return dict(result="NOT-FIRED", runs=0)
+        return dict(verdict="NOT-FIRED", runs=0)
     notes["safemode_cuts"] = cuts
     finish(instance.tool(target, log, new=True), instance)
     runs = 1
@@ -1294,11 +1294,11 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
     texts = instance.run_texts()
     notes["waited_out"] = any("ESPHome in safe mode" in text for text in texts)
     if not converted(instance.last_state(), sc["route"]):
-        return dict(result="FAIL", runs=runs)
+        return dict(verdict="FAIL", runs=runs)
     if notes["waited_out"]:
-        return dict(result="PASS", runs=runs)
+        return dict(verdict="PASS", runs=runs)
     found_itself = texts and re.search(r"This run is for the device at \S+.*, running ESPHome", texts[0])
-    return dict(result="MISTIMED" if found_itself else "FAIL-TAKEN-FOR-SONOFF", runs=runs)
+    return dict(verdict="MISTIMED" if found_itself else "FAIL-TAKEN-FOR-SONOFF", runs=runs)
 
 
 def esphome_now(instance: Instance) -> tuple[str | None, str | None]:
@@ -1325,14 +1325,14 @@ def own_build_scenario(instance: Instance, log: Path, notes: dict) -> dict:
         esphome_ota.upload(instance.lease(), image, port=esphome_ota.LIBRETINY_PORT, timeout=30)
     except (OSError, esphome_ota.OTAError) as exc:
         notes["own_not_sent"] = str(exc)
-        return dict(result="NOT-FIRED", runs=0)
+        return dict(verdict="NOT-FIRED", runs=0)
     deadline = time.monotonic() + OWN_BUILD_STARTS
     while built != own and time.monotonic() < deadline:
         time.sleep(5)
         built = esphome_now(instance)[0]
     if built != own:
         notes["own_not_started"] = built
-        return dict(result="NOT-FIRED", runs=0)
+        return dict(verdict="NOT-FIRED", runs=0)
     notes["own"] = own
     before = log.stat().st_size if log.exists() else 0
     finish(instance.tool("esphome", log, new=True), instance)
@@ -1347,9 +1347,9 @@ def own_build_scenario(instance: Instance, log: Path, notes: dict) -> dict:
         finish(instance.tool("esphome", log), instance)
         runs += 1
     if not converted(instance.last_state(), OWN_BUILD_JUDGED_AS):
-        return dict(result="FAIL", runs=runs, route=OWN_BUILD_JUDGED_AS)
+        return dict(verdict="FAIL", runs=runs, route=OWN_BUILD_JUDGED_AS)
     notes["built_now"], notes["calibration_now"] = esphome_now(instance)
-    return dict(result=own_build.problem(notes, pin["built"]) or "PASS", runs=runs, route=OWN_BUILD_JUDGED_AS)
+    return dict(verdict=own_build.problem(notes, pin["built"]) or "PASS", runs=runs, route=OWN_BUILD_JUDGED_AS)
 
 
 def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes: dict) -> bool:
@@ -1409,7 +1409,7 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         run.wait(timeout=60)
         reruns += 1
         if reruns > RECOVERY_RUNS or converted(instance.last_state(), sc["route"]):
-            return dict(result="NOT-FIRED")
+            return dict(verdict="NOT-FIRED")
         recover(instance, target, notes)
         run = instance.tool(target, log)
     length = ROUTES[sc["route"]][sc["step"]]
@@ -1459,15 +1459,15 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         notes["ctrlc_seen"] = any(CTRL_C_LOGGED in text for text in instance.run_texts())
     ok = converted(instance.last_state(), route)
     if notes.get("mistimed"):
-        return dict(result="MISTIMED", runs=runs)
+        return dict(verdict="MISTIMED", runs=runs)
     if ok and not_fired(sc["fault"], notes):
-        return dict(result="NOT-FIRED", runs=runs)
+        return dict(verdict="NOT-FIRED", runs=runs)
     wrong = handling_verdict(sc, notes, ok, runs, instance.run_texts)
     if sc["fault"] == "diskfull" and not backup_whole(instance):
         wrong = "FAIL-BAD-BACKUP"   # never on without the whole backup
     if wrong:
-        return dict(result=wrong, runs=runs, route=route)
-    return dict(result="PASS" if ok else "FAIL", runs=runs, route=route)
+        return dict(verdict=wrong, runs=runs, route=route)
+    return dict(verdict="PASS" if ok else "FAIL", runs=runs, route=route)
 
 
 def to_api(sc: dict) -> bool:
@@ -1548,7 +1548,7 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
-            return dict(result="NOT-FIRED", runs=1)
+            return dict(verdict="NOT-FIRED", runs=1)
         if sc["fault"] in ("readdress", "diskfull"):
             # As the read ends: the device then asked for at the address it had,
             # or the readout written as the disk fills.
@@ -1599,17 +1599,17 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     problems = problems_now()
     notes["readout"] = problems if problems is not None else ["none kept"]
     if notes.get("mistimed"):
-        return dict(result="MISTIMED", runs=runs)
+        return dict(verdict="MISTIMED", runs=runs)
     if not_fired(sc["fault"], notes):
-        return dict(result="NOT-FIRED", runs=runs)
+        return dict(verdict="NOT-FIRED", runs=runs)
     wrong = handling_verdict(sc, notes, problems == [], runs, instance.run_texts)
     if wrong:
-        return dict(result=wrong, runs=runs)
+        return dict(verdict=wrong, runs=runs)
     if problems != []:
         # No whole readout kept; or sent, the API's verdict (api_problems).
         first = notes["readout"][0].split(":")[0]
-        return dict(result=first if sent and first.startswith("FAIL-") else "FAIL-READOUT", runs=runs)
-    return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=runs)
+        return dict(verdict=first if sent and first.startswith("FAIL-") else "FAIL-READOUT", runs=runs)
+    return dict(verdict="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=runs)
 
 
 def api_run(instance: Instance, log: Path, number: int, since: int, code: int, sc: dict) -> dict:
@@ -1656,7 +1656,7 @@ def readout_all_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
-            return dict(result="NOT-FIRED", runs=1)
+            return dict(verdict="NOT-FIRED", runs=1)
         time.sleep(length * sc["at"] / 100)
         if happened(instance, "phase", phase=ends):
             notes["mistimed"] = True
@@ -1675,16 +1675,16 @@ def readout_all_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -
     notes["runs"] = judged
     problems = [problem for one in judged for problem in one["problems"]]
     if notes.get("mistimed"):
-        return dict(result="MISTIMED", runs=len(judged))
+        return dict(verdict="MISTIMED", runs=len(judged))
     if sc["fault"] != "none" and not_fired(sc["fault"], notes):
-        return dict(result="NOT-FIRED", runs=len(judged))
+        return dict(verdict="NOT-FIRED", runs=len(judged))
     if problems:
-        return dict(result=problems[0][0], runs=len(judged))
+        return dict(verdict=problems[0][0], runs=len(judged))
     if judged[-1]["code"] != 0:
-        return dict(result="FAIL-NOT-FINISHED", runs=len(judged))
+        return dict(verdict="FAIL-NOT-FINISHED", runs=len(judged))
     if sc["account"] == "many" and not any(one["429"] for one in judged):
-        return dict(result="NOT-FIRED", runs=len(judged))   # the API's limit never reached: proves nothing
-    return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=len(judged))
+        return dict(verdict="NOT-FIRED", runs=len(judged))   # the API's limit never reached: proves nothing
+    return dict(verdict="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=len(judged))
 
 
 def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
@@ -1699,18 +1699,18 @@ def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
     problems = fault_verdicts.first_stage_problems(kept[-1].read_bytes(), "openbeken") if kept else None
     notes["readout"] = problems if problems is not None else ["none kept"]
     if happened(instance, "phase", phase="serving"):   # the readout firmware, or Sonoff's
-        return dict(result="FAIL-SENT", runs=1)
+        return dict(verdict="FAIL-SENT", runs=1)
     if run.returncode != 0:
-        return dict(result="FAIL-EXIT", runs=1)
+        return dict(verdict="FAIL-EXIT", runs=1)
     if notes["readout"]:
-        return dict(result="FAIL-READOUT", runs=1)
-    return dict(result="PASS" if instance.answering() else "FAIL-DISTURBED", runs=1)
+        return dict(verdict="FAIL-READOUT", runs=1)
+    return dict(verdict="PASS" if instance.answering() else "FAIL-DISTURBED", runs=1)
 
 
 def all_passed(ids_file: str | None = None) -> bool:
     """Whether every scenario of `ids_file` (else every one) has passed last."""
     wanted = Path(ids_file).read_text(encoding="utf-8").split() if ids_file else [sc["id"] for sc in scenarios()]
-    passed = {i for i, entry in fault_verdicts.latest(RESULTS).items() if entry.get("result") == "PASS"}
+    passed = {i for i, entry in fault_verdicts.latest(RESULTS).items() if entry.get("verdict") == "PASS"}
     return all(i in passed for i in wanted)
 
 
@@ -1724,7 +1724,7 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
     every = {sc["id"]: sc for sc in scenarios()}
     wanted = (Path(ids_file).read_text(encoding="utf-8").split() if ids_file else list(every))
     earlier = fault_verdicts.latest(RESULTS)   # those run here before: a re-run's pass rate is apart (emulator_stats)
-    passed = {i for i, entry in earlier.items() if entry.get("result") == "PASS"}
+    passed = {i for i, entry in earlier.items() if entry.get("verdict") == "PASS"}
     todo: queue.Queue = queue.Queue()
     # The longest first, so the batch does not end on one started last (scenario_times).
     for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],
@@ -1749,14 +1749,14 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
                 except Exception as exc:  # noqa: BLE001 - one scenario's failure is recorded, not the batch's
                     # Where it was raised too, as the Espressif suite keeps it: the error alone
                     # (a FileNotFoundError, say) does not tell which file.
-                    outcome = dict(result="ERROR", notes={"error": repr(exc), "trace": traceback.format_exc()})
+                    outcome = dict(verdict="ERROR", notes={"error": repr(exc), "trace": traceback.format_exc()})
                 with lock:
                     record(sc, outcome)
-                    label = fault_verdicts.starved_label(outcome["result"], outcome.get("notes", {}))
-                    print(f"{outcome['result']:9} {sc['id']}{label}", flush=True)
+                    label = fault_verdicts.starved_label(outcome["verdict"], outcome.get("notes", {}))
+                    print(f"{outcome['verdict']:9} {sc['id']}{label}", flush=True)
                 # The device's eWeLink is always the local stub (ACCOUNT).
                 emulator_stats.fault_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, scenario=sc,
-                                         verdict=outcome["result"], tries=outcome.get("runs"),
+                                         verdict=outcome["verdict"], tries=outcome.get("runs"),
                                          seconds=round(time.time() - started), cloud="stub", workers=workers,
                                          rerun=sc["id"] in earlier,
                                          outcomes=fault_verdicts.run_outcomes(instance.state / "work/captures",
@@ -1946,8 +1946,8 @@ def report() -> None:
     found = fault_verdicts.latest(RESULTS)
     for sc in scenarios():
         entry = found.get(sc["id"], {})
-        label = fault_verdicts.starved_label(entry.get("result"), entry.get("notes", {}))
-        print(f"{entry.get('result', '-'):9} {sc['id']}{label}")
+        label = fault_verdicts.starved_label(entry.get("verdict"), entry.get("notes", {}))
+        print(f"{entry.get('verdict', '-'):9} {sc['id']}{label}")
 
 
 def main(argv: list[str]) -> int:

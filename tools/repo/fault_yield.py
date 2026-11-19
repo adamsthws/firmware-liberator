@@ -15,11 +15,12 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from tools.repo import fault_verdicts
+
 # Results that say nothing of what the fault leads to: a pass, a fault that
 # never landed or landed outside its step, a computer that could not reach
 # eWeLink, nothing to change, an emulator that never started, and the suite's
-# own error (the Espressif suite's verdicts in `verdict`, the Beken suite's in
-# `result`). NO-STEP is the Beken suite's NOT-FIRED as results kept from before
+# own error (fault_verdicts.verdict). NO-STEP is the Beken suite's NOT-FIRED as results kept from before
 # 2026-11-19 name it.
 UNTESTED = frozenset({"PASS", "MISTIMED", "NOT-FIRED", "NO-INTERNET", "NO-TRAFFIC", "NO-STEP", "NOT-READY",
                       "HARNESS-ERROR", "ERROR"})
@@ -59,17 +60,13 @@ def fault_of(scenario_id: str) -> tuple[str, str, str] | None:
     return (match[2], match[3], match[1] or "") if match else None
 
 
-def verdict(row: dict[str, Any]) -> str:
-    return row.get("verdict") or row.get("result") or "HARNESS-ERROR"
-
-
 def found(every: Iterable[dict[str, Any]]) -> list[str]:
     """For each fault, its length and moment: how many scenarios ran it, and
     those that ever failed, with a few named."""
     ran: dict[tuple[str, str, str], set[str]] = {}
     failed: dict[tuple[str, str, str], dict[str, str]] = {}
     for row in every:
-        fault, said = fault_of(row["id"]), verdict(row)
+        fault, said = fault_of(row["id"]), fault_verdicts.verdict(row)
         if fault is None or (said in UNTESTED and said != "PASS"):
             continue
         ran.setdefault(fault, set()).add(row["id"])

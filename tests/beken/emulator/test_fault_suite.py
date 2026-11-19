@@ -109,7 +109,7 @@ class EndChecksTests(unittest.TestCase):
         def step_scenario(instance, sc, target, tool_log, notes):
             if screen is not None:
                 tool_log.write_text(screen, encoding="utf-8")   # what the run printed
-            return {"result": "PASS", "runs": 1, **({"route": went} if went else {})}
+            return {"verdict": "PASS", "runs": 1, **({"route": went} if went else {})}
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp, "work/runs/1/run.log")
             write_events(run.parent, ("run", {}), ("began", {"step": "B2"}), *events)
@@ -155,7 +155,7 @@ class EndChecksTests(unittest.TestCase):
 
     def test_a_failure_keeps_its_run_records_whole_as_the_espressif_suites_does(self):
         kept = []
-        self.assertEqual(self.result("False", kept=kept)["result"], "FAIL-CHECKS")
+        self.assertEqual(self.result("False", kept=kept)["verdict"], "FAIL-CHECKS")
         self.assertIn(("evidence", "evidence/runs/1/run.log"), kept)
         passed = []
         self.result("True", kept=passed)
@@ -166,29 +166,29 @@ class EndChecksTests(unittest.TestCase):
         said = {"result": "converted", "stopped": None,
                 "checks": {"answer": "failed", "relay": "did not switch", "meter_confirms": False}}
         outcome = self.result("True", outcome=said)
-        self.assertEqual((outcome["result"], outcome["notes"]["checks"]),
+        self.assertEqual((outcome["verdict"], outcome["notes"]["checks"]),
                          ("FAIL-CHECKS", "Checks passed: Fail; Relay: did not switch"))
         unconfirmed = {**said, "checks": {"answer": "passed", "relay": "switches (meter unchanged)",
                                           "meter_confirms": False}}
-        self.assertEqual(self.result("True", outcome=unconfirmed)["result"], "FAIL-CHECKS")
+        self.assertEqual(self.result("True", outcome=unconfirmed)["verdict"], "FAIL-CHECKS")
         confirmed = {**said, "checks": {"answer": "passed", "relay": "switches (meter confirms)",
                                         "meter_confirms": True}}
-        self.assertEqual(self.result("False", outcome=confirmed)["result"], "PASS")
+        self.assertEqual(self.result("False", outcome=confirmed)["verdict"], "PASS")
 
     def test_a_run_that_met_an_error_nobody_foresaw_fails_though_the_next_converts(self):
         unforeseen = "[09:59:00] FAILED: something unexpected went wrong: OSError: the device fetched 1 of 2 bytes\n"
-        self.assertEqual(self.result("True", said=unforeseen)["result"], "FAIL-UNEXPECTED")
+        self.assertEqual(self.result("True", said=unforeseen)["verdict"], "FAIL-UNEXPECTED")
         # Its own outcome says it too, whatever its words.
         from unittest import mock
         crashed = [{"at": 1.0, "result": "failed", "stopped": {"step": "J2", "error": "crash"}}]
         with mock.patch.object(fault_suite.fault_verdicts, "run_outcomes", return_value=crashed):
-            self.assertEqual(self.result("True")["result"], "FAIL-UNEXPECTED")
+            self.assertEqual(self.result("True")["verdict"], "FAIL-UNEXPECTED")
         stopped = [{"at": 1.0, "result": "failed", "stopped": {"step": "J2", "error": "upload-cut"}}]
         with mock.patch.object(fault_suite.fault_verdicts, "run_outcomes", return_value=stopped):
-            self.assertEqual(self.result("True")["result"], "PASS", "a stop to act on is no bug")
+            self.assertEqual(self.result("True")["verdict"], "PASS", "a stop to act on is no bug")
 
     def test_a_converted_device_whose_relay_switched_passes(self):
-        self.assertEqual(self.result("True")["result"], "PASS")
+        self.assertEqual(self.result("True")["verdict"], "PASS")
 
     def test_a_stage_s_failed_try_left_on_the_screen_is_its_own_failure(self):
         rule = "=" * 72
@@ -196,15 +196,15 @@ class EndChecksTests(unittest.TestCase):
                   "Stage 6 - Sending OpenBeken - Stopped\nStage 6 - Sending OpenBeken - Complete\n"
                   f"{rule}\nExit code 0 - finished\n")
         outcome = self.result("True", screen)
-        self.assertEqual(outcome["result"], "FAIL-SCREEN")
+        self.assertEqual(outcome["verdict"], "FAIL-SCREEN")
         self.assertEqual(len(outcome["notes"]["screen"]), 1)
         clean = screen.replace("Stage 6 - Sending OpenBeken - Stopped\n", "")
-        self.assertEqual(self.result("True", clean)["result"], "PASS")
+        self.assertEqual(self.result("True", clean)["verdict"], "PASS")
 
     def test_a_converted_device_must_be_on_this_releases_firmware(self):
-        self.assertEqual(self.result("True")["result"], "PASS")
+        self.assertEqual(self.result("True")["verdict"], "PASS")
         outcome = self.result("True", release="1.18.300-1")
-        self.assertEqual((outcome["result"], outcome["notes"]["release"]), ("FAIL-NOT-LATEST", "openbeken 1.18.300-1"))
+        self.assertEqual((outcome["verdict"], outcome["notes"]["release"]), ("FAIL-NOT-LATEST", "openbeken 1.18.300-1"))
 
     def test_the_devices_release_is_what_its_firmware_says(self):
         from unittest import mock
@@ -222,7 +222,7 @@ class EndChecksTests(unittest.TestCase):
         (tools/beken/emulator/board.py), so a check that saw no change in it
         did not read it."""
         outcome = self.result("True", relay="Switches (meter unchanged)")
-        self.assertEqual(outcome["result"], "FAIL-CHECKS")
+        self.assertEqual(outcome["verdict"], "FAIL-CHECKS")
         self.assertEqual(outcome["notes"]["checks"],
                          "the meter did not confirm the switch; Relay: Switches (meter unchanged)")
 
@@ -230,8 +230,8 @@ class EndChecksTests(unittest.TestCase):
         """The Basic Gen5 has no meter: its check says the relay switched with
         the meter unchanged, and passes. The S61's must still confirm it."""
         unchanged = "Switches (meter unchanged)"
-        self.assertEqual(self.result("True", relay=unchanged, kind="sonoff-basic-1gs")["result"], "PASS")
-        self.assertEqual(self.result("True", relay=unchanged, kind="sonoff-s61")["result"], "FAIL-CHECKS")
+        self.assertEqual(self.result("True", relay=unchanged, kind="sonoff-basic-1gs")["verdict"], "PASS")
+        self.assertEqual(self.result("True", relay=unchanged, kind="sonoff-s61")["verdict"], "FAIL-CHECKS")
 
     def test_the_meter_is_demanded_as_the_kind_run_says(self):
         for kind in fault_suite.kinds.ALL:
@@ -242,7 +242,7 @@ class EndChecksTests(unittest.TestCase):
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")
-        self.assertEqual(outcome["result"], "FAIL-CHECKS")
+        self.assertEqual(outcome["verdict"], "FAIL-CHECKS")
         self.assertEqual(outcome["notes"]["checks"], "Checks passed: False; Relay: Did not switch")
 
 
@@ -324,11 +324,22 @@ class BatchResultTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             ids = Path(temp) / "ids"
             ids.write_text("a\nb\n", encoding="utf-8")
-            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "MISTIMED"}}):
+            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"verdict": "PASS"}, "b": {"verdict": "MISTIMED"}}):
                 self.assertFalse(fault_suite.all_passed(str(ids)))
-            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "PASS"}}):
+            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"verdict": "PASS"}, "b": {"verdict": "PASS"}}):
                 self.assertTrue(fault_suite.all_passed(str(ids)))
 
+    def test_a_result_is_recorded_as_the_espressif_suites_and_older_ones_still_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            results = Path(temp) / "results.jsonl"
+            # A pass as this suite recorded it before 2026-11-19, under "result".
+            results.write_text('{"id": "a", "result": "PASS"}\n', encoding="utf-8")
+            ids = Path(temp) / "ids"
+            ids.write_text("a\nb\n", encoding="utf-8")
+            with mock.patch.object(fault_suite, "RESULTS", results), mock.patch.object(fault_suite, "OUT", Path(temp)):
+                fault_suite.record({"id": "b"}, {"verdict": "PASS", "runs": 1})
+                self.assertTrue(fault_suite.all_passed(str(ids)))
+            self.assertEqual(json.loads(results.read_text(encoding="utf-8").splitlines()[-1])["verdict"], "PASS")
 
     def test_share_writes_each_machines_share(self):
         from unittest import mock
@@ -355,7 +366,7 @@ class BatchResultTests(unittest.TestCase):
 
         def run(instance, sc):
             ran.append(sc["id"])
-            return {"result": "PASS"}
+            return {"verdict": "PASS"}
         with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
                 mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
@@ -375,7 +386,7 @@ class BatchResultTests(unittest.TestCase):
         with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
                 mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fault_suite, "Instance") as instance, mock.patch.object(fault_suite, "record"), \
-                mock.patch.object(fault_suite, "run_scenario", return_value={"result": "PASS"}), \
+                mock.patch.object(fault_suite, "run_scenario", return_value={"verdict": "PASS"}), \
                 mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "2"}), \
                 mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
                 mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
@@ -401,7 +412,7 @@ class BatchResultTests(unittest.TestCase):
                 mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
                 mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
                 mock.patch.object(fault_suite, "run_scenario",
-                                  side_effect=lambda *a: events.append("run") or {"result": "PASS"}), \
+                                  side_effect=lambda *a: events.append("run") or {"verdict": "PASS"}), \
                 mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
                 mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
                 mock.patch.object(fault_suite.cpu_load, "wait_for_room", side_effect=lambda *a: events.append("wait")), \
@@ -425,7 +436,7 @@ class BatchResultTests(unittest.TestCase):
                 mock.patch("builtins.print"):
             fault_suite.batch()
         outcome = record.call_args.args[1]
-        self.assertEqual(outcome["result"], "ERROR")
+        self.assertEqual(outcome["verdict"], "ERROR")
         self.assertIn("FileNotFoundError", outcome["notes"]["error"])
         self.assertIn("in run", outcome["notes"]["trace"])
 
@@ -532,7 +543,7 @@ class BadImageScenarioTests(unittest.TestCase):
         sc = {"id": "x", "route": "sonoff>openbeken", "step": "B2", "fault": "badimage", "arg": arg, "at": 40}
         instance = SimpleNamespace(tool=lambda *a, **k: None, last_state=dict, all_events=lambda: happened(*events))
         with mock.patch.object(fault_suite, "finish"), mock.patch.object(fault_suite, "converted", return_value=True):
-            return fault_suite.bad_image_scenario(instance, sc, "openbeken", Path("tool.log"), {})["result"]
+            return fault_suite.bad_image_scenario(instance, sc, "openbeken", Path("tool.log"), {})["verdict"]
 
     def test_it_hears_the_run_send_the_image_again(self):
         # The run's own word that it went back to the step (runner.execute, output.EVENTS).
@@ -566,7 +577,7 @@ class SafeModeScenarioTests(unittest.TestCase):
             notes = {}
             result = fault_suite.safe_mode_scenario(
                 instance, {"id": "x", "route": "esphome>openbeken", "step": "start", "fault": "safemode",
-                           "arg": "ten", "at": 40}, "openbeken", Path("tool.log"), notes)["result"]
+                           "arg": "ten", "at": 40}, "openbeken", Path("tool.log"), notes)["verdict"]
         return result, len(cycled), notes
 
     # Each start: its update service answers, then a look for its page.
@@ -625,21 +636,21 @@ class OwnBuildScenarioTests(unittest.TestCase):
 
     def test_left_be_then_replaced_passes_judged_as_an_update(self):
         outcome, runs, notes, upload = self.outcome(["own", "own", "published"])
-        self.assertEqual((outcome["result"], outcome["route"]), ("PASS", "outdated>esphome"))
+        self.assertEqual((outcome["verdict"], outcome["route"]), ("PASS", "outdated>esphome"))
         self.assertEqual(runs, [(), ("--replace-own-build",)])
         self.assertEqual(upload.call_args.kwargs["port"], fault_suite.esphome_ota.LIBRETINY_PORT)
         self.assertTrue(notes["refused"])
 
     def test_not_said_to_be_its_own_fails(self):
         outcome = self.outcome(["own", "own", "published"], said="nothing to convert.")[0]
-        self.assertEqual(outcome["result"], "FAIL-NOT-REFUSED")
+        self.assertEqual(outcome["verdict"], "FAIL-NOT-REFUSED")
 
     def test_still_its_own_after_the_replace_fails(self):
-        self.assertEqual(self.outcome(["own", "own", "own"])[0]["result"], "FAIL-NOT-REPLACED")
+        self.assertEqual(self.outcome(["own", "own", "own"])[0]["verdict"], "FAIL-NOT-REPLACED")
 
     def test_a_build_of_its_own_that_never_started_is_not_fired(self):
         outcome, runs, _, _ = self.outcome(["published"] * 200)
-        self.assertEqual((outcome["result"], runs), ("NOT-FIRED", []))
+        self.assertEqual((outcome["verdict"], runs), ("NOT-FIRED", []))
 
 
 class DoubleCutTests(unittest.TestCase):
@@ -992,7 +1003,7 @@ class FaultAppliedTests(unittest.TestCase):
                 mock.patch.object(fault_suite, "inject"), mock.patch.object(fault_suite, "finish"), \
                 mock.patch.object(fault_suite, "recover"), mock.patch.object(fault_suite.time, "sleep"), \
                 mock.patch.object(fault_suite, "converted", return_value=is_converted):
-            return fault_suite.step_scenario(instance, sc, "esphome", Path("unused"), {})["result"]
+            return fault_suite.step_scenario(instance, sc, "esphome", Path("unused"), {})["verdict"]
 
     def test_converted_without_its_fault_is_not_fired_and_a_failure_stands(self):
         self.assertEqual(self.step_result(is_converted=True), "NOT-FIRED")
@@ -1132,9 +1143,9 @@ class ReadoutAllTests(unittest.TestCase):
                                      dhcp_names=mock.Mock(side_effect=AssertionError("a conversion's check")))
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
                     mock.patch.object(fault_suite, "Person"), \
-                    mock.patch.object(fault_suite, "readout_all_scenario", return_value={"result": "PASS", "runs": 1}):
+                    mock.patch.object(fault_suite, "readout_all_scenario", return_value={"verdict": "PASS", "runs": 1}):
                 outcome = fault_suite.run_scenario(device, sc)
-        self.assertEqual(outcome["result"], "PASS")
+        self.assertEqual(outcome["verdict"], "PASS")
 
     def test_each_account_reaches_the_stub_and_the_api_and_none_lingers(self):
         from tools.ewelink.stub_cloud import accounts
@@ -1192,18 +1203,18 @@ class ReadoutAllTests(unittest.TestCase):
     def test_every_device_asked_and_the_device_taken_whole_passes(self):
         held = '2026-11-17T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
         found, _ = self.outcome([0], [[held, held, self.WANTED, self.taken()]])
-        self.assertEqual(found["result"], "PASS")
+        self.assertEqual(found["verdict"], "PASS")
 
     def test_run_again_until_one_finishes_each_judged_by_its_own_requests(self):
         held = '2026-11-17T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
         found, kept = self.outcome([1, 0], [[held, held, self.WANTED], [held, held, self.WANTED, self.taken()]])
-        self.assertEqual((found["result"], found["runs"]), ("PASS", 2))
+        self.assertEqual((found["verdict"], found["runs"]), ("PASS", 2))
         self.assertEqual(kept[1].count("/v1/wanted"), 3)   # the second run's alone
 
     def test_one_the_api_did_not_keep_fails_as_it_says(self):
         held = '2026-11-17T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
         found, _ = self.outcome([0], [[held, held, self.WANTED, self.taken()]], stored=False)
-        self.assertEqual(found["result"], "FAIL-NOT-STORED")
+        self.assertEqual(found["verdict"], "FAIL-NOT-STORED")
 
 
 class InstanceTests(unittest.TestCase):
@@ -1347,7 +1358,7 @@ class ReadoutScenarioTests(unittest.TestCase):
     def test_a_whole_readout_kept_and_sonoff_working_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             outcome, tools, _ = self.outcome(self.SC, self.instance(tmp), kept_after=1)
-        self.assertEqual((outcome["result"], tools), ("PASS", ["readout"]))
+        self.assertEqual((outcome["verdict"], tools), ("PASS", ["readout"]))
 
     def test_a_device_left_on_openbeken_is_put_back_on_sonoff_then_read_out_again(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1356,23 +1367,23 @@ class ReadoutScenarioTests(unittest.TestCase):
         # Still answering as OpenBeken after the conversion, in this stand-in: sent to Sonoff again.
         self.assertEqual(tools[:2], ["readout", "sonoff"])
         self.assertEqual(notes["then"][0], "sonoff")
-        self.assertEqual(outcome["result"], "PASS")
+        self.assertEqual(outcome["verdict"], "PASS")
 
     def test_none_kept_whole_or_sonoff_not_working_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             outcome, tools, notes = self.outcome(self.SC, self.instance(tmp, kept=b"part"))
-        self.assertEqual(outcome["result"], "FAIL-READOUT")
+        self.assertEqual(outcome["verdict"], "FAIL-READOUT")
         self.assertEqual(len(tools), 1 + fault_suite.RECOVERY_RUNS)
         self.assertEqual(notes["readout"], ["no info.txt"])
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(self.outcome(self.SC, self.instance(tmp), kept_after=1, works=False)[0]["result"],
+            self.assertEqual(self.outcome(self.SC, self.instance(tmp), kept_after=1, works=False)[0]["verdict"],
                              "FAIL-NOT-SONOFF")
 
     def test_a_fault_after_its_phase_is_mistimed(self):
         with tempfile.TemporaryDirectory() as tmp:
             instance = self.instance(tmp)
             instance.last_events = lambda: happened(("phase", {"phase": "read-done"}))
-            self.assertEqual(self.outcome(self.SC, instance, kept_after=1)[0]["result"], "MISTIMED")
+            self.assertEqual(self.outcome(self.SC, instance, kept_after=1)[0]["verdict"], "MISTIMED")
 
     PLAIN = {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none", "arg": "unattended", "at": 0}
     DIGEST = "a" * 64
@@ -1404,7 +1415,7 @@ class ReadoutScenarioTests(unittest.TestCase):
                                       return_value=[] if whole else ["no info.txt"]):
                 outcome = fault_suite.readout_scenario(instance, self.PLAIN, Path(tmp, "x.log"), {})
             self.assertTrue(Path(tmp, "x-api/requests.log").exists())   # what the API was asked, kept
-        return outcome["result"], runs
+        return outcome["verdict"], runs
 
     def test_the_readout_with_no_fault_is_sent_to_the_api_and_judged_there(self):
         result, runs = self.sent()
@@ -1437,7 +1448,7 @@ class ReadoutScenarioTests(unittest.TestCase):
                     mock.patch.object(fault_suite.fault_verdicts, "first_stage_problems",
                                       side_effect=lambda data, runs: [] if (data, runs) == (b"tar", "openbeken")
                                       else ["wrong"]):
-                return fault_suite.readout_scenario(instance, sc, Path("tool.log"), {})["result"]
+                return fault_suite.readout_scenario(instance, sc, Path("tool.log"), {})["verdict"]
 
     def test_a_readout_of_a_device_on_openbeken_reads_its_first_stage_alone_leaving_it_as_it_was(self):
         self.assertEqual(self.converted(0), "PASS")
@@ -1633,7 +1644,7 @@ class CancelRunsTests(unittest.TestCase):
                 mock.patch.object(fault_suite, "converted", side_effect=converted):
             outcome = fault_suite.step_scenario(instance, sc, target, Path("unused"), {})
         self.went = outcome["route"]   # what run_scenario's end checks judge the device on
-        return outcome["result"], made, routes
+        return outcome["verdict"], made, routes
 
     def test_after_ctrl_c_twice_a_person_carries_on_starts_afresh_or_switches(self):
         result, made, _ = self.runs("continue")

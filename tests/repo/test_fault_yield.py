@@ -26,7 +26,7 @@ class FoundTests(unittest.TestCase):
             {"id": "a>b:S1:outage-120", "verdict": "PASS"},
             {"id": "a>b:S2:outage-120", "verdict": "FAIL-SCREEN"},
             {"id": "a>b:S2:outage-120", "verdict": "PASS"},          # fixed since: it still found it
-            {"id": "a>b:S1:outage-5", "result": "PASS"},             # the Beken suite's rows
+            {"id": "a>b:S1:outage-5", "result": "PASS"},             # the Beken suite's rows before 2026-11-19
             {"id": "a>b:S3:outage-5", "result": "NOT-FIRED"},        # never landed: not counted
             {"id": "a>b:S1@10:crash-1", "result": "ERROR"},          # the suite's own error
         ])

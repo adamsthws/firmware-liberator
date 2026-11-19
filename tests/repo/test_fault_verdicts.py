@@ -460,8 +460,17 @@ class ResultsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             results = Path(tmp) / "results.jsonl"
             self.assertEqual(fault_verdicts.latest(results), {})
-            results.write_text('{"id": "a", "result": "FAIL"}\n\n{"id": "a", "result": "PASS"}\n', encoding="utf-8")
-            self.assertEqual(fault_verdicts.latest(results), {"a": {"id": "a", "result": "PASS"}})
+            results.write_text('{"id": "a", "verdict": "FAIL"}\n\n{"id": "a", "verdict": "PASS"}\n', encoding="utf-8")
+            self.assertEqual(fault_verdicts.latest(results), {"a": {"id": "a", "verdict": "PASS"}})
+
+    def test_a_row_from_before_the_verdict_key_is_read_as_one(self):
+        # The Beken suite's rows kept their verdict as "result" until 2026-11-19.
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.jsonl"
+            results.write_text('{"id": "a", "result": "PASS"}\n{"id": "b", "notes": {}}\n', encoding="utf-8")
+            found = fault_verdicts.latest(results)
+        self.assertEqual((found["a"]["verdict"], found["b"]["verdict"]), ("PASS", "HARNESS-ERROR"))
+        self.assertEqual(fault_verdicts.verdict({"verdict": "FAIL", "result": "PASS"}), "FAIL")
 
     def test_only_a_failure_is_labelled_starved(self):
         starved = {"memory": {"starved": True}}

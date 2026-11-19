@@ -413,15 +413,28 @@ def screen_problems(output: str) -> list[str]:
     return problems
 
 
+# Where a results row keeps its verdict: both suites' rows since 2026-11-19;
+# the Beken suite's before then kept it as OLD_VERDICT, which is still read.
+VERDICT = "verdict"
+OLD_VERDICT = "result"
+
+
+def verdict(row: dict) -> str:
+    """A results row's verdict, however old the row: HARNESS-ERROR for one
+    with none."""
+    return row.get(VERDICT) or row.get(OLD_VERDICT) or "HARNESS-ERROR"
+
+
 def latest(results: Path) -> dict[str, dict]:
     """Each scenario's newest row in a suite's results file (JSON lines), by
-    id; none for a file not there or not whole."""
+    id, its verdict under VERDICT however old the row (verdict); none for a
+    file not there or not whole."""
     found: dict[str, dict] = {}
     try:
         for line in results.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 row = json.loads(line)
-                found[row["id"]] = row
+                found[row["id"]] = {**row, VERDICT: verdict(row)}
     except (OSError, ValueError):
         pass
     return found
