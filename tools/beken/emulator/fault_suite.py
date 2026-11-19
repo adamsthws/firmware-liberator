@@ -1197,7 +1197,7 @@ def apply_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: 
         cut.join(5)
     notes["cut_at"] = cut.fired
     if cut.fired is None:
-        return dict(result="NO-STEP", runs=runs)
+        return dict(result="NOT-FIRED", runs=runs)
     return dict(result="PASS" if converted(instance.last_state(), sc["route"]) else "FAIL", runs=runs)
 
 
@@ -1342,7 +1342,7 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         run.wait(timeout=60)
         reruns += 1
         if reruns > RECOVERY_RUNS or converted(instance.last_state(), sc["route"]):
-            return dict(result="NO-STEP")
+            return dict(result="NOT-FIRED")
         recover(instance, target, notes)
         run = instance.tool(target, log)
     length = ROUTES[sc["route"]][sc["step"]]
@@ -1481,7 +1481,7 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
-            return dict(result="NO-STEP", runs=1)
+            return dict(result="NOT-FIRED", runs=1)
         if sc["fault"] in ("readdress", "diskfull"):
             # As the read ends: the device then asked for at the address it had,
             # or the readout written as the disk fills.
@@ -1589,7 +1589,7 @@ def readout_all_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -
         begins, ends, length = READOUT_PHASES[sc["step"]]
         if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
-            return dict(result="NO-STEP", runs=1)
+            return dict(result="NOT-FIRED", runs=1)
         time.sleep(length * sc["at"] / 100)
         if happened(instance, "phase", phase=ends):
             notes["mistimed"] = True

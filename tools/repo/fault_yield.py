@@ -19,7 +19,8 @@ from typing import Any
 # never landed or landed outside its step, a computer that could not reach
 # eWeLink, nothing to change, an emulator that never started, and the suite's
 # own error (the Espressif suite's verdicts in `verdict`, the Beken suite's in
-# `result`).
+# `result`). NO-STEP is the Beken suite's NOT-FIRED as results kept from before
+# 2026-11-19 name it.
 UNTESTED = frozenset({"PASS", "MISTIMED", "NOT-FIRED", "NO-INTERNET", "NO-TRAFFIC", "NO-STEP", "NOT-READY",
                       "HARNESS-ERROR", "ERROR"})
 # How many failed scenarios each fault's line names.
