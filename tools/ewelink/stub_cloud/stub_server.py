@@ -16,6 +16,11 @@ One TLS socket on `:443` wears every hat, routed by request:
                           online. The tool's app side connects here too, and its
                           commands for the device (an OTA upgrade) are relayed.
   GET  /dispatch/app      the tool's dispatch: the same IoT server.
+  POST /v2/device/thing/status
+                          a device's params set as the app sets them, passed on to
+                          the device; its answer is the request's. uiActive is
+                          passed on only so, as eWeLink does: sent on the app's
+                          socket, it is answered there and goes nowhere.
   /v2/user/login, /v2/device/thing, /v2/device/ota/query
                           the account API the tool reads the device's LAN key,
                           model and version from (the key is the one in the dump
@@ -59,6 +64,7 @@ import socketserver
 import ssl
 import struct
 import sys
+import queue
 import threading
 from pathlib import Path
 
@@ -161,6 +167,9 @@ class Conn:
 _relay_lock = threading.Lock()
 _devices: dict[str, Conn] = {}          # deviceid -> the device's WebSocket
 _subscribers: dict[str, set[Conn]] = {}  # deviceid -> app WebSockets watching it
+_answers: dict[str, "queue.Queue[dict]"] = {}  # sequence -> where the device's answer to it goes (set_params)
+# How long a device's params set over the API wait for its answer (seconds).
+SET_PARAMS_WAIT = 5.0
 
 
 def _register_device(deviceid: str, conn: Conn) -> None:
@@ -220,6 +229,44 @@ def send_to_device(deviceid: str, msg: dict) -> bool:
         return False
     conn.send(wire(msg))
     return True
+
+def set_params(deviceid: str, apikey: str, params: dict) -> int:
+    """A device's params set over the API (POST /v2/device/thing/status), as an
+    app sets them: passed on to the device as an update, and its answer's
+    error returned (504, eWeLink's word on the app's socket, when it is not
+    online or says nothing in SET_PARAMS_WAIT)."""
+    sequence = str(int(dt.datetime.now().timestamp() * 1000))
+    answer: queue.Queue[dict] = queue.Queue()
+    with _relay_lock:
+        _answers[sequence] = answer
+    try:
+        if not send_to_device(deviceid, {"action": "update", "deviceid": deviceid, "apikey": apikey,
+                                         "userAgent": "app", "sequence": sequence, "params": params}):
+            return 504
+        try:
+            return int(answer.get(timeout=SET_PARAMS_WAIT).get("error", 0))
+        except queue.Empty:
+            return 504
+    finally:
+        with _relay_lock:
+            _answers.pop(sequence, None)
+
+
+def answered(msg: dict) -> bool:
+    """Whether `msg` is a device's answer to params set over the API
+    (set_params), handed to it: not the app's to see."""
+    with _relay_lock:
+        waiting = _answers.get(str(msg.get("sequence")))
+    if waiting is None or msg.get("action"):
+        return False
+    waiting.put(msg)
+    return True
+
+
+# Seen against the real cloud: eWeLink answers a uiActive sent on the app's
+# socket itself, error 0, and sends the device nothing (tools/ewelink/relay.py).
+ANSWERED_HERE = frozenset({"uiActive"})
+
 
 # -- the server ----------------------------------------------------------------
 
@@ -336,6 +383,19 @@ class Stub:
             d.setdefault("apikey", seen["apikey"])
             d.setdefault("devicekey", seen["apikey"])
         return d
+
+    def thing_status(self, body: bytes) -> dict:
+        """POST /v2/device/thing/status: a device's params set (set_params)."""
+        try:
+            request = json.loads(body)
+            deviceid, params = request["id"], request["params"]
+        except (ValueError, KeyError, TypeError):
+            return {"error": 400, "msg": "params"}
+        listed = [item["itemData"] for item in self.device_thing().get("data", {}).get("thingList", [])]
+        apikey = next((item.get("apikey") for item in listed if item.get("deviceid") == deviceid), None)
+        if apikey is None or not isinstance(params, dict):
+            return {"error": 400, "msg": "params"}
+        return {"error": set_params(deviceid, apikey, params), "msg": "", "data": {}}
 
     def device_thing(self) -> dict:
         d = self.account_device()
@@ -496,6 +556,8 @@ class Handler(socketserver.BaseRequestHandler):
             self._serve_json(sock, self.stub.account_login(), peer, "account login")
         elif path == "/v2/device/thing":
             self._serve_signed_in(sock, headers, self.stub.device_thing, peer, "device list")
+        elif path == "/v2/device/thing/status" and request_line.startswith("POST "):
+            self._serve_signed_in(sock, headers, lambda: self.stub.thing_status(body), peer, "params set")
         elif path == "/v2/device/ota/query":
             self._serve_signed_in(sock, headers, lambda: self.stub.ota_query(body), peer, "OTA query")
         elif path.startswith("/ota/"):
@@ -633,7 +695,7 @@ class Handler(socketserver.BaseRequestHandler):
             conn.send(wire(reply))
         # Pass the device's own reports (incl. its reply to a relayed command) to
         # any app watching it.
-        if deviceid:
+        if deviceid and not answered(msg):
             for app in _subscribers_of(deviceid):
                 try:
                     app.send(wire(msg))
@@ -647,6 +709,12 @@ class Handler(socketserver.BaseRequestHandler):
             # A command for a device: hand it to that device and watch for its
             # replies. The device's answer (relayed back) is the app's ack.
             device = _subscribe(target_id, conn)
+            params = msg.get("params")
+            if msg.get("action") == "update" and isinstance(params, dict) and params and params.keys() <= ANSWERED_HERE:
+                log(conn.peer, "ws -> answered here, not passed on (uiActive)")
+                conn.send(wire({"error": 0, "deviceid": target_id, "apikey": msg.get("apikey"),
+                                "sequence": msg.get("sequence")}))
+                return
             if device is not None:
                 log(conn.peer, f"relay app->device ({msg.get('action')})")
                 device.send(wire(msg))
@@ -658,6 +726,12 @@ class Handler(socketserver.BaseRequestHandler):
             log(conn.peer, "ws -> refused: a token a later sign-in ended")
             conn.send(wire(TOKEN_ENDED))
             return
+        if msg.get("action") == "userOnline":
+            # Each of the account's devices' reports go to every app signed in,
+            # as eWeLink sends them: an app asking a device for its readings
+            # over the API gets them here (relay.answers).
+            for item in self.stub.device_thing().get("data", {}).get("thingList", []):
+                _subscribe(item["itemData"]["deviceid"], conn)
         reply = self.stub.ws_reply(msg)   # userOnline handshake, keep-alives
         if reply is not None:
             log(conn.peer, "ws ->", json.dumps(redacted(reply)))

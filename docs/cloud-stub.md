@@ -312,9 +312,17 @@ client cannot stop the rest.
 - **`GET /dispatch/app`** (the tool) gives the same server for the app side.
 - **The relay.** Device and app each hold a WebSocket, and the stub passes an
   app's command to the device by its `deviceid` and the device's messages
-  back. Without it the `upgrade` never reached the device. An app watching is
-  told `sysmsg {"online": false}` when the device drops, as it does to
-  install, as at eWeLink.
+  back, to every app signed in. Without it the `upgrade` never reached the
+  device. An app watching is told `sysmsg {"online": false}` when the device
+  drops, as it does to install, as at eWeLink.
+- **The readings.** As at eWeLink, a `uiActive` sent on the app's WebSocket
+  is answered by the stub itself and passed to no device
+  (`stub_server.ANSWERED_HERE`). Set over the API instead,
+  `POST /v2/device/thing/status` with `{"type": 1, "id": "<device id>",
+  "params": {"uiActive": 60}}`, it is passed to the device as an `update`,
+  and the device's answer is the request's (`set_params`): the device then
+  sends its readings on the app's WebSocket. That is how the tool asks for
+  them (`relay.ask_readings`).
 - **`POST /v2/user/login`, `GET /v2/device/thing`, `POST /v2/device/ota/query`**
   (the tool) are the account API: a token, the device list and the update
   offer. Each sign-in gives a new token and ends the one before, as at
@@ -423,6 +431,34 @@ digits. Your computer and the stub are at `192.168.60.1`, the device at
 | app dispatch, `GET /dispatch/app` | `Authorization: Bearer stub-access-token-<hex>` | `{"error": 0, "reason": "", "domain": "192.168.60.1", "IP": "192.168.60.1", "port": 443}` |
 | `userOnline`, first on `GET /api/ws` as the app | `{"action": "userOnline", "at": "stub-access-token-<hex>", "apikey": "<apikey>", "appid": "<app id>", "nonce": "BucKkPAM", "ts": 1792443098, "userAgent": "app", "sequence": "1792443098404", "version": 8}` | `{"error": 0, "apikey": "<apikey>", "sequence": "1792443098404", "config": {"hb": 1, "hbInterval": 145}}` |
 | `upgrade`, the installer | `{"action": "upgrade", "deviceid": "<device id>", "apikey": "<apikey>", "userAgent": "app", "sequence": "1792443098405", "params": {"model": "SN-ESP32C3-S60-01", "version": "4.4.3", "binList": [{"name": "user1.bin", "downloadUrl": "http://192.168.60.1:8088/user1.bin", "digest": "<SHA-256 of the image>"}, {"name": "user2.bin", "downloadUrl": "http://192.168.60.1:8088/user2.bin", "digest": "<SHA-256 of the image>"}]}}` | It passes this to the device as it is. Within 0.1 s the device sends `update` `{…, "d_seq": 153697133, "seq": 2, "params": {"only_device": {"ota": "start"}}}`, answered like any `update` and passed to the tool. Half a second later the device drops its WebSocket, and the stub tells the tool `{"action": "sysmsg", "deviceid": "<device id>", "params": {"online": false}}`. The device fetches the image from `downloadUrl` in ranges, each request carrying its device id, a `ts` and a `sign`. |
+
+**A device's readings on the real cloud.** Recorded from the tool's app
+socket and the device's own connection to eWeLink (its packets, encrypted,
+timed against the tool's) in a run back to Sonoff's firmware on an emulated
+S60:
+
+- A `uiActive` sent on the app's socket is answered `{"error": 0, ...}`
+  within 25 ms, by eWeLink: nothing goes down the device's connection, and
+  no readings come. Every relay check against the real cloud had said "Power
+  meter: Not checked" for this. The other form apps send,
+  `{"uiActive": {"all": 1, "time": 60}}`, fares the same, and so does a
+  `selfApikey` in the message. A switch, by contrast, reaches the device,
+  whose answer comes back with a `uid` added.
+- The same `uiActive` set over the API (above) goes to the device at once,
+  eWeLink adding a `partnerApikey`, and is answered `{"error": 0, "msg": "",
+  "data": {}}`. The device sends
+  `{"action": "update", "userAgent": "device", "deviceid": "<device id>", "d_seq": 5839,
+  "params": {"current": 43, "voltage": 23008, "power": 9999, "dayKwh": 0, "monthKwh": 0}}`,
+  whole hundredths as on the stub, which eWeLink passes to the app's socket.
+  While the device keeps sending (the `uiActive` seconds), it also sends its
+  readings when they change, such as 2 s after a switch: 0 V then, 230.08 V
+  when asked 12 s later, so readings waiting when they are asked for are
+  passed over (`relay.STALE_READ`).
+- A `query` on the app's socket for `power`, `voltage` and `current` is
+  answered by eWeLink from its record, the last readings the device sent,
+  without asking it: zeros until a device has sent any.
+- An app socket opened with the same sign-in as another ends the other
+  ("WebSocket closed unexpectedly"): one socket a sign-in.
 
 What the values are:
 

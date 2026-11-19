@@ -163,6 +163,66 @@ class SendToDeviceTests(unittest.TestCase):
         self.assertEqual(json.loads(conn.send.call_args.args[0]), {"action": "upgrade"})
 
 
+class ReadingsTests(unittest.TestCase):
+    """A device's readings asked for as at eWeLink: seen against the real
+    cloud, a uiActive on the app's socket was answered by eWeLink itself and
+    sent to no device; set over the API it went to the device, whose readings
+    came back on the app's socket (tools/ewelink/relay.py)."""
+
+    def setUp(self):
+        self.handler = stub_server.Handler.__new__(stub_server.Handler)
+        self.handler.stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"})
+        for patcher in (mock.patch.dict(stub_server._subscribers, {}, clear=True),
+                        mock.patch.dict(stub_server._answers, {}, clear=True),
+                        mock.patch.object(stub_server, "log")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_a_uiactive_on_the_apps_socket_is_answered_and_goes_no_further(self):
+        device, app = mock.Mock(), mock.Mock(peer="app")
+        with mock.patch.dict(stub_server._devices, {"1000abcdef": device}, clear=True):
+            self.handler._app_message(app, {"action": "update", "deviceid": "1000abcdef", "apikey": "k",
+                                            "sequence": "1", "params": {"uiActive": 60}})
+            self.handler._app_message(app, {"action": "update", "deviceid": "1000abcdef", "apikey": "k",
+                                            "sequence": "2", "params": {"switches": [{"switch": "on", "outlet": 0}]}})
+        self.assertEqual(json.loads(app.send.call_args.args[0]),
+                         {"error": 0, "deviceid": "1000abcdef", "apikey": "k", "sequence": "1"})
+        self.assertEqual([json.loads(call.args[0])["sequence"] for call in device.send.call_args_list], ["2"])
+
+    def test_set_over_the_api_it_reaches_the_device_and_its_readings_every_app(self):
+        app, device = mock.Mock(peer="app"), mock.Mock(peer="device")
+        self.handler.stub.signed_in = lambda _token: True
+        self.handler._app_message(app, {"action": "userOnline", "at": "t"})   # asking the device nothing
+
+        def answer(data):   # the S60's firmware: its readings, then its answer
+            sent = json.loads(data)
+            if sent.get("userAgent") != "app":
+                return   # the stub's own answers to it
+            self.handler._device_message(device, {"action": "update", "deviceid": "1000abcdef", "userAgent": "device",
+                                                  "params": {"voltage": 23008, "power": 9999}}, "1000abcdef")
+            self.handler._device_message(device, {"error": 0, "deviceid": "1000abcdef", "userAgent": "device",
+                                                  "sequence": sent["sequence"]}, "1000abcdef")
+        device.send.side_effect = answer
+        with mock.patch.dict(stub_server._devices, {"1000abcdef": device}, clear=True):
+            reply = self.handler.stub.thing_status(json.dumps(
+                {"type": 1, "id": "1000abcdef", "params": {"uiActive": 60}}).encode())
+        self.assertEqual(reply["error"], 0)
+        self.assertEqual(json.loads(device.send.call_args_list[0].args[0])["params"], {"uiActive": 60})
+        told = [json.loads(call.args[0]) for call in app.send.call_args_list]
+        self.assertIn({"voltage": 23008, "power": 9999}, [msg.get("params") for msg in told])
+        self.assertNotIn("sequence", told[-1])   # the device's answer is the request's, not the app's
+
+    def test_a_refusal_is_the_requests_answer_and_no_device_is_eWeLinks_504(self):
+        device = mock.Mock(peer="device")
+        device.send.side_effect = lambda data: json.loads(data).get("userAgent") == "app" and self.handler._device_message(
+            device, {"error": 400, "deviceid": "1000abcdef", "sequence": json.loads(data)["sequence"]}, "1000abcdef")
+        body = json.dumps({"type": 1, "id": "1000abcdef", "params": {"uiActive": 60}}).encode()
+        with mock.patch.dict(stub_server._devices, {"1000abcdef": device}, clear=True):
+            self.assertEqual(self.handler.stub.thing_status(body)["error"], 400)
+        with mock.patch.dict(stub_server._devices, {}, clear=True):
+            self.assertEqual(self.handler.stub.thing_status(body)["error"], 504)
+
+
 class OnlineTests(unittest.TestCase):
     """The app watching a device is told when it comes and goes, as at eWeLink."""
 

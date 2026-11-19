@@ -4,18 +4,26 @@ switches it to the other state and back, each confirmed by the device's
 answer to it, reading its meter after each as the app does, so a run back
 to Sonoff's firmware ends with the relay proved as a run to another
 firmware does (autoflash's report).  answers() asks the device for nothing it
-changes, to know it is there.  Each sends in a turn of the run's own in the
+changes, to know it is there.
+
+The readings are asked for over eWeLink's HTTP API (ask_readings), not on
+the app's socket: seen against the real cloud, an S60 sent uiActive on the
+socket was sent nothing - eWeLink answered it itself, error 0 within 25 ms,
+and nothing went down the device's connection - while the same uiActive set
+over the API went to the device at once, and its readings came back on the
+app's socket as an update (docs/cloud-stub.md).  Each sends in a turn of the run's own in the
 fault suite (get_device_key.cloud_turn), and an update sent outside one is
 refused there (send_update).
 """
 
 from __future__ import annotations
 
+import json
 import socket
 import time
 from typing import Any, Callable, NamedTuple
 
-from tools.ewelink.get_device_key import (APP_ID, TOKEN_REFUSED, Account, EwelinkError, SessionEnded, api_json,
+from tools.ewelink.get_device_key import (API, APP_ID, TOKEN_REFUSED, Account, EwelinkError, SessionEnded, api_json,
                                           cloud_turn, get_devices, in_turn, select_device)
 from tools.ewelink.probe_ota_command import WS_DISPATCH, nonce
 from tools.ewelink.websocket_minimal import WebSocket, WebSocketError
@@ -28,13 +36,20 @@ SWITCH_WAIT = 15.0
 # confirmed a switch, back 15 s later, so the switch back reached no one.
 RESTORE_WAIT = 60.0
 # A device's answer to an update it does not take: error 400, which eWeLink
-# passes on (the DualR3's to uiActive). eWeLink's own for a device not there is 504.
+# passes on (the DualR3's to uiActive, seen on the stub only, which answers
+# ask_readings with it). eWeLink's own for a device not there is 504.
 REFUSED = 400
 # How long after a switch the meter is read, for it to have measured the new
 # state: as autoflash's report waits before reading Tasmota's (seconds).
 READING_SETTLE = 6.0
 # How long a device asked for its readings may take to send them (seconds).
 READING_WAIT = 10.0
+# How long the app asks a device to keep sending its readings, as it asks as
+# its page opens (seconds).
+UI_ACTIVE = 60
+# Readings already waiting when they are asked for were sent before the meter
+# had settled: read off for this long (seconds) and passed over.
+STALE_READ = 0.1
 
 
 class RelayCheck(NamedTuple):
@@ -94,13 +109,19 @@ def switch_params(params: dict[str, Any], on: bool) -> dict[str, Any]:
     return {"switch": word}
 
 
-def send_update(ws: WebSocket, device: dict[str, Any], params: dict[str, Any]) -> str:
-    """Send the device an update, as the app does; its sequence, which the
-    answer to it carries. In the fault suite only within a turn of the run's
-    own with its device on eWeLink (cloud_turn): every emulated device is the
-    same eWeLink device, and one sent outside it reaches another run's."""
+def may_send() -> None:
+    """Refuse anything sent to the device outside a turn of the run's own in
+    the fault suite, with its device on eWeLink (cloud_turn): every emulated
+    device is the same eWeLink device, and one sent outside it reaches
+    another run's."""
     if not in_turn():
         raise EwelinkError("not sent: no turn of the run's own with its device on eWeLink (cloud_turn)")
+
+
+def send_update(ws: WebSocket, device: dict[str, Any], params: dict[str, Any]) -> str:
+    """Send the device an update, as the app does; its sequence, which the
+    answer to it carries. Only where it may be sent (may_send)."""
+    may_send()
     seq = str(int(time.time() * 1000))
     ws.send_json({"action": "update", "deviceid": device["deviceid"], "apikey": device["apikey"],
                   "userAgent": "app", "sequence": seq, "params": params})
@@ -143,24 +164,48 @@ def reading(params: dict[str, Any]) -> dict[str, float] | None:
     return values or None
 
 
-def read_meter(ws: WebSocket, device: dict[str, Any], *, wait: float = READING_WAIT) -> dict[str, float] | None:
-    """The device's readings, asked for as the app asks as its page opens
-    (uiActive), which the device answers by sending them.  None when it sends
-    none in `wait`: a device with no meter, or one refusing it (the DualR3)."""
-    seq = send_update(ws, device, {"uiActive": 60})
+def ask_readings(region: str, session: dict[str, Any], device: dict[str, Any]) -> int:
+    """Ask the device to send its readings (uiActive), set over eWeLink's API
+    as the app sets a device's params, which eWeLink passes on to the device
+    (the module's docstring): the error eWeLink answers, 0 for asked. Only
+    where it may be sent (may_send)."""
+    may_send()
+    answer = api_json(API[region] + "/v2/device/thing/status",
+                      body=json.dumps({"type": 1, "id": device["deviceid"],
+                                       "params": {"uiActive": UI_ACTIVE}}).encode("utf-8"),
+                      headers={"Authorization": "Bearer " + session["at"], "Content-Type": "application/json",
+                               "X-CK-Appid": APP_ID})
+    if answer.get("error") in TOKEN_REFUSED:
+        raise SessionEnded("eWeLink ended the sign-in: " + str(answer.get("msg", "token refused")))
+    return int(answer.get("error", 0))
+
+
+def readings_sent(ws: WebSocket, device: dict[str, Any], wait: float) -> dict[str, float] | None:
+    """The readings the device sends on the app's socket within `wait`: an
+    update from it holding them. None when none comes."""
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         try:
             msg = ws.receive_json(timeout=max(0.1, deadline - time.monotonic()))
         except socket.timeout:
             break
-        if msg.get("sequence") == seq and msg.get("error", 0) != 0:
-            return None
-        found = reading(msg["params"]) if (msg.get("deviceid") == device["deviceid"]
-                                            and isinstance(msg.get("params"), dict)) else None
-        if found:
-            return found
+        if msg.get("deviceid") == device["deviceid"] and isinstance(msg.get("params"), dict):
+            found = reading(msg["params"])
+            if found:
+                return found
     return None
+
+
+def read_meter(ws: WebSocket, region: str, session: dict[str, Any], device: dict[str, Any], *,
+               wait: float = READING_WAIT) -> dict[str, float] | None:
+    """The device's readings, asked for as the app asks as its page opens
+    (ask_readings), which the device answers by sending them.  None when it
+    sends none in `wait`: a device with no meter, or one refusing it (the
+    DualR3)."""
+    readings_sent(ws, device, STALE_READ)
+    if ask_readings(region, session, device) != 0:
+        return None
+    return readings_sent(ws, device, wait)
 
 
 def answers(*, account: Account, device_id: str) -> bool | None:
@@ -168,16 +213,18 @@ def answers(*, account: Account, device_id: str) -> bool | None:
     cannot be reached.  The account's "online" does not say it: eWeLink
     keeps a device that went silent online until it has missed its
     heartbeats, minutes on, and passes it what is sent meanwhile to no one.
-    Asked as the app asks for a device's readings as its page opens
-    (uiActive), which changes nothing on the device: refusing it is answering
-    too. Firmware with no meter does not know that and says nothing, so then
-    asked to keep its LED's setting as it last reported it, which changes
-    nothing either."""
+    Asked for its readings as the app asks as its page opens (ask_readings),
+    which changes nothing on the device: its readings sent back, or its
+    refusal, are its answer - not eWeLink's to the asking, which eWeLink gives
+    a uiActive on the app's socket itself. Firmware with no meter does not
+    know that and says nothing, so then asked to keep its LED's setting as it
+    last reported it, which changes nothing either."""
     def ask(region: str, session: dict[str, Any]) -> bool:
         device = select_device(get_devices(region, session["at"]), device_id)
         ws = app_socket(region, session)
         try:
-            if command(ws, device, {"uiActive": 60}, answers=(0, REFUSED)):
+            asked = ask_readings(region, session, device)
+            if asked == REFUSED or asked == 0 and readings_sent(ws, device, READING_WAIT):
                 return True
             led = (device.get("params") or {}).get("sledOnline")
             return command(ws, device, {"sledOnline": led}) if led in ("on", "off") else False
@@ -213,7 +260,7 @@ def check_relay(*, account: Account, device_id: str,
                 if not switch(ws, device, on):
                     return False, None
                 time.sleep(READING_SETTLE)
-                return True, read_meter(ws, device)
+                return True, read_meter(ws, region, session, device)
             try:
                 switched, first = switched_and_read(not was_on)
                 restored, second = switched_and_read(was_on)

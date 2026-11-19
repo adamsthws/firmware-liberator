@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest import mock
 
@@ -7,42 +8,51 @@ from tools.ewelink import get_device_key, relay
 
 class Device:
     """The cloud's socket as the app sees it, with a device behind it that
-    reports each switch it is sent - or, `obeys` False, none."""
+    reports each switch it is sent - or, `obeys` False, none. As against the
+    real cloud, a uiActive on the socket is eWeLink's to answer, and reaches
+    no device; set over the API (set_params) it does, and a device with a
+    `meter` sends its readings on the socket."""
 
     def __init__(self, obeys=True, error=0, reports=False, knows_readings=True, meter=False):
         self.sent, self.obeys, self.error, self.on, self.reports = [], obeys, error, False, reports
-        self.knows_readings, self.meter, self.answered = knows_readings, meter, 0
+        self.knows_readings, self.meter, self.pending, self.set_over_api = knows_readings, meter, [], []
+
+    def set_params(self, params):
+        """Params set over the API: eWeLink's answer, the device's error."""
+        self.set_over_api.append(params)
+        if self.error:
+            return self.error
+        if self.obeys and self.knows_readings and self.meter and "uiActive" in params:
+            # An S60's, a 100 W load on 230 V.
+            self.pending.append({"userAgent": "device", "action": "update", "deviceid": "1000abcdef",
+                                 "params": {"voltage": 23008 if self.on else 0, "current": 43 if self.on else 0,
+                                            "power": 9999 if self.on else 0}})
+        return 0
 
     def send_json(self, value):
         self.sent.append(value)
-        self.answered = 0   # times what was last sent was answered
+        if value.get("action") == "userOnline":
+            self.pending.append({"error": 0})
+        elif self.error:
+            self.pending.append({"error": self.error, "sequence": value["sequence"]})
+        elif "uiActive" in value["params"]:   # eWeLink's own answer
+            self.pending.append({"error": 0, "deviceid": "1000abcdef", "sequence": value["sequence"]})
+        elif not self.obeys:
+            pass
+        elif "sledOnline" in value["params"]:
+            self.pending.append({"error": 0, "deviceid": "1000abcdef", "sequence": value["sequence"]})
+        else:
+            self.on = value["params"]["switches"][0]["switch"] == "on"
+            if self.reports:   # its new state, as some devices say it
+                self.pending.append({"action": "update", "deviceid": "1000abcdef",
+                                     "params": {"switches": [{"outlet": 0, "switch": "on" if self.on else "off"}]}})
+            else:   # the S61's answer
+                self.pending.append({"error": 0, "deviceid": "1000abcdef", "sequence": value["sequence"]})
 
     def receive_json(self, timeout=None):
-        last = self.sent[-1]
-        if last.get("action") == "userOnline":
-            return {"error": 0}
-        if self.error:
-            return {"error": self.error, "sequence": last["sequence"]}
-        if not self.obeys:
+        if not self.pending:
             raise relay.socket.timeout
-        if "uiActive" in last["params"]:   # its readings asked for: answered, then sent
-            if not self.knows_readings:    # a device with no meter says nothing
-                raise relay.socket.timeout
-            self.answered += 1
-            if self.answered == 1:
-                return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}
-            if self.meter and self.answered == 2:   # an S60's, a 100 W load on 230 V
-                return {"userAgent": "device", "action": "update", "deviceid": "1000abcdef",
-                        "params": {"voltage": 23008 if self.on else 0, "current": 43 if self.on else 0,
-                                   "power": 9999 if self.on else 0}}
-            raise relay.socket.timeout
-        if "sledOnline" in last["params"]:
-            return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}
-        self.on = last["params"]["switches"][0]["switch"] == "on"
-        if self.reports:   # its new state, as some devices say it
-            return {"action": "update", "deviceid": "1000abcdef",
-                    "params": {"switches": [{"outlet": 0, "switch": "on" if self.on else "off"}]}}
-        return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}   # the S61's answer
+        return self.pending.pop(0)
 
     def close(self):
         pass
@@ -50,6 +60,19 @@ class Device:
 
 RECORD = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up", "online": True,
           "params": {"switches": [{"outlet": 0, "switch": "off"}]}}
+
+
+def cloud_api(behind):
+    """eWeLink's API for relay.api_json: the socket's server, and params set
+    (set_params) of the device behind the last socket opened of `behind`."""
+    def api_json(url, body=None, headers=None):
+        if url.endswith("/v2/device/thing/status"):
+            request = json.loads(body)
+            assert request["id"] == "1000abcdef" and headers["Authorization"].startswith("Bearer ")
+            open_now = [one for one in behind if one.sent] or behind
+            return {"error": open_now[-1].set_params(request["params"])}
+        return {"domain": "192.0.2.1", "port": 443}
+    return api_json
 
 
 def asked_of(device, record=RECORD, ask=relay.check_relay, sockets=None, **more):
@@ -60,7 +83,7 @@ def asked_of(device, record=RECORD, ask=relay.check_relay, sockets=None, **more)
     account = relay.Account(lambda: ("eu", {"at": "t", "user": {"apikey": "a"}}))
     with mock.patch.object(relay, "get_devices", return_value=[record]), \
             mock.patch.object(relay, "READING_SETTLE", 0), \
-            mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
+            mock.patch.object(relay, "api_json", cloud_api(sockets or [device])), \
             mock.patch.object(relay.WebSocket, "connect", **connect):
         return ask(account=account, device_id="1000abcdef", **more)
 
@@ -70,17 +93,25 @@ class RelayTests(unittest.TestCase):
         return asked_of(*args, **more)
 
     def test_a_device_that_answers_is_there_and_nothing_on_it_changes(self):
-        device = Device()
+        device = Device(meter=True)
         self.assertIs(self.check(device, ask=relay.answers), True)
-        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"uiActive": 60}])
+        self.assertEqual(device.set_over_api, [{"uiActive": relay.UI_ACTIVE}])
+        self.assertEqual([m for m in device.sent if m.get("action") == "update"], [])
         self.assertFalse(device.on)
+
+    def test_ewelinks_own_answer_is_not_the_devices(self):
+        # Seen against the real cloud: a uiActive on the app's socket answered
+        # by eWeLink itself, error 0 within 25 ms, sent to no device.
+        device = Device(meter=True, obeys=False)
+        self.assertIs(self.check(device, ask=relay.answers), False)
 
     def test_a_device_with_no_meter_is_asked_to_keep_its_leds_setting(self):
         device = Device(knows_readings=False)
         record = {**RECORD, "params": {**RECORD["params"], "sledOnline": "off"}}
-        self.assertIs(self.check(device, record, ask=relay.answers), True)
-        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"],
-                         [{"uiActive": 60}, {"sledOnline": "off"}])
+        with mock.patch.object(relay, "READING_WAIT", 0.2):
+            self.assertIs(self.check(device, record, ask=relay.answers), True)
+        self.assertEqual(device.set_over_api, [{"uiActive": relay.UI_ACTIVE}])
+        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"sledOnline": "off"}])
         self.assertFalse(device.on)
 
     def test_a_dualr3_driving_a_motor_says_so(self):
@@ -90,21 +121,23 @@ class RelayTests(unittest.TestCase):
 
     def test_with_no_led_setting_reported_nothing_more_is_sent(self):
         device = Device(knows_readings=False)
-        self.assertIs(self.check(device, ask=relay.answers), False)
-        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"uiActive": 60}])
+        with mock.patch.object(relay, "READING_WAIT", 0.2):
+            self.assertIs(self.check(device, ask=relay.answers), False)
+        self.assertEqual([m for m in device.sent if m.get("action") == "update"], [])
 
     def test_a_device_refusing_the_question_is_there(self):
         # The DualR3's Sonoff firmware answers uiActive with error 400: its own
-        # refusal, which eWeLink passes on, and only a device there sends.
+        # refusal, which the stub passes on, and only a device there sends.
         device = Device(error=400)
         self.assertIs(self.check(device, ask=relay.answers), True)
-        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"uiActive": 60}])
+        self.assertEqual(device.set_over_api, [{"uiActive": relay.UI_ACTIVE}])
 
     def test_a_device_online_still_from_before_does_not_answer(self):
         # eWeLink keeps a device that restarted online until its heartbeats are
         # missed: what is sent to it meanwhile goes to no one.
-        self.assertIs(self.check(Device(obeys=False), ask=relay.answers), False)
-        self.assertIs(self.check(Device(error=504), ask=relay.answers), False)
+        with mock.patch.object(relay, "READING_WAIT", 0.2):
+            self.assertIs(self.check(Device(obeys=False), ask=relay.answers), False)
+            self.assertIs(self.check(Device(error=504), ask=relay.answers), False)
 
     def test_whether_it_answers_is_not_known_without_ewelink(self):
         account = relay.Account(mock.Mock(side_effect=relay.EwelinkError("no route")))
@@ -120,9 +153,10 @@ class RelayTests(unittest.TestCase):
             if token == "old":
                 raise relay.SessionEnded("eWeLink ended the sign-in")
             return [RECORD]
+        device = Device(meter=True)
         with mock.patch.object(relay, "get_devices", devices), \
-                mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
-                mock.patch.object(relay.WebSocket, "connect", return_value=Device()):
+                mock.patch.object(relay, "api_json", cloud_api([device])), \
+                mock.patch.object(relay.WebSocket, "connect", return_value=device):
             self.assertIs(relay.answers(account=account, device_id="1000abcdef"), True)
             self.assertIs(relay.answers(account=account, device_id="1000abcdef"), True)
         self.assertEqual(sign_in.call_count, 2)
@@ -197,8 +231,21 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(checked, relay.RelayCheck(True, True, {"Voltage": 230.08, "Power": 99.99},
                                                    {"Voltage": 0.0, "Power": 0.0}))
         asked = [m["params"] for m in device.sent if m.get("action") == "update"]
-        self.assertEqual(asked, [{"switches": [{"switch": "on", "outlet": 0}]}, {"uiActive": 60},
-                                 {"switches": [{"switch": "off", "outlet": 0}]}, {"uiActive": 60}])
+        self.assertEqual(asked, [{"switches": [{"switch": "on", "outlet": 0}]},
+                                 {"switches": [{"switch": "off", "outlet": 0}]}])
+        self.assertEqual(device.set_over_api, [{"uiActive": relay.UI_ACTIVE}] * 2)
+
+    def test_readings_waiting_from_before_they_were_asked_for_are_passed_over(self):
+        # Seen against the real cloud: the device reported 0 V 2 s after its
+        # relay went off, its meter not yet settled, and 230.08 V when asked.
+        class Early(Device):
+            def send_json(self, value):
+                super().send_json(value)
+                if "switches" in value.get("params", {}) and self.on:
+                    self.pending.append({"userAgent": "device", "action": "update", "deviceid": "1000abcdef",
+                                         "params": {"voltage": 0, "current": 0, "power": 0}})
+        checked = self.check(Early(meter=True))
+        self.assertEqual(checked.on, {"Voltage": 230.08, "Power": 99.99})
 
     def test_a_device_on_already_is_read_on_after_its_switch_back(self):
         device = Device(meter=True)
@@ -215,11 +262,8 @@ class RelayTests(unittest.TestCase):
     def test_a_device_refusing_to_send_readings_is_not_waited_for(self):
         # The DualR3's Sonoff firmware refuses uiActive (error 400).
         class Refusing(Device):
-            def receive_json(self, timeout=None):
-                last = self.sent[-1]
-                if "uiActive" in last.get("params", {}):
-                    return {"error": 400, "sequence": last["sequence"]}
-                return super().receive_json(timeout)
+            def set_params(self, params):
+                return 400 if "uiActive" in params else super().set_params(params)
         started = relay.time.monotonic()
         self.assertEqual(self.check(Refusing()), relay.RelayCheck(True, True, None, None))
         self.assertLess(relay.time.monotonic() - started, relay.READING_WAIT)
@@ -260,7 +304,7 @@ class TurnTests(unittest.TestCase):
         return got, asked, not outside
 
     def test_whether_the_device_answers_is_asked_in_a_turn(self):
-        got, asked, within = self.in_the_suite(relay.answers, Device())
+        got, asked, within = self.in_the_suite(relay.answers, Device(meter=True))
         self.assertEqual((got, asked, within), (True, ["command"], True))
 
     def test_a_relay_check_is_one_turn_switching_back_included(self):
@@ -283,9 +327,12 @@ class TurnTests(unittest.TestCase):
     def test_an_update_outside_a_turn_is_refused(self):
         device = Device()
         with mock.patch.object(get_device_key, "_TURN_FILE", "/nonexistent/cloud-turn"), \
-                self.assertRaises(relay.EwelinkError):
-            relay.command(device, RECORD, {"switch": "on"})
-        self.assertEqual(device.sent, [])
+                mock.patch.object(relay, "api_json", cloud_api([device])):
+            with self.assertRaises(relay.EwelinkError):
+                relay.command(device, RECORD, {"switch": "on"})
+            with self.assertRaises(relay.EwelinkError):
+                relay.ask_readings("eu", {"at": "t"}, RECORD)
+        self.assertEqual((device.sent, device.set_over_api), ([], []))
 
 
 if __name__ == "__main__":
