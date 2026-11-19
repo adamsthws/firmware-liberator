@@ -394,6 +394,21 @@ class BatchResultTests(unittest.TestCase):
             fault_suite.batch(first=81)
         self.assertEqual(sorted(call.args[0] for call in instance.call_args_list), [81, 82])
 
+    def test_a_batch_says_each_verdict_as_the_espressif_suite_does(self):
+        rows = [{"id": "a", "route": "sonoff>openbeken", "step": "B2", "fault": "deviceoff", "arg": 1}]
+        with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
+                mock.patch.object(fault_suite, "run_scenario", return_value={"verdict": "FAIL", "notes": {}}), \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
+                mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
+                mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
+                mock.patch.object(fault_suite.fault_verdicts, "batch_line", return_value="the line") as line, \
+                mock.patch("builtins.print") as printed:
+            fault_suite.batch(first=81)
+        line.assert_called_once_with(81, "FAIL", "a", {})
+        printed.assert_any_call("the line", flush=True)
+
     def test_a_batch_refuses_instances_another_run_has(self):
         with mock.patch.object(fault_suite.emulator_instances, "running", return_value={2}), \
                 mock.patch.object(fault_suite, "scenarios", return_value=[]), \

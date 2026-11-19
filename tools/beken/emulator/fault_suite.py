@@ -1752,8 +1752,8 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
                     outcome = dict(verdict="ERROR", notes={"error": repr(exc), "trace": traceback.format_exc()})
                 with lock:
                     record(sc, outcome)
-                    label = fault_verdicts.starved_label(outcome["verdict"], outcome.get("notes", {}))
-                    print(f"{outcome['verdict']:9} {sc['id']}{label}", flush=True)
+                    print(fault_verdicts.batch_line(n, outcome["verdict"], sc["id"], outcome.get("notes", {})),
+                          flush=True)
                 # The device's eWeLink is always the local stub (ACCOUNT).
                 emulator_stats.fault_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, scenario=sc,
                                          verdict=outcome["verdict"], tries=outcome.get("runs"),

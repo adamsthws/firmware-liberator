@@ -6,6 +6,7 @@ import io
 import json
 import tarfile
 import tempfile
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -471,6 +472,13 @@ class ResultsTests(unittest.TestCase):
             found = fault_verdicts.latest(results)
         self.assertEqual((found["a"]["verdict"], found["b"]["verdict"]), ("PASS", "HARNESS-ERROR"))
         self.assertEqual(fault_verdicts.verdict({"verdict": "FAIL", "result": "PASS"}), "FAIL")
+
+    def test_a_batch_line_is_alike_from_both_suites(self):
+        at = time.mktime((2026, 11, 19, 14, 5, 9, 0, 0, -1))
+        self.assertEqual(fault_verdicts.batch_line(81, "PASS", "sonoff>esphome:J2:cancel-new", {}, at),
+                         "14:05:09 [81] PASS             sonoff>esphome:J2:cancel-new")
+        self.assertTrue(fault_verdicts.batch_line(3, "FAIL", "x", {"memory": {"starved": True}}, at)
+                        .endswith("x  (memory-starved)"))
 
     def test_only_a_failure_is_labelled_starved(self):
         starved = {"memory": {"starved": True}}

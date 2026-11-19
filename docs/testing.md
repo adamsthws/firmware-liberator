@@ -338,6 +338,10 @@ Both suites run a batch the same way:
   beside a batch once took a 6-core computer's load to 28, and fresh devices
   never reached eWeLink. Run the unit tests elsewhere or between batches
   anyway.
+- As each scenario ends, a batch prints one line, both suites alike
+  (`fault_verdicts.batch_line`): the time, the emulator instance in
+  brackets, the verdict and the scenario, such as
+  `14:05:09 [81] PASS             sonoff>esphome:J2:cancel-new`.
 - A result's notes say how short of memory the computer was, and a failure
   while it was starved, when connections can fail with nothing wrong, is
   marked "memory-starved".

@@ -401,6 +401,29 @@ class SavedDeviceTests(unittest.TestCase):
             fs.worker(1, todo, threading.Lock())
         self.assertEqual(events, ["wait", "run"])
 
+    def test_a_batch_says_each_verdict_as_the_beken_suite_does(self):
+        import queue
+        import threading
+        todo = queue.Queue()
+        todo.put({"id": "a", "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60})
+
+        class Started:
+            def __init__(self, *args):
+                pass
+
+            def go(self):
+                return {"verdict": "FAIL", "notes": {}}
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(fs, "OUT", Path(out)), mock.patch.object(fs, "LOGS", Path(out)), \
+                mock.patch.object(fs, "memory_now", return_value=(fs.LOW_MEMORY_KB * 2, None)), \
+                mock.patch.object(fs.cpu_load, "wait_for_room"), \
+                mock.patch.object(fs, "Scenario", Started), mock.patch.object(fs, "TUNER"), \
+                mock.patch.object(fs.fault_verdicts, "batch_line", return_value="the line") as line, \
+                mock.patch("builtins.print") as printed:
+            fs.worker(81, todo, threading.Lock())
+        line.assert_called_once_with(81, "FAIL", "a", {})
+        printed.assert_any_call("the line", flush=True)
+
     def test_a_batch_starts_the_longest_first(self):
         rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abc"]
         ran = []

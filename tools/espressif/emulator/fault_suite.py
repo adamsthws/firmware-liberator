@@ -3133,7 +3133,7 @@ def worker(n, todo, lock, cloud=False, room=None):
                 f.write(json.dumps(row) + "\n")
             sh("docker", "stop", name(n), timeout=120)
         with lock:
-            print(f"{time.strftime('%T')} [{n}] {row['verdict']:16} {sc['id']}{fault_verdicts.starved_label(row['verdict'], row.get('notes', {}))}", flush=True)
+            print(fault_verdicts.batch_line(n, row["verdict"], sc["id"], row.get("notes", {})), flush=True)
         emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc, verdict=row["verdict"],
                                  tries=row.get("runs"), seconds=round(time.time() - started),
                                  cloud=cloud_of(sc), workers=WORKERS, rerun=sc["id"] in EARLIER,

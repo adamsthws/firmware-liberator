@@ -14,6 +14,7 @@ import lzma
 import re
 import shutil
 import tarfile
+import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -445,6 +446,14 @@ def starved_label(verdict: str | None, notes: dict) -> str:
     of memory (memory_pressure): a failure that may be the computer's."""
     starved = verdict != "PASS" and notes.get("memory", {}).get("starved")
     return "  (memory-starved)" if starved else ""
+
+
+def batch_line(instance: int, verdict: str, scenario_id: str, notes: dict, at: float | None = None) -> str:
+    """What a batch prints as a scenario ends, both suites alike: the time
+    (`at`, now unless given), the emulator instance, the verdict and the
+    scenario, and the starved label (starved_label)."""
+    return (f"{time.strftime('%T', time.localtime(at))} [{instance}] {verdict:16} {scenario_id}"
+            f"{starved_label(verdict, notes)}")
 
 
 def records_under(work: Path) -> Path:
