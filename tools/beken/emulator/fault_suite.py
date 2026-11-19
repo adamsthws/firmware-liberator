@@ -8,7 +8,8 @@ does for the Espressif devices.
                                         the starting devices: one on the interim firmware,
                                         one on OpenBeken, one on ESPHome, converted by
                                         the tool from the dump
-    fault_suite.py prep-update          the update scenarios' starting devices: on OpenBeken
+    fault_suite.py prep-update [--first-instance N]
+                                        the update scenarios' starting devices: on OpenBeken
                                         and on ESPHome as an earlier release converts them
     fault_suite.py check [--instances 1,2]
                                         the final firmware, with no faults: each installed
@@ -174,6 +175,8 @@ EARLIER_RELEASE = "v2.3.0"
 # Where its tree keeps the dumps and the devices its prep saves.
 EARLIER_FIRMWARES = "captures/emulation/beken-firmwares"
 EARLIER_SAVED = "captures/emulation/s61/saved"
+# Where its prep chooses its instance: always 1, as it takes no --first-instance.
+EARLIER_PREP_INSTANCE = "instance = Instance(1)"
 # The outages as the Espressif suite's, each length where it can lead somewhere
 # the others do not: within the tool's shortest timeouts, past them, and long
 # enough for ESPHome to raise its own network (a minute or two).
@@ -1728,7 +1731,7 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
                                            scenario_times.times(*suite_roots())):
         todo.put(sc)
     workers = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
-    emulator_instances.refuse_taken("beken", range(first, first + workers))
+    numbers = emulator_instances.take("beken", first, workers)
     lock = threading.Lock()
 
     def work(n: int) -> None:
@@ -1766,7 +1769,7 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
     emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="fault", device=STATS_DEVICE.key, total=len(every),
                          planned=todo.qsize(), cloud="stub", workers=workers,
                          tier=emulator_stats.tier(wanted, every, (sc["id"] for sc in scenarios(quick=True))))
-    threads = [threading.Thread(target=work, args=(n,)) for n in range(first, first + workers)]
+    threads = [threading.Thread(target=work, args=(n,)) for n in numbers]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -1779,8 +1782,7 @@ def prep(first: int = 1) -> None:
     `first`: on the interim firmware (a run to ESPHome stopped once that has
     started), on OpenBeken, then on ESPHome, each saved with the captures its
     runs left."""
-    emulator_instances.refuse_taken("beken", [first])
-    instance = Instance(first)
+    instance = Instance(emulator_instances.take("beken", first)[0])
     try:
         instance.reset("sonoff")
         if not instance.start("sonoff"):
@@ -1820,17 +1822,20 @@ def save(instance: Instance, firmware: str) -> None:
     print(f"saved the device on {firmware} in {SAVED / firmware}", flush=True)
 
 
-def prep_update() -> None:
+def prep_update(first: int = 1) -> None:
     """The update scenarios' starting devices: on OpenBeken and on ESPHome as
     EARLIER_RELEASE converts them, which no run of this checkout can make. That
-    release's own suite makes them, from its tagged files: in its tree, its
-    folders are named as that release names them (v2.3.0's after the S61)."""
+    release's own suite makes them, from its tagged files, on instance `first`:
+    in its tree, its folders are named as that release names them (v2.3.0's
+    after the S61)."""
+    emulator_instances.take("beken", first)
     tree = folders.LEGACY / EARLIER_RELEASE
     folders.clear(tree)
     (tree / "captures/emulation").mkdir(parents=True)
     archive = subprocess.run(["git", "-C", str(REPO), "archive", EARLIER_RELEASE], capture_output=True, check=True).stdout
     subprocess.run(["tar", "-x", "-C", str(tree)], input=archive, check=True)
     shutil.copytree(folders.FIRMWARES, tree / EARLIER_FIRMWARES)
+    earlier_on(tree / "tools/beken/emulator/fault_suite.py", first)
     try:
         subprocess.run([str(tree / "tools/beken/emulator/fault_suite.py"), "prep"], check=True)
         for firmware in ("openbeken", "esphome"):
@@ -1840,6 +1845,17 @@ def prep_update() -> None:
             print(f"saved the device on {EARLIER_RELEASE}'s {firmware} in {kept}", flush=True)
     finally:
         folders.clear(tree)
+
+
+def earlier_on(suite: Path, first: int) -> None:
+    """EARLIER_RELEASE's suite, in its tree, made to prep on instance `first`:
+    it takes no --first-instance, its prep always on instance 1
+    (EARLIER_PREP_INSTANCE)."""
+    code = suite.read_text(encoding="utf-8")
+    if EARLIER_PREP_INSTANCE not in code:
+        raise SystemExit(f"{EARLIER_RELEASE}'s suite does not start its prep as expected: "
+                         f"no {EARLIER_PREP_INSTANCE!r} in {suite}")
+    suite.write_text(code.replace(EARLIER_PREP_INSTANCE, f"instance = Instance({first})"), encoding="utf-8")
 
 
 # The check: two ways, each a final firmware installed, then that device taken to
@@ -1938,21 +1954,20 @@ def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
     for line in folders.migrate():
         print(line, file=sys.stderr)
-    if command in ("prep", "batch"):
+    if command in ("prep", "prep-update", "batch"):
         import argparse
         parser = argparse.ArgumentParser(prog=f"fault_suite.py {command}")
         if command == "batch":
             parser.add_argument("file", nargs="?")
-        parser.add_argument("--first-instance", type=int, default=1, metavar="N",
-                            help="the first emulator instance used, one more for each worker")
+        emulator_instances.add_first_instance(parser)
         args = parser.parse_args(argv[1:])
         if command == "prep":
             prep(args.first_instance)
+        elif command == "prep-update":
+            prep_update(args.first_instance)
         else:
             batch(args.file, args.first_instance)
             return 0 if all_passed(args.file) else 1
-    elif command == "prep-update":
-        prep_update()
     elif command == "check":
         import argparse
         parser = argparse.ArgumentParser(prog="fault_suite.py check")

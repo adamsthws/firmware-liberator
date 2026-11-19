@@ -17,6 +17,7 @@ own process alone:
 
 from __future__ import annotations
 
+import argparse
 import fcntl
 import os
 import re
@@ -156,6 +157,23 @@ def refuse_taken(family: str, numbers: Iterable[int]) -> None:
         raise SystemExit(f"{family} emulator instance{'s' if len(claimed) > 1 else ''} "
                          f"{', '.join(map(str, claimed))} claimed by another suite here "
                          f"(python3 tools/repo/emulator_instances.py lists them): {instead}")
+
+
+def add_first_instance(parser: argparse.ArgumentParser, default: int = 1, commands: str = "") -> None:
+    """--first-instance N, as every suite takes it: the first emulator
+    instance it uses. `commands`: those of the suite's that take it, where it
+    has others."""
+    parser.add_argument("--first-instance", type=int, default=default, metavar="N",
+                        help=f"{commands + ': ' if commands else ''}the first emulator instance used, "
+                             f"one more for each emulator (default {default})")
+
+
+def take(family: str, first: int, count: int = 1) -> range:
+    """The `count` instances of `family` from `first` on, claimed for this
+    process: SystemExit where one is not free (refuse_taken)."""
+    numbers = range(first, first + count)
+    refuse_taken(family, numbers)
+    return numbers
 
 
 def claimed_elsewhere(family: str) -> set[int]:

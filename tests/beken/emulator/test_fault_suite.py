@@ -277,6 +277,41 @@ class UpdateScenarioTests(unittest.TestCase):
         self.assertEqual(fault_suite.start_of("esphome>openbeken"), "esphome")
 
 
+class PrepUpdateTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(fault_suite.emulator_instances, "running", return_value=set())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_prep_update_takes_the_first_instance_as_prep_and_batch_do(self):
+        with mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                mock.patch.object(fault_suite, "prep_update") as made:
+            self.assertEqual(fault_suite.main(["prep-update", "--first-instance", "81"]), 0)
+            self.assertEqual(fault_suite.main(["prep-update"]), 0)
+        self.assertEqual([call.args for call in made.call_args_list], [(81,), (1,)])
+
+    def test_prep_update_refuses_an_instance_in_use_before_it_makes_anything(self):
+        with mock.patch.object(fault_suite.emulator_instances, "running", return_value={81}), \
+                mock.patch.object(fault_suite.folders, "clear") as cleared, \
+                mock.patch.object(fault_suite.subprocess, "run") as ran:
+            with self.assertRaises(SystemExit) as refused:
+                fault_suite.prep_update(81)
+        self.assertIn("--first-instance 1", str(refused.exception))
+        cleared.assert_not_called()
+        ran.assert_not_called()
+
+    def test_the_earlier_releases_prep_runs_on_the_instance_given(self):
+        # That release's prep, as it chooses its instance (EARLIER_PREP_INSTANCE).
+        with tempfile.TemporaryDirectory() as tmp:
+            suite = Path(tmp, "fault_suite.py")
+            suite.write_text(f"def prep():\n    {fault_suite.EARLIER_PREP_INSTANCE}\n", encoding="utf-8")
+            fault_suite.earlier_on(suite, 81)
+            self.assertEqual(suite.read_text(encoding="utf-8"), "def prep():\n    instance = Instance(81)\n")
+            # Not as expected: refused, never run on instance 1 beside another's.
+            with self.assertRaises(SystemExit):
+                fault_suite.earlier_on(suite, 82)
+
+
 class BatchResultTests(unittest.TestCase):
     def setUp(self):
         # No other run's emulators here, whatever this computer runs.

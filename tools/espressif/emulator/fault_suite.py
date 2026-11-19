@@ -17,8 +17,8 @@ Add --stub-cloud to prep/batch to run against a local eWeLink stub per emulator
 (emu.sh --stub-cloud): fully offline, no cloud lock, every scenario in parallel
 on AUTOFLASH_EMU_STUB_WORKERS emulators. Without it the real cloud is used and
 the cloud scenarios take turns, as below. --first-instance N (default 1) numbers
-a batch's emulators from N, and prep's from N too, as the attended suite's and
-the Beken suite's: one asked to start on an instance already running refuses
+a batch's emulators from N, and prep's and prep-update's from N too, as the
+attended suite's and the Beken suite's (emulator_instances.add_first_instance): one asked to start on an instance already running refuses
 (tools/repo/emulator_instances.py).
 
 Each scenario: a conversion from a saved device; when the step under test has
@@ -3213,7 +3213,7 @@ def batch(ids_file=None):
     lock = threading.Lock()
     threads = [threading.Thread(target=worker, args=(n, cloud, lock, True)) for n in range(FIRST, first)]
     most = max(na, int(os.environ.get("AUTOFLASH_EMU_MOST_WORKERS", na)))
-    emulator_instances.refuse_taken("espressif", range(FIRST, first + most))
+    emulator_instances.take("espressif", FIRST, first + most - FIRST)
     threads += [threading.Thread(target=worker, args=(n, anywhere, lock, False, lambda n: n - first < allowed(na)))
                 for n in range(first, first + most)]
     stop_log = threading.Event()
@@ -3313,10 +3313,9 @@ def prepared(said, stop_after, stopped):
 def make_start(save, args, stop_after=None):
     """One starting device, saved as `save`: a run with `args`, stopped once
     `stop_after` is done, or else converted."""
-    n = FIRST
     # A run that could not start would count as one that failed, and take the
     # device saved before it away.
-    emulator_instances.refuse_taken("espressif", [n])
+    n = emulator_instances.take("espressif", FIRST)[0]
     unattended = str(REPO / "tools/espressif/emulator/unattended-test.sh")
 
     def stopped_after(step, sc, since, stopped):
@@ -3458,8 +3457,7 @@ def main():
                         "share out; list: quick, for a routine run's")
     parser.add_argument("workers", nargs="*", type=int,
                         help="share: how many emulators each machine runs, one number a machine")
-    parser.add_argument("--first-instance", type=int, default=1, metavar="N",
-                        help="prep, batch: the first emulator instance used, one more for each emulator")
+    emulator_instances.add_first_instance(parser, commands="prep, prep-update, batch")
     parser.add_argument("--times-from", action="append", default=[], type=Path, metavar="DIR",
                         help="share: another machine's suite folders, copied here, for how long its scenarios took")
     args = parser.parse_args()

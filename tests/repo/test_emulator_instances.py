@@ -110,6 +110,31 @@ class RefuseTests(unittest.TestCase):
             self.assertNotIn("[1-9][0-9][0-9]", text, script)
         self.assertEqual(emulator_instances.LAST, 99)
 
+    def test_a_suite_takes_its_numbers_from_the_first_given(self):
+        with docker_ps("autoflash-beken-emu-1"):
+            self.assertEqual(list(emulator_instances.take("beken", 81, 2)), [81, 82])
+            self.assertIn(("beken", 82), emulator_instances.HELD)
+            with self.assertRaises(SystemExit) as refused:
+                emulator_instances.take("beken", 1)
+        self.assertIn("--first-instance 2", str(refused.exception))
+
+    def test_every_suite_takes_the_first_instance_alike(self):
+        import argparse
+        parser = argparse.ArgumentParser()
+        emulator_instances.add_first_instance(parser, commands="prep, batch")
+        self.assertEqual(parser.parse_args([]).first_instance, 1)
+        self.assertEqual(parser.parse_args(["--first-instance", "81"]).first_instance, 81)
+        self.assertIn("prep, batch: the first emulator instance", parser.format_help())
+        attended = argparse.ArgumentParser()
+        emulator_instances.add_first_instance(attended, default=61)
+        self.assertEqual(attended.parse_args([]).first_instance, 61)
+        # Each family's fault suite gives it through this one, so they cannot drift apart.
+        root = Path(__file__).resolve().parents[2]
+        for suite in ("tools/espressif/emulator/fault_suite.py", "tools/beken/emulator/fault_suite.py"):
+            text = (root / suite).read_text(encoding="utf-8")
+            self.assertIn("emulator_instances.add_first_instance(parser", text, suite)
+            self.assertNotIn('add_argument("--first-instance"', text, suite)
+
     def test_the_first_free_run_of_numbers_is_found(self):
         self.assertEqual(emulator_instances.first_free(set(), 3), 1)
         self.assertEqual(emulator_instances.first_free({1, 4}, 2), 2)

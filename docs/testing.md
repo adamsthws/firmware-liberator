@@ -1063,12 +1063,13 @@ AUTOFLASH_BEKEN_EMU_WORKERS=2 tools/beken/emulator/fault_suite.py batch beken.tx
 tools/beken/emulator/fault_suite.py report
 ```
 
-`--first-instance N` on `prep` and `batch` numbers the emulators from N, as
-on the Espressif suite, to keep clear of another run on the same computer
+`--first-instance N` on `prep`, `prep-update` and `batch` numbers the
+emulators from N, as on the Espressif suite, to keep clear of another run on the same computer
 ([several at once](emulator.md#several-at-once)).
 
 `prep-update` makes the update scenarios' devices through the earlier
-release's own suite. `list openbeken` gives the six scenarios a new OpenBeken
+release's own suite, which takes no `--first-instance`: its prep is made to
+start on the instance given (`earlier_on`). `list openbeken` gives the six scenarios a new OpenBeken
 build must pass ([updating-firmware.md](updating-firmware.md#5-test)).
 `check` runs each final firmware with no faults, installed from Sonoff's
 firmware and then each taken to the other, and holds each way to the
