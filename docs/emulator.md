@@ -264,7 +264,11 @@ backup.
   worktrees.
 - **Its device's state stays between runs.** `tools/repo/prune_captures.py`
   lists what of it, and of the suites' logs and build caches, has gone unused
-  for two weeks, and `--delete` removes it, keeping any backup.
+  for two weeks, and `--delete` removes it, keeping any backup. With `--images`
+  it lists the emulator images left by earlier checkouts too: those no
+  container uses, built from files no checkout in use holds now (each
+  family's `image.sh tag`). Each is pulled or built again when a checkout
+  needs it.
 - **All share one Docker network**, `autoflash-emu`, with any Windows
   container. `emu.sh` makes it the first time and keeps it
   ([why it has its own](../tools/espressif/emulator/README.md#how-it-fits-together));

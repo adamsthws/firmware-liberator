@@ -1448,6 +1448,11 @@ class ScenarioTests(unittest.TestCase):
         removed.assert_not_called()
         call.assert_not_called()
 
+    def test_prep_says_how_to_clear_old_trees_and_images(self):
+        # As the Beken suite's prep does: one line, where there is much to clear.
+        import inspect
+        self.assertIn("prune_captures.suggest()", inspect.getsource(fs.prep))
+
     def test_a_legacy_run_is_killed_by_its_own_tools_name(self):
         # 2.0.x's tool is tools/autoflash_cli.py, 1.2.0's tools/s60_autoflash.py.
         import re

@@ -328,6 +328,30 @@ Both suites run a batch the same way:
       HOST:REPO/captures/emulation/ captures/emulation/kept/NAME/
   ```
 
+- A machine that tests from copies of this repository fills up with them,
+  each holding gigabytes of emulator devices, and with the images earlier
+  checkouts ran on. `prep` says so in one line where old checkouts beside its
+  own, those images and `captures/` hold `HINT_AT` or more that can be made
+  again. `tools/repo/prune_captures.py` lists them, and `--delete` clears
+  them:
+
+  ```sh
+  python3 tools/repo/prune_captures.py --trees ~ --images            # what would go
+  python3 tools/repo/prune_captures.py --trees ~ --images --delete
+  ```
+
+  A checkout unchanged for `TREE_DAYS` is cleared down to its backups, its
+  suites' `results.jsonl` (for `batch`'s times and `found`), its devices'
+  records, its `.env` and its git repository. One an emulator runs from, one a
+  suite claims instances for, and one where git shows changes not committed
+  are left alone. So is every git worktree (a checkout made with `git worktree
+  add`): its repository keeps a record of it, so clearing its folder would
+  leave every file in it showing as deleted, and someone may still be working
+  in it. Those that look finished (old, nothing to commit, on `main`, no
+  backup in them) are listed with the `git worktree remove` that takes one
+  away, for whoever owns it to run. An emulator image goes when no container uses it and it was
+  built from neither family's files in this checkout or one in use.
+
 - `found` says, for each fault and length, how many scenarios have run it
   here and in what is kept, and which of them ever failed with the fault
   landed (`tools/repo/fault_yield.py`): a length that never finds what the

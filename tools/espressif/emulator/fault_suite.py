@@ -96,7 +96,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, output, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
+from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, prune_captures, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.ewelink.stub_cloud.accounts import ACCOUNTS  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
@@ -3373,6 +3373,7 @@ def prep():
         make_start(AFTER_D1[f"sonoff>{target}"], [f"--from={saved(stock)}", "--", "--firmware", target],
                    stop_after="D1")
     no_backup_start()
+    prune_captures.suggest()
 
 
 def no_backup_start():

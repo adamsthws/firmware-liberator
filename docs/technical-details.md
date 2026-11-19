@@ -258,7 +258,9 @@ again**: keep a copy of `captures/devices/` somewhere safe.
 
 `python3 tools/repo/prune_captures.py` lists what can be made again and has
 not been used for a while, and removes it with `--delete`. It never removes a
-backup.
+backup. `--trees FOLDER` does the same for the old checkouts of this
+repository in FOLDER, and `--images` for old emulator images
+([testing.md](testing.md#the-fault-suites)).
 
 Releases before 3.0.0 kept each device's records in `captures/plugs/<MAC>/`,
 with `plug.json` for today's `device.json`. The first time a newer release

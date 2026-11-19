@@ -129,7 +129,7 @@ from tools.autoflash.routes import beken  # noqa: E402
 from tools.autoflash.routes.beken import images as beken_images  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
+from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, prune_captures, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -1814,6 +1814,7 @@ def prep(first: int = 1) -> None:
             instance.start(target)
     finally:
         instance.stop()
+    prune_captures.suggest()
 
 
 def save(instance: Instance, firmware: str) -> None:

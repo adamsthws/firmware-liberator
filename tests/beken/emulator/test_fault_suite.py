@@ -1723,5 +1723,12 @@ class CancelRunsTests(unittest.TestCase):
         self.assertEqual(routes[-1], "sonoff>esphome")
 
 
+class PrepTests(unittest.TestCase):
+    def test_prep_says_how_to_clear_old_trees_and_images(self):
+        # As the Espressif suite's prep does: one line, where there is much to clear.
+        import inspect
+        self.assertIn("prune_captures.suggest()", inspect.getsource(fault_suite.prep))
+
+
 if __name__ == "__main__":
     unittest.main()
