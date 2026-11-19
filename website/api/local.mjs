@@ -13,6 +13,10 @@
 // unset; AUTOFLASH_LOCAL_OTA_BASE is where the files of links sent are fetched
 // from in place of eWeLink's server (offered.js CLOUDS): the cloud stub's.
 // Without it every fetch fails: nothing here asks eWeLink's own server.
+// AUTOFLASH_LOCAL_WANTED_AFTER_OFFER=SECONDS holds each /v1/wanted until an
+// /v1/offers with offers in it has been answered, or SECONDS have passed, so
+// a test can try a readout asked after its own run's offer, which the tool
+// sends beside the run in either order.
 // POST /local/retry-offers, its own path and not the Worker's, fetches the
 // files of offers taken as right as the nightly job does (offered.js
 // retryOffers): here no offer is agreed, as every request comes from one
@@ -111,10 +115,27 @@ if (process.env.PARENT) {
 // a rented server's (index.js RENTED_SHARE).
 const NETWORK = 64496;
 
+// Settled once an offer has been answered (AUTOFLASH_LOCAL_WANTED_AFTER_OFFER).
+let offerAnswered;
+const offered = new Promise((resolve) => { offerAnswered = resolve; });
+const WANTED_AFTER_OFFER = Number(process.env.AUTOFLASH_LOCAL_WANTED_AFTER_OFFER) || 0;
+function holdsOffers(body) {
+  try {
+    return JSON.parse(body).offers?.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   const body = Buffer.concat(chunks);
+  if (WANTED_AFTER_OFFER && request.method === "POST" && request.url === "/v1/wanted") {
+    let timer;
+    await Promise.race([offered, new Promise((resolve) => { timer = setTimeout(resolve, WANTED_AFTER_OFFER * 1000); })]);
+    clearTimeout(timer);
+  }
   const headers = new Headers(request.headers);
   headers.set("CF-Connecting-IP", request.socket.remoteAddress || "unknown");
   const retrying = request.method === "POST" && request.url === "/local/retry-offers";
@@ -127,6 +148,8 @@ const server = http.createServer(async (request, response) => {
   const text = await answer.text();
   fs.appendFileSync(path.join(folder, "requests.log"),
     `${new Date().toISOString()} ${request.method} ${request.url} ${body.length} -> ${answer.status} ${text}\n`);
+  // Logged first, so requests.log has the offer ahead of the /wanted it lets go.
+  if (request.method === "POST" && request.url === "/v1/offers" && holdsOffers(body)) offerAnswered();
   response.writeHead(answer.status, Object.fromEntries(answer.headers));
   response.end(text);
 });

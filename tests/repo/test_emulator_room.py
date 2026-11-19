@@ -2,6 +2,7 @@
 the API's own code beside them."""
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -191,9 +192,12 @@ class LocalApiTests(unittest.TestCase):
         self.assertIn("--name emu-3-api --network emu-net", run)
         self.assertIn(f"-v {ROOT}/website:/website:ro -v {folder}:/api", run)
         self.assertTrue(run.endswith("node /website/api/local.mjs 0.0.0.0 8080 /api X"), run)
-        # What local.mjs takes from the environment reaches it.
-        for name in ("PROOF_BITS", "READOUT_LIMIT", "OFFERED_SEND", "OTA_BASE"):
-            self.assertIn(f" -e AUTOFLASH_LOCAL_{name} ", run)
+        # Whatever local.mjs takes from the environment reaches it.
+        taken = set(re.findall(r"process\.env\.(AUTOFLASH_LOCAL_\w+)",
+                               (ROOT / "website/api/local.mjs").read_text(encoding="utf-8")))
+        self.assertTrue(taken)
+        for name in taken:
+            self.assertIn(f" -e {name} ", run)
         self.assertEqual(self.asked()[0], "rm -f emu-3-api")   # one a killed run left goes first
 
     def test_it_is_stopped_with_what_it_said_kept(self):

@@ -247,6 +247,15 @@ class RunTests(unittest.TestCase):
                     self.assertEqual(attended_suite.run_environment({}, family, None)
                                      ["AUTOFLASH_LOCAL_OFFERED_SEND"], "files")
 
+    def test_an_api_links_scenarios_wanted_is_held_for_its_offer_and_no_other_scenarios_in_either_family(self):
+        with mock.patch("tools.autoflash.records.read_device", return_value={}), \
+                mock.patch.dict("os.environ", {"AUTOFLASH_LOCAL_WANTED_AFTER_OFFER": "99"}):
+            for family in attended_suite.SCENARIOS:
+                with self.subTest(family=family):
+                    self.assertEqual(attended_suite.run_environment({"api_links": True}, family, None)
+                                     ["AUTOFLASH_LOCAL_WANTED_AFTER_OFFER"], str(attended_suite.WANTED_AFTER_OFFER))
+                    self.assertNotIn("AUTOFLASH_LOCAL_WANTED_AFTER_OFFER", attended_suite.run_environment({}, family, None))
+
     def test_a_readout_where_the_api_is_down_goes_where_nothing_answers_with_no_api_started(self):
         from unittest import mock
         scenario = {"command": "readout", "api_down": True}

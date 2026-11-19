@@ -200,7 +200,9 @@ taken as right; locally no offer is agreed, as no request names its network:
 approve its first stage in the API's `api.sqlite` (`UPDATE readouts SET
 review = 'approved'`) and `POST` its `/local/retry-offers`, as a night after
 an approval would ([local.mjs](../website/api/local.mjs)). The attended runs'
-`api_links` scenarios take links this way ([testing.md](testing.md#attended-runs)).
+`api_links` scenarios take links this way ([testing.md](testing.md#attended-runs)),
+with `AUTOFLASH_LOCAL_WANTED_AFTER_OFFER` set so the API holds a readout's
+`/v1/wanted` until the run's own offer is answered.
 `--no-api` keeps readouts on the computer, unsent. Nothing a run in either
 emulator sends reaches the project's own API.
 

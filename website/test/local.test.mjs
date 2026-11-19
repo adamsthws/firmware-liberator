@@ -61,6 +61,52 @@ test("it fetches no offer's files from eWeLink's own server", async () => {
   }
 });
 
+test("held by AUTOFLASH_LOCAL_WANTED_AFTER_OFFER, /v1/wanted waits for an offer, or for its seconds", async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-api-"));
+  const { child, port } = await started(folder, "", { AUTOFLASH_LOCAL_PROOF_BITS: "8",
+    AUTOFLASH_LOCAL_WANTED_AFTER_OFFER: "2" });
+  const post = (route, value) => {
+    const body = Buffer.from(JSON.stringify(value));
+    return fetch(`http://127.0.0.1:${port}${route}`, { method: "POST", body,
+      headers: { "Content-Type": "application/json", "X-Proof": proofFor(body, 8) } });
+  };
+  const ask = { format: 1, model: "S60TPF", stock_model: "SN-ESP32C3-S60-01", stock_version: "1.2.0",
+    stage: "first", firmware: [] };
+  const offers = (list) => ({ format: 1, tool_version: "3.1.0", cloud: "ewelink", offers: list });
+  try {
+    const wanted = post("/v1/wanted", ask).then((answer) => answer.text());
+    // The question whether to send links, with no offers in it, lets nothing go.
+    await (await post("/v1/offers", offers([]))).text();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await (await post("/v1/offers", offers([{ model: "S60TPF", stock_model: "SN-ESP32C3-S60-01",
+      stock_version: "1.2.0", device: null, files: [] }]))).text();
+    await wanted;
+    const routes = () => fs.readFileSync(path.join(folder, "requests.log"), "utf8").trim().split("\n")
+      .map((line) => line.split(" ")[2]);
+    assert.deepEqual(routes(), ["/v1/offers", "/v1/offers", "/v1/wanted"]);
+    // Once an offer is answered, none is held.
+    const since = Date.now();
+    await (await post("/v1/wanted", ask)).text();
+    assert.ok(Date.now() - since < 1500, `held ${Date.now() - since} ms`);
+  } finally {
+    child.kill();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-api-"));
+  const second = await started(other, "", { AUTOFLASH_LOCAL_PROOF_BITS: "8", AUTOFLASH_LOCAL_WANTED_AFTER_OFFER: "1" });
+  try {
+    const body = Buffer.from(JSON.stringify(ask));
+    const begun = Date.now();
+    const answer = await fetch(`http://127.0.0.1:${second.port}/v1/wanted`, { method: "POST", body,
+      headers: { "Content-Type": "application/json", "X-Proof": proofFor(body, 8) } });
+    assert.equal(answer.status, 200, await answer.text());
+    assert.ok(Date.now() - begun >= 1000, "with no offer, held its seconds and then answered");
+  } finally {
+    second.child.kill();
+    fs.rmSync(other, { recursive: true, force: true });
+  }
+});
+
 test("it is gone once the script that started it is", async () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-api-"));
   const parent = spawn("sleep", ["30"]);

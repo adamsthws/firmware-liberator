@@ -475,12 +475,21 @@ def product_of(family: str, mac: str | None) -> str:
             or kinds.SONOFF_S60.example_product_model).upper()
 
 
+# How long the API beside the emulator holds an `api_links` scenario's
+# /v1/wanted for the offer sent beside the run (local.mjs's
+# AUTOFLASH_LOCAL_WANTED_AFTER_OFFER), which otherwise comes about a second
+# after it: many times that, yet well inside the 15 s the tool waits for an
+# answer (readout.light_post). An offer later still is NOT-FIRED.
+WANTED_AFTER_OFFER = 8
+
+
 def run_environment(scenario: dict[str, Any], family: str, mac: str | None) -> dict[str, str]:
     """The environment a scenario's run goes on in, in either chip family -
     both runners take it from here, so a setting cannot reach one alone: the
     API beside the emulator told it has enough of the device's product where
     the scenario says (`api_enough`), as fault_suite.enough, and taking
-    offers' links for `api_links`; its readout sent
+    offers' links for `api_links`, its /v1/wanted held for the offer the
+    run sends beside it, so the readout comes after it; its readout sent
     where nothing answers for `api_down`; and on the S60's stub the device
     listed under its product. Without that, the stub takes the product from
     this checkout's earlier runs (emu.sh), and on one with none lists no
@@ -493,6 +502,9 @@ def run_environment(scenario: dict[str, Any], family: str, mac: str | None) -> d
     # How the API beside it takes offers: as the scenario says, never as this
     # computer's environment happens to (local.mjs takes files unset).
     environment["AUTOFLASH_LOCAL_OFFERED_SEND"] = "links" if scenario.get("api_links") else "files"
+    environment.pop("AUTOFLASH_LOCAL_WANTED_AFTER_OFFER", None)
+    if scenario.get("api_links"):
+        environment["AUTOFLASH_LOCAL_WANTED_AFTER_OFFER"] = str(WANTED_AFTER_OFFER)
     if scenario.get("account"):
         # The account's other devices, made up, for the stub to list beside the
         # device (emu.sh, beken-emu.sh device): one of stub_cloud.accounts'.
