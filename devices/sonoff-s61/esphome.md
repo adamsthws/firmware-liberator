@@ -66,7 +66,8 @@ Builder 1.25.0 (ESPHome 2026.10.0): found and added, switched and read; not
 offered for adoption; added by hand, built and installed over the air in about
 two minutes; the tool then said the device runs a build of its own, and
 `--replace-own-build` put this project's back, Home Assistant reconnecting by
-itself both times.
+itself both times. `tools/repo/home_assistant_check.py` repeats this before a
+release ([testing.md](../../docs/testing.md#home-assistant)).
 
 ## Changing it
 

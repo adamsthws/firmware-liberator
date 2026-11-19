@@ -57,6 +57,14 @@ config at the release the device's firmware came from, and your device keeps
 that config until you choose a newer release:
 [how it works, how to take a fix and how to customise it](../../docs/home-assistant-adoption.md).
 
+Tried in the emulator with Home Assistant 2026.11.2 and the ESPHome builder
+(ESPHome 2026.10.0): found and added with no key, switched and read; offered
+for adoption, adopted, built and installed over the air; the tool then said
+the device runs a build of its own, and `--replace-own-build` put this
+project's back, Home Assistant carrying on with the device each time.
+`tools/repo/home_assistant_check.py` repeats this before a release
+([testing.md](../../docs/testing.md#home-assistant)).
+
 ## Changing it
 
 Edit `esphome.yaml`, then build and publish it with

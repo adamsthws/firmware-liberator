@@ -1213,6 +1213,40 @@ Results and recordings go to `captures/emulation/attended/<time>/`.
 matches a question the tool asks, so a reworded question fails in the unit
 tests first.
 
+### Home Assistant
+
+What [home-assistant-adoption.md](home-assistant-adoption.md) and each
+device's `esphome.md` say you find in Home Assistant, checked on the emulator
+before a release, one family at a time:
+
+```sh
+.venv/bin/python -I tools/repo/home_assistant_check.py espressif --instance 57
+.venv/bin/python -I tools/repo/home_assistant_check.py beken --instance 57
+```
+
+It starts the device on this project's ESPHome from the fault suite's saved
+start, then a throwaway Home Assistant, onboarded with a made-up user, and an
+ESPHome builder on the device's Wi-Fi. On an S60 they run on the emulator's
+computer, whose Wi-Fi it is; on an S61 they join the device's network. Its
+docstring lists the steps, each printed PASS or FAIL as it ends: Home
+Assistant finds the device and adds it with no key, and the power reading
+follows the relay switched from there; the builder offers to adopt an S60,
+and not an S61 (`NOT_OFFERED` says why, and the step fails if one is ever
+offered, so the page is corrected); adopting it writes the config
+`devices/sonoff-s61/esphome.md` shows; the builder builds it and installs it
+over the air; the tool then leaves the device alone, as a build of its own,
+and `--replace-own-build` puts this project's back. Home Assistant has to
+carry on with the device after each install. It stops at the first FAIL, and
+keeps what it saw, the builder's job and both containers' logs, in
+`captures/emulation/home-assistant/<family>-<N>/`.
+
+Home Assistant's release is pinned in `HOME_ASSISTANT`; the builder is the
+ESPHome image the device's published build came from (`firmware.json`). Its
+first build fetches the toolchain, so allow half an hour; a few minutes after
+that. It is not in CI: it pulls Home Assistant and builds firmware. The
+logic it reads Home Assistant and the builder with is unit-tested in
+`tests/repo/test_home_assistant_check.py`.
+
 ### Emulator stats
 
 Every suite - fault, attended and the final-firmware check, of every chip
