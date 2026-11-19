@@ -1277,6 +1277,60 @@ class LinksTests(unittest.TestCase):
         self.assertNotIn("cloud", manifest)
         self.assertTrue(all("link" not in item for item in manifest["offered"]))
 
+    def test_a_file_whose_link_is_fit_for_review_goes_as_a_file_naming_its_url(self):
+        from tools.autoflash import kinds
+        other = offered_firmware.Offered("user2.bin", "1.1.0", b"\xe9other")
+        offers = {"offers": [{"version": "1.1.0", "binList": [
+            LINKED["offers"][0]["binList"][0],
+            {"name": "user2.bin", "downloadUrl": "http://eu-otadl.coolkit.cc:8088/rom/user2.bin?sign=x#y",
+             "digest": other.sha256}]}]}
+        offered_firmware.fetch.return_value = ([other], [])
+        offered = self.whole("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", readout_espressif, offers)
+        manifest, files, updates = offered.call_args.args[1:]
+        self.assertEqual(manifest["offered"], [
+            {"file": "offered/user2.bin", "version": "1.1.0", "size": len(other.data), "sha256": other.sha256,
+             "url": "http://eu-otadl.coolkit.cc:8088/rom/user2.bin"},
+            {"file": None, "version": "1.1.0", "sha256": "a" * 64, "link": f"/ota/rom/{TOKEN}/user1.bin"}])
+        names = tarfile.open(fileobj=io.BytesIO(readout.package(manifest, files, updates))).getnames()
+        self.assertEqual(names, ["manifest.json", "offered/user2.bin", "flash.bin.xz"])   # the file still sent
+
+    def test_a_first_stage_with_a_link_fit_for_review_goes_as_files_naming_its_url(self):
+        two = offered_firmware.Offered("user2.bin", "1.1.0", b"\xe9two")
+        offers = {"offers": [{"version": "1.1.0", "binList": [
+            {"name": "user2.bin", "downloadUrl": "https://cn-otadl.coolkit.cn/rom/user2.bin?deviceid=x",
+             "digest": two.sha256}]}]}
+        offered_firmware.fetch.return_value = ([two], [])
+        with mock.patch.multiple(account, ask_account=mock.Mock(return_value=account.Asked(
+                    "1.0.0", "SN-NEW-01", "NEWTHING", [], offers, "1000abcdef"))), \
+                learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), \
+                mock.patch.object(readout, "offer", return_value="") as offered:
+            readout.run(self.ctx, DEVICE)
+        readout.send_offers.assert_not_called()
+        manifest, _, updates = offered.call_args.args[1:]
+        self.assertEqual(updates, [two])
+        self.assertEqual(manifest["offered"], [{"file": "offered/user2.bin", "version": "1.1.0", "size": len(two.data),
+                                                "sha256": two.sha256, "url": "https://cn-otadl.coolkit.cn/rom/user2.bin"}])
+        self.assertEqual(manifest["cloud"], "ewelink")
+
+    def test_a_link_naming_the_device_goes_as_a_file_alone(self):
+        two = offered_firmware.Offered("user2.bin", "1.1.0", b"\xe9two")
+        for link in ("https://cn-otadl.coolkit.cn/rom/1000ABCDEF/user2.bin",
+                     "https://cn-otadl.coolkit.cn/rom/user2.bin?mac=12-34-56-ab-cd-ef",
+                     "https://cn-otadl.coolkit.cn/rom/123456abcdef.bin"):
+            with self.subTest(link=link):
+                offers = {"offers": [{"version": "1.1.0", "binList": [
+                    {"name": "user2.bin", "downloadUrl": link, "digest": two.sha256}]}]}
+                offered_firmware.fetch.return_value = ([two], [])
+                with mock.patch.multiple(account, ask_account=mock.Mock(return_value=account.Asked(
+                            "1.0.0", "SN-NEW-01", "NEWTHING", [], offers, "1000abcdef"))), \
+                        learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), \
+                        mock.patch.object(readout, "offer", return_value="") as offered:
+                    readout.run(self.ctx, {**DEVICE, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:EF"}})
+                manifest = offered.call_args.args[1]
+                self.assertEqual([item["file"] for item in manifest["offered"]], ["offered/user2.bin"])
+                self.assertNotIn("url", manifest["offered"][0])
+                self.assertNotIn("cloud", manifest)
+
     def test_a_beken_device_read_in_full_still_fetches_them_to_put_sonoff_back_but_sends_links(self):
         from tools.autoflash import kinds
         stock = offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9stock")

@@ -93,15 +93,23 @@ version, SHA-256 and path on eWeLink's server. The project then fetches those
 files from eWeLink itself.
 
 - **An offer never holds** your eWeLink account or its sign-in, a device's
-  eWeLink ID, its name, or any address. The path is the same for every
-  device on that release: the tool leaves out the rest of the link.
+  eWeLink ID, its name, or any address of yours. The path is the same for
+  every device on that release: the tool leaves out the rest of the link.
+- **A link of a shape the tool has not seen before** is sent whole instead,
+  for the project to check before it fetches anything from it: eWeLink's
+  server and the path, without the part after `?` or `#`. It is sent only if
+  it is plain (an eWeLink file server or a public address, and a path of
+  letters, digits and `. _ - /` alone) and never if it names the device
+  anywhere - its eWeLink ID or its MAC address, in any form. A readout you
+  send still carries the file itself beside such a link
+  ([readouts](readouts.md#a-link-of-another-shape)).
 - **It is sent unasked**, as a report is, and only while the website asks for
   links. Nothing of it shows on your screen and the run never waits for it:
   the small puzzle it carries, which lets the server turn away floods, is
   worked out beside the run at the lowest priority. It uses the run's own
   sign-in to eWeLink, never one of its own. If the run ends first, it is
   dropped: nothing is kept to send later. A device whose offer has a file
-  with a link of a shape the tool does not know is left out, to go once a
+  with a link of another shape that cannot be sent is left out, to go once a
   later version knows it.
 - **Each device's offer goes at most once a week** from your computer
   (`OFFER_RESEND_DAYS` in

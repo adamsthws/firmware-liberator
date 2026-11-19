@@ -202,7 +202,8 @@ class SendTests(World):
         self.assertEqual(list(json.loads(self.sent_path.read_text(encoding="utf-8"))),
                          [offers.key_of(HALL)])
         self.assertEqual(self.logged, ["Offers of the account's devices: 1 sent: 1 taken, 0 held already, "
-                                       "0 for another day, 0 turned down; 1 not sent: a link of another shape."])
+                                       "0 for another day, 0 turned down; 1 not sent: a link of another shape, "
+                                       "unfit for review."])
 
     def test_none_sent_when_every_one_has_a_link_of_another_shape(self):
         self.latest.side_effect = lambda region, token, identities: {identity["deviceid"]: {"offers": [
@@ -212,7 +213,43 @@ class SendTests(World):
         self.send_offers.assert_not_called()
         self.assertFalse(self.sent_path.exists())
         self.assertEqual(self.logged, ["Offers of the account's devices: none sent; 2 not sent: a link of another "
-                                       "shape."])
+                                       "shape, unfit for review."])
+
+    def test_a_link_of_another_shape_fit_for_review_is_sent_whole_without_its_query(self):
+        def latest(region, token, identities):
+            found = {identity["deviceid"]: offer_of(1) for identity in identities}
+            found["1000fedcba"]["offers"][0]["binList"].append(
+                {"name": "user2.bin", "downloadUrl": "http://eu-otadl.coolkit.cc:8088/rom/user2.bin?sign=x",
+                 "digest": "2" * 64})
+            return found
+        self.latest.side_effect = latest
+        self.run_sender()
+        self.assertEqual(self.sent()[1]["files"][1], {"name": "user2.bin", "version": "1.3.0", "sha256": "2" * 64,
+                                                       "url": "http://eu-otadl.coolkit.cc:8088/rom/user2.bin"})
+        self.assertEqual(len(json.loads(self.sent_path.read_text(encoding="utf-8"))), 2)
+        self.assertEqual(self.logged, ["Offers of the account's devices: 2 sent: 2 taken, 0 held already, "
+                                       "0 for another day, 0 turned down; 1 of their files by a link of another "
+                                       "shape, for review."])
+
+    def test_a_link_naming_the_device_is_not_sent_even_for_review(self):
+        for named, link in (("1000fedcba", "http://eu-otadl.coolkit.cc/rom/1000FEDCBA/user2.bin"),
+                            ("1000abcdef", "http://eu-otadl.coolkit.cc/rom/12-34-56-ab-cd-ef.bin"),
+                            ("1000abcdef", "http://eu-otadl.coolkit.cc/rom/user2.bin?mac=123456ABCDEF")):
+            with self.subTest(link=link):
+                self.sent_path.unlink(missing_ok=True)
+                self.send_offers.reset_mock()
+                self.logged.clear()
+
+                def latest(region, token, identities, named=named, link=link):
+                    found = {identity["deviceid"]: offer_of(1) for identity in identities}
+                    found[named]["offers"][0]["binList"].append({"name": "user2.bin", "downloadUrl": link,
+                                                                 "digest": "2" * 64})
+                    return found
+                self.latest.side_effect = latest
+                self.run_sender()
+                self.assertEqual(len(self.sent()), 1)   # the other device's
+                self.assertNotIn("user2.bin", json.dumps(self.sent()))
+                self.assertIn("1 not sent: a link of another shape, unfit for review", self.logged[-1])
 
     def test_a_pause_between_two_queries_alone(self):
         for count, pauses in ((2, 0), (QUERY_MOST * 2 + 1, 2)):

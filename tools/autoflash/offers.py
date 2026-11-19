@@ -166,23 +166,28 @@ class Sender:
             return   # stopped, or eWeLink ended the sign-in: said already
         offers, keys, unsaid, unlinked = [], [], 0, 0
         for device in todo:
-            latest = found[str(device.get("deviceid") or "")]
-            if "offers" in latest and offered_firmware.unlinked(latest["offers"]):
-                # An offer names all its files: one with a link of a shape not
-                # known here waits for a tool that knows it, unremembered.
+            deviceid = str(device.get("deviceid") or "")
+            latest, params, extra = found[deviceid], device.get("params") or {}, device.get("extra") or {}
+            # A link of a shape not known here goes whole, for review, unless
+            # it names the device (offered_firmware.for_review).
+            own = tuple(str(each) for each in (deviceid, params.get("staMac")) if each)
+            if "offers" in latest and offered_firmware.unlinked(latest["offers"], own):
+                # An offer names all its files: one with a link that cannot be
+                # sent even for review waits for a tool that knows it, unremembered.
                 unlinked += 1
             elif "offers" in latest:
-                params, extra = device.get("params") or {}, device.get("extra") or {}
                 offers.append(readout.an_offer(str(device.get("productModel") or ""), str(extra.get("model") or ""),
                                                str(params.get("fwVersion") or ""), latest["offers"],
-                                               report_data.device_hash(params.get("staMac"))))
+                                               report_data.device_hash(params.get("staMac")), own))
                 keys.append(key_of(device))
             else:
                 unsaid += 1
         if self.stop.is_set():
             return
-        left = "; ".join(part for part in (unsaid and f"eWeLink said nothing of {unsaid}",
-                                           unlinked and f"{unlinked} not sent: a link of another shape") if part)
+        review = sum("url" in item for offer in offers for item in offer["files"])
+        left = "; ".join(part for part in (review and f"{review} of their files by a link of another shape, for review",
+                                           unsaid and f"eWeLink said nothing of {unsaid}",
+                                           unlinked and f"{unlinked} not sent: a link of another shape, unfit for review") if part)
         if not offers:
             self.say(f"none sent; {left}.")
             return

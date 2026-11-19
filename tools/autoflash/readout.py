@@ -639,8 +639,14 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     # known (offered_firmware.unlinked): a file with another is downloaded and
     # sent as in files, and a first stage with one goes as files whole, as an
     # offer must name every file. Nothing else is downloaded - but for a Beken
-    # device read in full, as above.
+    # device read in full, as above. A file sent whose link is of another
+    # shape names that link too, for review (offered_firmware.for_review),
+    # never one naming the device.
     unlinked = offered_firmware.unlinked(offers)
+    own = tuple(str(each) for each in (asked.deviceid, device.get("deviceid"), ctx.readout.mac,
+                                       (device.get("params") or {}).get("staMac")) if each)
+    review = {str(item["digest"]).lower(): url for offer in offers for item in offer.get("binList") or []
+              if (url := offered_firmware.for_review(item, own))}
     links = answer.send == "links" and (whole or not unlinked)
     as_links = links and not whole
     linked = [item for item in offered_firmware.links(offers) if item["sha256"] not in answer.held] if links else []
@@ -658,13 +664,14 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     # checks it against; each held already, fetched for a Beken device or not,
     # by its SHA-256 alone; each sent as a link by its path.
     manifest["offered"] = [{"file": f"offered/{item.name}", "version": item.version, "size": len(item.data),
-                            "sha256": item.sha256} for item in sent]
+                            "sha256": item.sha256, **({"url": review[item.sha256]} if item.sha256 in review else {})}
+                           for item in sent]
     manifest["offered"] += [{"file": None, "version": item.version, "sha256": item.sha256, "held": True}
                             for item in updates if item not in sent and item.sha256 not in by_link]
     manifest["offered"] += held_offered(offers, answer.held, [item.sha256 for item in updates])
     manifest["offered"] += [{"file": None, "version": item["version"], "sha256": item["sha256"],
                              "link": item["path"]} for item in linked]
-    if linked:
+    if linked or any("url" in item for item in manifest["offered"]):
         manifest["cloud"] = CLOUD
     chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned and whole else None
     beken_stock = (readout_beken.stock_from_offered(updates)
@@ -976,13 +983,14 @@ def ask_wanted(product: str, model: str, version: str, stage: str, firmware: lis
 
 
 def an_offer(product: str, model: str, version: str, offers: list[dict[str, Any]],
-             device: str | None) -> dict[str, Any]:
+             device: str | None, own: tuple[str, ...] | None = None) -> dict[str, Any]:
     """One device's offer as /offers takes it: the device as /wanted is asked
     of it, `device` its hash (report_data.device_hash) or None, and each file
-    eWeLink offers it by its link and SHA-256 (offered_firmware.links) - none
-    where eWeLink offers nothing, which the website only counts."""
+    eWeLink offers it by its link and SHA-256 (offered_firmware.links, given
+    `own`, its id and MAC) - none where eWeLink offers nothing, which the
+    website only counts."""
     return {"model": product or "-", "stock_model": model or "-", "stock_version": version or "-", "device": device,
-            "files": offered_firmware.links(offers)}
+            "files": offered_firmware.links(offers, own)}
 
 
 def offers_request(offers: list[dict[str, Any]]) -> dict[str, Any]:
