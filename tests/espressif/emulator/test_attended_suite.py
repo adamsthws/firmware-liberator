@@ -4,6 +4,7 @@ from its recording as it should be - here with recordings made up, as a
 terminal would have them."""
 import ast
 import io
+import itertools
 import json
 import re
 import tempfile
@@ -493,11 +494,17 @@ def shows_as_a_stage(pattern: re.Pattern[str], texts: list[str]) -> bool:
 
 
 class InstanceTests(unittest.TestCase):
+    def setUp(self):
+        # No times from this checkout's own batches: tests leave captures/ be.
+        patcher = mock.patch.object(attended_suite.scenario_times, "times", return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_run_uses_one_instance_per_worker_never_two_scenarios_at_once(self):
         found = {f"s60-{i}": ("espressif", {}) for i in range(7)} | {f"s61-{i}": ("beken", {}) for i in range(3)}
         busy, used, lock = set(), [], threading.Lock()
 
-        def run_one(n, name, family, scenario, results, mac, workers):
+        def run_one(n, name, family, scenario, results, mac, workers, rerun):
             with lock:
                 self.assertNotIn(n, busy, f"{name} on {n}, which another scenario is using")
                 busy.add(n)
@@ -509,7 +516,7 @@ class InstanceTests(unittest.TestCase):
 
         with mock.patch.object(attended_suite, "run_one", run_one), redirect_stdout(io.StringIO()), \
                 mock.patch.object(attended_suite.emulator_instances, "running", return_value=set()):
-            lines = attended_suite.run_all(list(found), found, Path("results"), None, workers=3, first=81)
+            lines = attended_suite.run_all(list(found), found, Path("no-results"), None, workers=3, first=81)
         self.assertEqual(len(lines), 10)
         self.assertEqual({n for family, n in used if family == "espressif"}, {81, 82, 83})
         self.assertEqual({n for family, n in used if family == "beken"}, {81})
@@ -521,9 +528,114 @@ class InstanceTests(unittest.TestCase):
         with mock.patch.object(attended_suite, "run_one") as run_one, \
                 mock.patch.object(attended_suite.emulator_instances, "running", side_effect=running.get):
             with self.assertRaises(SystemExit) as refused:
-                attended_suite.run_all(list(found), found, Path("results"), None, workers=2, first=61)
+                attended_suite.run_all(list(found), found, Path("no-results"), None, workers=2, first=61)
         self.assertIn("beken emulator instance 61", str(refused.exception))
         run_one.assert_not_called()
+
+
+class BatchTests(unittest.TestCase):
+    """A batch run again into its folder carries on, as a fault suite's does;
+    one its skip file names is left out; and the scenarios are shared out
+    between machines by the fault suites' own helpers (scenario_times)."""
+
+    FOUND = {"a": ("espressif", {}), "b": ("espressif", {}), "c": ("beken", {}), "d": ("espressif", {})}
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        # A batch's folder, where scenario_times reads it: one of several in the suite's.
+        self.results = Path(folder.name, "attended", "batch")
+        self.results.mkdir(parents=True)
+        self.times = attended_suite.scenario_times.times
+        for patcher in (mock.patch.object(attended_suite.emulator_instances, "running", return_value=set()),
+                        mock.patch.object(attended_suite.emulator_stats, "began"),
+                        mock.patch.object(attended_suite.scenario_times, "times", return_value={})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def run_all(self, took=None):
+        ran = []
+
+        def run_one(n, name, family, scenario, results, mac, workers, rerun):
+            ran.append((name, rerun))
+            attended_suite.record(results, {"id": name, "verdict": "PASS", "verdicts": [], "seconds": 1})
+            return f"PASS {name}"
+        with mock.patch.object(attended_suite, "run_one", run_one), redirect_stdout(io.StringIO()), \
+                mock.patch.object(attended_suite.scenario_times, "times", return_value=took or {}):
+            attended_suite.run_all(list(self.FOUND), self.FOUND, self.results, None, workers=1, first=61)
+        return ran
+
+    def test_a_batch_run_again_runs_only_what_has_not_passed_there(self):
+        attended_suite.record(self.results, {"id": "a", "verdict": "PASS", "verdicts": [], "seconds": 5})
+        attended_suite.record(self.results, {"id": "b", "verdict": "PASS", "verdicts": [], "seconds": 5})
+        attended_suite.record(self.results, {"id": "b", "verdict": "FAIL-RESULT", "verdicts": ["FAIL-RESULT: x"],
+                                             "seconds": 5})
+        self.assertEqual(sorted(self.run_all()), [("b", True), ("c", False), ("d", False)])
+        self.assertEqual(self.run_all(), [])
+
+    def test_a_batch_starts_the_longest_first(self):
+        self.assertEqual([name for name, _ in self.run_all({"a": 60, "b": 600, "d": 300})], ["b", "d", "a", "c"])
+
+    def test_a_scenario_its_skip_file_names_is_left_out_as_the_batch_runs(self):
+        (self.results / "skip.txt").write_text("b\nc\n", encoding="utf-8")
+        self.assertEqual(sorted(self.run_all()), [("a", False), ("d", False)])
+
+    def test_a_scenarios_run_is_recorded_in_its_batch_as_it_ends(self):
+        with mock.patch.object(attended_suite, "run_espressif", return_value=(1, Path("r"))), \
+                mock.patch.object(attended_suite, "judged", return_value=["FAIL-RESULT: exit 1"]), \
+                mock.patch.object(attended_suite, "readout_verdicts", return_value=[]), \
+                mock.patch.object(attended_suite, "product_of", return_value="S60"), \
+                mock.patch.object(attended_suite.time, "monotonic", side_effect=itertools.count(0, 30)), \
+                mock.patch.object(attended_suite.emulator_stats, "attended_run") as stats:
+            line = attended_suite.run_one(61, "a", "espressif", {"answers": []}, self.results, None, rerun=True)
+        row = attended_suite.fault_verdicts.latest(self.results / attended_suite.ROWS)["a"]
+        self.assertEqual((row["verdict"], row["verdicts"], row["instance"]), ("FAIL-RESULT", ["FAIL-RESULT: exit 1"], 61))
+        self.assertEqual(line, attended_suite.line_of(row))
+        self.assertTrue(line.startswith("FAIL-RESULT") and line.endswith("\n    FAIL-RESULT: exit 1"))
+        self.assertIs(stats.call_args.kwargs["rerun"], True)
+        # Its time read back as the fault suites' are, for the next batch's order and shares.
+        self.assertEqual(self.times(self.results.parent), {"a": 30.0})
+
+    def main(self, *argv):
+        with mock.patch.object(attended_suite.sys, "argv", ["attended_suite.py", *argv]), \
+                mock.patch.object(attended_suite, "scenarios", return_value=self.FOUND), \
+                mock.patch.object(attended_suite.emulator_stats, "send", return_value=""), \
+                redirect_stdout(io.StringIO()) as said:
+            return attended_suite.main(), said.getvalue()
+
+    def test_a_batch_passes_once_every_scenario_given_has_passed_in_its_folder(self):
+        (self.results / "names").write_text("a\nc\n", encoding="utf-8")
+        attended_suite.record(self.results, {"id": "a", "verdict": "PASS", "verdicts": [], "seconds": 5})
+        attended_suite.record(self.results, {"id": "c", "verdict": "FAIL-RESULT", "verdicts": [], "seconds": 5})
+        with mock.patch.object(attended_suite, "run_all") as run_all:
+            code, _ = self.main("run", "--file", str(self.results / "names"), "--results", str(self.results),
+                                 "--device", "12:34:56:ab:cd:ef")
+        self.assertEqual(code, 1)
+        self.assertEqual(run_all.call_args.args[:3], (["a", "c"], self.FOUND, self.results.resolve()))
+        attended_suite.record(self.results, {"id": "c", "verdict": "PASS", "verdicts": [], "seconds": 5})
+        with mock.patch.object(attended_suite, "run_all"):
+            code, _ = self.main("run", "--file", str(self.results / "names"), "--results", str(self.results),
+                                 "--device", "12:34:56:ab:cd:ef")
+        self.assertEqual(code, 0)
+        # Every scenario's last result in the folder, from before the batch was run again too.
+        self.assertEqual((self.results / "results.txt").read_text(encoding="utf-8").split("\n")[0].split()[:2],
+                         ["PASS", "a"])
+
+    def test_share_writes_each_machines_share_by_how_long_each_took(self):
+        names = self.results / "all.txt"
+        names.write_text("a espressif about a\nb espressif\nc beken\n", encoding="utf-8")
+        with mock.patch.object(attended_suite.scenario_times, "times", return_value={"a": 600, "b": 300, "c": 300}):
+            code, said = self.main("share", str(names), "1", "1")
+        self.assertEqual(code, 0)
+        self.assertEqual([Path(f"{names}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\nc\n"])
+        self.assertIn("all.txt.1: 1 scenarios on 1 emulators", said)
+
+    def test_times_come_from_every_batch_here_and_those_kept_from_other_machines(self):
+        emulation = self.results.parent.parent
+        (emulation / "kept" / "second" / "attended").mkdir(parents=True)
+        with mock.patch.object(attended_suite, "RESULTS", self.results.parent):
+            self.assertEqual(attended_suite.suite_roots(),
+                             [emulation / "attended", emulation / "kept" / "second" / "attended"])
 
 
 class SharedAnswerTests(unittest.TestCase):

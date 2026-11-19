@@ -377,11 +377,12 @@ def fault_run(folder: Path, *, family: str, device: str, scenario: dict[str, Any
 
 
 def attended_run(folder: Path, *, family: str, device: str, name: str, verdict: str, seconds: Any,
-                 workers: Any) -> None:
-    """An attended run, kept: always on the stub (attended_suite.py), and each
-    a first try, as the suite runs every scenario it is given."""
+                 workers: Any, rerun: bool = False) -> None:
+    """An attended run, kept: always on the stub (attended_suite.py); `rerun`
+    where its batch's results folder had it already, as a batch run again
+    there runs what has not passed yet."""
     record(folder, family=family, suite="attended", device=device, scenario=name, verdict=verdict,
-           seconds=seconds, cloud="stub", workers=workers)
+           seconds=seconds, cloud="stub", workers=workers, rerun=rerun)
 
 
 def check_run(folder: Path, *, family: str, device: str, route: str, passed: bool, seconds: Any,

@@ -99,14 +99,26 @@ The verdict, from the recording alone (judge):
                       that never happened; it wins over any other verdict
 
     tools/espressif/emulator/attended_suite.py list
-    tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] [--first-instance N] --device MAC
+    tools/espressif/emulator/attended_suite.py run [NAME ...] [--file FILE] [--results DIR] [--workers N]
+                                                   [--first-instance N] --device MAC
+    tools/espressif/emulator/attended_suite.py share FILE N ... [--times-from DIR]
 
-Its results, and each run's recording, go to captures/emulation/attended/<time>/.
+Its results, and each run's recording, go to a batch's folder,
+captures/emulation/attended/<time>/ or --results DIR: a verdict a line in
+results.jsonl as each scenario ends (ROWS), and results.txt as the batch does.
+Run again into the same folder, a batch runs only what has not passed there,
+as a fault suite's batch does; and leaves out, as it runs, each scenario
+named in skip.txt in that folder (scenario_times.SKIP). `share` splits FILE's
+scenarios (as `list` writes them, a name a line) between machines running N
+emulators each, by how long each took last, as the fault suites' share does:
+FILE.1, FILE.2, ..., one per machine to `run --file`.
+
 Run on a computer with the emulators (docs/emulator.md); each scenario runs
 on an emulator of its own, --workers at once - the S61's after, one at a
-time - numbered from --first-instance (61) to one per worker, each started
-afresh: a run uses no more instance numbers than it has workers, and refuses
-to start on one already running (tools/repo/emulator_instances.py).
+time - the longest first, numbered from --first-instance (61) to one per
+worker, each started afresh: a run uses no more instance numbers than
+it has workers, and refuses to start on one already running
+(tools/repo/emulator_instances.py).
 """
 
 from __future__ import annotations
@@ -134,7 +146,8 @@ from tools.autoflash import cli, context, kinds, prompts, readout, records, sign
 from tools.autoflash.routes import source  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import emulator_instances, emulator_stats, fault_verdicts, suite_coverage, unattended_run  # noqa: E402
+from tools.repo import (emulator_instances, emulator_stats, fault_verdicts, scenario_times,  # noqa: E402
+                        suite_coverage, unattended_run)
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
              "beken": ROOT / "tools/beken/emulator/attended"}
@@ -832,7 +845,9 @@ def overall(verdicts: list[str]) -> str:
 
 
 def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: Path, mac: str,
-            workers: int = 1) -> str:
+            workers: int = 1, rerun: bool = False) -> str:
+    """The scenario run and judged on emulator `n`: its verdict kept in its
+    batch's `results` folder (record), and its result line."""
     folder = results / name
     folder.mkdir(parents=True, exist_ok=True)
     run = run_beken if family == "beken" else run_espressif
@@ -867,11 +882,44 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
         stop_beken(n)   # left running for an `again` not run: the first run did not pass
     verdict = overall(verdicts)
     # Kept beside every batch's folder, so one not sent goes with the next.
+    seconds = round(time.monotonic() - started)
     emulator_stats.attended_run(RESULTS, family=family, device=device_of(family, mac).key, name=name,
-                                verdict=verdict, seconds=round(time.monotonic() - started), workers=workers)
-    line = f"{verdict:<16} {name:<28} {time.monotonic() - started:5.0f}s"
+                                verdict=verdict, seconds=seconds, workers=workers, rerun=rerun)
     (folder / "verdict.txt").write_text("\n".join(verdicts or ["PASS"]) + "\n", encoding="utf-8")
-    return line + "".join(f"\n    {verdict}" for verdict in verdicts)
+    row = {"id": name, "family": family, "verdict": verdict, "verdicts": verdicts, "seconds": seconds,
+           "instance": n, "finished": datetime.datetime.now().isoformat(timespec="seconds")}
+    record(results, row)
+    return line_of(row)
+
+
+# A batch's results, a JSON line for each scenario as it ends, in its folder:
+# what a batch run again there leaves out (passed), and how long each took
+# (scenario_times, which reads every batch's).
+ROWS = "results.jsonl"
+_recording = threading.Lock()
+
+
+def record(results: Path, row: dict[str, Any]) -> None:
+    with _recording, open(results / ROWS, "a", encoding="utf-8") as rows:
+        rows.write(json.dumps(row) + "\n")
+
+
+def line_of(row: dict[str, Any]) -> str:
+    """A scenario's result line: its verdict, name and time, and under them
+    what was found."""
+    return (f"{row['verdict']:<16} {row['id']:<28} {row.get('seconds', 0):5.0f}s"
+            + "".join(f"\n    {verdict}" for verdict in row.get("verdicts", [])))
+
+
+def passed(results: Path) -> set[str]:
+    """The scenarios whose last run in a batch's folder passed."""
+    return {name for name, row in fault_verdicts.latest(results / ROWS).items() if row.get("verdict") == "PASS"}
+
+
+def suite_roots() -> list[Path]:
+    """Where batches' folders are: this computer's, and those kept from other
+    machines (scenario_times.kept), for how long each scenario took."""
+    return [RESULTS, *scenario_times.kept(RESULTS.parent, RESULTS.name)]
 
 
 def new_results(now: datetime.datetime) -> Path:
@@ -892,67 +940,108 @@ def new_results(now: datetime.datetime) -> Path:
 
 def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], results: Path, mac: str | None,
             workers: int, first: int) -> list[str]:
-    """Each chosen scenario, `workers` at once (the S61's one at a time,
-    after), each on an emulator numbered from `first` that no scenario under
-    way is using: a result line for each, printed as it comes."""
-    def one(name: str, free: queue.SimpleQueue[int], at_once: int) -> str:
+    """Each chosen scenario not yet passed in `results` (a batch run again
+    there carries on), `workers` at once, the longest first
+    (scenario_times), each on an emulator of its family numbered from
+    `first` that no scenario under way is using (an S61's one at a time,
+    after the S60's); one its skip file names
+    (scenario_times.SKIP) as it is about to start is left out. A result line
+    for each run, printed as it comes."""
+    earlier = fault_verdicts.latest(results / ROWS)
+    done = passed(results)
+    todo = [sc["id"] for sc in scenario_times.longest_first([{"id": name} for name in chosen if name not in done],
+                                                            scenario_times.times(*suite_roots()))]
+    # The S61's on their own, after the S60's: its emulator is slow, and run
+    # beside three S60s a readout's device was not found in time.
+    ways = {"espressif": max(1, workers), "beken": 1}
+    planned = {family: [name for name in todo if found[name][0] == family] for family in ways}
+    for family, names in planned.items():
+        if names:
+            emulator_instances.refuse_taken(family, range(first, first + ways[family]))
+
+    def one(name: str, free: queue.SimpleQueue[int], at_once: int) -> str | None:
+        if scenario_times.skipped(results, name):
+            return None
         n = free.get()
         try:
-            return run_one(n, name, *found[name], results, mac, at_once)
+            return run_one(n, name, *found[name], results, mac, at_once, rerun=name in earlier)
         finally:
             free.put(n)
 
     lines = []
-    # The S61's on their own, after the S60's: its emulator is slow, and run
-    # beside three S60s a readout's device was not found in time.
-    ways = (("espressif", max(1, workers)), ("beken", 1))
-    for family, at_once in ways:
-        if any(found[name][0] == family for name in chosen):
-            emulator_instances.refuse_taken(family, range(first, first + at_once))
-    for family, at_once in ways:
-        planned = [name for name in chosen if found[name][0] == family]
-        if planned:
-            emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,
-                                 total=sum(1 for each, _ in found.values() if each == family), planned=len(planned),
-                                 cloud="stub", workers=at_once)
+    for family, names in planned.items():
+        if not names:
+            continue
+        emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,
+                             total=sum(1 for each, _ in found.values() if each == family), planned=len(names),
+                             cloud="stub", workers=ways[family])
         free: queue.SimpleQueue[int] = queue.SimpleQueue()
-        for n in range(first, first + at_once):
+        for n in range(first, first + ways[family]):
             free.put(n)
-        with concurrent.futures.ThreadPoolExecutor(at_once) as pool:
-            jobs = [pool.submit(one, name, free, at_once) for name in chosen if found[name][0] == family]
-            for job in concurrent.futures.as_completed(jobs):
-                lines.append(job.result())
-                print(lines[-1], flush=True)
+        with concurrent.futures.ThreadPoolExecutor(ways[family]) as pool:
+            for job in concurrent.futures.as_completed([pool.submit(one, name, free, ways[family])
+                                                        for name in names]):
+                line = job.result()
+                if line is not None:
+                    lines.append(line)
+                    print(line, flush=True)
     return lines
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["list", "run"])
-    parser.add_argument("names", nargs="*", help="the scenarios to run (default: all)")
+    parser.add_argument("command", choices=["list", "run", "share"])
+    parser.add_argument("names", nargs="*", help="run: the scenarios to run (default: all); share: the file "
+                        "of names to share out, then how many emulators each machine runs")
     parser.add_argument("--workers", type=int, default=1, help="scenarios at once, each on an emulator of its own")
     parser.add_argument("--first-instance", type=int, default=FIRST_INSTANCE,
                         help="the first emulator instance it uses, one more for each worker")
     parser.add_argument("--device", help="the backed-up S60 the Espressif scenarios start from, its MAC "
                         "as emu.sh --device takes it")
+    parser.add_argument("--file", help="run: the scenarios named in this file, one a line (as list and share "
+                        "write them)")
+    parser.add_argument("--results", type=Path, help="run: the batch's results folder, where one run there "
+                        "before is carried on (default: a new one in captures/emulation/attended/)")
+    parser.add_argument("--times-from", action="append", default=[], type=Path, metavar="DIR",
+                        help="share: another machine's attended folder, copied here, for how long its scenarios "
+                        "took")
     args = parser.parse_args()
     found = scenarios()
     if args.command == "list":
         for name, (family, scenario) in found.items():
             print(f"{name:<28} {family:<10} {scenario.get('about', '')}")
         return 0
-    chosen = args.names or list(found)
+    if args.command == "share":
+        if len(args.names) < 2 or not all(number.isdigit() for number in args.names[1:]):
+            parser.error("share needs the names' file and each machine's emulators: share all.txt 4 8 8")
+        try:
+            for line in scenario_times.write_shares(args.names[0], [int(number) for number in args.names[1:]],
+                                                    ({"id": name} for name in found),
+                                                    scenario_times.times(*suite_roots(), *args.times_from)):
+                print(line)
+        except ValueError as exc:
+            parser.error(str(exc))
+        return 0
+    chosen = (scenario_times.read_ids(args.file) if args.file else []) + args.names or list(found)
     unknown = [name for name in chosen if name not in found]
     if unknown:
         parser.error(f"no such scenario: {', '.join(unknown)}")
     if not args.device and any(found[name][0] == "espressif" for name in chosen):
         parser.error("an S60's scenarios need --device: the backed-up device the emulator runs a copy of")
-    results = new_results(datetime.datetime.now())
-    lines = run_all(chosen, found, results, args.device, args.workers, args.first_instance)
-    (results / "results.txt").write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
+    results = args.results.resolve() if args.results else new_results(datetime.datetime.now())
+    results.mkdir(parents=True, exist_ok=True)
+    run_all(chosen, found, results, args.device, args.workers, args.first_instance)
+    latest = fault_verdicts.latest(results / ROWS)
+    (results / "results.txt").write_text("".join(line_of(row) + "\n" for _, row in sorted(latest.items())),
+                                         encoding="utf-8")
     print(emulator_stats.send(RESULTS), flush=True)
-    print(f"Results: {results.relative_to(ROOT)}/results.txt")
-    return 0 if all(line.startswith("PASS") for line in lines) else 1
+    print(f"Results: {shown(results)}/results.txt")
+    return 0 if all(latest.get(name, {}).get("verdict") == "PASS" for name in chosen) else 1
+
+
+def shown(path: Path) -> Path:
+    """`path` as said on the screen: from the checkout, where it is in it."""
+    return path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
 
 
 if __name__ == "__main__":

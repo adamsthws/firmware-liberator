@@ -1208,6 +1208,26 @@ tools/espressif/emulator/attended_suite.py list
 tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers 3] [--first-instance 61] --device MAC
 ```
 
+A batch is run, resumed and shared out as the fault suites' batches are
+([above](#the-fault-suites)), through the same helpers
+(`tools/repo/scenario_times.py`):
+
+- Its results go to a folder of its own, `captures/emulation/attended/<time>/`,
+  or the one `--results DIR` names. Run again with the same `--results`, it
+  runs only what has not passed there, longest first by how long each took
+  last (in any batch's folder here, and those kept from other machines in
+  `captures/emulation/kept/NAME/attended/`).
+- As it runs, it leaves out each scenario named in `skip.txt` in its folder.
+- `share` splits a list of scenarios between machines, so that they end
+  together, by those times; `run --file` takes a machine's share:
+
+  ```sh
+  tools/espressif/emulator/attended_suite.py list > attended.txt
+  tools/espressif/emulator/attended_suite.py share attended.txt 4 8 8 --times-from second/attended/
+  tools/espressif/emulator/attended_suite.py run --file attended.txt.1 --results captures/emulation/attended/full \
+      --workers 4 --device MAC
+  ```
+
 A scenario is a file in `tools/espressif/emulator/attended/` (an S60's) or
 `tools/beken/emulator/attended/` (an S61's), saying where the device starts,
 what is done to it first (a Tasmota web password, an ESPHome with a web login
@@ -1263,8 +1283,8 @@ as a refused image fails it, for its failed ending to be seen, with the
 run's option `--simulate-bad-image STEP[:N]`: the image step STEP sends,
 spoilt the first N times - an S61's at B2, J2 or O1, refused by its
 bootloader; an S60's at D1, the Berry Tasmota, refused by the installer.
-Each runs on an emulator of its own, `--workers` at once; the S61's run after
-the S60's, one at a time. Their instances are numbered from `--first-instance`
+Each runs on an emulator of its own, `--workers` at once, the longest first;
+the S61's run after the S60's, one at a time. Their instances are numbered from `--first-instance`
 (61), one per worker, and reused, each scenario starting its device afresh: a
 run keeps clear of the instances it was not given.
 
@@ -1284,7 +1304,10 @@ otherwise it is:
 | NOT-FIRED | an `api_links` scenario's offer sent only after the readout asked `/v1/wanted` (the run outran the sender beside it): the case not tried, so neither a pass nor a failure, as the fault suites' NOT-FIRED, whatever else the run shows |
 | HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 
-Results and recordings go to `captures/emulation/attended/<time>/`.
+Results and recordings go to the batch's folder: a line in `results.jsonl`
+as each scenario ends, and in `results.txt` each scenario's last result there
+as the batch does, beside a folder for each scenario with its recordings and
+`verdict.txt`.
 `tests/espressif/emulator/test_attended_suite.py` checks every answer still
 matches a question the tool asks, so a reworded question fails in the unit
 tests first.

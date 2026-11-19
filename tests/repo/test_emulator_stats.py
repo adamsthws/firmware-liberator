@@ -159,6 +159,12 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertEqual({k: kept.call_args.kwargs[k] for k in ("fault", "arg", "outcomes")},
                          {"fault": "outage", "arg": 120, "outcomes": [{"result": "converted"}]})
 
+    def test_an_attended_run_says_whether_its_batch_had_run_it_before(self):
+        with mock.patch.object(emulator_stats, "record") as kept:
+            emulator_stats.attended_run(self.folder, family="beken", device="sonoff-s61", name="s61-x",
+                                        verdict="PASS", seconds=600, workers=2, rerun=True)
+        self.assertIs(kept.call_args.kwargs["rerun"], True)
+
     def test_each_device_has_the_firmware_the_checkout_installs_on_it(self):
         for kind in kinds.EVERY:
             firmware = emulator_stats.firmware(kind.key)
@@ -380,6 +386,7 @@ class EveryFamilyTests(unittest.TestCase):
         from tools.espressif.emulator import attended_suite
         source = (ROOT / "tools/espressif/emulator/attended_suite.py").read_text(encoding="utf-8")
         self.assertIn("emulator_stats.attended_run(", source)
+        self.assertIn("rerun=rerun", source)
         self.assertIn("emulator_stats.began(RESULTS,", source)
         self.assertIn("print(emulator_stats.send(RESULTS), flush=True)", source)
         for family in attended_suite.SCENARIOS:
