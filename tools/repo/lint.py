@@ -146,9 +146,11 @@ def esphome_command(files: list[str], mounts: Iterable[str] = ()) -> list[str]:
 
 
 def adoption_example(path: Path) -> bool:
-    """The guide, or a device's config that its examples build on."""
+    """The guide, or a device's config that its examples build on, or a file
+    shared by the configs (devices/power-on-state.yaml)."""
     return path == Path("docs/home-assistant-adoption.md") or (
-        path.name == "esphome.yaml" and path.parts[0] == "devices")
+        path.name == "esphome.yaml" and path.parts[0] == "devices") or (
+        path.parent == Path("devices") and path.suffix == ".yaml")
 
 
 # Each file named compiled in memory, nothing written: a SyntaxError the

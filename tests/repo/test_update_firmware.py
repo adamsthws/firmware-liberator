@@ -23,7 +23,12 @@ class IncludedFilesTests(unittest.TestCase):
         self.assertEqual(uf.included(config), ["a.h"])
         s60 = (ROOT / "devices/sonoff-s60/esphome.yaml").read_text(encoding="utf-8")
         self.assertIn("    - <nvs.h>\n", s60)
-        self.assertEqual(uf.included(s60), [])
+        self.assertEqual(uf.included(s60), ["../power-on-state.yaml"])
+
+    def test_a_package_included_is_a_file_to_copy_once(self):
+        config = ("packages:\n  a: !include {file: ../p.yaml, vars: {relay: relay}}\n"
+                  "  b: !include {file: ../p.yaml, vars: {relay: relay_2}}\n")
+        self.assertEqual(uf.included(config), ["../p.yaml"])
 
     def test_both_movers_include_the_one_restart_route(self):
         for chip in ("esp32c3", "esp32"):
@@ -59,6 +64,41 @@ class IncludedFilesTests(unittest.TestCase):
         given = self.build_with(self.CONFIG, {"r.h": "shared", "chip/r.h": "not this"})
         self.assertEqual(given["r.h"], "shared")
         self.assertEqual(uf.included(given["mover.yaml"]), ["r.h"])
+
+    def test_a_shared_package_is_built_beside_the_config_by_its_own_name(self):
+        config = self.CONFIG + "packages:\n  a: !include {file: ../p.yaml, vars: {relay: relay}}\n"
+        given = self.build_with(config, {"r.h": "shared", "p.yaml": "switch: []\n"})
+        self.assertEqual(given["p.yaml"], "switch: []\n")
+        self.assertIn("!include {file: p.yaml, vars: {relay: relay}}", given["mover.yaml"])
+
+    def test_a_libretiny_build_has_its_shared_package_beside_it_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            devices, work = Path(tmp) / "devices", Path(tmp) / "work"
+            (devices / "chip").mkdir(parents=True)
+            work.mkdir()
+            (devices / "p.yaml").write_text("switch: []\n", encoding="utf-8")
+            config_path = devices / "chip" / "esphome.yaml"
+            config_path.write_text('esphome:\n  name: s61\n  project:\n    version: "1.0.0"\n'
+                                   "packages:\n  a: !include {file: ../p.yaml, vars: {relay: relay}}\n",
+                                   encoding="utf-8")
+            with mock.patch.object(uf, "docker", side_effect=OSError("built")), mock.patch("builtins.print"):
+                with self.assertRaisesRegex(OSError, "built"):
+                    uf.build_libretiny("builder", config_path, "1.0.0", work)
+            self.assertEqual((work / "p.yaml").read_text(encoding="utf-8"), "switch: []\n")
+            self.assertIn("!include {file: p.yaml,", (work / "esphome.yaml").read_text(encoding="utf-8"))
+
+    def test_includes_are_named_from_the_folder_given(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work, source = Path(tmp) / "work", Path(tmp) / "devices" / "chip"
+            source.mkdir(parents=True)
+            work.mkdir()
+            (source.parent / "r.h").write_text("shared", encoding="utf-8")
+            config_path = work / "mover.yaml"   # a copy, changed, as the attended suite builds
+            config_path.write_text(self.CONFIG, encoding="utf-8")
+            with mock.patch.object(uf, "docker", side_effect=OSError("built")), mock.patch("builtins.print"):
+                with self.assertRaisesRegex(OSError, "built"):
+                    uf.build("builder", config_path, "1.0.0", work, beside=source)
+            self.assertEqual((work / "r.h").read_text(encoding="utf-8"), "shared")
 
     def test_one_not_there_stops_the_build(self):
         with self.assertRaisesRegex(uf.UpdateError, r"includes \.\./r\.h, which is not there"):

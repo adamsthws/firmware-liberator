@@ -64,6 +64,10 @@ packages:
   liberator.sonoff-s60: !include common/sonoff-s60.yaml
 ```
 
+Download `devices/power-on-state.yaml` from the same release too, and save it
+beside your device's config, not in `common/`: your copy includes it from the
+folder above its own, as `../power-on-state.yaml`.
+
 The builder then downloads nothing from this project, and the copy is yours to
 change.
 
@@ -98,11 +102,10 @@ wifi:
 # Added: fewer log lines
 logger:
   level: WARN
-# Added: the relay's name, and off after a power cut
+# Added: the relay's name
 switch:
   - id: !extend relay
     name: "Lamp"
-    restore_mode: ALWAYS_OFF
 ```
 
 - **In a section**, such as `wifi:` or `logger:`, write only the settings you
@@ -111,6 +114,10 @@ switch:
   the item you want to change. You will find the `id` in your device's
   `esphome.yaml`. Without `!extend`, ESPHome treats it as a new item and shows
   an error.
+- **What a relay does when the power comes back** is its power-on state, a
+  setting in Home Assistant (`Relay power-on state`), not its `restore_mode`:
+  the project's config sets that, and one you add is overridden as the device
+  starts.
 - **`substitutions:`** only sets your device's name in this example. The project's
   config does not use substitutions, so you cannot change its settings with them.
 

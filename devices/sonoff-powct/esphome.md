@@ -11,7 +11,8 @@ It switches the relay, from its button and over the network, and reports
 voltage, current and power, showing voltage and power on the display. Current
 and power are divided by π ([why](README.md#the-meters-clamp)).
 
-The relay is off after a first start, and otherwise as it was before a power cut.
+The relay is off after a first start, and otherwise as it was before a power
+cut, unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 

@@ -9,7 +9,8 @@ says.
 
 It switches the relay, from its button and over the network.
 
-The relay is off after a first start, and otherwise as it was before a power cut.
+The relay is off after a first start, and otherwise as it was before a power
+cut, unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 

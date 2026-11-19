@@ -10,7 +10,8 @@ says.
 It switches the two relays, from the buttons and over the network. It does not
 drive the screen.
 
-Each relay is off after a first start, and otherwise as it was before a power cut.
+Each relay is off after a first start, and otherwise as it was before a power
+cut, unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 

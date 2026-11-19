@@ -143,74 +143,78 @@
     },
     "sonoff-s60": {
       "esphome": {
-        "file": "artifacts/esphome-sonoff-s60-imprintable-2026.10.0-2.bin",
+        "file": "artifacts/esphome-sonoff-s60-imprintable-2026.10.0-3.bin",
         "config": "devices/sonoff-s60/esphome.yaml",
-        "version": "2026.10.0-2",
+        "version": "2026.10.0-3",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:55:44 +0000",
+        "built": "2026-11-20 01:05:03 +0000",
         "earlier_builds": [
           "2026-10-21 02:35:20 +0100",
           "2026-10-22 19:49:39 +0000",
           "2026-10-26 17:26:39 +0000",
           "2026-11-04 14:38:48 +0000",
-          "2026-11-06 22:21:09 +0000"
+          "2026-11-06 22:21:09 +0000",
+          "2026-11-10 15:55:44 +0000"
         ],
-        "size": 967936,
-        "sha256": "78a9796bdc169e1f208e2ebe93766d9be9a3c69ab33d3b9bdc79e05b3188fcab"
+        "size": 973280,
+        "sha256": "bdf4cdc15374483845613741f25c75bef501c79e5024860ee39cc9f38eddad5b"
       }
     },
     "sonoff-pow-elite": {
       "esphome": {
-        "file": "artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-2.bin",
+        "file": "artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin",
         "config": "devices/sonoff-pow-elite/esphome.yaml",
-        "version": "2026.10.0-2",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:57:05 +0000",
-        "earlier_builds": [
-          "2026-11-05 23:13:00 +0000",
-          "2026-11-06 22:23:44 +0000"
-        ],
-        "size": 883312,
-        "sha256": "1a462e946c051e8c735cdb53f0b8100e28203c488f697e5a548d8a2c29d4cc0d"
-      }
-    },
-    "sonoff-powct": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-powct-imprintable-2026.10.0-3.bin",
-        "config": "devices/sonoff-powct/esphome.yaml",
         "version": "2026.10.0-3",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:57:40 +0000",
+        "built": "2026-11-20 01:06:54 +0000",
+        "earlier_builds": [
+          "2026-11-05 23:13:00 +0000",
+          "2026-11-06 22:23:44 +0000",
+          "2026-11-10 15:57:05 +0000"
+        ],
+        "size": 888000,
+        "sha256": "a50a3ada72e17e2697d059c52aafcb8bee4b505528039f8e18a292c3b90f8a67"
+      }
+    },
+    "sonoff-powct": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-powct-imprintable-2026.10.0-4.bin",
+        "config": "devices/sonoff-powct/esphome.yaml",
+        "version": "2026.10.0-4",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-20 01:08:06 +0000",
         "earlier_builds": [
           "2026-11-06 01:00:39 +0000",
           "2026-11-06 22:24:31 +0000",
-          "2026-11-08 18:48:06 +0000"
+          "2026-11-08 18:48:06 +0000",
+          "2026-11-10 15:57:40 +0000"
         ],
-        "size": 870656,
-        "sha256": "d75f9b4e4a7ed58a95cb1ad6a08fa4a0bfce5f03af3b65443fa924506a11c31f"
+        "size": 875504,
+        "sha256": "38674483df4d4dad1e7a0ff0f59c8d0f6ef34aac38e293ade4b6e23b69d0c9b8"
       }
     },
     "sonoff-th-elite": {
       "esphome": {
-        "file": "artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-2.bin",
+        "file": "artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin",
         "config": "devices/sonoff-th-elite/esphome.yaml",
-        "version": "2026.10.0-2",
+        "version": "2026.10.0-3",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:58:17 +0000",
+        "built": "2026-11-20 01:08:38 +0000",
         "earlier_builds": [
           "2026-11-06 01:04:22 +0000",
-          "2026-11-06 22:25:23 +0000"
+          "2026-11-06 22:25:23 +0000",
+          "2026-11-10 15:58:17 +0000"
         ],
-        "size": 863120,
-        "sha256": "6783373bce2d8941b7e20080a85360a24f6a57e72e57ad72a7a2d511f3983d0a"
+        "size": 868400,
+        "sha256": "91b521124cf9c4ed4ae7b853d0dd86c9f079dd3a30ac788e10c959802984643e"
       },
       "table": {
         "file": "artifacts/sonoff-th-elite-partition-table.bin",
@@ -220,19 +224,20 @@
     },
     "sonoff-dualr3": {
       "esphome": {
-        "file": "artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-2.bin",
+        "file": "artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin",
         "config": "devices/sonoff-dualr3/esphome.yaml",
-        "version": "2026.10.0-2",
+        "version": "2026.10.0-3",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:58:52 +0000",
+        "built": "2026-11-20 01:09:10 +0000",
         "earlier_builds": [
           "2026-11-06 01:27:40 +0000",
-          "2026-11-06 22:26:08 +0000"
+          "2026-11-06 22:26:08 +0000",
+          "2026-11-10 15:58:52 +0000"
         ],
-        "size": 868816,
-        "sha256": "3923e646cea3bd5e39692e2a92b39234677ebd94f0454d1487554fbfa0712c2a"
+        "size": 874432,
+        "sha256": "4d847f4b1c4c4699b5c7221fcbd6d281153bf30a86c4915e2be46e504abbd1eb"
       }
     },
     "sonoff-nspanel": {
@@ -266,20 +271,21 @@
         "sha256": "4faef4259545557d2eee7e12499cb24c89c51e443cb987d7ad90d5f7d0bf68c1"
       },
       "esphome": {
-        "file": "artifacts/esphome-sonoff-s61-2026.10.0-3.rbl",
+        "file": "artifacts/esphome-sonoff-s61-2026.10.0-4.rbl",
         "config": "devices/sonoff-s61/esphome.yaml",
-        "version": "2026.10.0-3",
+        "version": "2026.10.0-4",
         "esphome": "2026.10.0",
         "libretiny": "1.13.0",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:56:18 +0000",
+        "built": "2026-11-20 01:09:59 +0000",
         "earlier_builds": [
           "2026-11-04 14:39:04 +0000",
           "2026-11-06 22:21:51 +0000",
-          "2026-11-08 18:44:20 +0000"
+          "2026-11-08 18:44:20 +0000",
+          "2026-11-10 15:56:18 +0000"
         ],
-        "size": 505216,
-        "sha256": "f1a5e519ba079e4d45a8a77f7ca81cadb8398e21fd1914dda86addbac84f59f7"
+        "size": 507680,
+        "sha256": "06e863beb878c4252755e95702fbe31ca7736d6cfafba3944f43bdff5b2e497f"
       }
     },
     "sonoff-basic-1gs": {
@@ -304,18 +310,19 @@
         "sha256": "5129951d1e89b06f4c5c7e39a0d01b081010d338c562d78c6e422f7175965952"
       },
       "esphome": {
-        "file": "artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl",
+        "file": "artifacts/esphome-sonoff-basic-1gs-2026.10.0-3.rbl",
         "config": "devices/sonoff-basic-1gs/esphome.yaml",
-        "version": "2026.10.0-2",
+        "version": "2026.10.0-3",
         "esphome": "2026.10.0",
         "libretiny": "1.13.0",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-10 15:59:22 +0000",
+        "built": "2026-11-20 01:11:30 +0000",
         "earlier_builds": [
-          "2026-11-07 01:43:32 +0000"
+          "2026-11-07 01:43:32 +0000",
+          "2026-11-10 15:59:22 +0000"
         ],
-        "size": 489824,
-        "sha256": "92f00bd1476d44110c63f61d1da955c804e81e79f5f0eefec85083595fb8fa0d"
+        "size": 492640,
+        "sha256": "8dfbac967a9cae91655e16f53780ef3a7621cf09fa21df5021cdc0cdfd7f15dd"
       }
     },
     "readout": {

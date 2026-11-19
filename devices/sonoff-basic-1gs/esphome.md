@@ -12,7 +12,8 @@ It is [the S61's config](../sonoff-s61/esphome.md) less the meter, with the pins
 in [this device's page](README.md). It switches the relay, from its two inputs
 and over the network.
 
-The relay is on after a first start, and otherwise as it was before a power cut.
+The relay is on after a first start, and otherwise as it was before a power cut,
+unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 
@@ -26,5 +27,5 @@ Edit `esphome.yaml`, then build and publish it with
 the `WiFi Signal` sensor's and `Relay` switch's names and the `autoflash_wifi`
 action: the tool uses each ([how](../sonoff-s60/esphome.md#changing-it)).
 
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl`,
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-basic-1gs-2026.10.0-3.rbl`,
 with `tools/repo/update_firmware.py esphome 2026.10.0 --device sonoff-basic-1gs`.

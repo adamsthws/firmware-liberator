@@ -14,7 +14,8 @@ its two pins is pulsed for half a second, interlocked with the other. Its state
 cannot be read back, so what is shown is what it was last told.
 
 The main relay is off after a first start, and otherwise as last told before a
-power cut; the dry contact is off at every start.
+power cut, unless you set its power-on state to `On` or `Off`; the dry contact
+is off at every start.
 
 ## Adopted into Home Assistant
 

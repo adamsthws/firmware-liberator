@@ -13,7 +13,8 @@ switches the relay, and a longer one changes what the display shows. Over the
 `Overload threshold` (3680 W unless you change it) for five seconds, it switches
 the relay off.
 
-The relay is off after a first start, and otherwise as it was before a power cut.
+The relay is off after a first start, and otherwise as it was before a power
+cut, unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 

@@ -38,7 +38,8 @@ class AdoptionExamplesTests(unittest.TestCase):
                           "packages:\n  device: !include /config/devices/sonoff-s61/esphome.yaml\n"})
 
     def test_the_lint_runs_it_for_the_guide_and_the_configs_it_builds_on(self):
-        for path in ("docs/home-assistant-adoption.md", "devices/sonoff-s60/esphome.yaml"):
+        for path in ("docs/home-assistant-adoption.md", "devices/sonoff-s60/esphome.yaml",
+                     "devices/power-on-state.yaml"):
             self.assertTrue(lint.adoption_example(Path(path)), path)
         for path in ("docs/testing.md", "devices/esp32c3/mover.yaml", "esphome.yaml"):
             self.assertFalse(lint.adoption_example(Path(path)), path)

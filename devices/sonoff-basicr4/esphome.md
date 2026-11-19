@@ -11,7 +11,8 @@ It switches the relay, from its button and over the network. Sonoff's Magic
 Switch, a wall switch read through the zero-cross input on GPIO5, is not
 supported: none of ESPHome's own components reads it.
 
-The relay is off after a first start, and otherwise as it was before a power cut.
+The relay is off after a first start, and otherwise as it was before a power
+cut, unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 

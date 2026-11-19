@@ -607,18 +607,29 @@ def app_description(image: bytes) -> dict[str, str]:
     return {"version": field(16, 48), "project": field(48, 80), "esp_idf": field(112, 144).removeprefix("v")}
 
 
-def build(builder: str, config_path: Path, version: str, workdir: Path) -> tuple[bytes, bytes]:
-    """Build one config at this version: its app and bootloader."""
+def staged(config_path: Path, version: str, workdir: Path, beside: Path | None = None) -> str:
+    """The config at this version, written into `workdir` with the files it
+    includes beside it, for either family's build. Its includes are named from
+    `beside`, the folder the config is in unless given."""
     config = as_built(config_path.read_text(encoding="utf-8"), version)
     for name in included(config):
         # Named from where the config is - shared ones up in devices/, as the
-        # movers' restart - and built beside it, under its own name.
-        source = config_path.parent / name
+        # movers' restart and the relays' power-on state - and built beside
+        # it, under its own name.
+        source = (beside or config_path.parent) / name
         if not source.is_file():
             raise UpdateError(f"{config_path.name} includes {name}, which is not there")
         shutil.copyfile(source, workdir / source.name)
-        config = config.replace(f"    - {name}\n", f"    - {source.name}\n")
+        config = (config.replace(f"    - {name}\n", f"    - {source.name}\n")
+                  .replace(f"!include {{file: {name},", f"!include {{file: {source.name},"))
     (workdir / config_path.name).write_text(config, encoding="utf-8")
+    return config
+
+
+def build(builder: str, config_path: Path, version: str, workdir: Path,
+          beside: Path | None = None) -> tuple[bytes, bytes]:
+    """Build one config at this version: its app and bootloader."""
+    config = staged(config_path, version, workdir, beside)
     print(f"  building {config_path.name} {version} (minutes; a first build downloads ESP-IDF)...")
     docker("run", "--rm", "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/config",
            "-v", f"{workdir}:/config", builder, "compile", config_path.name)
@@ -628,10 +639,13 @@ def build(builder: str, config_path: Path, version: str, workdir: Path) -> tuple
 
 
 def included(config: str) -> list[str]:
-    """The files an ESPHome config's esphome: includes: names: not a system
-    header in angle brackets (<nvs.h>), which the build's own paths give."""
+    """The files an ESPHome config reads besides itself: those its esphome:
+    includes: names, but a system header in angle brackets (<nvs.h>), which
+    the build's own paths give; then each its packages include, once."""
     found = re.search(r"^  includes:\n((?:    - .+\n)+)", config, re.MULTILINE)
-    return re.findall(r"^    - ([^<\s]\S*)", found.group(1), re.MULTILINE) if found else []
+    headers = re.findall(r"^    - ([^<\s]\S*)", found.group(1), re.MULTILINE) if found else []
+    packages = re.findall(r"!include \{file: ([^\s,}]+),", config)
+    return headers + list(dict.fromkeys(packages))
 
 
 def check_esphome_app(image: bytes, label: str, release: str, chip: chips.Chip = chips.ESP32C3) -> dict[str, str]:
@@ -1032,8 +1046,7 @@ def openbeken_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
 def build_libretiny(builder: str, config_path: Path, version: str, workdir: Path) -> tuple[bytes, dict[str, Any], str]:
     """Build one LibreTiny config at this version: its rt_ota image, the board
     (its layout) the build used, and the LibreTiny version."""
-    config = as_built(config_path.read_text(encoding="utf-8"), version)
-    (workdir / config_path.name).write_text(config, encoding="utf-8")
+    config = staged(config_path, version, workdir)
     print(f"  building {config_path.name} {version} (minutes; a first build downloads LibreTiny and its SDK)...")
     docker("run", "--rm", "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/config",
            "-v", f"{workdir}:/config", builder, "compile", config_path.name)

@@ -37,17 +37,17 @@ ESP-IDF, under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-
 its bundled components keep their own notices and licences, listed in the
 ESP-IDF source for the version each build names.
 
-`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-2.bin` is built with ESPHome
+`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-3.bin` is built with ESPHome
 2026.10.0 and ESP-IDF 5.5.6 from this project's config
 [`devices/sonoff-s60/esphome.yaml`](devices/sonoff-s60/esphome.yaml), with `esphome compile`.
 Its corresponding source is the
 [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tree/2026.10.0)
 and that config.
 
-`artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-2.bin`,
-`artifacts/esphome-sonoff-powct-imprintable-2026.10.0-3.bin`,
-`artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-2.bin` and
-`artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-2.bin` are built the
+`artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin`,
+`artifacts/esphome-sonoff-powct-imprintable-2026.10.0-4.bin`,
+`artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin` and
+`artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin` are built the
 same way, from the same release, each from its device's `esphome.yaml`.
 
 `artifacts/autoflash-mover-esp32c3-1.2.0.bin`,
@@ -63,14 +63,14 @@ S60's config at 1.2.0 in this repository's history, built with ESPHome
 [ESPHome 2026.9.1 release](https://github.com/esphome/esphome/tree/2026.9.1)
 and that config.
 
-`artifacts/esphome-sonoff-s61-2026.10.0-3.rbl` is built with ESPHome 2026.10.0 and
+`artifacts/esphome-sonoff-s61-2026.10.0-4.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from [`devices/sonoff-s61/esphome.yaml`](devices/sonoff-s61/esphome.yaml),
 the rt_ota image LibreTiny's build makes. Its corresponding source is the
 [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tree/2026.10.0),
 [LibreTiny 1.13.0](https://github.com/libretiny-eu/libretiny/tree/v1.13.0)
 (MIT), the Beken SDK LibreTiny builds on, and that config.
 
-`artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl` is built with ESPHome 2026.10.0 and
+`artifacts/esphome-sonoff-basic-1gs-2026.10.0-3.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from [`devices/sonoff-basic-1gs/esphome.yaml`](devices/sonoff-basic-1gs/esphome.yaml),
 as the S61's is. Its corresponding source is the
 [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tree/2026.10.0),

@@ -18,7 +18,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-s60
-    version: "2026.10.0-2"
+    version: "2026.10.0-3"
   # System headers only: adoption takes this one file
   includes:
     - <nvs.h>
@@ -177,7 +177,7 @@ esphome:
 # so nothing of ours reaches an adopted device until its owner names a newer one.
 # update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v3.0.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v3.1.0
   import_full_config: false
 
 globals:
@@ -253,7 +253,8 @@ esp32:
     type: esp-idf
   flash_size: 4MB
 
-# avoid frequent NVS write to save flash
+# What is saved without a sync() of its own, such as the energy totals,
+# reaches flash at most this often (ESPHome's default).
 preferences:
   flash_write_interval: 60s
 
@@ -355,12 +356,15 @@ status_led:
     number: GPIO5
     inverted: false  # Tasmota's 544 on this pin: LedLink, not inverted
 
+# Each relay's power-on state: off, on, or as it was last switched.
+packages:
+  power_on: !include {file: ../power-on-state.yaml, vars: {relay: relay, name: "Relay", default: "true"}}
+
 switch:
   - id: relay
     platform: gpio
     name: "Relay"
     pin: GPIO4
-    restore_mode: RESTORE_DEFAULT_ON  # as it was before a power cut; on if never set
 
 number:
   - platform: template

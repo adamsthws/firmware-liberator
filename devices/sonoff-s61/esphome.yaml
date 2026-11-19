@@ -26,7 +26,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-s61
-    version: "2026.10.0-3"
+    version: "2026.10.0-4"
   # System headers only: adoption takes this one file
   includes:
     - <libretiny.h>
@@ -182,7 +182,7 @@ esphome:
 # so nothing of ours reaches an adopted device until its owner names a newer one.
 # update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.1.0
   import_full_config: false
 
 globals:
@@ -245,7 +245,8 @@ bk72xx:
   framework:
     version: recommended
 
-# avoid frequent flash writes
+# What is saved without a sync() of its own, such as the energy totals,
+# reaches flash at most this often (ESPHome's default).
 preferences:
   flash_write_interval: 60s
 
@@ -346,12 +347,15 @@ output:
       number: P0
       inverted: true
 
+# Each relay's power-on state: off, on, or as it was last switched.
+packages:
+  power_on: !include {file: ../power-on-state.yaml, vars: {relay: relay, name: "Relay", default: "true"}}
+
 switch:
   - id: relay
     platform: gpio
     name: "Relay"
     pin: P26
-    restore_mode: RESTORE_DEFAULT_ON  # as it was before a power cut; on if never set
     on_turn_on:
       - output.turn_on: relay_led
     on_turn_off:

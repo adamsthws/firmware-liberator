@@ -353,6 +353,31 @@ Either way, your backup or your eWeLink account can still take the device
 back to Sonoff's firmware. (Tasmota does not run on a Beken device, so none
 of this applies there.)
 
+### After a power cut
+
+On every firmware the tool installs, a relay comes back as it was last
+switched: ESPHome and OpenBeken write its state to flash as it switches, and
+Tasmota within a second (`SaveData 1`). Each also lets you choose off or on
+instead, as Sonoff's own firmware does:
+
+- **ESPHome**: each relay's power-on state, a setting in Home Assistant
+  (`Relay power-on state`): `Off`, `On` or `Last state`.
+- **Tasmota**: `PowerOnState 0` (off) or `1` (on), for every relay; `3` is
+  the last state.
+- **OpenBeken**: `SetStartValue <channel> 0` (off) or `1` (on), for each relay;
+  `-1` is the last state.
+
+A meter's energy totals are kept less closely:
+
+- **ESPHome** keeps them as they were up to a minute before the power went
+  (each config's `flash_write_interval`).
+- **OpenBeken** writes its total each time it has grown by 10 Wh (its
+  `ConsumptionThreshold`), and at least every six hours.
+- **Tasmota** keeps them in memory that lasts through a restart but not a
+  power cut, and writes them to flash only at midnight and before it restarts
+  itself: a power cut loses the day's energy so far, from today's and the
+  total.
+
 ## Changing firmware later
 
 A device this tool converted can move to any other firmware the tool installs

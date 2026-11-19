@@ -449,7 +449,7 @@ def build_locked(variant: str) -> Path:
     work.mkdir(parents=True, exist_ok=True)
     path = work / "esphome.yaml"
     path.write_text(config, encoding="utf-8")
-    app, _ = update_firmware.build(image.split("@")[0], path, release, work)
+    app, _ = update_firmware.build(image.split("@")[0], path, release, work, beside=ROOT / "devices/sonoff-s60")
     built.parent.mkdir(parents=True, exist_ok=True)
     built.write_bytes(imprint.imprint(app, "PICSimLabWifi", ""))
     return built

@@ -17,7 +17,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-dualr3
-    version: "2026.10.0-2"
+    version: "2026.10.0-3"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
     # ends with one: release them before anything drives them.
@@ -85,7 +85,7 @@ esphome:
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome.yaml@v3.0.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome.yaml@v3.1.0
   import_full_config: false
 
 globals:
@@ -100,7 +100,8 @@ esp32:
     type: esp-idf
   flash_size: 4MB
 
-# avoid frequent NVS write to save flash
+# What is saved without a sync() of its own, such as the energy totals,
+# reaches flash at most this often (ESPHome's default).
 preferences:
   flash_write_interval: 60s
 
@@ -150,17 +151,20 @@ status_led:
     number: GPIO13
     inverted: true
 
+# Each relay's power-on state: off, on, or as it was last switched.
+packages:
+  power_on: !include {file: ../power-on-state.yaml, vars: {relay: relay, name: "Relay", default: "false"}}
+  power_on_2: !include {file: ../power-on-state.yaml, vars: {relay: relay_2, name: "Relay 2", default: "false"}}
+
 switch:
   - id: relay
     platform: gpio
     name: "Relay"
     pin: GPIO27
-    restore_mode: RESTORE_DEFAULT_OFF
   - id: relay_2
     platform: gpio
     name: "Relay 2"
     pin: GPIO14
-    restore_mode: RESTORE_DEFAULT_OFF
 
 binary_sensor:
   - platform: gpio

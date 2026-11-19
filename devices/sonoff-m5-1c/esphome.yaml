@@ -86,7 +86,7 @@ esphome:
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-m5-1c/esphome.yaml@v3.0.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-m5-1c/esphome.yaml@v3.1.0
   import_full_config: false
 
 globals:
@@ -101,7 +101,8 @@ esp32:
     type: esp-idf
   flash_size: 4MB
 
-# avoid frequent NVS write to save flash
+# What is saved without a sync() of its own, such as the energy totals,
+# reaches flash at most this often (ESPHome's default).
 preferences:
   flash_write_interval: 60s
 
@@ -144,12 +145,15 @@ status_led:
     number: GPIO5
     inverted: true
 
+# Each relay's power-on state: off, on, or as it was last switched.
+packages:
+  power_on: !include {file: ../power-on-state.yaml, vars: {relay: relay, name: "Relay", default: "false"}}
+
 switch:
   - id: relay
     platform: gpio
     name: "Relay"
     pin: GPIO23
-    restore_mode: RESTORE_DEFAULT_OFF
 
 binary_sensor:
   - platform: gpio

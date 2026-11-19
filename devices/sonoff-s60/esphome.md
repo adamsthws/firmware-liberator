@@ -5,20 +5,23 @@ choose ESPHome. You do not need to build it: the tool installs it pre-built,
 from [`artifacts/`](../../artifacts/README.md), and writes your Wi-Fi into it in
 memory only.
 
-Home Assistant adopts a converted device from this config (`dashboard_import`),
-so it is one self-contained file. It includes no files of its own, only system
-headers, and no partition file: an app image does not hold the partition table,
-and the device keeps Sonoff's.
+Home Assistant adopts a converted device from this config (`dashboard_import`).
+Besides system headers it includes one file, once for each relay:
+[`devices/power-on-state.yaml`](../power-on-state.yaml), which every device's
+config shares and Home Assistant's builder fetches with it. It has no partition
+file: an app image does not hold the partition table, and the device keeps
+Sonoff's.
 
 ## What it reports
 
 It switches the relay, from its button and over the network, and reports
 voltage, current and power, and apparent and reactive power and the power
 factor, which Home Assistant leaves off until you turn them on. The relay is on
-after a first start, and otherwise as it was before a power cut. Over the
-`Overload threshold` (3500 W unless you change it) for five seconds, it switches
-the relay off, and the `Overload` sensor shows it. `Countdown` toggles the relay
-after the seconds you set.
+after a first start, and otherwise as it was before a power cut, unless you set
+its power-on state to `On` or `Off`. Over the `Overload threshold` (3500 W
+unless you change it) for five seconds, it switches the relay off, and the
+`Overload` sensor shows it. `Countdown` toggles the relay after the seconds you
+set.
 
 Apparent power, reactive power and the power factor are worked out each second
 from the same meter readings. Reactive power is 0 while power is within 1.5%

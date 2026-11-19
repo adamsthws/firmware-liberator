@@ -53,6 +53,8 @@ def main() -> int:
         (where / "secrets.yaml").write_text(SECRETS, encoding="utf-8")
         for device in devices:   # as the guide's "using your own config" saves it
             (where / "common" / f"{device}.yaml").write_bytes((ROOT / "devices" / device / "esphome.yaml").read_bytes())
+        for shared in (ROOT / "devices").glob("*.yaml"):   # and what they include, a folder up
+            (where / shared.name).write_bytes(shared.read_bytes())
         for name, config in configs.items():
             (where / name).write_text(config, encoding="utf-8")
         where.chmod(0o755)

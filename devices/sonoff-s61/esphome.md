@@ -28,7 +28,7 @@ it](../../docs/home-assistant-adoption.md).
 **Why the builder does not offer it.** The builder offers to adopt a device that
 says on the network where its config is (`package_import_url`). An S61's ESPHome
 runs on LibreTiny, whose mDNS takes no announcement over 63 characters, and that
-one is longer: `package_import_url=github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0`.
+one is longer: `package_import_url=github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.1.0`.
 It is left out and the rest announced, so the device shows in Home Assistant but
 not in the builder's list of devices to adopt. An S60's ESPHome has no such limit.
 The limit is lwIP's, which LibreTiny's mDNS is built on: it keeps the
@@ -53,7 +53,7 @@ substitutions:
   friendly_name: esphome abcdef
 
 packages:
-  liberator.sonoff-s61: "github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0"
+  liberator.sonoff-s61: "github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.1.0"
 
 esphome:
   name: ${name}
@@ -89,7 +89,7 @@ the `WiFi Signal` sensor, the `Relay` switch, the four energy totals and the
 each, as [the S60's page](../sonoff-s60/esphome.md#changing-it) says. This image has
 no `AUTOFLASH-IMPRINT-` placeholders.
 
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-3.rbl`,
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-4.rbl`,
 with `tools/repo/update_firmware.py esphome 2026.10.0 --device sonoff-s61`.
 
 To build it by hand, use ESPHome's own Docker image with the config alone in a

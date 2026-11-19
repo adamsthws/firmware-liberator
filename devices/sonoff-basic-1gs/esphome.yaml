@@ -19,7 +19,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-basic-1gs
-    version: "2026.10.0-2"
+    version: "2026.10.0-3"
   # System headers only: adoption takes this one file
   includes:
     - <libretiny.h>
@@ -131,7 +131,7 @@ esphome:
 # package. It names the release this image came out in, which cannot change.
 # update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-basic-1gs/esphome.yaml@v3.0.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-basic-1gs/esphome.yaml@v3.1.0
   import_full_config: false
 
 globals:
@@ -146,7 +146,8 @@ bk72xx:
   framework:
     version: recommended
 
-# avoid frequent flash writes
+# What is saved without a sync() of its own, such as the energy totals,
+# reaches flash at most this often (ESPHome's default).
 preferences:
   flash_write_interval: 60s
 
@@ -189,12 +190,15 @@ status_led:
   pin:
     number: P8
 
+# Each relay's power-on state: off, on, or as it was last switched.
+packages:
+  power_on: !include {file: ../power-on-state.yaml, vars: {relay: relay, name: "Relay", default: "true"}}
+
 switch:
   - id: relay
     platform: gpio
     name: "Relay"
     pin: P26
-    restore_mode: RESTORE_DEFAULT_ON  # as it was before a power cut; on if never set
 
 # From the OpenBeken device database's entry: P6 as its Btn, P1 as its Btn_n,
 # each pulled up, the second reading high when pressed.

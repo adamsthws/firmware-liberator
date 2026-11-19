@@ -11,7 +11,8 @@ It switches both relays, from its button, its wall switches and over the
 network, and reports voltage, each channel's current and power from a CSE7761.
 Units with a BL0930 report no readings.
 
-Each relay is off after a first start, and otherwise as it was before a power cut.
+Each relay is off after a first start, and otherwise as it was before a power
+cut, unless you set its power-on state to `On` or `Off`.
 
 ## Adopted into Home Assistant
 

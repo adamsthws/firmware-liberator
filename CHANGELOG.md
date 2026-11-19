@@ -28,6 +28,21 @@ check.
 - A device eWeLink names no product model of is read out as any other: the
   website is asked first whether it wants it, and takes it. Before, it was
   read out unasked and its readout turned down once sent.
+- On ESPHome, a relay switched less than a minute before a power cut comes
+  back as it was switched: each device's config writes the relay's state to
+  flash as it switches. Before, the state waited up to a minute to be written,
+  and a device unplugged in that minute came back as it was before
+  ([#21](https://github.com/adamsthws/firmware-liberator/issues/21)). A device
+  adopted into Home Assistant has it once its package names this release.
+  [What each firmware keeps after a power cut](docs/what-happens.md#after-a-power-cut).
+- On ESPHome, each relay has a power-on state, a setting in Home Assistant
+  (`Relay power-on state`): `Off`, `On` or `Last state`, as Sonoff's own
+  firmware offers. It starts as `Last state`, so a device does as before
+  until you change it, and an update keeps the relay as it was. A
+  `restore_mode` you gave a relay in your own config is overridden by it, and
+  a copy of the config you keep yourself needs `devices/power-on-state.yaml`
+  beside it
+  ([how](docs/home-assistant-adoption.md#using-your-own-config-instead)).
 - A conversion or a readout asks what next however it ended, not only one that
   finished: unless you stopped it with `q` or Ctrl-C, you can read out or convert
   another device without starting the tool again. After a conversion that
@@ -126,6 +141,12 @@ check.
 - When the device never reaches this computer, the message names a guest
   network or client isolation on the router as a likely cause, beside this
   computer's firewall.
+- ESPHome for the S60 rebuilt with
+  [2026.10.0](https://github.com/esphome/esphome/releases/tag/2026.10.0).
+- ESPHome for the Sonoff S61 rebuilt with
+  [2026.10.0](https://github.com/esphome/esphome/releases/tag/2026.10.0).
+- ESPHome for the Sonoff Basic Gen5 rebuilt with
+  [2026.10.0](https://github.com/esphome/esphome/releases/tag/2026.10.0).
 
 ## 3.0.0
 

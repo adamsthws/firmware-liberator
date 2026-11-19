@@ -1,0 +1,65 @@
+# One relay's power-on state, as Sonoff's own firmware offers it: off, on, or
+# as it was last switched. A device's config includes this once for each of
+# its relays, naming it in vars:
+#
+#   relay    the relay switch's id
+#   name     its name, which the select's begins with
+#   default  its state on a first start, when it has never been switched:
+#            "true" or "false"
+#
+# The relay is set up doing nothing (restore_mode: DISABLED), so that "Off"
+# never sees it switched on, even for a moment, and is switched as the select
+# says once both are set up. Its state is saved where ESPHome saves a
+# restoring switch's, so a device updated from a build without this keeps it.
+
+esphome:
+  on_boot:
+    # After the relay and the select (setup_priority::HARDWARE), and a template
+    # relay (HARDWARE - 2); before the meter and Wi-Fi.
+    - priority: 700
+      then:
+        - lambda: |-
+            // Saved from here on, as RESTORE_DEFAULT_OFF saves it; read as it
+            // reads it.
+            id(${relay}).set_restore_mode(switch_::SWITCH_RESTORE_DEFAULT_OFF);
+            bool on = id(${relay}).get_initial_state().value_or(${default});
+            const auto choice = id(${relay}_power_on).current_option();
+            if (choice == "On") {
+              on = true;
+            } else if (choice == "Off") {
+              on = false;
+            }
+            if (on) {
+              id(${relay}).turn_on();
+            } else {
+              id(${relay}).turn_off();
+            }
+
+switch:
+  - id: !extend ${relay}
+    restore_mode: DISABLED
+    # Written to flash now, not at the next flash_write_interval: unplugged
+    # before then, the device would come back as it was.
+    on_turn_on:
+      - lambda: global_preferences->sync();
+    on_turn_off:
+      - lambda: global_preferences->sync();
+
+select:
+  - platform: template
+    id: ${relay}_power_on
+    name: "${name} power-on state"
+    icon: mdi:power-settings
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    options:
+      - "Off"
+      - "On"
+      - "Last state"
+    initial_option: "Last state"
+    on_value:
+      # The select saves its choice once on_value has run, so the write waits
+      # for the next loop.
+      - delay: 0s
+      - lambda: global_preferences->sync();
