@@ -115,6 +115,9 @@ check.
 - While a converted device is waited for to start its new firmware, the stage
   says so under its line - in either chip family - for the minutes before it
   asks you to switch the device off and on. Before, only the spinner turned.
+- When the installer is not fully delivered, what the sender reported shows
+  each line once. Before, a device timing out again and again on one part of
+  the file showed the same "Request timed out" line two or three times.
 
 ## 3.0.0
 

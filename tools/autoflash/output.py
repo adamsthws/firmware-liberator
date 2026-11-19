@@ -1061,10 +1061,11 @@ def tool_said(text: str) -> bool:
 
 def tool_problems(limit: int = 3) -> list[str]:
     """The last helper tool's own words on what went wrong: its lines that read
-    like an error, or failing that its last few lines."""
-    lines = [line for line in _s.tool_tail if line.strip()]
+    like an error, or failing that its last few lines - each once, as a device
+    timing out again and again on one block gives the same line each time."""
+    lines = [line.strip() for line in _s.tool_tail if line.strip()]
     problems = [line for line in lines if PROBLEM_RE.search(line)]
-    return [line.strip() for line in (problems or lines)[-limit:]]
+    return list(dict.fromkeys(reversed(problems or lines)))[:limit][::-1]
 
 
 def _last_redraw(line: str) -> str:

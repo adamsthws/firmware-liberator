@@ -1270,6 +1270,17 @@ class FailureReasonTests(OutputTestCase):
         self.assertEqual(codes, [1])
         self.assertEqual(output.tool_problems(), ["Error: login failed"])
 
+    def test_a_line_said_again_and_again_is_given_once(self):
+        # A device timing out on one block, asked for again each time: the
+        # failure once showed "Request timed out" twice, one under the other.
+        script = ("print('Request timed out: first'); "
+                  "[print('GET /user1.bin 206') or print('Request timed out: again') for _ in range(7)]; "
+                  "print('WARNING: the device did not request every firmware byte.'); raise SystemExit(1)")
+        child = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.run_with(io.StringIO(), False, lambda: output.stream(child))
+        self.assertEqual(output.tool_problems(), ["Request timed out: first", "Request timed out: again",
+                                                  "WARNING: the device did not request every firmware byte."])
+
     def test_without_an_error_line_the_last_lines_are_given(self):
         child = subprocess.Popen([sys.executable, "-c", "print('one'); print('two'); raise SystemExit(2)"],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
