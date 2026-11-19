@@ -1,6 +1,7 @@
 """From Sonoff's firmware to Tasmota through the installer
 (tools/autoflash/routes/espressif/installer.py): the bridge, the stock
 backup, and Tasmota given its Wi-Fi."""
+import collections
 import tempfile
 import time
 import unittest
@@ -1063,7 +1064,10 @@ class DeliveryPortTests(unittest.TestCase):
                  mock.patch.object(prompts, "warning_box"), \
                  mock.patch.object(prompts, "require_word", return_value=True) as asked, \
                  mock.patch.object(hostsys, "run_tool", side_effect=list(codes) * sends) as run_tool, \
-                 mock.patch.object(output, "say"):
+                 mock.patch.object(output, "say"), \
+                 mock.patch.object(output._s, "tool_tail", collections.deque(maxlen=40)):
+                # The sender's words its own, none another test's helper left in
+                # the process: "Served /user" there reads as a delivery begun.
                 try:
                     for _ in range(sends):
                         self.result = installer.step_bridge(ctx)
