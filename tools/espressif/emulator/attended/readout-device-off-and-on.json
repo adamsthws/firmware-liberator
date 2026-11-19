@@ -9,10 +9,10 @@
  "minutes": 40,
  "answers": [
   {
-   "when": "Stage +5 - .* +- Underway",
+   "when": "Reading the device's memory - about a minute",
    "power": "off",
    "anywhere": true,
-   "after": 20
+   "after": 5
   },
   {
    "when": "Switch it off for five seconds, then on|Switch it off and on: it starts",
