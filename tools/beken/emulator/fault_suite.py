@@ -1166,10 +1166,9 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     if log.exists():   # every run's recording: what each stage showed on the way
         fault_verdicts.keep_recordings(log.read_text(encoding="utf-8", errors="replace"),
                                        instance.state / "work", folder)
-    try:
-        shutil.copy(instance.state / "serial.log", folder / "serial.log")
-    except OSError:
-        pass
+    # Its serial output and the stub's log, each begun afresh with the scenario (reset).
+    fault_verdicts.keep_log(instance.state / "serial.log", folder / "serial.log")
+    fault_verdicts.keep_log(instance.state / "stub.log", folder / "stub.log")
     if outcome["verdict"] != "PASS":
         fault_verdicts.keep_evidence(instance.records(), folder)
     notes["memory"] = memory.note()

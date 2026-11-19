@@ -597,6 +597,30 @@ class ScenarioFolderTests(unittest.TestCase):
                 self.assertIn("fault_verdicts.device_address(", (root / suite).read_text(encoding="utf-8"))
 
 
+class KeepLogTests(unittest.TestCase):
+    """A log the emulator adds to across scenarios, kept with the scenario's own part."""
+
+    def kept(self, text, start=0, most=None, there=True):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, kept = Path(tmp, "stub.log"), Path(tmp, "folder", "stub.log")
+            if there:
+                source.write_bytes(text)
+            fault_verdicts.keep_log(source, kept, start, most)
+            return kept.read_bytes() if kept.exists() else None
+
+    def test_from_where_the_scenario_began(self):
+        self.assertEqual(self.kept(b"before\nours\n", start=7), b"ours\n")
+
+    def test_all_of_a_log_begun_again(self):
+        self.assertEqual(self.kept(b"new\n", start=100), b"new\n")
+
+    def test_at_most_its_end(self):
+        self.assertEqual(self.kept(b"0123456789", start=2, most=3), b"789")
+
+    def test_nothing_for_a_log_not_there(self):
+        self.assertIsNone(self.kept(b"", there=False))
+
+
 class EvidenceTests(unittest.TestCase):
     def test_a_failures_records_are_kept_whole_but_its_firmware_images(self):
         import tempfile

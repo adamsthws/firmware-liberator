@@ -755,6 +755,10 @@ Beken suite's (`fault_verdicts.scenario_folder`):
   only its last screen (`cat` it in a terminal, or feed it to
   `unattended_run.Screen`);
 - `serial.log`: the device's serial output, up to `SERIAL_KEPT` of it;
+- `stub.log`: what the eWeLink stub logged in the scenario, with
+  `--stub-cloud` (the emulator's own is added to by the next scenario, so a
+  stub that closed its connection is read here; `fault_verdicts.keep_log`,
+  as both suites keep it);
 - `dhcp.log`: every address the emulator's router gave the device, and any
   it gave back, as both suites keep it (`fault_verdicts.keep_dhcp_log`);
 - `evidence/`: what a failure leaves, its run records whole but the
@@ -1105,7 +1109,9 @@ Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder), each scenario's
 folder in `logs/` laid out as the Espressif suite's, `dhcp.log` among it:
 every address the router gave the device (`fault_verdicts.keep_dhcp_log`, as
-both suites keep it). A scenario passes
+both suites keep it); and `serial.log` and `stub.log`, the device's serial
+output and the eWeLink stub's log, which its emulator begins again with the
+next scenario (`fault_verdicts.keep_log`). A scenario passes
 when the run's record has every step of its route done (FAIL otherwise, as
 for the interim firmware, above) and none of these applies:
 

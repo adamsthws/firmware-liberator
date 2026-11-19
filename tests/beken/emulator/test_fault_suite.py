@@ -115,6 +115,8 @@ class EndChecksTests(unittest.TestCase):
             write_events(run.parent, ("run", {}), ("began", {"step": "B2"}), *events)
             run.write_text(log, encoding="utf-8")
             (Path(tmp) / "flash.bin").write_bytes(b"\xff" * 0x400000)
+            (Path(tmp) / "serial.log").write_text("the device's own\n", encoding="utf-8")
+            (Path(tmp) / "stub.log").write_text("ws <- the stub's\n", encoding="utf-8")
             device = SimpleNamespace(reset=lambda start: None, account=lambda sc, folder: None, stop=lambda: None,
                                      start=lambda firmware: True, runs=lambda: [run],
                                      all_events=lambda: output.events(run.parent),
@@ -131,7 +133,7 @@ class EndChecksTests(unittest.TestCase):
             if kept is not None:
                 folder = Path(tmp, "logs/sonoff-openbeken_B2_deviceoff-1")
                 kept.extend(sorted((path.name, path.read_text(encoding="utf-8")) for path in folder.iterdir()
-                                   if path.name.startswith(("run-", "dhcp"))))
+                                   if path.name.startswith(("run-", "dhcp", "serial", "stub"))))
                 kept.extend(("evidence", str(path.relative_to(folder))) for path in sorted(folder.rglob("*"))
                             if "evidence" in path.parts and path.is_file())
             return outcome
@@ -144,9 +146,12 @@ class EndChecksTests(unittest.TestCase):
     def test_each_runs_log_and_events_and_the_routers_dhcp_log_are_kept(self):
         kept = []
         self.result("True", kept=kept)
-        self.assertEqual([name for name, _ in kept], ["dhcp.log", "run-1.events.jsonl", "run-1.log"])
+        self.assertEqual([name for name, _ in kept],
+                         ["dhcp.log", "run-1.events.jsonl", "run-1.log", "serial.log", "stub.log"])
         self.assertIn("DHCPACK", kept[0][1])
         self.assertIn('"began"', kept[1][1])
+        # The device's serial output and the eWeLink stub's log, as the Espressif suite keeps them.
+        self.assertEqual(dict(kept[3:]), {"serial.log": "the device's own\n", "stub.log": "ws <- the stub's\n"})
 
     def test_the_explained_waits_its_runs_went_through_are_noted(self):
         # One the starting device's own run waited, before the scenario began, is not.

@@ -1923,8 +1923,9 @@ class Scenario:
             monitor.preheld = True
         monitor.start()
         self.started = time.time()
-        uart = self.state / "logs/uart.log"
+        uart, stub = self.state / "logs/uart.log", self.state / "logs/stub.log"
         self.uart_from = uart.stat().st_size if uart.exists() else 0  # this scenario's networks: from here
+        self.stub_from = stub.stat().st_size if stub.exists() else 0
         attending = threading.Event()
         threading.Thread(target=self.person, args=(attending,), daemon=True).start()
         self.memory = MemoryWatch()
@@ -2981,14 +2982,11 @@ class Scenario:
         fault_verdicts.keep_recordings(Path(self.log).read_text(encoding="utf-8", errors="replace"),
                                        self.state / "work", folder)
         fault_verdicts.keep_dhcp_log(self.dhcp_log(), folder)
-        uart = self.state / "logs/uart.log"
-        if uart.exists():
-            with open(uart, "rb") as serial:
-                size = serial.seek(0, os.SEEK_END)
-                start = getattr(self, "uart_from", 0)
-                # This scenario's alone - an emulator started afresh begins it again.
-                serial.seek(max(start if size >= start else 0, size - SERIAL_KEPT))
-                (folder / "serial.log").write_bytes(serial.read())
+        # This scenario's part of its emulator's serial output and the stub's
+        # log: both are added to across scenarios.
+        fault_verdicts.keep_log(self.state / "logs/uart.log", folder / "serial.log",
+                                getattr(self, "uart_from", 0), SERIAL_KEPT)
+        fault_verdicts.keep_log(self.state / "logs/stub.log", folder / "stub.log", getattr(self, "stub_from", 0))
         if verdict != "PASS":
             # This scenario's own screens: the run's log goes back further.
             if STRANDED.search(re.sub(r"\s+", " ", Path(self.log).read_text(encoding="utf-8", errors="replace"))):

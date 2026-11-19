@@ -1562,6 +1562,7 @@ class KeptLogsTests(unittest.TestCase):
         (run.parent / "events.jsonl").write_text(self.SAVED_EVENTS + events, encoding="utf-8")
         (tmp / "state/logs").mkdir(parents=True)
         (tmp / "state/logs/uart.log").write_bytes(b"the last scenario's\nthis one's\n")
+        (tmp / "state/logs/stub.log").write_bytes(b"ws <- the last scenario's\nws <- this one's\n")
         folder = fs.fault_verdicts.scenario_folder(tmp / "logs", "esphome>sonoff:R1:deviceoff-1")
         folder.mkdir(parents=True)
         (folder / "tool.log").write_text("--- a run\n    Result:   Converted\n", encoding="utf-8")
@@ -1569,6 +1570,7 @@ class KeptLogsTests(unittest.TestCase):
                               "fault": "deviceoff", "arg": 1, "at": 40}, folder / "tool.log")
         sc.state, sc.target, sc.started = tmp / "state", "sonoff", started
         sc.uart_from = len(b"the last scenario's\n")
+        sc.stub_from = len(b"ws <- the last scenario's\n")
         sc.carried = {fs.fault_verdicts.filed_as(run): len(self.EARLIER), fs.fault_verdicts.filed_as(run.parent / "events.jsonl"): len(self.SAVED_EVENTS)}
         sc.memory = mock.Mock(note=mock.Mock(return_value={}))
         with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
@@ -1592,6 +1594,8 @@ class KeptLogsTests(unittest.TestCase):
         self.assertTrue((folder / "run-1.log").read_text(encoding="utf-8").startswith("[10:00:00]"))
         self.assertEqual((folder / "run-1.events.jsonl").read_text(encoding="utf-8"), '{"ours": 1}\n')
         self.assertEqual((folder / "serial.log").read_bytes(), b"this one's\n")
+        # The eWeLink stub's log, as the Beken suite keeps it: the next scenario adds to it.
+        self.assertEqual((folder / "stub.log").read_bytes(), b"ws <- this one's\n")
         # Every address the router gave the device, as the Beken suite keeps it.
         self.assertIn("192.168.60.50", (folder / "dhcp.log").read_text(encoding="utf-8"))
         self.assertFalse((folder / "evidence").exists())

@@ -553,6 +553,26 @@ def device_address(leases: str, dhcp_log: str, mac: str | None = None) -> str | 
     return given[-1] if given else None
 
 
+def keep_log(source: Path, kept: Path, start: int = 0, most: int | None = None) -> None:
+    """A log its emulator adds to across scenarios - the device's serial
+    output, the eWeLink stub's log - kept in the scenario's folder as `kept`,
+    by both families' suites alike: from `start` bytes in, where the scenario
+    began (all of it where the log is shorter now, begun again), and at most
+    the last `most` bytes of that. Nothing for a log not there."""
+    try:
+        with open(source, "rb") as log:
+            size = log.seek(0, os.SEEK_END)
+            begin = start if size >= start else 0
+            if most is not None:
+                begin = max(begin, size - most)
+            log.seek(begin)
+            text = log.read()
+    except OSError:
+        return
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_bytes(text)
+
+
 def keep_runs(runs: Iterable[Path], folder: Path, before: Callable[[Path], int] = lambda path: 0) -> None:
     """Each of a scenario's run logs (`runs`, oldest first) and the events
     beside it copied into `folder` as run-1.log and run-1.events.jsonl, ...,

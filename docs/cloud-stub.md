@@ -473,7 +473,7 @@ What the values are:
   `--first-instance` (default 1). Its starting devices
   (`stub-suite-*`) and results (`captures/emulation/suite-stub/`) are kept
   apart from the real cloud's: a pass on the stub is not a pass against
-  eWeLink ([testing.md](testing.md#the-espressif-fault-suite)).
+  eWeLink ([testing.md](testing.md#reading-its-results-espressif)).
 
 A stub run's flash differs from a cloud run's, so `emu.sh` records which a
 device has in `state-N/.flash-mode` (one from before that, or any cloud
@@ -489,7 +489,9 @@ say) to build and run an image of your own without replacing the shared
 `rm -rf captures/emulation/state-N`.
 
 Logs are in `state-N/logs/`: `uart.log` and `stub.log`, each added to across
-runs, and `wifi-*.pcap` with `--pcap`.
+runs, and `wifi-*.pcap` with `--pcap`. The fault suite keeps each scenario's
+part of both in its folder, as `serial.log` and `stub.log`
+([testing.md](testing.md#reading-its-results-espressif)).
 
 ```sh
 D=captures/emulation/state-N/logs
@@ -522,7 +524,7 @@ All in the emulator, on an S60 unless said.
   report said `S60TPG` and named the template "Sonoff S60TPG", as the cloud
   run's did.
 - **The installer is sent again through the stub.** The whole fault suite
-  runs on it ([testing.md](testing.md#the-espressif-fault-suite)). After a
+  runs on it ([testing.md](testing.md#reading-its-results-espressif)). After a
   power cut at C3 or D1, or the network gone at C3fb, the device went back to
   Sonoff's firmware, the installer went again through the stub (twice after
   the C3 cut), and the device converted.
@@ -704,7 +706,8 @@ names the one dialled.
 `beken-emu.sh device` runs the stub as root in the device's container
 (`device-net.sh`), as it binds the router's ports 80 and 443. Its log is
 `stub.log` in the device's state directory (`captures/emulation/beken/state/`,
-or `state-N/` with `--instance N`). By hand:
+or `state-N/` with `--instance N`), begun again with each fault scenario,
+which keeps its own copy in its folder. By hand:
 
 ```sh
 python3 -I -B tools/beken/emulator/cloud_stub.py --state DIR --bind ADDRESS --flash DIR/flash.bin
