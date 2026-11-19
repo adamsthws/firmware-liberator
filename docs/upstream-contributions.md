@@ -22,6 +22,8 @@ fixes.
   beken_freertos_sdk
 - [A Beken device on ESPHome giving up an address it still uses](#a-beken-device-on-esphome-giving-up-an-address-it-still-uses) -
   LibreTiny, ESPHome
+- [A Beken device on ESPHome the builder never offers to adopt](#a-beken-device-on-esphome-the-builder-never-offers-to-adopt) -
+  LibreTiny's lwIP, LibreTiny
 - [A security fix, reported privately](#a-security-fix-reported-privately) -
   Tasmota
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
@@ -175,6 +177,28 @@ free to give the address away. Two bugs together cause it:
 Proven over 48 router outages in the BekenEmulator: with both fixes the
 address was never released
 ([the trace](beken-research.md#esphome-releasing-the-address-it-keeps)).
+
+<br>
+
+## A Beken device on ESPHome the builder never offers to adopt
+
+The ESPHome builder offers to adopt a device that announces where its config
+is (`package_import_url`). On LibreTiny that item is never announced: lwIP's
+mDNS keeps the announcement's items as if they were a domain name, refusing
+any over 63 bytes and capping the whole at 256, where DNS-SD allows 255 an
+item. An upstream lwIP fix by another contributor has waited since January,
+so it was backported to LibreTiny's own copy, and LibreTiny given room for
+ESPHome's whole announcement:
+
+| Project | Pull request | Status | What it fixes |
+|---|---|---|---|
+| LibreTiny's lwIP | [#8](https://github.com/libretiny-eu/lwip/pull/8) | ![state](https://img.shields.io/github/pulls/detail/state/libretiny-eu/lwip/8?label=) | A TXT item over 63 bytes was refused (backport of [lwip-tcpip/lwip#83](https://github.com/lwip-tcpip/lwip/pull/83)) |
+| LibreTiny | [#449](https://github.com/libretiny-eu/libretiny/pull/449) | ![state](https://img.shields.io/github/pulls/detail/state/libretiny-eu/libretiny/449?label=) | The TXT record had 256 bytes in all, ESPHome's needing 293 |
+
+Proven on the S61 in the BekenEmulator: with both, its announcement grew from
+9 items to all 10, and the builder offered it for adoption
+([the S61's page](../devices/sonoff-s61/esphome.md#adopted-into-home-assistant)).
+LibreTiny's issue: [#248](https://github.com/libretiny-eu/libretiny/issues/248).
 
 <br>
 

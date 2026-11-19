@@ -31,6 +31,16 @@ runs on LibreTiny, whose mDNS takes no announcement over 63 characters, and that
 one is longer: `package_import_url=github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0`.
 It is left out and the rest announced, so the device shows in Home Assistant but
 not in the builder's list of devices to adopt. An S60's ESPHome has no such limit.
+The limit is lwIP's, which LibreTiny's mDNS is built on: it keeps the
+announcement's items as if they were a domain name, 63 characters each and 256
+in all, where ESPHome's needs 293. Two fixes await LibreTiny's maintainers:
+items up to 255 characters
+([libretiny-eu/lwip#8](https://github.com/libretiny-eu/lwip/pull/8)), and room
+for 384 in all
+([libretiny-eu/libretiny#449](https://github.com/libretiny-eu/libretiny/pull/449)).
+With both, the builder offered the S61 for adoption in the emulator; this
+device's firmware gets them once ESPHome builds on a LibreTiny release that has
+them.
 
 **Adding it by hand.** In the builder, add a new device and replace its config
 with this one, using your device's name, which Home Assistant shows

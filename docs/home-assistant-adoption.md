@@ -3,7 +3,8 @@
 This guide is for any device the tool has converted to ESPHome. Home Assistant's
 ESPHome builder finds the device on your network and offers to adopt it - but
 not an S61, which you add to the builder by hand
-([how](../devices/sonoff-s61/esphome.md#adopted-into-home-assistant)). If you
+([how](../devices/sonoff-s61/esphome.md#adopted-into-home-assistant)) until its
+firmware is built on a LibreTiny with two fixes to its mDNS. If you
 accept, the builder writes a short config for your device, with its name and your
 Wi-Fi details. It adds no API key, as this project's ESPHome has none: Home
 Assistant connects without one, and you can add one yourself
