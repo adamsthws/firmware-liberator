@@ -263,6 +263,14 @@ then run again as a person would, switching the device off and on or joining
 its own network where the run says to, until the device is converted or four
 runs have failed. A fault that never happened is NOT-FIRED, never a pass.
 
+Both suites take a device as converted when the last run says so: its
+report's result is Converted (or Updated), or it found nothing to convert
+(`fault_verdicts.run_result`, `converted`). That is the run's own word, given
+only once every step of its route is done, so a suite need not know each
+route's steps, nor put together the records of runs that each did some of
+them - a run started afresh part way, one switched to the other firmware. Where
+the device ended is judged apart, by asking it.
+
 **Tried alike everywhere.** Each kind of fault, and each way a readout ends
 without reading the device whole, is to be tried in every cell - a
 conversion and a readout, in each family's suite - as the attended
@@ -1139,8 +1147,8 @@ every address the router gave the device (`fault_verdicts.keep_dhcp_log`, as
 both suites keep it); and `serial.log` and `stub.log`, the device's serial
 output and the eWeLink stub's log, which its emulator begins again with the
 next scenario (`fault_verdicts.keep_log`). A scenario passes
-when the run's record has every step of its route done (FAIL otherwise, as
-for the interim firmware, above) and none of these applies:
+when the device is converted, as both suites judge it (FAIL otherwise, as
+for the interim firmware, above), and none of these applies:
 
 | Verdict | Means |
 |---|---|

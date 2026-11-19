@@ -751,60 +751,13 @@ class ScenarioTests(unittest.TestCase):
             tuner.finished(row, "/nonexistent", 1)
         self.assertEqual(list(tuner.recent), [])
 
-    def no_report(self, screen):
+    def test_a_runs_result_is_read_as_both_suites_read_it(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log"
-            log.write_text("--- run\n" + screen, encoding="utf-8")
-            return fs.Scenario.screen_result(mock.Mock(log=log))
-
-    def test_a_run_with_no_report_says_where_it_stopped_and_why(self):
-        # Seen: "no report" ten times on the real cloud, and why only on screen -
-        # once this computer's own way to eWeLink failing, not the device.
-        self.assertEqual(self.no_report(
-            " Stage  2 - Discovering the device       - Underway\n"
-            "     eWeLink is unreachable (eWeLink connection failed: [Errno -2] Name or service not known):\n"
-            "     listing every device that answers.\n"
-            " Stage  2 - Discovering the device       - Stopped\n"
-            " Stopped as asked. Run this again to carry on.\n"
-            "Exit code 130 - stopped at a question, or by Ctrl-C\n"),
-            "no report (stopped at stage 2, Discovering the device: eWeLink is unreachable (eWeLink connection"
-            " failed: [Errno -2] Name or service not known): listing every device that answers.; exit 130)")
-
-    def test_a_question_an_unattended_run_cannot_answer_is_named(self):
-        self.assertEqual(self.no_report(
-            " Stage  3 of 15 - Discovering the device        - Underway 22s\n\n"
-            " -- Your S60 did not answer on this network\n"
-            "     - 'S60TPG': eWeLink shows it offline - check it is switched on at the wall.\n"
-            "     1. Look again\n     4. Quit - stop here\n\n"
-            " ! An unattended run cannot answer this, so it stops here:\n     What now\n"
-            " Stage  3 of 15 - Discovering the device        - Stopped\n"),
-            "no report (stopped at stage 3, Discovering the device: Your S60 did not answer on this network "
-            "'S60TPG': eWeLink shows it offline - check it is switched on at the wall. What now)")
-
-    def test_an_update_counts_as_having_got_there(self):
-        with tempfile.TemporaryDirectory() as directory:
-            log = Path(directory) / "log"
-            log.write_text("--- run\n     Result:               Updated\n", encoding="utf-8")
-            result = fs.Scenario.screen_result(mock.Mock(log=log))
-        self.assertIn("Converted", result)
-
-    def test_the_result_is_read_up_to_the_column_beside_it(self):
-        with tempfile.TemporaryDirectory() as directory:
-            log = Path(directory) / "log"
-            log.write_text("--- run\n    Result:        Converted                        Firmware: Tasmota\n",
-                           encoding="utf-8")
-            self.assertEqual(fs.Scenario.screen_result(mock.Mock(log=log, state=Path(directory))), "Converted")
-
-    def test_the_result_is_the_one_the_harness_says_from_the_runs_log(self):
-        # The screen says how it ended above the report, which has no Result;
-        # unattended_run says the log's, in full.
-        with tempfile.TemporaryDirectory() as directory:
-            log = Path(directory) / "log"
-            log.write_text("--- run\n FAILED: it went quiet\n========\n"
-                           "Result: Stopped at stage 6 of 15 (Installing Tasmota): it went quiet\n"
-                           "Exit code 2 - failed\n", encoding="utf-8")
-            self.assertEqual(fs.Scenario.screen_result(mock.Mock(log=log, state=Path(directory))),
-                             "Stopped at stage 6 of 15 (Installing Tasmota): it went quiet")
+            log.write_text("--- run\nResult: Converted\n", encoding="utf-8")
+            with mock.patch.object(fs.fault_verdicts, "run_result", return_value="said") as read:
+                self.assertEqual(fs.Scenario.screen_result(mock.Mock(log=log)), "said")
+        read.assert_called_once_with("--- run\nResult: Converted\n")
 
     def test_a_run_over_before_its_fault_waits_for_all_of_it(self):
         self.assertGreater(fs.fault_wait(180), 180)

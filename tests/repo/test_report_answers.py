@@ -50,7 +50,7 @@ FIELDS = [
 ]
 # What the suites read: the answer, by the pattern each reads it with.
 READ = {
-    "Result": fault_suite.REPORT_RESULT,
+    "Result": fault_verdicts.REPORT_RESULT,
     "Backup": fault_suite.REPORT_BACKUP,
     "Identity": fault_suite.REPORT_IDENTITY,
     "Checks": fault_verdicts.CHECKS_PASSED,
@@ -101,7 +101,7 @@ class ReportAnswerTests(unittest.TestCase):
                            "=== run started ===\n" + log, encoding="utf-8")
             said = unattended_run.logged_result(0)
         self.assertEqual(said, dict(FIELDS)["Result"])   # the last run's, in full
-        self.assertEqual(fault_suite.REPORT_RESULT.findall(f"Result: {said}\nExit code 2 - failed\n"), [said])
+        self.assertEqual(fault_verdicts.REPORT_RESULT.findall(f"Result: {said}\nExit code 2 - failed\n"), [said])
 
     def test_what_the_person_does_not_need_is_in_the_log_alone(self):
         screen, log = shown(FIELDS, 100)

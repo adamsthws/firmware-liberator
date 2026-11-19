@@ -456,6 +456,65 @@ class WaitsTests(unittest.TestCase):
         self.assertEqual(fault_verdicts.waits([], since=0), [])
 
 
+class RunResultTests(unittest.TestCase):
+    """How both suites read the last run in a scenario's log, and judge a device converted."""
+
+    def no_report(self, screen):
+        return fault_verdicts.run_result("--- run\n" + screen)
+
+    def test_a_run_with_no_report_says_where_it_stopped_and_why(self):
+        # Seen: "no report" ten times on the real cloud, and why only on screen -
+        # once this computer's own way to eWeLink failing, not the device.
+        self.assertEqual(self.no_report(
+            " Stage  2 - Discovering the device       - Underway\n"
+            "     eWeLink is unreachable (eWeLink connection failed: [Errno -2] Name or service not known):\n"
+            "     listing every device that answers.\n"
+            " Stage  2 - Discovering the device       - Stopped\n"
+            " Stopped as asked. Run this again to carry on.\n"
+            "Exit code 130 - stopped at a question, or by Ctrl-C\n"),
+            "no report (stopped at stage 2, Discovering the device: eWeLink is unreachable (eWeLink connection"
+            " failed: [Errno -2] Name or service not known): listing every device that answers.; exit 130)")
+
+    def test_a_question_an_unattended_run_cannot_answer_is_named(self):
+        self.assertEqual(self.no_report(
+            " Stage  3 of 15 - Discovering the device        - Underway 22s\n\n"
+            " -- Your S60 did not answer on this network\n"
+            "     - 'S60TPG': eWeLink shows it offline - check it is switched on at the wall.\n"
+            "     1. Look again\n     4. Quit - stop here\n\n"
+            " ! An unattended run cannot answer this, so it stops here:\n     What now\n"
+            " Stage  3 of 15 - Discovering the device        - Stopped\n"),
+            "no report (stopped at stage 3, Discovering the device: Your S60 did not answer on this network "
+            "'S60TPG': eWeLink shows it offline - check it is switched on at the wall. What now)")
+
+    def test_an_update_counts_as_converted(self):
+        result = fault_verdicts.run_result("--- run\n     Result:               Updated\n")
+        self.assertEqual(result, "Converted (updated)")
+        self.assertTrue(fault_verdicts.converted(result))
+
+    def test_a_device_already_on_its_firmware_counts_as_converted(self):
+        result = fault_verdicts.run_result("--- run\nThe device already runs ESPHome: there is nothing to convert.\n")
+        self.assertTrue(fault_verdicts.converted(result))
+
+    def test_the_result_is_read_up_to_the_column_beside_it(self):
+        self.assertEqual(fault_verdicts.run_result(
+            "--- run\n    Result:        Converted                        Firmware: Tasmota\n"), "Converted")
+
+    def test_the_result_is_the_one_the_harness_says_from_the_runs_log(self):
+        # The screen says how it ended above the report, which has no Result;
+        # unattended_run says the log's, in full.
+        result = fault_verdicts.run_result("--- run\n FAILED: it went quiet\n========\n"
+                                           "Result: Stopped at stage 6 of 15 (Installing Tasmota): it went quiet\n"
+                                           "Exit code 2 - failed\n")
+        self.assertEqual(result, "Stopped at stage 6 of 15 (Installing Tasmota): it went quiet")
+        self.assertFalse(fault_verdicts.converted(result))
+
+    def test_only_the_last_run_counts(self):
+        # A conversion a later run of the scenario did not end with: judged on the later one.
+        log = "--- run\nResult: Converted\nExit code 0 - finished\n--- run --new\nExit code 2 - failed\n"
+        self.assertEqual(fault_verdicts.run_result(log), "no report (exit 2)")
+        self.assertTrue(fault_verdicts.converted(fault_verdicts.run_result(log.rsplit("--- ", 1)[0])))
+
+
 class ResultsTests(unittest.TestCase):
     def test_each_scenarios_newest_row_is_read(self):
         with tempfile.TemporaryDirectory() as tmp:

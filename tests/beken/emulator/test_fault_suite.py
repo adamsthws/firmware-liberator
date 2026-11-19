@@ -686,7 +686,7 @@ class OwnBuildScenarioTests(unittest.TestCase):
                 runs.append(more)
                 with open(log_path, "a", encoding="utf-8") as out:
                     out.write(said if not more else "Update complete!")
-            instance = SimpleNamespace(tool=tool, lease=lambda: "192.0.2.60", last_state=dict)
+            instance = SimpleNamespace(tool=tool, lease=lambda: "192.0.2.60")
             with mock.patch.object(fault_suite.own_build, "beken", return_value=(b"uf2", own)), \
                     mock.patch.object(fault_suite.esphome_ota, "upload") as upload, \
                     mock.patch.object(fault_suite, "esphome_now",
@@ -1158,17 +1158,56 @@ class InterimTests(unittest.TestCase):
 
 
 class ConvertedTests(unittest.TestCase):
-    def state(self, **steps):
-        return {"steps": {step: {"status": status} for step, status in steps.items()}}
+    """Judged by the last run's own word, as the Espressif suite judges it (fault_verdicts.run_result)."""
 
-    def test_converted_when_every_step_of_the_route_is_done(self):
-        self.assertTrue(fault_suite.converted(self.state(B1="done", B2="done", K1="done", B4="done"),
-                                              "sonoff>openbeken"))
+    def judged(self, text):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp, "tool.log")
+            if text is not None:
+                log.write_text(text, encoding="utf-8")
+            return fault_suite.converted(log)
 
-    def test_not_while_a_step_is_left(self):
-        self.assertFalse(fault_suite.converted(self.state(B1="done", B2="done", K1="failed"),
-                                               "sonoff>openbeken"))
-        self.assertFalse(fault_suite.converted({}, "esphome>sonoff"))
+    def test_converted_when_the_last_run_says_so(self):
+        self.assertTrue(self.judged("--- computer\nResult: Converted\nExit code 0 - finished\n"))
+        self.assertTrue(self.judged("--- computer\nResult: Updated\nExit code 0 - finished\n"))
+
+    def test_not_while_the_last_run_stopped_or_before_any(self):
+        self.assertFalse(self.judged("--- computer\nResult: Converted\n--- computer\nExit code 2 - failed\n"))
+        self.assertFalse(self.judged(None))
+
+    def test_a_conversion_finished_by_a_run_started_anew_is_converted(self):
+        # sonoff>esphome:J2:cancel-new: run 1 stopped at J2, run 2 started anew
+        # from the interim firmware and converted. Its record held only the
+        # steps it did: judged by the records, the scenario needed them merged.
+        self.assertTrue(self.judged("--- computer --firmware esphome --new\nExit code 130 - stopped\n"
+                                    "--- computer --firmware esphome --new\n"
+                                    "[10:21:20]     Result: Converted\nExit code 0 - finished\n"))
+
+    def test_a_device_found_on_its_firmware_already_is_converted(self):
+        self.assertTrue(self.judged("--- computer\nThe device already runs OpenBeken: there is nothing to convert.\n"))
+
+    def test_each_run_is_marked_in_the_log_as_the_espressif_suite_marks_it(self):
+        instance = fault_suite.Instance(81)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite.subprocess, "Popen") as popen:
+            log = Path(tmp, "tool.log")
+            instance.tool("esphome", log, new=True)
+            popen.call_args.kwargs["stdout"].close()
+            text = log.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith(fault_suite.fault_verdicts.RUN_MARK))
+        self.assertIn("--firmware esphome --new", text)
+
+
+class RouteAfterTests(unittest.TestCase):
+    def test_a_switch_is_judged_as_a_conversion_to_the_other_firmware(self):
+        self.assertEqual(fault_suite.route_after("sonoff>esphome", False), "sonoff>esphome")
+        self.assertEqual(fault_suite.route_after("sonoff>esphome", True), "sonoff>openbeken")
+        # An update's device switched part way is converted from the firmware it
+        # ran: judged as outdated>openbeken, it waited for U3 and U4, which no
+        # conversion takes, and failed converted (outdated>esphome:U1:cancel-switch).
+        self.assertEqual(fault_suite.route_after("outdated>esphome", True), "esphome>openbeken")
+        self.assertEqual(fault_suite.route_after("outdated>openbeken", True), "openbeken>esphome")
+        self.assertEqual(fault_suite.route_after("outdated>esphome", False), "outdated>esphome")
+
 
 
 class SavingTests(unittest.TestCase):
@@ -1692,24 +1731,25 @@ class CancelRunsTests(unittest.TestCase):
     def runs(self, arg, target="openbeken", said=("",), converts_after=1):
         from unittest import mock
         sc = {"route": f"sonoff>{target}", "step": "B2", "fault": "cancel", "arg": arg, "at": 40}
-        made, routes = [], []
+        made, judged = [], []
         done = iter([False] * converts_after + [True])
         words = iter(said)
         instance = SimpleNamespace(tool=lambda target, log, **options: made.append((target, options)),
                                    last_state=lambda: {}, run_texts=lambda: [output.CTRL_C_LOGGED], last_events=list,
                                    last_log=lambda: next(words, ""))
 
-        def converted(state, route):
-            routes.append(route)
+        def converted(log):
+            judged.append(log)
             return next(done, True)
         with mock.patch.object(fault_suite, "wait_for_step", return_value=True), \
                 mock.patch.object(fault_suite, "inject"), mock.patch.object(fault_suite, "finish"), \
                 mock.patch.object(fault_suite, "recover"), mock.patch.object(fault_suite.time, "sleep"), \
                 mock.patch.object(fault_suite, "happened", return_value=False), \
                 mock.patch.object(fault_suite, "converted", side_effect=converted):
-            outcome = fault_suite.step_scenario(instance, sc, target, Path("unused"), {})
-        self.went = outcome["route"]   # what run_scenario's end checks judge the device on
-        return outcome["verdict"], made, routes
+            outcome = fault_suite.step_scenario(instance, sc, target, Path("tool.log"), {})
+        self.assertEqual(set(judged), {Path("tool.log")}, "judged by the scenario's own log")
+        # The route run_scenario's end checks judge the device on.
+        return outcome["verdict"], made, outcome["route"]
 
     def test_after_ctrl_c_twice_a_person_carries_on_starts_afresh_or_switches(self):
         result, made, _ = self.runs("continue")
@@ -1717,16 +1757,15 @@ class CancelRunsTests(unittest.TestCase):
         self.assertEqual(made[1], ("openbeken", {"new": False}))
         _, made, _ = self.runs("new")
         self.assertEqual(made[1], ("openbeken", {"new": True}))
-        _, made, routes = self.runs("switch")
+        _, made, route = self.runs("switch")
         self.assertEqual(made[1], ("esphome", {"new": False}))
-        self.assertEqual(routes[-1], "sonoff>esphome")   # converted to the other firmware
-        self.assertEqual(self.went, "sonoff>esphome")
+        self.assertEqual(route, "sonoff>esphome")   # converted to the other firmware
 
     def test_a_switch_refused_part_way_is_started_again_with_new_as_the_run_says(self):
         refused = f"The device {fault_suite.SWITCH_REFUSED} ESPHome part way. Start again with --new."
-        _, made, routes = self.runs("switch", said=(refused,), converts_after=2)
+        _, made, route = self.runs("switch", said=(refused,), converts_after=2)
         self.assertEqual(made[1:], [("esphome", {"new": False}), ("esphome", {"new": True})])
-        self.assertEqual(routes[-1], "sonoff>esphome")
+        self.assertEqual(route, "sonoff>esphome")
 
 
 class PrepTests(unittest.TestCase):

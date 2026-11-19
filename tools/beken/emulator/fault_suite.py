@@ -406,11 +406,28 @@ def interim_problems(route: str, names: list[str], flash: bytes | None) -> list[
     return problems
 
 
-def converted(state: dict, route: str) -> bool:
-    """Whether a run's record (autoflash-state.json) has every step of the
-    route done: the device on its new firmware, and checked there."""
-    steps = state.get("steps", {})
-    return all((steps.get(step) or {}).get("status") == "done" for step in route_steps(route))
+def converted(log: Path) -> bool:
+    """Whether the last run in a scenario's log (tool.log, each run after a
+    fault_verdicts.RUN_MARK line) ended with the device converted, as the
+    Espressif suite judges it: by the run's own word
+    (fault_verdicts.run_result, which says why that and not the steps its
+    record has done)."""
+    try:
+        return fault_verdicts.converted(fault_verdicts.run_result(log.read_text(encoding="utf-8", errors="replace")))
+    except OSError:
+        return False
+
+
+def route_after(route: str, switched: bool) -> str:
+    """The route a scenario's device is judged on - its firmware's release, its
+    names, the interim firmware's settings: `route`, or after a switch
+    to the other firmware (cancel-switch) a conversion to that one - from the
+    firmware an update's device ran (outdated>esphome's ESPHome), which takes
+    no update's steps but a conversion's."""
+    source, target = route.split(">")
+    if not switched:
+        return route
+    return f"{target if source == 'outdated' else source}>{OTHER[target]}"
 
 
 def metered(state: dict) -> bool:
@@ -567,6 +584,9 @@ class Instance:
                 ["--no-api", "computer", "tools/repo/unattended_run.py", "--", "--env-file", "captures/tool.env",
                  "--firmware", target] + (["--new"] if new else [])) + list(more)
         out = open(log, "a", encoding="utf-8")
+        # Where the run starts in the scenario's log, as the Espressif suite marks it.
+        out.write(f"{fault_verdicts.RUN_MARK}{' '.join(args)}\n")
+        out.flush()
         return subprocess.Popen(self.command(*args), env=self.env, stdout=out, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
 
@@ -1203,7 +1223,7 @@ def apply_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: 
     cut.start()
     try:
         runs = 0
-        while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS + 1:
+        while not converted(log) and runs <= RECOVERY_RUNS + 1:
             if runs:
                 recover(instance, target, notes)
             finish(instance.tool(target, log, new=not runs), instance)
@@ -1214,7 +1234,7 @@ def apply_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: 
     notes["cut_at"] = cut.fired
     if cut.fired is None:
         return dict(verdict="NOT-FIRED", runs=runs)
-    return dict(verdict="PASS" if converted(instance.last_state(), sc["route"]) else "FAIL", runs=runs)
+    return dict(verdict="PASS" if converted(log) else "FAIL", runs=runs)
 
 
 def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
@@ -1227,14 +1247,14 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
              f"{sc['step']}:{SPOILT_PAST_LIMIT}" if sc["arg"] == "restart" else sc["step"])
     finish(instance.tool(target, log, new=True, more=spoil), instance)
     runs = 1
-    while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS:
+    while not converted(log) and runs <= RECOVERY_RUNS:
         recover(instance, target, notes)
         finish(instance.tool(target, log, more=spoil), instance)
         runs += 1
     # The image found not installed, and sent again (errors.GoBack, output.EVENTS).
     again = [item for item in instance.all_events() if item["event"] == "again" and item.get("step") == sc["step"]]
     notes["sent_again"] = bool(again)
-    ok = converted(instance.last_state(), sc["route"]) and notes["sent_again"]
+    ok = converted(log) and notes["sent_again"]
     if sc["arg"] == "restart":
         # Converted by the run that restarted the device, not by a person's run after.
         notes["restarted"] = any(item.get("restarted") for item in again)
@@ -1287,13 +1307,13 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
     notes["safemode_cuts"] = cuts
     finish(instance.tool(target, log, new=True), instance)
     runs = 1
-    while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS:
+    while not converted(log) and runs <= RECOVERY_RUNS:
         recover(instance, target, notes)
         finish(instance.tool(target, log), instance)
         runs += 1
     texts = instance.run_texts()
     notes["waited_out"] = any("ESPHome in safe mode" in text for text in texts)
-    if not converted(instance.last_state(), sc["route"]):
+    if not converted(log):
         return dict(verdict="FAIL", runs=runs)
     if notes["waited_out"]:
         return dict(verdict="PASS", runs=runs)
@@ -1342,11 +1362,11 @@ def own_build_scenario(instance: Instance, log: Path, notes: dict) -> dict:
     notes["refused_built"] = esphome_now(instance)[0]
     finish(instance.tool("esphome", log, more=("--replace-own-build",)), instance)
     runs = 2
-    while not converted(instance.last_state(), OWN_BUILD_JUDGED_AS) and runs <= RECOVERY_RUNS + 1:
+    while not converted(log) and runs <= RECOVERY_RUNS + 1:
         recover(instance, "esphome", notes)
         finish(instance.tool("esphome", log), instance)
         runs += 1
-    if not converted(instance.last_state(), OWN_BUILD_JUDGED_AS):
+    if not converted(log):
         return dict(verdict="FAIL", runs=runs, route=OWN_BUILD_JUDGED_AS)
     notes["built_now"], notes["calibration_now"] = esphome_now(instance)
     return dict(verdict=own_build.problem(notes, pin["built"]) or "PASS", runs=runs, route=OWN_BUILD_JUDGED_AS)
@@ -1408,7 +1428,7 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
     while not wait_for_step(instance, sc["step"], run):
         run.wait(timeout=60)
         reruns += 1
-        if reruns > RECOVERY_RUNS or converted(instance.last_state(), sc["route"]):
+        if reruns > RECOVERY_RUNS or converted(log):
             return dict(verdict="NOT-FIRED")
         recover(instance, target, notes)
         run = instance.tool(target, log)
@@ -1431,13 +1451,12 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
     finish(run, instance)
     # After Ctrl-C twice, the person runs it to the other firmware (switch) or
     # afresh (new), as the Espressif suite's cancel does; else as it was.
-    if (sc["fault"], sc["arg"]) == ("cancel", "switch"):
-        target = OTHER[target]
-    route = f"{sc['route'].split('>')[0]}>{target}"
+    route = route_after(sc["route"], (sc["fault"], sc["arg"]) == ("cancel", "switch"))
+    target = route.split(">")[1]
     afresh = (sc["fault"], sc["arg"]) == ("cancel", "new")
     second = sc["fault"] == "double" and not notes.get("second_cut")
     runs = 1
-    while not converted(instance.last_state(), route) and runs <= RECOVERY_RUNS:
+    while not converted(log) and runs <= RECOVERY_RUNS:
         recover(instance, target, notes)
         run = instance.tool(target, log, new=afresh)
         if second and wait_for_step(instance, sc["step"], run):
@@ -1457,7 +1476,7 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         notes["moved_to"] = instance.lease()
     if sc["fault"] in ("ctrlc", "cancel"):
         notes["ctrlc_seen"] = any(CTRL_C_LOGGED in text for text in instance.run_texts())
-    ok = converted(instance.last_state(), route)
+    ok = converted(log)
     if notes.get("mistimed"):
         return dict(verdict="MISTIMED", runs=runs)
     if ok and not_fired(sc["fault"], notes):
@@ -1801,12 +1820,12 @@ def prep(first: int = 1) -> None:
         instance.reset("sonoff")
         if not instance.start("sonoff"):
             raise SystemExit("the device did not come online")
-        for target, route in (("openbeken", "sonoff>openbeken"), ("esphome", "openbeken>esphome")):
+        for target in ("openbeken", "esphome"):
             log = OUT / f"prep-{target}.log"
             OUT.mkdir(parents=True, exist_ok=True)
             for attempt in range(RECOVERY_RUNS):
                 instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
-                if converted(instance.last_state(), route):
+                if converted(log):
                     break
                 if asked_to_switch(instance):
                     instance.power("cycle")
@@ -1883,12 +1902,12 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
             instance.before = {fault_verdicts.filed_as(path) for path in instance.all_runs()}
             for attempt in range(RECOVERY_RUNS):
                 instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
-                if converted(instance.last_state(), route):
+                if converted(log):
                     break
                 if asked_to_switch(instance):
                     instance.power("cycle")
                     instance.ready(target)
-            problems = [] if converted(instance.last_state(), route) else ["not converted"]
+            problems = [] if converted(log) else ["not converted"]
             problems += interim_problems(route, instance.dhcp_names(), None)
             checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()),
                                                    instance.last_outcome(started))

@@ -145,6 +145,71 @@ def checks_problem(log: str, firmware: str, metered: bool = False, outcome: dict
     return None
 
 
+# How each suite's log of a scenario (its tool.log) starts each run of the
+# tool in it: a line of this, then the words that ran it.
+RUN_MARK = "--- "
+# A run's result as its report gives it (report.run_result): the line the
+# harness prints from the run's own log (unattended_run.logged_result), as the
+# screen says it above the report instead; an earlier release's report has it
+# on the screen too.
+REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
+# What a run says, with no report, of a device already on the firmware asked for.
+NOTHING_TO_CONVERT = "there is nothing to convert"
+
+
+def run_result(log: str) -> str:
+    """How the last run in a suite's log of a scenario (`log`, its runs each
+    after a RUN_MARK line) ended, as its report said it, the screen and the
+    harness's lines after it included: "Converted", "Converted (updated)" for
+    an update, "Converted (already: nothing to convert)" for a device already
+    on the firmware asked for, the result a run that stopped gave, or "no
+    report" and where it stopped.
+
+    Both suites judge a device converted by this (converted), as a person
+    would by the run's own word, not by the steps its record has done: the run
+    says Converted only once every step of its route is, so the suite need not
+    know the route's steps, nor put together the records of runs that each did
+    some of them (a run started anew part way, one switched to the other
+    firmware, an update's), nor tell what an earlier release recorded; and a
+    run that found nothing to convert says so. Where the device ended is
+    judged apart, by asking it (its firmware's release, its name)."""
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", log.split(RUN_MARK)[-1])
+    if NOTHING_TO_CONVERT in clean:
+        return "Converted (already: nothing to convert)"
+    found = REPORT_RESULT.findall(clean)
+    if found and found[-1].strip() == "Updated":
+        return "Converted (updated)"   # an update's report says so, and it counts the same
+    if found:
+        return found[-1].strip()
+    why = why_no_report(clean)
+    return f"no report ({why})" if why else "no report"
+
+
+def converted(result: str) -> bool:
+    """Whether a run's result (run_result, or a report's Result) says the
+    device was converted."""
+    return result.startswith("Converted")
+
+
+def why_no_report(screen: str) -> str:
+    """Where a run that wrote no report stopped, and what it said there: a stage
+    stopped at a question an unattended run cannot answer says so only on screen."""
+    code = re.findall(r"Exit code (-?\d+)", screen)
+    stops = list(re.finditer(r"^ *Stage +(\d+)(?: of \d+)? - (.+?) +- Stopped *$", screen, re.M))
+    if not stops:
+        return f"exit {code[-1]}" if code else ""
+    stop = stops[-1]
+    before = screen[:stop.start()]
+    began = list(re.finditer(rf"^ *Stage +{stop[1]}(?: of \d+)? - .+- Underway.*$", before, re.M))
+    said = before[began[-1].end():] if began else ""
+    lines = [line.strip(" -!") for line in said.splitlines()
+             if line.strip() and not re.match(r" *\d+\. ", line) and "unattended run cannot" not in line]
+    detail = " ".join(lines)
+    detail = detail if len(detail) <= 200 else detail[:197] + "..."
+    return (f"stopped at stage {stop[1]}, {stop[2]}" + (f": {detail}" if detail else "")
+            + (f"; exit {code[-1]}" if code else ""))
+
+
 # What a readout keeps (docs/readouts.md, "What is in one"), by chip family:
 # each .bin in it xz-compressed, and the firmware eWeLink offers under offered/.
 READOUT_FILES = {"espressif": ("manifest.json", "flash.bin.xz", "efuse.bin.xz", "info.txt", "report.json"),

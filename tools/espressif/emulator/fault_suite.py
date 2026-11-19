@@ -349,12 +349,9 @@ READOUT_ALL = "sonoff>readout-all"
 READOUT_ALL_FAULTS = [("read", "deviceoff", 1), ("read", "crash", 1)]
 # Where the readout asks for the device to be switched off and on, and waits.
 # The answers read off a run's report, in its log, each up to the gap after
-# it, wherever it is (report.report_screen). The result is the line the
-# harness prints from the run's own log (unattended_run.logged_result), as
-# the screen says it above the report instead; an earlier release's report
-# has it on the screen too. The labels before 3.0.0 too, for an earlier
-# release's runs.
-REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
+# it, wherever it is (report.report_screen); its result as both suites read
+# it (fault_verdicts.REPORT_RESULT). The labels before 3.0.0 too, for an
+# earlier release's runs.
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
@@ -1766,18 +1763,8 @@ class Scenario:
                     pass
 
     def screen_result(self):
-        text = Path(self.log).read_text(encoding="utf-8", errors="replace")
-        runs = text.split("--- ")[-1]
-        clean = re.sub(r"\x1b\[[0-9;]*m", "", runs)
-        if "there is nothing to convert" in clean:
-            return "Converted (already: nothing to convert)"
-        found = REPORT_RESULT.findall(clean)
-        if found and found[-1].strip() == "Updated":
-            return "Converted (updated)"   # an update's report says so, and it counts the same
-        if found:
-            return found[-1].strip()
-        why = why_no_report(clean)
-        return f"no report ({why})" if why else "no report"
+        """How the last run ended, as both suites judge it (fault_verdicts.run_result)."""
+        return fault_verdicts.run_result(Path(self.log).read_text(encoding="utf-8", errors="replace"))
 
     def person(self, stop):
         """As a person at the computer would: join the device's own network when
@@ -2044,7 +2031,7 @@ class Scenario:
         stop.set()
         self.earlier_release_wrote = {fault_verdicts.filed_as(log): len(text) for _, log, text in run_logs(self.state)}
         if step == "start":
-            if "Converted" not in results[-1][1]:
+            if not fault_verdicts.converted(results[-1][1]):
                 return self.finish(results, "OLD-RUN-FAILED")
             # Its starting point, not the end: the conversion under test is next.
             results[-1] = (results[-1][0], f"on {dict(tasmota='Tasmota', esphome='ESPHome')[source]}, by {sc['arg']}")
@@ -2211,11 +2198,11 @@ class Scenario:
         source = AFTER_D1.get(route, source)
         results = [(self.run_tool(self.target, source=source), None)]
         results[-1] = (results[-1][0], self.screen_result())
-        while "Converted" not in results[-1][1] and len(results) < MAX_RUNS:
+        while not fault_verdicts.converted(results[-1][1]) and len(results) < MAX_RUNS:
             results.append((self.run_tool(self.target), None))
             results[-1] = (results[-1][0], self.screen_result())
         self.target_final = self.target
-        if "Converted" not in results[-1][1]:
+        if not fault_verdicts.converted(results[-1][1]):
             return self.finish(results, None)
         fallback = self.tasmota("Module2")
         fallback = fallback.get("Module2") if isinstance(fallback, dict) else None
@@ -2710,7 +2697,7 @@ class Scenario:
         sc = self.sc
         fault, arg = sc["fault"], sc["arg"]
         first = len(results)
-        while "Converted" not in results[-1][1] and len(results) < MAX_RUNS:
+        while not fault_verdicts.converted(results[-1][1]) and len(results) < MAX_RUNS:
             said = self.last_said()
             if self.advised_to_switch():
                 self.say("following the run's advice: the device switched off and on")
@@ -2797,7 +2784,7 @@ class Scenario:
     def finish(self, results, special):
         self.ended = True
         sc = self.sc
-        converted = "Converted" in results[-1][1]
+        converted = fault_verdicts.converted(results[-1][1])
         fault, arg = sc["fault"], sc["arg"]
         left = self.leftovers()
         names, networks = self.names_seen()
@@ -3070,25 +3057,6 @@ def no_internet(verdict, results):
     return verdict
 
 
-def why_no_report(screen):
-    """Where a run that wrote no report stopped, and what it said there: a stage
-    stopped at a question an unattended run cannot answer says so only on screen."""
-    code = re.findall(r"Exit code (-?\d+)", screen)
-    stops = list(re.finditer(r"^ *Stage +(\d+)(?: of \d+)? - (.+?) +- Stopped *$", screen, re.M))
-    if not stops:
-        return f"exit {code[-1]}" if code else ""
-    stop = stops[-1]
-    before = screen[:stop.start()]
-    began = list(re.finditer(rf"^ *Stage +{stop[1]}(?: of \d+)? - .+- Underway.*$", before, re.M))
-    said = before[began[-1].end():] if began else ""
-    lines = [line.strip(" -!") for line in said.splitlines()
-             if line.strip() and not re.match(r" *\d+\. ", line) and "unattended run cannot" not in line]
-    detail = " ".join(lines)
-    detail = detail if len(detail) <= 200 else detail[:197] + "..."
-    return (f"stopped at stage {stop[1]}, {stop[2]}" + (f": {detail}" if detail else "")
-            + (f"; exit {code[-1]}" if code else ""))
-
-
 def allowed(default):
     """How many of a batch's emulators may take a scenario now: the number in
     OUT/workers when it holds one, so a running batch can be scaled to what
@@ -3306,7 +3274,8 @@ def prepared(said, stop_after, stopped):
     `stop_after` was done, or else converted. Saved whatever happened, a device
     whose run stopped at the start was once listed as saved, and its
     scenarios all failed."""
-    return stopped if stop_after else any(found.startswith("Converted") for found in REPORT_RESULT.findall(said))
+    return stopped if stop_after else any(fault_verdicts.converted(found)
+                                          for found in fault_verdicts.REPORT_RESULT.findall(said))
 
 
 def make_start(save, args, stop_after=None):
