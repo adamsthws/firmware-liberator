@@ -40,8 +40,10 @@ its database answers rightly: a GET of /confirm with a token that cannot be
 one (the firewall's GET path, the Worker, the database's newest migration:
 a page saying there is nothing to confirm), and a POST to /v1/wanted with the
 light proof of work but of a format no tool sends (the firewall's POST path,
-the proof checked and taken once in the database: 400). Nothing is counted
-or kept but that proof's mark. Deployed taking no requests (`off`), each is
+the proof checked and taken once in the database: 400), and a POST to
+/v1/offers of no offers, as a tool sends them (200, naming what a first stage
+sends: OFFERED_SEND in website/api/wrangler.jsonc, so a deploy of the wrong
+setting is seen). Nothing is counted or kept but those proofs' marks. Deployed taking no requests (`off`), each is
 to answer 503. It tries for LIVE_WAIT, as a new version takes some seconds
 to be everywhere.
 
@@ -71,6 +73,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import proof_of_work  # noqa: E402
+from tools.autoflash.readout import offers_request  # noqa: E402
 from tools.repo import cloudflare_settings as cs  # noqa: E402
 
 SNAPSHOT_URL = f"https://{cs.STATS_HOST}/v1/stats.json"
@@ -80,6 +83,7 @@ SNAPSHOT_URL = f"https://{cs.STATS_HOST}/v1/stats.json"
 SNAPSHOT_AGE = dt.timedelta(hours=25)
 DATABASE_JS = ROOT / "website" / "api" / "database.js"
 INDEX_JS = ROOT / "website" / "api" / "index.js"
+WRANGLER_JSONC = ROOT / "website" / "api" / "wrangler.jsonc"
 API_URL = f"https://{cs.API_HOST}"
 LIVE_WAIT = 90
 LIVE_EVERY = 10
@@ -136,6 +140,13 @@ def light_proof_bits() -> int:
     return int(found.group(1))
 
 
+def offered_send() -> str:
+    found = re.search(r'^\s*"OFFERED_SEND": "([a-z]+)"$', WRANGLER_JSONC.read_text(encoding="utf-8"), re.M)
+    if not found:
+        raise HealthError(f"{WRANGLER_JSONC.relative_to(ROOT)} sets no OFFERED_SEND")
+    return found.group(1)
+
+
 def ask(path: str, body: bytes | None = None) -> tuple[int, str]:
     """The API's answer to a GET, or with `body` a POST of it: (status, text)."""
     headers = {"User-Agent": "firmware-liberator-health"}
@@ -170,6 +181,18 @@ def live_problems(ingest: str) -> list[str]:
     elif status != 400 or "not a question this tool makes" not in text:
         problems.append(f"POST /v1/wanted: {status} {text[:200]!r}, not 400 for a question of no tool's format"
                         + (" (run python3 tools/repo/cloudflare_settings.py apply)" if "being updated" in text else ""))
+    status, text = ask("/v1/offers", json.dumps(offers_request([])).encode())
+    if ingest == "off":
+        if status != 503:
+            problems.append(f"POST /v1/offers: {status} {text[:200]!r}, not 503 as taking no requests")
+    else:
+        try:
+            send = json.loads(text).get("send") if status == 200 else None
+        except (ValueError, AttributeError):
+            send = None
+        if send != offered_send():
+            problems.append(f"POST /v1/offers: {status} {text[:200]!r}, not 200 saying a first stage sends "
+                            f"{offered_send()!r}, as website/api/wrangler.jsonc's OFFERED_SEND sets")
     return problems
 
 

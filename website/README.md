@@ -251,7 +251,8 @@ and push that.
 
 The API's deploy checks itself: its last step,
 `python3 tools/repo/api_health.py live`, fails the job unless the new Worker
-answers as one deployed with its database and newest migration does.
+answers as one deployed with its database and newest migration does,
+and says a first stage sends what `OFFERED_SEND` in `api/wrangler.jsonc` sets.
 Every answer names, in its `API-Tree` header, the git tree of `api/` it was
 deployed from, and the release workflow releases a tool only once the API
 answering is its own commit's (`api_health.py deployed`): a tool never goes

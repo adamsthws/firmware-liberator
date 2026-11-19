@@ -250,12 +250,15 @@ class MailTests(unittest.TestCase):
 class LiveTests(unittest.TestCase):
     """What a just-deployed API answers; the Worker's own answers are in website/test/."""
 
-    def answers(self, confirm, wanted, ingest="on"):
+    SENDS = (200, '{"send":"files","offers":[]}')
+
+    def answers(self, confirm, wanted, ingest="on", offers=SENDS):
         asked = []
         def ask(path, body=None):
             asked.append((path, body))
-            return confirm if path.startswith("/confirm") else wanted
-        with mock.patch.object(health, "ask", side_effect=ask):
+            return {"/v1/wanted": wanted, "/v1/offers": offers}.get(path, confirm)
+        with mock.patch.object(health, "ask", side_effect=ask), \
+                mock.patch.object(health, "offered_send", return_value="files"):
             return health.live_problems(ingest), asked
 
     def test_a_migrated_worker_taking_requests_passes(self):
@@ -273,8 +276,25 @@ class LiveTests(unittest.TestCase):
 
     def test_deployed_taking_no_requests_each_answers_503(self):
         off = (503, '{"error":"not taking requests for now: try again later"}')
-        self.assertEqual(self.answers(off, off, "off")[0], [])
-        self.assertEqual(len(self.answers((404, "Nothing to confirm"), off, "off")[0]), 1)
+        self.assertEqual(self.answers(off, off, "off", off)[0], [])
+        self.assertEqual(len(self.answers((404, "Nothing to confirm"), off, "off", off)[0]), 1)
+
+    def test_offers_must_name_what_wrangler_jsonc_sets_a_first_stage_sending(self):
+        wanted = (400, '{"error":"that is not a question this tool makes"}')
+        confirm = (404, "Nothing to confirm")
+        problems, asked = self.answers(confirm, wanted, offers=(200, '{"send":"links","offers":[]}'))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("OFFERED_SEND", problems[0])
+        body = json.loads(dict(asked)["/v1/offers"])
+        self.assertEqual((body["format"], body["cloud"], body["offers"]), (1, "ewelink", []),
+                         "no offers, as a tool sends them: answered, and nothing counted")
+        for broken in ((404, '{"error":"no such path"}'), (200, "not json"), (200, "[]")):
+            self.assertEqual(len(self.answers(confirm, wanted, offers=broken)[0]), 1, broken)
+        off = (503, '{"error":"not taking requests for now: try again later"}')
+        self.assertEqual(len(self.answers(off, off, "off")[0]), 1, "taking none, offers too answer 503")
+
+    def test_it_reads_offered_send_from_the_workers_settings(self):
+        self.assertIn(health.offered_send(), ("files", "links"))
 
     def test_the_post_carries_the_light_proof_the_worker_asks(self):
         sent = {}
