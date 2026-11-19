@@ -436,6 +436,45 @@ class BatchResultTests(unittest.TestCase):
         self.assertEqual(events, ["wait", "run"])
 
 
+    def batch_of(self, rows, workers="2", **patches):
+        """What a batch of `rows` ran, said, and exited with (None: ended whole)."""
+        from unittest import mock
+        ran, said = [], []
+        patches.setdefault("run_scenario", lambda instance, sc: ran.append(sc["id"]) or {"verdict": "PASS"})
+        with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
+                mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance"), \
+                mock.patch.multiple(fault_suite, **{"record": mock.DEFAULT, **patches}), \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": workers}), \
+                mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
+                mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
+                mock.patch.object(fault_suite.emulator_stats, "fault_run"), \
+                mock.patch.object(fault_suite.emulator_instances, "take",
+                                  side_effect=lambda family, first, count: range(first, first + count)), \
+                mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(" ".join(map(str, a)))):
+            try:
+                fault_suite.batch()
+                code = None
+            except SystemExit as stopped:
+                code = stopped.code
+        return ran, said, code
+
+    def test_a_worker_that_dies_stops_the_batch_loudly(self):
+        from unittest import mock
+        rows = [{"id": i, "arg": 1} for i in "abcdef"]
+        ran, said, code = self.batch_of(rows, record=mock.Mock(side_effect=OSError(28, "No space left on device")))
+        self.assertIn("No space left on device", code)
+        self.assertTrue(any("batch: stopping - a worker died" in line for line in said))
+        # Each worker finished the scenario it had, and took no other.
+        self.assertIn(len(ran), (1, 2))
+
+    def test_a_disk_that_stays_full_stops_the_batch_before_any_scenario(self):
+        from unittest import mock
+        ran, said, code = self.batch_of([{"id": "a", "arg": 1}],
+                                        disk_space=mock.Mock(wait_for_room=mock.Mock(return_value=False),
+                                                             stop_reason=mock.Mock(return_value="disk full")))
+        self.assertEqual((ran, code), ([], "batch stopped before its end: disk full"))
+
     def test_a_scenario_that_raises_is_recorded_with_where(self):
         from unittest import mock
 

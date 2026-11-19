@@ -424,6 +424,50 @@ class SavedDeviceTests(unittest.TestCase):
         line.assert_called_once_with(81, "FAIL", "a", {})
         printed.assert_any_call("the line", flush=True)
 
+    def test_a_disk_that_stays_full_stops_the_batch_before_the_next_scenario(self):
+        import queue
+        import threading
+        todo = queue.Queue()
+        todo.put({"id": "a", "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60})
+        crew = fs.batch_workers.Workers(lambda line: None)
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(fs, "OUT", Path(out)), mock.patch.object(fs, "LOGS", Path(out)), \
+                mock.patch.object(fs, "memory_now", return_value=(fs.LOW_MEMORY_KB * 2, None)), \
+                mock.patch.object(fs.disk_space, "wait_for_room", return_value=False), \
+                mock.patch.object(fs.disk_space, "stop_reason", return_value="disk full"), \
+                mock.patch.object(fs, "Scenario", side_effect=AssertionError("started")), \
+                mock.patch.object(fs, "TUNER"):
+            fs.worker(1, todo, threading.Lock(), crew=crew)
+        self.assertEqual(crew.why, "disk full")
+
+    def test_a_worker_that_dies_stops_the_batch_loudly(self):
+        rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abcd"]
+        taken = []
+
+        def worker(n, todo, lock, cloud, room, crew):
+            if n == 1:
+                raise OSError(28, "No space left on device")
+            crew.stopping.wait(5)
+            while crew.going() and not todo.empty():
+                taken.append(todo.get())
+        with mock.patch.object(fs, "scenarios", return_value=rows), \
+                mock.patch.object(fs.fault_verdicts, "latest", return_value={}), \
+                mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
+                mock.patch.object(fs, "untrusting_starts", return_value=[]), \
+                mock.patch.object(fs, "STUB_CLOUD", True), mock.patch.object(fs, "FIRST", 1), \
+                mock.patch.object(fs, "worker", worker), \
+                mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_STUB_WORKERS": "2"}), \
+                mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report") as report, \
+                mock.patch.object(fs.emulator_instances, "take"), \
+                mock.patch.object(fs.scenario_times, "times", return_value={}), \
+                mock.patch("builtins.print") as said:
+            with self.assertRaises(SystemExit) as stopped:
+                fs.batch()
+        self.assertIn("No space left on device", str(stopped.exception.code))
+        self.assertEqual(taken, [])
+        report.assert_called_once()   # what ran is still reported
+        self.assertTrue(any("a worker died" in str(call.args[0]) for call in said.call_args_list if call.args))
+
     def test_a_batch_starts_the_longest_first(self):
         rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abc"]
         ran = []

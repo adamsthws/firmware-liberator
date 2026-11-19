@@ -129,7 +129,7 @@ from tools.autoflash.routes import beken  # noqa: E402
 from tools.autoflash.routes.beken import images as beken_images  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
+from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -1728,17 +1728,22 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
     for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],
                                            scenario_times.times(*suite_roots())):
         todo.put(sc)
-    workers = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
-    numbers = emulator_instances.take("beken", first, workers)
+    count = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
+    numbers = emulator_instances.take("beken", first, count)
     lock = threading.Lock()
+    workers = batch_workers.Workers(lambda line: print(line, flush=True))
 
     def work(n: int) -> None:
         instance = Instance(n)
         try:
-            while True:
+            while workers.going():
                 try:
                     sc = todo.get_nowait()
                 except queue.Empty:
+                    return
+                if not disk_space.wait_for_room(OUT, lambda line: print(line, flush=True), workers.stopping):
+                    if workers.going():
+                        workers.stop(disk_space.stop_reason(OUT))
                     return
                 cpu_load.wait_for_room(lambda line: print(line, flush=True))
                 started = time.time()
@@ -1755,7 +1760,7 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
                 # The device's eWeLink is always the local stub (ACCOUNT).
                 emulator_stats.fault_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, scenario=sc,
                                          verdict=outcome["verdict"], tries=outcome.get("runs"),
-                                         seconds=round(time.time() - started), cloud="stub", workers=workers,
+                                         seconds=round(time.time() - started), cloud="stub", workers=count,
                                          rerun=sc["id"] in earlier,
                                          outcomes=fault_verdicts.run_outcomes(instance.state / "work/captures",
                                                                               started),
@@ -1765,14 +1770,13 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
             instance.stop()   # an emulator never left running
 
     emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="fault", device=STATS_DEVICE.key, total=len(every),
-                         planned=todo.qsize(), cloud="stub", workers=workers,
+                         planned=todo.qsize(), cloud="stub", workers=count,
                          tier=emulator_stats.tier(wanted, every, (sc["id"] for sc in scenarios(quick=True))))
-    threads = [threading.Thread(target=work, args=(n,)) for n in numbers]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    for n in numbers:
+        workers.add(work, n).start()
+    workers.join()
     print(emulator_stats.send(OUT), flush=True)
+    workers.end()
 
 
 def prep(first: int = 1) -> None:

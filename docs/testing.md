@@ -342,6 +342,15 @@ Both suites run a batch the same way:
   (`fault_verdicts.batch_line`): the time, the emulator instance in
   brackets, the verdict and the scenario, such as
   `14:05:09 [81] PASS             sonoff>esphome:J2:cancel-new`.
+- The next scenario waits too while the disk holding the results is short of
+  space (`tools/repo/disk_space.py`, `FLOOR`), and says so; if it stays short
+  for `LONGEST`, the batch stops, saying how much is free. A worker that dies
+  of an error no scenario caught (a full disk, say) stops the batch as well
+  (`tools/repo/batch_workers.py`): the others finish the scenario they have
+  and take no other, and the batch exits non-zero saying why. Run the batch
+  again once the cause is gone: it carries on from the scenarios not yet
+  passed. A results row is written whole or not at all
+  (`fault_verdicts.append_row`).
 - A result's notes say how short of memory the computer was, and a failure
   while it was starved, when connections can fail with nothing wrong, is
   marked "memory-starved".

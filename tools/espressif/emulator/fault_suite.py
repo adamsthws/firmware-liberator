@@ -96,7 +96,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, output, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
+from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.ewelink.stub_cloud.accounts import ACCOUNTS  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
@@ -3100,14 +3100,14 @@ def allowed(default):
         return default
 
 
-def worker(n, todo, lock, cloud=False, room=None):
-    while True:
+def worker(n, todo, lock, cloud=False, room=None, crew=None):
+    crew = crew or batch_workers.Workers(lambda line: print(line, flush=True))
+    while crew.going():
         # A cloud worker beyond how many the tuner allows now waits its turn,
         # and one beyond OUT/workers until it is raised or nothing is left.
-        while cloud and n - FIRST >= TUNER.workers:
+        if cloud and n - FIRST >= TUNER.workers or room and not room(n) and not todo.empty():
             time.sleep(10)
-        while room and not room(n) and not todo.empty():
-            time.sleep(10)
+            continue
         try:
             sc = todo.get_nowait()
         except queue.Empty:
@@ -3117,6 +3117,10 @@ def worker(n, todo, lock, cloud=False, room=None):
             continue
         while memory_now()[0] < LOW_MEMORY_KB:
             time.sleep(10)
+        if not disk_space.wait_for_room(OUT, lambda line: print(line, flush=True), crew.stopping):
+            if crew.going():
+                crew.stop(disk_space.stop_reason(OUT))
+            return
         cpu_load.wait_for_room(lambda line: print(line, flush=True))
         folder = fault_verdicts.scenario_folder(LOGS, sc["id"])
         keep_earlier(folder)
@@ -3128,8 +3132,8 @@ def worker(n, todo, lock, cloud=False, room=None):
         except Exception as exc:  # noqa: BLE001
             row = {**sc, "instance": n, "verdict": "HARNESS-ERROR", "error": repr(exc), "trace": traceback.format_exc(),
                    "finished": time.strftime("%Y-%m-%d %H:%M:%S")}
-            fault_verdicts.append_row(RESULTS, row)
             sh("docker", "stop", name(n), timeout=120)
+            fault_verdicts.append_row(RESULTS, row)
         with lock:
             print(fault_verdicts.batch_line(n, row["verdict"], sc["id"], row.get("notes", {})), flush=True)
         emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc, verdict=row["verdict"],
@@ -3209,10 +3213,11 @@ def batch(ids_file=None):
         print(f"batch: {stub_only} left to the stub (--stub-cloud batch): their fault comes after eWeLink",
               flush=True)
     lock = threading.Lock()
-    threads = [threading.Thread(target=worker, args=(n, cloud, lock, True)) for n in range(FIRST, first)]
+    crew = batch_workers.Workers(lambda line: print(line, flush=True))
+    threads = [crew.add(worker, n, cloud, lock, True, None, crew) for n in range(FIRST, first)]
     most = max(na, int(os.environ.get("AUTOFLASH_EMU_MOST_WORKERS", na)))
     emulator_instances.take("espressif", FIRST, first + most - FIRST)
-    threads += [threading.Thread(target=worker, args=(n, anywhere, lock, False, lambda n: n - first < allowed(na)))
+    threads += [crew.add(worker, n, anywhere, lock, False, lambda n: n - first < allowed(na), crew)
                 for n in range(first, first + most)]
     stop_log = threading.Event()
     every = float(os.environ.get("AUTOFLASH_EMU_CONNECTION_LOG", "2"))
@@ -3224,13 +3229,17 @@ def batch(ids_file=None):
                          planned=cloud.qsize() + anywhere.qsize(), cloud="stub" if STUB_CLOUD else "real",
                          workers=WORKERS, tier=emulator_stats.tier(ids, known, (sc["id"] for sc in scenarios(quick=True))))
     for t in threads:
+        if not crew.going():
+            break
         t.start()
         time.sleep(20)  # staggered: start-ups are the busiest moment
     for t in threads:
-        t.join()
+        if t.ident is not None:   # started
+            t.join()
     stop_log.set()
     print(emulator_stats.send(OUT), flush=True)
     report()
+    crew.end()
 
 
 def installs(target):
