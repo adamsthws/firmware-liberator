@@ -317,6 +317,16 @@ class PrepUpdateTests(unittest.TestCase):
                 fault_suite.earlier_on(suite, 82)
 
 
+class StatusTests(unittest.TestCase):
+    def test_status_reads_the_results_given_as_the_espressif_suite_does(self):
+        with mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                mock.patch.object(fault_suite.fault_status, "main", return_value=0) as status:
+            self.assertEqual(fault_suite.main(["status", "two/suite", "--ids", "beken.txt"]), 0)
+        argv, every, root, _ = status.call_args.args
+        self.assertEqual((argv, root), (["two/suite", "--ids", "beken.txt"], fault_suite.folders.BEKEN))
+        self.assertEqual([sc["id"] for sc in every], [sc["id"] for sc in fault_suite.scenarios()])
+
+
 class BatchResultTests(unittest.TestCase):
     def setUp(self):
         # No other run's emulators here, whatever this computer runs.

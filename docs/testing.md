@@ -328,6 +328,22 @@ Both suites run a batch the same way:
   tools/beken/emulator/fault_suite.py share beken.txt 2 2 2
   ```
 
+  Its estimate adds up each scenario's own time, so what passes between
+  scenarios on a busy machine - waiting for room (`cpu_load`), emulators
+  starting - is not in it: a full run on loaded machines took about 40%
+  longer. `status` says how long is left by the pace each machine has kept.
+- `status` says where a batch has got to, from the results files you give
+  it, one a machine (a `results.jsonl`, or its folder: copied here, or on a
+  mounted share), or with none the one written here last: each verdict's
+  count, the scenarios not passed, and how many of the batch's (`--ids`
+  the list it runs; every scenario without) are neither done nor run in its
+  latest batch, with about how long they take at the machines' pace together
+  over their last hour (`tools/repo/fault_status.py`):
+
+  ```sh
+  tools/beken/emulator/fault_suite.py status first/suite second/suite --ids beken.txt
+  ```
+
 - Before a machine that ran a batch is wiped, copy its results back to
   `captures/emulation/kept/NAME/` (`scenario_times.KEPT`), one folder a
   machine, laid out as its `captures/emulation/` is. `batch` and `share` take

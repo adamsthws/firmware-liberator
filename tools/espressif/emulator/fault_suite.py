@@ -11,6 +11,10 @@ device, every fault - on emulators side by side, on one machine or several
                                           scenario without), skipping those passed,
                                           and those its skip.txt names as it runs
     fault_suite.py report                 the latest result of each
+    fault_suite.py status [PATH ...] [--ids FILE]
+                                          where a batch has got to, from results files (one a
+                                          machine): verdicts, those not passed, and how many are
+                                          left, with about how long (tools/repo/fault_status.py)
     fault_suite.py found                  what each fault and length has found, in the
                                           results here and kept (tools/repo/fault_yield.py)
 
@@ -97,7 +101,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, output, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, prune_captures, scenario_times  # noqa: E402
+from tools.repo import batch_workers, cpu_load, disk_space, emulator_instances, emulator_stats, fault_status, fault_verdicts, fault_yield, own_build, prune_captures, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.ewelink.stub_cloud.accounts import ACCOUNTS  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
@@ -3416,6 +3420,8 @@ def report():
 def main():
     import argparse
     global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS, FIRST
+    if sys.argv[1:2] == ["status"]:   # its own arguments, as the Beken suite's (fault_status)
+        sys.exit(fault_status.main(sys.argv[2:], scenarios(), EMU, "fault_suite.py status"))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--device", help="the backed-up device's MAC, as emu.sh --device takes it")
     parser.add_argument("--stub-cloud", action="store_true",

@@ -362,6 +362,16 @@ class SavedDeviceTests(unittest.TestCase):
         self.assertEqual(ran, ["c"])
         self.assertTrue(any("1 left to the stub" in line for line in said))
 
+    def test_status_reads_the_results_given_as_the_beken_suite_does(self):
+        with mock.patch.object(fs.fault_status, "main", return_value=0) as status, \
+                mock.patch.object(fs.sys, "argv", ["fault_suite.py", "status", "one/suite-stub", "--ids", "all.txt"]), \
+                self.assertRaises(SystemExit) as ended:
+            fs.main()
+        self.assertEqual(ended.exception.code, 0)
+        argv, every, root, _ = status.call_args.args
+        self.assertEqual((argv, root), (["one/suite-stub", "--ids", "all.txt"], fs.EMU))
+        self.assertEqual([sc["id"] for sc in every], [sc["id"] for sc in fs.scenarios()])
+
     def test_share_writes_each_machines_share_from_the_times_kept_here_and_given(self):
         with tempfile.TemporaryDirectory() as directory:
             ids = Path(directory) / "all.txt"

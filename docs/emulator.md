@@ -237,6 +237,9 @@ backup.
   included, and one asked for an instance another suite claims refuses too.
   To see the claims on your computer - each suite's process and checkout,
   so you stop only your own - run `python3 tools/repo/emulator_instances.py`.
+  To see how far batches on several computers have got, copy their
+  `results.jsonl` here and give them to either suite's `status`
+  ([testing.md](testing.md#the-fault-suites)).
 - **Run no more at once than your computer has cores**, or runs fail that
   would otherwise pass. Sampled with `docker stats` every 2 seconds through
   whole conversions, an S60's emulator, its computer included, took about 0.6
