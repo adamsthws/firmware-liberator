@@ -48,6 +48,11 @@ ip link set tap1 master br1
 ip link set own0 master br1
 for link in tap1 own0 br1; do ip link set "$link" up; done
 # The device's connections off the network: to the stub, whatever address it dialled.
+# Not what it sends to the whole network - an mDNS answer to 224.0.0.251, a
+# broadcast - which is for every computer on its Wi-Fi, as on a real one: sent
+# to the router alone, Home Assistant never saw the device announce itself.
+iptables -t nat -A PREROUTING -i br0 -d 224.0.0.0/4 -j RETURN
+iptables -t nat -A PREROUTING -i br0 -d 255.255.255.255 -j RETURN
 iptables -t nat -A PREROUTING -i br0 -s "$net.48/28" ! -d "$net.0/24" -j DNAT --to-destination "$router"
 
 # The router's DHCP and DNS, as a script that can start them again with the

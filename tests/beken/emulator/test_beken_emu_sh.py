@@ -169,6 +169,18 @@ class DeviceNetRouterTests(unittest.TestCase):
         self.assertIn("-s 198.18.61.48/28 ! -d 198.18.61.0/24 -j DNAT --to-destination 198.18.61.1", calls)
         self.assertIn("--bind 198.18.61.1", calls)
 
+    def test_what_the_device_sends_the_whole_network_is_not_sent_to_the_router(self):
+        # Its mDNS answers to 224.0.0.251, as a broadcast, reach every computer
+        # on its Wi-Fi: rewritten for the router, Home Assistant never found it.
+        done, calls = self.commands()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        rules = [line for line in calls.splitlines() if line.startswith("iptables -t nat -A PREROUTING")]
+        dnat = next(i for i, rule in enumerate(rules) if "-j DNAT" in rule)
+        for group in ("224.0.0.0/4", "255.255.255.255"):
+            with self.subTest(group=group):
+                kept = [i for i, rule in enumerate(rules) if f"-d {group} -j RETURN" in rule]
+                self.assertTrue(kept and kept[0] < dnat, rules)
+
     def test_the_devices_own_network_is_bridged_into_the_tunnel_with_no_address(self):
         done, calls = self.commands()
         self.assertEqual(done.returncode, 0, done.stderr)
