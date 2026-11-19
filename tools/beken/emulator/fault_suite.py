@@ -1715,9 +1715,7 @@ def all_passed(ids_file: str | None = None) -> bool:
 
 
 def record(sc: dict, outcome: dict) -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    with RESULTS.open("a", encoding="utf-8") as results:
-        results.write(json.dumps({"id": sc["id"], "at": time.strftime("%Y-%m-%dT%H:%M:%S"), **outcome}) + "\n")
+    fault_verdicts.append_row(RESULTS, {"id": sc["id"], "at": time.strftime("%Y-%m-%dT%H:%M:%S"), **outcome})
 
 
 def batch(ids_file: str | None = None, first: int = 1) -> None:

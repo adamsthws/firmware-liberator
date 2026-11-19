@@ -480,6 +480,56 @@ class ResultsTests(unittest.TestCase):
         self.assertTrue(fault_verdicts.batch_line(3, "FAIL", "x", {"memory": {"starved": True}}, at)
                         .endswith("x  (memory-starved)"))
 
+    def test_a_row_cut_short_is_passed_over_not_every_row_after_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.jsonl"
+            results.write_text('{"id": "a", "result": "PASS"}\n{"id": "b", "res\n{"id": "c", "result": "FAIL"}\n'
+                               '[1]\n{"id": "d", "res', encoding="utf-8")
+            self.assertEqual(set(fault_verdicts.latest(results)), {"a", "c"})
+
+    def test_a_row_is_written_whole_and_after_a_line_left_unended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "sub" / "results.jsonl"
+            fault_verdicts.append_row(results, {"id": "a", "result": "PASS"})
+            with results.open("a", encoding="utf-8") as file:
+                file.write('{"id": "b", "res')
+            fault_verdicts.append_row(results, {"id": "c", "result": "FAIL"})
+            self.assertEqual(set(fault_verdicts.latest(results)), {"a", "c"})
+            self.assertTrue(results.read_text(encoding="utf-8").endswith('"FAIL"}\n'))
+
+    def test_a_write_failing_part_way_leaves_the_file_as_it_was(self):
+        real_open = open
+
+        class FullDisk:
+            """The file, filling after half the row: a short write, then ENOSPC."""
+            def __init__(self, *args, **kwargs):
+                self.file = real_open(*args, **kwargs)
+                self.writes = 0
+
+            def __getattr__(self, name):
+                return getattr(self.file, name)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.file.close()
+
+            def write(self, data):
+                self.writes += 1
+                if self.writes > 1:
+                    raise OSError(28, "No space left on device")
+                return self.file.write(data[:len(data) // 2])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.jsonl"
+            fault_verdicts.append_row(results, {"id": "a", "result": "PASS"})
+            before = results.read_bytes()
+            with mock.patch("tools.repo.fault_verdicts.open", FullDisk, create=True), \
+                    self.assertRaises(OSError):
+                fault_verdicts.append_row(results, {"id": "b", "result": "FAIL"})
+            self.assertEqual(results.read_bytes(), before)
+
     def test_only_a_failure_is_labelled_starved(self):
         starved = {"memory": {"starved": True}}
         self.assertIn("memory-starved", fault_verdicts.starved_label("FAIL", starved))

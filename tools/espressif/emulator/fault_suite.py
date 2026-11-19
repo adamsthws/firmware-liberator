@@ -2971,8 +2971,7 @@ class Scenario:
                "notes": self.notes, "leftovers": left, "log": str(self.log),
                "finished": time.strftime("%Y-%m-%d %H:%M:%S"), "host": os.uname().nodename,
                "seconds": round(time.time() - self.created)}
-        with open(RESULTS, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row) + "\n")
+        fault_verdicts.append_row(RESULTS, row)
         # Every run's log, events and recording, the router's DHCP log and the
         # device's serial output, whatever the verdict, laid out as the Beken suite's: gone
         # from the emulator when its next scenario begins.
@@ -3129,8 +3128,7 @@ def worker(n, todo, lock, cloud=False, room=None):
         except Exception as exc:  # noqa: BLE001
             row = {**sc, "instance": n, "verdict": "HARNESS-ERROR", "error": repr(exc), "trace": traceback.format_exc(),
                    "finished": time.strftime("%Y-%m-%d %H:%M:%S")}
-            with open(RESULTS, "a", encoding="utf-8") as f:
-                f.write(json.dumps(row) + "\n")
+            fault_verdicts.append_row(RESULTS, row)
             sh("docker", "stop", name(n), timeout=120)
         with lock:
             print(fault_verdicts.batch_line(n, row["verdict"], sc["id"], row.get("notes", {})), flush=True)

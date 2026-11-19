@@ -11,9 +11,11 @@ import hashlib
 import io
 import json
 import lzma
+import os
 import re
 import shutil
 import tarfile
+import threading
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -429,16 +431,53 @@ def verdict(row: dict) -> str:
 def latest(results: Path) -> dict[str, dict]:
     """Each scenario's newest row in a suite's results file (JSON lines), by
     id, its verdict under VERDICT however old the row (verdict); none for a
-    file not there or not whole."""
+    file not there. A line that is not a whole row - one cut short by a full
+    disk before append_row took it back - is passed over, not every row after
+    it lost."""
     found: dict[str, dict] = {}
     try:
-        for line in results.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                row = json.loads(line)
-                found[row["id"]] = {**row, VERDICT: verdict(row)}
-    except (OSError, ValueError):
-        pass
+        lines = results.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return found
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and isinstance(row.get("id"), str):
+            found[row["id"]] = {**row, VERDICT: verdict(row)}
     return found
+
+
+# One row written at a time: a row taken back must not take another's with it.
+ROW_LOCK = threading.Lock()
+
+
+def append_row(results: Path, row: dict) -> None:
+    """`row` added to a suite's results file (JSON lines) whole or not at all:
+    the line written in full and flushed to disk, or - the write failing part
+    way, as on a full disk - the file cut back to how it was, so no half row is
+    left for the next to run on into. A line an earlier writer left unended is
+    ended first. The error is raised as it was."""
+    line = (json.dumps(row) + "\n").encode("utf-8")
+    results.parent.mkdir(parents=True, exist_ok=True)
+    with ROW_LOCK, open(results, "a+b", buffering=0) as file:
+        end = file.seek(0, os.SEEK_END)
+        if end:
+            file.seek(end - 1)
+            if file.read(1) != b"\n":
+                line = b"\n" + line
+        try:
+            written = 0
+            while written < len(line):
+                written += file.write(line[written:])
+            os.fsync(file.fileno())
+        except OSError:
+            try:
+                file.truncate(end)
+            except OSError:
+                pass   # latest() passes over what is left
+            raise
 
 
 def starved_label(verdict: str | None, notes: dict) -> str:
