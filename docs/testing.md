@@ -403,7 +403,9 @@ and in a readout's read, the router gives the device another address once the
 step is done (`readdress`, as the Beken suite's: `wifi-root readdress`): the
 device takes it when it next starts, and the tool must find it there by its
 MAC. It is NOT-FIRED unless the device moved; the suite's own checks follow
-it to its lease. Not after F4 or U5: nothing after them starts the device
+it to its lease, and its turns at the real cloud shut it off at every address
+it may be at (both suites find it through `fault_verdicts.device_address`).
+Not after F4 or U5: nothing after them starts the device
 again (`READDRESS_NOT_AT`).
 
 **Faults that take two things at once** (`composite_scenarios()`):

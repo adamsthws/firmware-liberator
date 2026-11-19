@@ -149,8 +149,9 @@ def saved(name):
 
 MAC = None  # --device: the backed-up device the emulators run copies of
 NET = "192.168.60"   # the emulator's home Wi-Fi (container/bin/wifi-root)
-DEVICE_IP = f"{NET}.50"   # the device's address there, unless a readdress moves it
-DEVICE_URL = f"http://{DEVICE_IP}"
+# The device's address there as it starts (wifi-root): a readdress moves it,
+# so where it is now is the suite's address() or device_addresses().
+DEVICE_IP = f"{NET}.50"
 # An MQTT host for a device set up by its owner (notemplate): nobody's (RFC 5737).
 NOTEMPLATE_MQTT_HOST = "192.0.2.10"
 APP0_OFFSET = 0xE0000  # Tasmota's own firmware, on its layout (tools/espressif/safeboot/safeboot_migration.py)
@@ -733,45 +734,67 @@ def starts_online(sc):
 # clean. Only dropped, eWeLink kept the dead connection a while, and an update
 # command sent in a turn soon after could go down it, never to arrive. The
 # rest of the device's way out is dropped.
-SHUT = [["FORWARD", "-s", "192.168.60.50", "-o", "eth0", "-j", "DROP"],
-        ["FORWARD", "-s", "192.168.60.50", "-o", "eth0", "-p", "tcp", "-j", "REJECT",
-         "--reject-with", "tcp-reset"],
-        ["FORWARD", "-d", "192.168.60.50", "-i", "eth0", "-p", "tcp", "-j", "REJECT",
-         "--reject-with", "tcp-reset"]]
+def shut(address):
+    return [["FORWARD", "-s", address, "-o", "eth0", "-j", "DROP"],
+            ["FORWARD", "-s", address, "-o", "eth0", "-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset"],
+            ["FORWARD", "-d", address, "-i", "eth0", "-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset"]]
+
+
+def addresses_of(moved_to, dhcp_log):
+    """Every address an emulator's device may be at, or have connections from:
+    where it starts, each its router gave it (dnsmasq's log) and the one a
+    readdress has it given next (wifi-root's device-ip), before it asks."""
+    return sorted({DEVICE_IP, *fault_verdicts.dhcp_addresses(dhcp_log, MAC), *moved_to.split()})
+
+
+def device_addresses(n):
+    """addresses_of the device in emulator `n` (or named `n`)."""
+    container = n if isinstance(n, str) else name(n)
+    moved_to = sh("docker", "exec", container, "cat", "/run/autoflash-emu/device-ip").stdout
+    return addresses_of(moved_to, sh("docker", "exec", container, "cat", "/run/autoflash-emu/dnsmasq.log").stdout)
 
 
 def device_internet(n, on):
     """The device's own way to the internet (eWeLink), on or off: off for every
-    device but the one whose turn it is, as every emulated device is the same one."""
+    device but the one whose turn it is, as every emulated device is the same one.
+    At every address it may be at: a readdress moves it."""
+    rules = [rule for address in device_addresses(n) for rule in shut(address)]
     if on:
-        script = "; ".join(f"while iptables -D {' '.join(rule)} 2>/dev/null; do :; done" for rule in SHUT)
+        script = "; ".join(f"while iptables -D {' '.join(rule)} 2>/dev/null; do :; done" for rule in rules)
     else:
         script = "; ".join(f"iptables -C {' '.join(rule)} 2>/dev/null || "
-                           f"iptables -I {rule[0]} 1 {' '.join(rule[1:])}" for rule in SHUT)
+                           f"iptables -I {rule[0]} 1 {' '.join(rule[1:])}" for rule in rules)
     sh("docker", "exec", name(n), "sh", "-c", script)
 
 
-ESTABLISHED = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 "
-                         r"dst=(?!10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)(\S+) sport=(\d+) dport=(\d+)")
+def from_device(addresses):
+    """A conntrack line's source being the device's, at any of `addresses`."""
+    return "src=(?:" + "|".join(re.escape(address) for address in addresses) + ")"
 
 
-# The device's connection to this computer: what a run serves it.
-FETCHING = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 dst=192\.168\.60\.1 ")
+def established(conntrack, addresses):
+    """The device's connections up to the internet: (dst, sport, dport)."""
+    return set(re.findall(r"\btcp\b.*\bESTABLISHED " + from_device(addresses) +
+                          r" dst=(?!10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)(\S+) sport=(\d+) dport=(\d+)",
+                          conntrack))
 
 
 def device_fetching(n):
-    return bool(FETCHING.search(sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout))
+    """The device's connection to this computer up: what a run serves it."""
+    conntrack = sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout
+    return bool(re.search(r"\btcp\b.*\bESTABLISHED " + from_device(device_addresses(n)) +
+                          rf" dst={re.escape(NET)}\.1 ", conntrack))
 
 
-CONNECTION = re.compile(r"\btcp\s+\d+\s+\d+\s+(\w+) src=192\.168\.60\.50 dst=(\S+) sport=(\d+) dport=(\d+)")
-
-
-def connection_changes(seen, emulator, conntrack, at):
-    """Lines for what an emulator's device opened and closed since `seen`, which it
-    updates: each connection once as it is seen, and again once no longer up.
-    Its many short ones to this computer only when they are up."""
+def connection_changes(seen, emulator, conntrack, at, addresses):
+    """Lines for what an emulator's device, at `addresses`, opened and closed
+    since `seen`, which it updates: each connection once as it is seen, and
+    again once no longer up. Its many short ones to this computer only when
+    they are up."""
     lines, live = [], {}
-    for state, dst, sport, dport in CONNECTION.findall(conntrack):
+    connections = re.findall(r"\btcp\s+\d+\s+\d+\s+(\w+) " + from_device(addresses) +
+                             r" dst=(\S+) sport=(\d+) dport=(\d+)", conntrack)
+    for state, dst, sport, dport in connections:
         conn = (emulator, dst, sport, dport)
         live[conn] = up = state == "ESTABLISHED"
         before = seen.get(conn)
@@ -797,8 +820,8 @@ def log_connections(path, every, stop):
                     conntrack = sh("docker", "exec", emulator, "cat", "/proc/net/nf_conntrack", timeout=10).stdout
                 except subprocess.TimeoutExpired:
                     continue
-                out.writelines(line + "\n" for line in connection_changes(seen, emulator, conntrack,
-                                                                           time.strftime("%T")))
+                out.writelines(line + "\n" for line in connection_changes(
+                    seen, emulator, conntrack, time.strftime("%T"), device_addresses(emulator)))
             out.flush()
 
 
@@ -806,7 +829,7 @@ def cloud_connections(n):
     """The device's open connections to the internet, as its emulator's firewall
     tracks them. Sonoff's firmware prints nothing when it signs on to eWeLink."""
     out = sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout
-    return {m.groups() for m in ESTABLISHED.finditer(out)}
+    return established(out, device_addresses(n))
 
 
 class CloudQueue:
@@ -1258,14 +1281,6 @@ FIRED_NOTE = {("ownnet", "cut"): "cut_after_upload", ("ownnet", "dropupload"): "
               ("seven", "times"): "seven_times", ("seven", "advised"): "seven_times"}
 
 
-def lease_of(leases, mac):
-    """The address dnsmasq's lease file gives the device with `mac`: None for
-    none, or with no MAC (no --device)."""
-    found = [line.split()[2] for line in leases.splitlines()
-             if mac and len(line.split()) > 2 and line.split()[1].lower() == mac.lower()]
-    return found[-1] if found else None
-
-
 def not_fired(sc, notes, converted):
     """A device converted though its fault never happened proves nothing. A failure
     stands whatever happened: it may be a real one, or a brick."""
@@ -1673,7 +1688,7 @@ class Scenario:
             # The installer's answer to the upload ("Upload verified") never
             # reaches this computer, every retransmission dropped too: on only
             # now, as the backup's flash - which holds the same words - is read.
-            rule = ["INPUT", "-s", "192.168.60.50", "-p", "tcp", "--sport", "80", "-m", "string",
+            rule = ["INPUT", "-s", self.address(), "-p", "tcp", "--sport", "80", "-m", "string",
                     "--string", "Upload verified", "--algo", "bm", "-j", "DROP"]
             self.notes["answer_dropped"] = self.must("iptables", "-I", *rule).returncode == 0
             deadline = time.time() + 600
@@ -1729,12 +1744,12 @@ class Scenario:
     def offline(self, off):
         """The computer off the network: nothing between it and the device, and
         no internet - the device's own way to the internet is left as it is."""
-        rules = [("INPUT", "-s", "192.168.60.50"), ("OUTPUT", "-d", "192.168.60.50"),
-                 ("OUTPUT", "-o", "eth0")]
+        device = self.address()
+        rules = [("INPUT", "-s", device), ("OUTPUT", "-d", device), ("OUTPUT", "-o", "eth0")]
         # The router is in the same container, and stays up: its address
         # leases and names still answer the device.
-        router = [("INPUT", "-s", "192.168.60.50", "-p", "udp", "-m", "multiport", "--dports", "53,67"),
-                  ("OUTPUT", "-d", "192.168.60.50", "-p", "udp", "-m", "multiport", "--sports", "53,67")]
+        router = [("INPUT", "-s", device, "-p", "udp", "-m", "multiport", "--dports", "53,67"),
+                  ("OUTPUT", "-d", device, "-p", "udp", "-m", "multiport", "--sports", "53,67")]
         for (chain, *match), action in [(r, "DROP") for r in rules] + [(r, "ACCEPT") for r in router]:
             if off:
                 self.must("iptables", "-I", chain, "1", *match, "-j", action)
@@ -1869,15 +1884,16 @@ class Scenario:
             except subprocess.TimeoutExpired:
                 out.append(f"$ {' '.join(args)}  (no answer in {timeout}s)")
 
+        device = self.address()
         capture = subprocess.Popen(["docker", "exec", name(self.n), "timeout", "25", "tcpdump", "-n", "-e",
-                                    "-i", "tap0", "-c", "300", "host", "192.168.60.50"],
+                                    "-i", "tap0", "-c", "300", "host", device],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         time.sleep(2)
         connect = 'Br var c=tcpclient() var ok=c.connect("192.168.60.1",8089) c.close() return ok'
         for command in (connect, "Ping4 192.168.60.1", "Status 0", connect):
             # Tasmota answers only requests with a Referer, as the tool's are.
-            run("curl", "-sS", "-m", "15", "-H", "Referer: http://192.168.60.50/",
-                "http://192.168.60.50/cm?cmnd=" + urllib.parse.quote(command), timeout=20)
+            run("curl", "-sS", "-m", "15", "-H", f"Referer: http://{device}/",
+                f"http://{device}/cm?cmnd=" + urllib.parse.quote(command), timeout=20)
         out.append("$ tcpdump\n" + capture.communicate(timeout=40)[0])
         run("ss", "-tanp")
         run("iptables-save", "-c")
@@ -2042,7 +2058,7 @@ class Scenario:
             return self.finish(results, "NOT-FIRED")
         factory = self.state / "work/captures/esphome-factory.bin"
         factory.write_bytes(esphome_factory_image())
-        device = "http://192.168.60.50"
+        device = f"http://{self.address()}"
         # From the device's own page, as a browser on it is: Tasmota turns away
         # a request without (CSRF protection).
         page_of = ["curl", "-s", "-e", f"{device}/"]
@@ -2084,7 +2100,7 @@ class Scenario:
         DEVICE_IP, unless a readdress moved it (wifi-root readdress) and the
         device has asked again since."""
         leases = self.ex("cat", "/run/autoflash-emu/leases").stdout
-        return lease_of(leases, MAC) or DEVICE_IP
+        return fault_verdicts.device_address(leases, self.dhcp_log(), MAC) or DEVICE_IP
 
     def tasmota(self, command):
         """What the device's Tasmota answers to `command`, as JSON - or None."""
@@ -2328,7 +2344,7 @@ class Scenario:
         with no failure (FAIL-EXIT), the device sent nothing (FAIL-SENT) and
         keeping its Tasmota and template (FAIL-DISTURBED)."""
         self.target = "tasmota"
-        results = [(self.run_tool("readout", ["--device-ip", DEVICE_IP], source=ROUTES["tasmota>sonoff"][0]), None)]
+        results = [(self.run_tool("readout", ["--device-ip", self.address()], source=ROUTES["tasmota>sonoff"][0]), None)]
         results[-1] = (results[-1][0], self.readout_result())
         sent = any("serve_tasmota_ota.py" in t for m, _, t in run_logs(self.state) if m >= self.started)
         problems = self.first_stage_kept()

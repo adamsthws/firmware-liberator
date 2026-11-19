@@ -510,6 +510,25 @@ class ScenarioFolderTests(unittest.TestCase):
                 self.assertIn("fault_verdicts.keep_dhcp_log(", text)
                 self.assertNotIn('"dhcp.log"', text, "through keep_dhcp_log, which both suites share")
 
+    def test_the_devices_address_is_found_by_both_suites_alike(self):
+        mac = "12:34:56:AB:CD:EF"
+        leases = ("9 12:34:56:00:00:01 192.168.60.120 laptop *\n"
+                  "7 12:34:56:ab:cd:ef 192.168.60.50 sonoff *\n8 12:34:56:ab:cd:ef 192.168.60.55 sonoff *\n")
+        self.assertEqual(fault_verdicts.device_address(leases, "", mac), "192.168.60.55")   # its newest
+        self.assertEqual(fault_verdicts.device_address(leases, ""), "192.168.60.120")       # any, without a MAC
+        log = ("dnsmasq-dhcp[9]: 1 DHCPACK(br0) 198.18.61.50 12:34:56:ab:cd:ef openbeken-cdef\n"
+               "dnsmasq-dhcp[9]: 2 DHCPACK(br0) 198.18.61.120 12:34:56:00:00:01 laptop\n"
+               "dnsmasq-dhcp[9]: 3 DHCPACK(br0) 198.18.61.51 12:34:56:ab:cd:ef esphome-cdef\n"
+               "dnsmasq-dhcp[9]: 4 DHCPRELEASE(br0) 198.18.61.51 12:34:56:ab:cd:ef\n")
+        # No lease - forgotten, or given back and still used: the last given.
+        self.assertEqual(fault_verdicts.device_address("", log, mac), "198.18.61.51")
+        self.assertEqual(fault_verdicts.dhcp_addresses(log, mac), ["198.18.61.50", "198.18.61.51"])
+        self.assertIsNone(fault_verdicts.device_address("", "", mac))
+        root = Path(fault_verdicts.__file__).resolve().parents[2]
+        for suite in ("tools/espressif/emulator/fault_suite.py", "tools/beken/emulator/fault_suite.py"):
+            with self.subTest(suite=suite):
+                self.assertIn("fault_verdicts.device_address(", (root / suite).read_text(encoding="utf-8"))
+
 
 class EvidenceTests(unittest.TestCase):
     def test_a_failures_records_are_kept_whole_but_its_firmware_images(self):

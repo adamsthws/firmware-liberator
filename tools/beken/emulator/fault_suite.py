@@ -250,8 +250,6 @@ SAFE_MODE_ANSWERS = 55.0     # seconds its update service has to answer after a 
 INTERIM_SETTINGS = ((0x3E1000, 0x1000), (0x1E5000, 0x8000))
 # The name a device asks its router's DHCP for, by its firmware.
 DHCP_NAME = re.compile(r"DHCPACK\(\S+\) \S+ \S+ (\S+)")
-# The address its router gave it, each time.
-DHCP_ADDRESS = re.compile(r"DHCPACK\(\S+\) (\S+) ")
 NAME_PREFIX = {"interim": "autoflash-recovery-", "openbeken": "openbeken-", "esphome": "esphome-"}
 # A new OpenBeken build's check: each thing this project's driver and patches
 # do on it, once - its Wi-Fi and settings taken from Sonoff's (B4 after B2),
@@ -471,13 +469,9 @@ class Instance:
         """The device's address: its lease, or - released while it goes on
         using the address, as ESPHome does on rejoining after its network was
         gone - the last its router gave it."""
-        found = subprocess.run(["docker", "exec", self.device, "sh", "-c",
-                                "sort -n /run/autoflash-beken-emu/leases | tail -1"],
-                               capture_output=True, text=True).stdout.split()
-        if len(found) > 2:
-            return found[2]
-        given = DHCP_ADDRESS.findall(self.dhcp_log())
-        return given[-1] if given else None
+        leases = subprocess.run(["docker", "exec", self.device, "cat", "/run/autoflash-beken-emu/leases"],
+                                capture_output=True, text=True).stdout
+        return fault_verdicts.device_address(leases, self.dhcp_log())
 
     def answering(self) -> bool:
         address = self.lease()

@@ -53,7 +53,11 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 STATE=$ROOT/captures/emulation/state
 case "$ROOT" in /mnt/[a-z]/*) STATE=$HOME/.local/share/autoflash-emu/state ;; esac
 NAME=autoflash-emu PORT=8080
-DEVICE=192.168.60.50
+# The device's address in emulator $1: where it starts (container/bin/wifi-root),
+# unless the fault suite's readdress has the router give it another.
+device_address() {
+    docker exec "$1" cat /run/autoflash-emu/device-ip 2>/dev/null || echo 192.168.60.50
+}
 
 # emu.sh's own API would outlive this run: the run starts one of its own (below).
 emu_args=(--detach --no-api) keep=0 stub=0 run_args=() from="" save="" device_mac="" code="" driver_args=() answers_file="" api=1
@@ -213,6 +217,7 @@ legacy_env=()
 # A device off the network - on its own setup network after a power cut, say -
 # is one the run must find for itself: waited for, but not required.
 waited=0
+DEVICE=$(device_address "$NAME")
 until docker exec "$NAME" ping -c1 -W1 "$DEVICE" >/dev/null 2>&1; do
     if [ $((waited += 2)) -gt 120 ]; then
         echo "The emulated device is not on the network after 120s; running anyway."

@@ -620,8 +620,9 @@ class LeaseTests(unittest.TestCase):
     def lease(self, leases, log):
         instance = fault_suite.Instance.__new__(fault_suite.Instance)
         instance.device = "a-device"
-        answers = {"sh": SimpleNamespace(stdout=leases), "cat": SimpleNamespace(stdout=log)}
-        with mock.patch.object(fault_suite.subprocess, "run", side_effect=lambda cmd, **_: answers[cmd[3]]):
+        answers = {"leases": SimpleNamespace(stdout=leases), "dnsmasq.log": SimpleNamespace(stdout=log)}
+        with mock.patch.object(fault_suite.subprocess, "run",
+                               side_effect=lambda cmd, **_: answers[cmd[-1].rsplit("/", 1)[-1]]):
             return instance.lease()
 
     def test_the_lease_where_there_is_one(self):

@@ -3,9 +3,11 @@ the API Worker's own code, in a container of its own beside the emulator, unless
 told --no-api; and runs the device as with LAN Control off if told
 --no-lan-control."""
 
+import os
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -131,6 +133,35 @@ class LanControlTests(unittest.TestCase):
     def test_it_is_in_the_usage(self):
         done = subprocess.run(["bash", str(SCRIPT), "--bogus"], capture_output=True, text=True, timeout=60)
         self.assertIn("--no-lan-control", done.stdout)
+
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class AddressTests(unittest.TestCase):
+    """The device waited for, and its LAN Control turned off, at the address
+    its router gives it: seen, a run after the fault suite's readdress waited
+    its two minutes for the device at the address it had moved from."""
+
+    def address(self, docker):
+        function = re.search(r"(?ms)^device_address\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8")).group(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "docker").write_text(f"#!/bin/sh\n{docker}\n", encoding="utf-8")
+            Path(tmp, "docker").chmod(0o755)
+            done = subprocess.run(["bash", "-c", f"{function}\ndevice_address autoflash-emu-1"],
+                                  capture_output=True, text=True, timeout=30,
+                                  env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"})
+        return done.stdout.strip()
+
+    def test_where_a_readdress_moved_it(self):
+        self.assertEqual(self.address("echo 192.168.60.55"), "192.168.60.55")
+
+    def test_where_it_starts_otherwise(self):
+        self.assertEqual(self.address("exit 1"), "192.168.60.50")
+
+    def test_both_the_wait_and_lan_control_use_it(self):
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('DEVICE=$(device_address "$NAME")', text)
+        self.assertNotRegex(text, r"(?m)^DEVICE=192")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -323,7 +323,7 @@ class SavedDeviceTests(unittest.TestCase):
         seen, said = {}, []
         for at, conntrack in (("1", session), ("2", session + "\n" + fetched), ("3", closing), ("4", closing),
                               ("5", "")):
-            said += fs.connection_changes(seen, "autoflash-emu-1", conntrack, at)
+            said += fs.connection_changes(seen, "autoflash-emu-1", conntrack, at, [fs.DEVICE_IP])
         self.assertEqual(said, ["1 autoflash-emu-1 ESTABLISHED 192.0.2.81:443", "3 autoflash-emu-1 CLOSE 192.0.2.81:443"])
         self.assertEqual(seen, {})
 
@@ -1971,9 +1971,11 @@ class ReadoutScenarioTests(unittest.TestCase):
                 mock.patch.object(sc, "first_stage_kept", return_value=None if kept is None else list(kept)), \
                 mock.patch.object(fs, "run_logs", return_value=logs), \
                 mock.patch.object(sc, "template_ok", return_value=template), \
+                mock.patch.object(sc, "address", return_value="192.168.60.55"), \
                 mock.patch.object(sc, "finish_readout", side_effect=lambda results, special: special) as finish:
             verdict = sc.go_readout_converted()
-        self.assertEqual(run.call_args.args[:2], ("readout", ["--device-ip", fs.DEVICE_IP]))
+        # At its address now: a readdress may have moved it.
+        self.assertEqual(run.call_args.args[:2], ("readout", ["--device-ip", "192.168.60.55"]))
         return verdict, finish
 
     def test_a_readout_of_a_converted_device_reads_its_first_stage_alone_leaving_it_as_it_was(self):
@@ -2337,11 +2339,56 @@ class ReaddressTests(unittest.TestCase):
                     self.assertEqual(readdressed, step not in fs.READDRESS_NOT_AT)
         self.assertIn(fs.sid("sonoff>readout", "read", "readdress", "new"), ids)
 
-    def test_the_devices_address_is_its_lease(self):
-        mac = "12:34:56:AB:CD:EF"
+    def address(self, leases, log):
+        sc = fs.Scenario.__new__(fs.Scenario)
+        files = {"leases": leases, "dnsmasq.log": log}
+        with mock.patch.object(fs, "MAC", "12:34:56:AB:CD:EF"), \
+                mock.patch.object(sc, "ex", side_effect=lambda *args, **_: mock.Mock(
+                    stdout=files[args[-1].rsplit("/", 1)[-1]])):
+            return sc.address()
+
+    def test_the_devices_address_is_its_lease_or_the_last_it_was_given(self):
         leases = "1 12:34:56:00:00:01 192.168.60.120 laptop *\n2 12:34:56:ab:cd:ef 192.168.60.55 sonoff *\n"
-        self.assertEqual(fs.lease_of(leases, mac), "192.168.60.55")
-        self.assertIsNone(fs.lease_of("", mac))
+        self.assertEqual(self.address(leases, ""), "192.168.60.55")
+        # Forgotten by the router (a readdress), and not asked again yet: still there.
+        log = "dnsmasq-dhcp[9]: 3 DHCPACK(lan) 192.168.60.55 12:34:56:ab:cd:ef sonoff\n"
+        self.assertEqual(self.address("", log), "192.168.60.55")
+        self.assertEqual(self.address("", ""), fs.DEVICE_IP)
+
+    def test_its_internet_is_shut_at_every_address_it_may_be_at(self):
+        # Seen: the rules named .50 alone, so a device moved to .55 kept eWeLink
+        # out of its turn.
+        log = "dnsmasq-dhcp[9]: 3 DHCPACK(lan) 192.168.60.55 12:34:56:ab:cd:ef sonoff\n"
+        self.assertEqual(fs.addresses_of("", log), ["192.168.60.50", "192.168.60.55"])
+        self.assertEqual(fs.addresses_of("192.168.60.55\n", ""), ["192.168.60.50", "192.168.60.55"])
+        scripts = []
+        with mock.patch.object(fs, "device_addresses", return_value=["192.168.60.50", "192.168.60.55"]), \
+                mock.patch.object(fs, "sh", side_effect=lambda *args, **_: scripts.append(args[-1])):
+            fs.device_internet(1, False)
+            fs.device_internet(1, True)
+        for script in scripts:
+            for address in ("192.168.60.50", "192.168.60.55"):
+                self.assertIn(f"FORWARD -s {address} -o eth0 -j DROP", script)
+                self.assertIn(f"FORWARD -d {address} -i eth0", script)
+
+    def test_its_connections_are_seen_from_where_it_moved_to(self):
+        moved = ["192.168.60.50", "192.168.60.55"]
+        up = "ipv4 2 tcp 6 300 ESTABLISHED src=192.168.60.55 dst=192.0.2.81 sport=50280 dport=443 "
+        self.assertEqual(fs.established(up, moved), {("192.0.2.81", "50280", "443")})
+        self.assertEqual(fs.established(up, ["192.168.60.50"]), set())
+        self.assertEqual(fs.connection_changes({}, "autoflash-emu-1", up, "1", moved),
+                         ["1 autoflash-emu-1 ESTABLISHED 192.0.2.81:443"])
+        fetching = "ipv4 2 tcp 6 300 ESTABLISHED src=192.168.60.55 dst=192.168.60.1 sport=1 dport=8089 "
+        with mock.patch.object(fs, "device_addresses", return_value=moved), \
+                mock.patch.object(fs, "sh", return_value=mock.Mock(stdout=fetching)):
+            self.assertTrue(fs.device_fetching(1))
+
+    def test_no_step_reaches_the_device_at_the_address_it_starts_at_alone(self):
+        # Where it is now is address() or device_addresses(): DEVICE_IP is
+        # named only as their starting point.
+        text = Path(fs.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("192.168.60.50", text)
+        self.assertEqual(text.count("{NET}.50"), 1, "DEVICE_IP's own")
 
     def test_it_fired_only_once_the_device_moved(self):
         sc = {"fault": "readdress", "arg": "new"}

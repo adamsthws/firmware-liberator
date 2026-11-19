@@ -465,6 +465,33 @@ def keep_dhcp_log(text: str, folder: Path) -> None:
     (folder / "dhcp.log").write_text(text, encoding="utf-8")
 
 
+# A line of the router's dnsmasq log giving an address: the address, then the MAC.
+DHCP_GIVEN = re.compile(r"DHCPACK\(\S+\) (\S+) (\S+)")
+
+
+def dhcp_addresses(dhcp_log: str, mac: str | None = None) -> list[str]:
+    """Each address the emulator's router gave the device, oldest first, from
+    its dnsmasq log: by its MAC, as a readdress moves it part way; any device's
+    without one (each emulator has one device)."""
+    return [address for address, given_to in DHCP_GIVEN.findall(dhcp_log)
+            if not mac or given_to.lower() == mac.lower()]
+
+
+def device_address(leases: str, dhcp_log: str, mac: str | None = None) -> str | None:
+    """The device's address now, by both families' suites alike: its newest
+    lease in the router's dnsmasq lease file; or, with none - the router
+    forgot it (a readdress), or the device gave it back and goes on using it,
+    as ESPHome does on rejoining - the last the router gave it. None if the
+    router never gave it one."""
+    held = [line.split() for line in leases.splitlines()]
+    held = [fields for fields in held if len(fields) > 2 and fields[0].isdigit()
+            and (not mac or fields[1].lower() == mac.lower())]
+    if held:
+        return max(held, key=lambda fields: int(fields[0]))[2]
+    given = dhcp_addresses(dhcp_log, mac)
+    return given[-1] if given else None
+
+
 def keep_runs(runs: Iterable[Path], folder: Path, before: Callable[[Path], int] = lambda path: 0) -> None:
     """Each of a scenario's run logs (`runs`, oldest first) and the events
     beside it copied into `folder` as run-1.log and run-1.events.jsonl, ...,

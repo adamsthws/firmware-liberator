@@ -147,6 +147,8 @@ LOCKED_LOGIN = ("admin", "test-login-1")
 # as it ends answered, or the run waits there until its --timeout.
 QUIT_FIRST = [{"when": "Which device is this run for|Press any key", "type": "q\r"},
               {"when": "\\[[Yy]/n\\]", "type": "n\r"}]
+# Where the S60 is (container/bin/wifi-root): no attended scenario moves it,
+# as the fault suite's readdress does.
 DEVICE = "192.168.60.50"
 # Where an `api_down` scenario's readout goes: the discard port on the tool's
 # own computer, where nothing listens, so it is refused at once.
