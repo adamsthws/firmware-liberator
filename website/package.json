@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@astrojs/sitemap": "3.7.4",
-    "astro": "7.4.1",
-    "wrangler": "4.151.2"
+    "astro": "7.4.8",
+    "wrangler": "4.159.0"
   }
 }
