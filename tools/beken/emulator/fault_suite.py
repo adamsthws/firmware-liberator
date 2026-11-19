@@ -125,9 +125,10 @@ from tools.autoflash import output  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash import esphome, esphome_ota, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
+from tools.autoflash.routes.beken import images as beken_images  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -244,6 +245,14 @@ SPOILT_PAST_LIMIT = 3
 SAFE_MODE_ROUTES = ("esphome>openbeken", "esphome>sonoff")
 SAFE_MODE_CUTS = 12          # cuts before the scenario gives up on safe mode
 SAFE_MODE_ANSWERS = 55.0     # seconds its update service has to answer after a start
+# A build of its own (ownbuild-replaced), as the Espressif suite has it: a
+# device on ESPHome given one as an ESPHome builder that adopted it installs it
+# (tools/repo/own_build.py); then the tool to ESPHome, which must leave it be,
+# and with --replace-own-build put the published build back - an update, from
+# "your own build" (routes/update.replace_own_build), so judged on its steps.
+OWN_BUILD_ROUTE = "esphome>esphome"
+OWN_BUILD_JUDGED_AS = "outdated>esphome"
+OWN_BUILD_STARTS = 400.0     # seconds for the device to start its build of its own, the bootloader writing it in
 # The interim firmware's settings, which it erases before the firmware it
 # fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.
@@ -344,6 +353,8 @@ def scenarios(quick: bool = False) -> list[dict]:
         if route in SAFE_MODE_ROUTES:
             found.append(dict(id=sid(route, "start", "safemode", "ten"), route=route, step="start",
                               fault="safemode", arg="ten", at=40))
+    found.append(dict(id=sid(OWN_BUILD_ROUTE, "start", "ownbuild", "replaced"), route=OWN_BUILD_ROUTE,
+                      step="start", fault="ownbuild", arg="replaced", at=40))
     return found + readout_scenarios()
 
 
@@ -1104,6 +1115,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = bad_image_scenario(instance, sc, target, log, notes)
     elif sc["fault"] == "safemode":
         outcome = safe_mode_scenario(instance, sc, target, log, notes)
+    elif sc["fault"] == "ownbuild":
+        outcome = own_build_scenario(instance, log, notes)
     else:
         outcome = step_scenario(instance, sc, target, log, notes)
     # The route the runs went: another firmware's, where the person switched to
@@ -1283,6 +1296,57 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
         return dict(result="PASS", runs=runs)
     found_itself = texts and re.search(r"This run is for the device at \S+.*, running ESPHome", texts[0])
     return dict(result="MISTIMED" if found_itself else "FAIL-TAKEN-FOR-SONOFF", runs=runs)
+
+
+def esphome_now(instance: Instance) -> tuple[str | None, str | None]:
+    """When the device's ESPHome says it was built, and what its Calibration
+    sensor says, as the tool asks them (esphome.api_device_info,
+    calibration_state): Nones where it does not answer."""
+    address = instance.lease()
+    if not address:
+        return None, None
+    info = esphome.api_device_info(address)
+    return (info and info["built"]) or None, esphome.calibration_state(address)
+
+
+def own_build_scenario(instance: Instance, log: Path, notes: dict) -> dict:
+    """ownbuild-replaced: the device on ESPHome given a build of its own, as an
+    ESPHome builder that adopted it installs one (tools/repo/own_build.py); the
+    tool to ESPHome must say it is the device's own and leave it be, then with
+    --replace-own-build put the published build back, its calibration kept
+    (own_build.problem). Judged after as an update (OWN_BUILD_JUDGED_AS)."""
+    pin = beken_images.pin(DEVICE, "esphome")
+    built, notes["calibration"] = esphome_now(instance)
+    image, own = own_build.beken((REPO / pin["file"]).read_bytes(), pin["built"], f"esphome-{DEVICE.key}")
+    try:
+        esphome_ota.upload(instance.lease(), image, port=esphome_ota.LIBRETINY_PORT, timeout=30)
+    except (OSError, esphome_ota.OTAError) as exc:
+        notes["own_not_sent"] = str(exc)
+        return dict(result="NOT-FIRED", runs=0)
+    deadline = time.monotonic() + OWN_BUILD_STARTS
+    while built != own and time.monotonic() < deadline:
+        time.sleep(5)
+        built = esphome_now(instance)[0]
+    if built != own:
+        notes["own_not_started"] = built
+        return dict(result="NOT-FIRED", runs=0)
+    notes["own"] = own
+    before = log.stat().st_size if log.exists() else 0
+    finish(instance.tool("esphome", log, new=True), instance)
+    with open(log, encoding="utf-8", errors="replace") as said:
+        said.seek(before)
+        notes["refused"] = "It is a build of its own" in re.sub(r"\s+", " ", said.read())
+    notes["refused_built"] = esphome_now(instance)[0]
+    finish(instance.tool("esphome", log, more=("--replace-own-build",)), instance)
+    runs = 2
+    while not converted(instance.last_state(), OWN_BUILD_JUDGED_AS) and runs <= RECOVERY_RUNS + 1:
+        recover(instance, "esphome", notes)
+        finish(instance.tool("esphome", log), instance)
+        runs += 1
+    if not converted(instance.last_state(), OWN_BUILD_JUDGED_AS):
+        return dict(result="FAIL", runs=runs, route=OWN_BUILD_JUDGED_AS)
+    notes["built_now"], notes["calibration_now"] = esphome_now(instance)
+    return dict(result=own_build.problem(notes, pin["built"]) or "PASS", runs=runs, route=OWN_BUILD_JUDGED_AS)
 
 
 def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes: dict) -> bool:

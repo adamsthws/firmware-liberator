@@ -472,6 +472,14 @@ the three firmwares:
   and the update service, for five minutes. The tool must recognise it and
   wait (FAIL-TAKEN-FOR-MOVER), never take it for a device left part way: on a
   run staying on ESPHome, that mistake sent it the startup firmware.
+- **On a build of its own** (`ownbuild-replaced`, to ESPHome). The saved
+  ESPHome is given a build of its own through its update service, as an
+  ESPHome builder that adopted it installs one: the published build with its
+  build time an hour later (`tools/repo/own_build.py`), which is how the tool
+  tells one, with no toolchain needed. A run must say it is the device's own
+  and leave it be (FAIL-NOT-REFUSED, FAIL-REPLACED-UNASKED); a run with
+  `--replace-own-build` must put the published build back
+  (FAIL-NOT-REPLACED), its calibration kept (FAIL-CALIBRATION-LOST).
 
 **Runs left by an earlier release** (`legacy`, on an S60 only, the one device
 those releases knew), run from another tree with `unattended-test.sh
@@ -990,6 +998,12 @@ itself, never take it for a device on Sonoff's firmware
 (FAIL-TAKEN-FOR-SONOFF). Safe mode lasts five minutes, in the emulator as on a
 device ([docs/beken-research.md](beken-research.md#esphome-in-safe-mode)): a run
 that found ESPHome started as itself again came too late (MISTIMED).
+
+**On a build of its own** (`ownbuild-replaced`), as the Espressif suite's:
+the saved ESPHome given a build of its own through its update service, as a
+builder that adopted it would, then the tool to ESPHome, which must leave it
+be, and with `--replace-own-build` put the published build back, judged then
+as an update (`outdated>esphome`'s steps).
 
 **The interim firmware.** A device converted through it passes only if, by
 the names it asked its router's DHCP for, it was `autoflash-recovery-CDEF`

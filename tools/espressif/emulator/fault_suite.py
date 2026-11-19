@@ -96,7 +96,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, output, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_instances, emulator_stats, fault_verdicts, fault_yield, own_build, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.ewelink.stub_cloud.accounts import ACCOUNTS  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
@@ -104,6 +104,7 @@ from tools.espressif import layouts  # noqa: E402
 from tools.espressif.emulator.patch_stock import holds_rsa_ca, trusts  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA_VERSION  # noqa: E402
 from tools.autoflash.routes import espressif as espressif_routes  # noqa: E402
+from tools.autoflash.routes.espressif import images as espressif_images  # noqa: E402
 EMU = REPO / "captures/emulation"
 OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
 RESULTS = OUT / "results.jsonl"
@@ -512,6 +513,10 @@ def composite_scenarios():
         in safe mode (go_safemode); then the tool, to ESPHome, Tasmota or
         Sonoff: it must know the device for ESPHome in safe mode, not the mover
         (FAIL-TAKEN-FOR-MOVER).
+    ownbuild-replaced: a device converted to ESPHome, then given a build of
+        its own as an ESPHome builder that adopted it would (go_ownbuild,
+        tools/repo/own_build.py); the tool must leave it be, and with
+        --replace-own-build put the published build back, its calibration kept.
     D5ot, on a device with a temporary table only (TEMPORARY_TABLE_LENGTHS): a
         power cut or crash as its own table is written back, at 10, 50 and
         90% of it.
@@ -566,6 +571,7 @@ def composite_scenarios():
         yield one(route, "start", "bootloop", "fallback")
     for route in ("esphome>esphome", "esphome>tasmota", "esphome>sonoff"):
         yield one(route, "start", "safemode", "ten")
+    yield one("esphome>esphome", "start", "ownbuild", "replaced")
     for route, step in BLIP_STEPS:
         yield one(route, step, "blips", 3, at=10)
         yield one(route, step, "lossy", "phase", at=10)
@@ -1278,7 +1284,8 @@ def sh(*args, timeout=None):
 # moment in the run that may never come.
 FIRED_NOTE = {("ownnet", "cut"): "cut_after_upload", ("ownnet", "dropupload"): "dropped_off",
               ("ownnet", "dropsetup"): "dropped_off", ("lostanswer", "once"): "answer_dropped",
-              ("seven", "times"): "seven_times", ("seven", "advised"): "seven_times"}
+              ("seven", "times"): "seven_times", ("seven", "advised"): "seven_times",
+              ("ownbuild", "replaced"): "own"}
 
 
 def not_fired(sc, notes, converted):
@@ -1947,6 +1954,8 @@ class Scenario:
             return self.go_bootloop()
         if sc["fault"] == "safemode":
             return self.go_safemode()
+        if sc["fault"] == "ownbuild":
+            return self.go_ownbuild()
         if sc["fault"] == "badimage":
             return self.go_badimage()
         if step == "C2":
@@ -2267,6 +2276,64 @@ class Scenario:
         self.say(f"SAFEMODE: in safe mode after {cuts} cuts: its update service only")
         results[-1] = (results[-1][0], "on ESPHome's safe mode")
         return self.again(results, self.target, [])
+
+    def in_computer(self, code, *args, timeout=60):
+        """What `code`, run by the tool's Python in the emulated computer - the
+        device's API and update service are on its network only - printed last,
+        as JSON; None if it printed none."""
+        said = self.ex("python3", "-c", "import json, sys; sys.path.insert(0, '/work')\n" + code, *args,
+                       timeout=timeout, as_tool=True).stdout.strip().splitlines()
+        try:
+            return json.loads(said[-1]) if said else None
+        except ValueError:
+            return None
+
+    def esphome_now(self):
+        """When the device's ESPHome says it was built, and what its Calibration
+        sensor says: as the tool asks them (esphome.api_device_info,
+        calibration_state). Nones where it does not answer."""
+        code = ("from tools.autoflash import esphome\n"
+                "info = esphome.api_device_info(sys.argv[1])\n"
+                "print(json.dumps([info and info['built'], esphome.calibration_state(sys.argv[1])]))")
+        return tuple(self.in_computer(code, self.address()) or (None, None))
+
+    def go_ownbuild(self):
+        """A device converted to ESPHome, then given a build of its own, as an
+        ESPHome builder that adopted it installs one (tools/repo/own_build.py):
+        the tool, to ESPHome, must say it is the device's own and leave it be;
+        then with --replace-own-build, put the published build back over it,
+        its calibration kept (own_build.problem)."""
+        self.target = "esphome"
+        results = [(self.run_tool("esphome", source="suite-esphome"), None)]
+        results[-1] = (results[-1][0], self.screen_result())
+        if "nothing to convert" not in results[-1][1]:
+            return self.finish(results, "NOT-FIRED")
+        built, self.notes["calibration"] = self.esphome_now()
+        code = ("from tools.autoflash import esphome, esphome_ota, kinds\n"
+                "from tools.autoflash.routes.espressif import images\n"
+                "from tools.repo import own_build\n"
+                "kind = kinds.find(sys.argv[2])\n"
+                "image, built = own_build.espressif(images.image_for(*esphome.api_wifi_details(sys.argv[1]), "
+                "kind=kind), images.image_pin(kind)['built'])\n"
+                "esphome_ota.upload(sys.argv[1], image, timeout=30)\n"
+                "print(json.dumps(built))")
+        own = self.in_computer(code, self.address(), DEVICE.key, timeout=600)
+        deadline = time.time() + 180
+        while own and built != own and time.time() < deadline:
+            time.sleep(5)
+            built = self.esphome_now()[0]
+        if not own or built != own:
+            self.say(f"OWNBUILD: the build of its own never started (said {own}, runs {built})")
+            return self.finish(results, "NOT-FIRED")
+        self.notes["own"] = own
+        self.say(f"OWNBUILD: the device runs a build of its own, built {own}")
+        results.append((self.run_tool("esphome"), None))
+        results[-1] = (results[-1][0], self.screen_result())
+        self.notes["refused"] = "It is a build of its own" in self.last_said()
+        self.notes["refused_built"] = self.esphome_now()[0]
+        results.append((self.run_tool("esphome", ["--replace-own-build"]), None))
+        results[-1] = (results[-1][0], self.screen_result())
+        return self.again(results, "esphome", ["--replace-own-build"])
 
     def go_readout(self):
         """A readout of a device fresh from Sonoff's firmware, found as a person
@@ -2757,6 +2824,8 @@ class Scenario:
         self.notes["ctrl_c_logged"] = self.ctrl_c_lines() > self.ctrl_c_before
         if fault == "readdress":
             self.notes["moved_to"] = self.address()
+        if fault == "ownbuild" and converted:
+            self.notes["built_now"], self.notes["calibration_now"] = self.esphome_now()
         if not_fired(sc, self.notes, converted) and not special:
             special = "NOT-FIRED"
         converted_from_untemplated = "Converting the device from Tasmota without the device's template" in ours
@@ -2816,6 +2885,9 @@ class Scenario:
                 special = "FAIL-ASKED-AGAIN"  # the go-ahead is asked once a run
             elif fault == "safemode" and "ESPHome in safe mode" not in ours:
                 special = "FAIL-TAKEN-FOR-MOVER"  # sent the startup firmware, even to stay on ESPHome
+            elif fault == "ownbuild" and (own_problem := own_build.problem(
+                    self.notes, espressif_images.image_pin(DEVICE)["built"])):
+                special = own_problem
             elif fault == "notemplate" and not converted_from_untemplated:
                 special = "FAIL-NOT-UNTEMPLATED"  # taken for something else
             elif fault == "notemplate" and "ESPHome's update service did not answer" in ours:

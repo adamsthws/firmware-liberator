@@ -1,7 +1,8 @@
 """The Beken fault suite: its scenarios, and how it tells a device converted."""
 
-import json
 import io
+import itertools
+import json
 import tempfile
 import threading
 import time
@@ -31,7 +32,8 @@ class ScenarioTests(unittest.TestCase):
         ids = [sc["id"] for sc in found]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual({sc["route"] for sc in found},
-                         set(fault_suite.ROUTES) | {"sonoff>readout", "openbeken>readout", fault_suite.READOUT_ALL})
+                         set(fault_suite.ROUTES) | {"sonoff>readout", "openbeken>readout", fault_suite.READOUT_ALL,
+                                                    fault_suite.OWN_BUILD_ROUTE})
 
     def test_the_steps_that_write_are_also_faulted_early_and_late(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
@@ -550,6 +552,59 @@ class SafeModeScenarioTests(unittest.TestCase):
 
     def test_never_in_safe_mode_is_not_fired(self):
         self.assertEqual(self.outcome(self.NORMAL * fault_suite.SAFE_MODE_CUTS, "")[0], "NOT-FIRED")
+
+
+class OwnBuildScenarioTests(unittest.TestCase):
+    """ownbuild-replaced: a build of its own put on the device, as a builder
+    that adopted it would; then the tool, as the Espressif suite has it."""
+
+    def test_one_from_esphome_as_the_espressif_suites(self):
+        self.assertEqual([sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "ownbuild"],
+                         ["esphome>esphome:start:ownbuild-replaced"])
+
+    def outcome(self, builds, said="It is a build of its own, adopted into an ESPHome builder", converted=True):
+        """`builds`: what the device says it was built at, each time it is asked."""
+        published = fault_suite.beken_images.pin(fault_suite.DEVICE, "esphome")["built"]
+        own = "2000-01-01 01:00:00 +0000"
+        builds = iter([published, *(own if build == "own" else published for build in builds)])
+        runs = []
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp, "tool.log")
+
+            def tool(target, log_path, new=False, more=()):
+                runs.append(more)
+                with open(log_path, "a", encoding="utf-8") as out:
+                    out.write(said if not more else "Update complete!")
+            instance = SimpleNamespace(tool=tool, lease=lambda: "192.0.2.60", last_state=dict)
+            with mock.patch.object(fault_suite.own_build, "beken", return_value=(b"uf2", own)), \
+                    mock.patch.object(fault_suite.esphome_ota, "upload") as upload, \
+                    mock.patch.object(fault_suite, "esphome_now",
+                                      side_effect=lambda _: (next(builds), "stock store")), \
+                    mock.patch.object(fault_suite.time, "sleep"), mock.patch.object(fault_suite, "finish"), \
+                    mock.patch.object(fault_suite.time, "monotonic", side_effect=itertools.count(0, 10)), \
+                    mock.patch.object(fault_suite, "recover"), \
+                    mock.patch.object(fault_suite, "converted", return_value=converted):
+                notes = {}
+                outcome = fault_suite.own_build_scenario(instance, log, notes)
+        return outcome, runs, notes, upload
+
+    def test_left_be_then_replaced_passes_judged_as_an_update(self):
+        outcome, runs, notes, upload = self.outcome(["own", "own", "published"])
+        self.assertEqual((outcome["result"], outcome["route"]), ("PASS", "outdated>esphome"))
+        self.assertEqual(runs, [(), ("--replace-own-build",)])
+        self.assertEqual(upload.call_args.kwargs["port"], fault_suite.esphome_ota.LIBRETINY_PORT)
+        self.assertTrue(notes["refused"])
+
+    def test_not_said_to_be_its_own_fails(self):
+        outcome = self.outcome(["own", "own", "published"], said="nothing to convert.")[0]
+        self.assertEqual(outcome["result"], "FAIL-NOT-REFUSED")
+
+    def test_still_its_own_after_the_replace_fails(self):
+        self.assertEqual(self.outcome(["own", "own", "own"])[0]["result"], "FAIL-NOT-REPLACED")
+
+    def test_a_build_of_its_own_that_never_started_is_not_fired(self):
+        outcome, runs, _, _ = self.outcome(["published"] * 200)
+        self.assertEqual((outcome["result"], runs), ("NOT-FIRED", []))
 
 
 class DoubleCutTests(unittest.TestCase):

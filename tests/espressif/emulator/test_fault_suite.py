@@ -1,6 +1,7 @@
 """The fault suite's own logic: the names a device may go by, the saved devices
 each device has, and the scenarios it lists."""
 
+import itertools
 import json
 import os
 import tempfile
@@ -1459,7 +1460,7 @@ class ScenarioTests(unittest.TestCase):
                 steps = fs.LEGACY_STEPS[sc["arg"].partition("+")[0]].get(sc["route"], {})
                 self.assertTrue(sc["step"] == "start" or sc["step"] in steps, sc["id"])
                 continue
-            if sc["fault"] in ("lostapp", "notemplate", "bootloop", "safemode"):
+            if sc["fault"] in ("lostapp", "notemplate", "bootloop", "safemode", "ownbuild"):
                 self.assertEqual(sc["step"], "start", sc["id"])
                 continue
             if fs.is_readout(sc["route"]):
@@ -1666,6 +1667,49 @@ class BadImageTests(unittest.TestCase):
                 self.assertEqual(again.call_args.args[1:], ("tasmota", []))   # whole from here on
             else:
                 self.assertEqual(finish.call_args.args[1], "NOT-FIRED")
+
+
+class OwnBuildTests(unittest.TestCase):
+    """ownbuild-replaced: a build of its own put on the device, as a builder
+    that adopted it would; then the tool, as the Beken suite has it."""
+
+    def test_one_from_esphome_as_the_beken_suites(self):
+        self.assertEqual([sc["id"] for sc in fs.scenarios() if sc["fault"] == "ownbuild"],
+                         ["esphome>esphome:start:ownbuild-replaced"])
+
+    def go(self, own, builds, said="It is a build of its own"):
+        sc = fs.Scenario(24, {"id": "esphome>esphome:start:ownbuild-replaced", "route": "esphome>esphome",
+                              "step": "start", "fault": "ownbuild", "arg": "replaced", "at": 40}, "/dev/null")
+        builds = iter(builds)
+        with mock.patch.object(sc, "run_tool", return_value=0) as run, \
+                mock.patch.object(sc, "screen_result", return_value="Converted (already: nothing to convert)"), \
+                mock.patch.object(sc, "address", return_value="192.0.2.50"), \
+                mock.patch.object(sc, "in_computer", return_value=own), \
+                mock.patch.object(sc, "esphome_now", side_effect=lambda: (next(builds), "stock store")), \
+                mock.patch.object(sc, "last_said", return_value=said), mock.patch.object(fs.time, "sleep"), \
+                mock.patch.object(fs.time, "time", side_effect=itertools.count(0, 10)), \
+                mock.patch.object(sc, "again") as again, mock.patch.object(sc, "finish") as finish:
+            sc.go_ownbuild()
+        return sc, run, again, finish
+
+    def test_its_own_build_on_then_left_be_then_replaced(self):
+        own = "2026-11-10 16:55:44 +0000"
+        sc, run, again, finish = self.go(own, ["published", own, own])
+        self.assertEqual([call.args for call in run.call_args_list],
+                         [("esphome",), ("esphome",), ("esphome", ["--replace-own-build"])])
+        self.assertEqual(run.call_args_list[0].kwargs, {"source": "suite-esphome"})
+        self.assertEqual(again.call_args.args[1:], ("esphome", ["--replace-own-build"]))
+        self.assertEqual((sc.notes["own"], sc.notes["refused"], sc.notes["refused_built"]), (own, True, own))
+
+    def test_a_build_of_its_own_that_never_started_is_not_fired(self):
+        sc, run, again, finish = self.go("2026-11-10 16:55:44 +0000", ["published"] * 100)
+        self.assertEqual(finish.call_args.args[1], "NOT-FIRED")
+        self.assertEqual(run.call_count, 1)
+
+    def test_the_end_is_judged_by_the_shared_own_build_problem(self):
+        notes = {"own": "b", "refused": True, "refused_built": "b", "built_now": "b",
+                 "calibration": "c", "calibration_now": "c"}
+        self.assertEqual(fs.own_build.problem(notes, "a"), "FAIL-NOT-REPLACED")
 
 
 class ReadoutScenarioTests(unittest.TestCase):

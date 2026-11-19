@@ -48,6 +48,8 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
     "ownnet-dropupload": (("conversion", "espressif"), INSTALLER),
     "lostanswer-once": (("conversion", "espressif"), INSTALLER),
     "safemode-ten": (("conversion",), f"ESPHome's safe mode, on a converted device: {FIRST_STAGE}"),
+    "ownbuild-replaced": (("conversion",), "a build of its own, an ESPHome builder's, which the tool leaves be "
+                                           f"unless told to replace it: {FIRST_STAGE}, whosever the build"),
 }
 
 # A cell a situation cannot be tried in though the others it is for can, and
