@@ -211,7 +211,7 @@ def back_on_sonoff(ctx: Context) -> bool:
             "Switch it off for five seconds, then on (a wall switch at its breaker).",
             "If this computer joined the device's network, rejoin your usual Wi-Fi.",
         ])
-    prompts.wait_for_key("Press any key once it is switched back on")
+    prompts.wait_for_key(f"{prompts.PRESS_ANY_KEY} once it is switched back on")
     output.transient_end()
     started = time.monotonic()
     answered = False

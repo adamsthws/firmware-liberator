@@ -21,6 +21,11 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 
+# The question when more than one device answers on the network; the
+# attended suite answers it by this name.
+CHOOSE = "Which device is this run for"
+
+
 def known_macs() -> set[str]:
     """The MACs of the devices this computer has records of: their backups and their runs."""
     return {name.replace("-", ":") for name in
@@ -129,11 +134,11 @@ def find_current_firmware(ctx: Context) -> str:
     stock = "A device still on Sonoff's firmware (it is set up in the eWeLink app)"
     if prompts.UNATTENDED and len(found) == 1:
         chosen = found[0]
-        prompts.answered_unattended("Which device is this run for", chosen.describe())
+        prompts.answered_unattended(CHOOSE, chosen.describe())
     else:
         offered = found + locked
         output.transient_begin()
-        choice = prompts.ask_choice("Which device is this run for",
+        choice = prompts.ask_choice(CHOOSE,
                             [found_device.describe()[0].upper() + found_device.describe()[1:]
                              for found_device in offered] + [stock])
         output.transient_end()

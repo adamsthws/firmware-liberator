@@ -698,6 +698,7 @@ def _main() -> int:
     return code
 
 
+WHAT_NEXT = "What next"   # the question as a run ends; the attended suite answers it by this name
 AGAIN = "again"   # what_next's answer for the device that failed, tried again
 
 
@@ -736,7 +737,7 @@ def what_next(last: str, again: bool = False) -> str | None:
         choices = [*([("Try this device again", AGAIN)] if again else []),
                    ("Convert another device", "run"), ("Read out a device", "readout")]
     try:
-        return choices[prompts.ask_choice("What next", [label for label, _ in choices])][1]
+        return choices[prompts.ask_choice(WHAT_NEXT, [label for label, _ in choices])][1]
     except QuitRun:
         return None
     except KeyboardInterrupt:

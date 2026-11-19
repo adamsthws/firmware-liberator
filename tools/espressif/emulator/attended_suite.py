@@ -130,7 +130,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tools.autoflash import kinds, readout, records  # noqa: E402
+from tools.autoflash import cli, context, kinds, prompts, readout, records, signup  # noqa: E402
+from tools.autoflash.routes import source  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
 from tools.repo import emulator_instances, emulator_stats, fault_verdicts, suite_coverage, unattended_run  # noqa: E402
@@ -234,9 +235,18 @@ def tried() -> dict[str, set[suite_coverage.Cell]]:
 SUITE = suite_coverage.Suite("attended scenarios", tried, NOT_EVERYWHERE)
 
 
+def asked(question: str) -> str:
+    """A question the tool names, as an answer's `when`: its words matched as
+    they are, each {} it is filled in at as anything - one ending the
+    question left off, as the question shows its words before it."""
+    words = question.removesuffix(" {}")
+    # Its regex characters escaped, not its spaces, as scenarios write one.
+    return re.sub(r"([.^$*+?()\[\]{}|\\])", r"\\\1", words).replace("\\{\\}", ".+")
+
+
 # The readout's question when the account holds several devices: its first
 # option is every device.
-CHOOSE_READOUT = readout.CHOOSE
+CHOOSE_READOUT = asked(readout.CHOOSE)
 
 
 # What a person answers in every run alike, of either family, a conversion or
@@ -247,16 +257,17 @@ CHOOSE_READOUT = readout.CHOOSE
 # a signal in place of typing - and the shared one left out. All optional: a
 # run need not ask them. A question reworded is changed here, once.
 SHARED_ANSWERS: tuple[dict[str, Any], ...] = (
-    {"when": "Which device is this run for", "type": "1\r", "optional": True},
+    {"when": asked(source.CHOOSE), "type": "1\r", "optional": True},
     {"when": CHOOSE_READOUT, "type": "1\r", "optional": True},
-    {"when": "This computer's password \\(for sudo\\)", "type": "autoflash\r", "times": 6, "optional": True},
-    {"when": "Press any key", "type": "x", "times": 3, "optional": True},
-    {"when": "Type .+ to go ahead", "type": "PROCEED\r", "times": 3, "optional": True},
-    {"when": "Which eWeLink account is this device in", "type": "2\r", "optional": True},
-    {"when": "eWeLink account email or phone number", "type": "someone@example.invalid\r", "optional": True},
-    {"when": "eWeLink password for", "type": "made-up-password\r", "optional": True},
-    {"when": "What next", "type": "q\r", "optional": True},
-    {"when": "\\[[Yy]/n\\]", "type": "n\r", "optional": True},
+    {"when": asked(prompts.SUDO_PASSWORD), "type": "autoflash\r", "times": 6, "optional": True},
+    {"when": asked(prompts.PRESS_ANY_KEY), "type": "x", "times": 3, "optional": True},
+    {"when": asked(prompts.GO_AHEAD), "type": "PROCEED\r", "times": 3, "optional": True},
+    {"when": asked(context.WHICH_ACCOUNT), "type": "2\r", "optional": True},
+    {"when": asked(context.EWELINK_ACCOUNT), "type": "someone@example.invalid\r", "optional": True},
+    {"when": asked(context.EWELINK_PASSWORD), "type": "made-up-password\r", "optional": True},
+    {"when": asked(cli.WHAT_NEXT), "type": "q\r", "optional": True},
+    {"when": asked(signup.QUESTION), "type": "n\r", "optional": True},
+    # Any other yes or no, as prompts.ask_yes_no asks it.
     {"when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)", "type": "y\r", "times": 3, "optional": True},
 )
 

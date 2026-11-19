@@ -49,6 +49,12 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import (
 from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkError, EwelinkUnreachable, account_name, get_devices,
                                           is_email, login_session, phone_number, session_env)
 
+# The eWeLink sign-in's questions; the attended suite answers them by these
+# names. EWELINK_PASSWORD takes the account's email or phone number.
+WHICH_ACCOUNT = "Which eWeLink account is this device in"
+EWELINK_ACCOUNT = "eWeLink account email or phone number"
+EWELINK_PASSWORD = "eWeLink password for {}"
+
 # Digits written as a phone number is (spaces, dashes, dots, brackets, a +):
 # at least six, the fewest a number without its country code is likely to have.
 PHONE_LIKE = re.compile(r"\+?[\s().-]*(?:\d[\s().-]*){6,}")
@@ -301,7 +307,7 @@ class Context:
         if self._ewelink_password is None:
             email = self.email()
             output.transient_begin()
-            self._ewelink_password = prompts.ask_secret(f"eWeLink password for {email}: ")
+            self._ewelink_password = prompts.ask_secret(f"{EWELINK_PASSWORD.format(email)}: ")
             output.transient_end()
         return {**os.environ, "EWELINK_PASSWORD": self._ewelink_password}
 
@@ -399,13 +405,13 @@ class Context:
         if not email:
             output.transient_begin()
             last = runs.load_settings().get("ewelink_email")
-            if last and prompts.ask_choice("Which eWeLink account is this device in", [
+            if last and prompts.ask_choice(WHICH_ACCOUNT, [
                 f"The one used last time: {last}",
                 "A different account - enter its email or phone number",
             ]) == 0:
                 email = last
             else:
-                email = prompts.ask_text("eWeLink account email or phone number", validate=account_answer)
+                email = prompts.ask_text(EWELINK_ACCOUNT, validate=account_answer)
             output.transient_end()
         email = account_name(email)
         self.remember_email(email)

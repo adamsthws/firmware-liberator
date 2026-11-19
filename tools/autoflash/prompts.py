@@ -61,6 +61,12 @@ STOPPED_AS_ASKED = "Stopped as asked."
 BULLET = "    "
 # A password field on a row of its own, below a prompt too long to share one.
 FIELD = output.MARGIN + "> "
+# Questions asked in many places, named once: the attended suite answers
+# them by these names. GO_AHEAD takes the word to type.
+PRESS_ANY_KEY = "Press any key"
+SUDO_PASSWORD = "This computer's password (for sudo)"
+GO_AHEAD = "Type {} to go ahead"
+
 QUIT_WORDS = {"q", "quit", "exit", "abort"}
 # Where one of several things can be passed by (require_word's `skip`).
 SKIP_WORDS = {"s", "skip"}
@@ -458,7 +464,7 @@ def ask_admin_password() -> str:
     with output.hold():
         mark = output.mark()
         for attempt in range(ADMIN_PASSWORD_TRIES):
-            password = ask_secret("This computer's password (for sudo): ")
+            password = ask_secret(f"{SUDO_PASSWORD}: ")
             with _echo_off():  # sudo takes a moment over a wrong one; typing ahead waits unseen
                 accepted = hostsys.check_sudo_password(password) is None
             if accepted:
@@ -597,14 +603,14 @@ def _ask_secret_windows(prompt: str, reveal_seconds: float) -> str:
     return line.value
 
 
-def wait_for_key(prompt: str = "Press any key to continue", *,
+def wait_for_key(prompt: str = f"{PRESS_ANY_KEY} to continue", *,
                  until: Callable[[], bool] | None = None) -> None:
     _ctrl_c_first()
     with interrupt.asking():
         _wait_for_key(prompt, until=until)
 
 
-def _wait_for_key(prompt: str = "Press any key to continue", *,
+def _wait_for_key(prompt: str = f"{PRESS_ANY_KEY} to continue", *,
                   until: Callable[[], bool] | None = None) -> None:
     """Pause until one key is pressed; q quits, anything else carries on.
     `until`: stop waiting without a key, too, once it is true - looked at a
@@ -1109,7 +1115,7 @@ def require_word(word: str, *, skip: bool = False) -> bool:
     With `skip` - one device among several - s passes this one by (False)."""
     _ctrl_c_first()
     output.tell("")
-    question = f"Type {word.upper()} to go ahead"
+    question = GO_AHEAD.format(word.upper())
     if UNATTENDED:
         # Given in advance by starting the run with --unattended.
         answered_unattended(question, word.upper())

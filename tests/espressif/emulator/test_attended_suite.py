@@ -541,6 +541,33 @@ class SharedAnswerTests(unittest.TestCase):
                 self.assertTrue(any(re.search(answer["when"], text) for text in texts),
                                 f"nothing the tool shows says {answer['when']!r}")
 
+    def test_a_named_question_is_matched_by_its_words_and_anything_where_it_is_filled_in(self):
+        asked = attended_suite.asked
+        self.assertEqual(asked("Type {} to go ahead"), "Type .+ to go ahead")
+        self.assertEqual(asked("eWeLink password for {}"), "eWeLink password for")
+        self.assertEqual(asked("This computer's password (for sudo)"), "This computer's password \\(for sudo\\)")
+        self.assertTrue(re.search(asked("Type {} to go ahead"), "Type PROCEED to go ahead"))
+        self.assertFalse(re.search(asked("Done? (y/n)"), "Done! (y/n)"))
+
+    def test_a_scenario_answering_a_shared_question_itself_says_it_as_the_shared_one_does(self):
+        # Else its answer is not taken in the shared one's place (with_shared):
+        # both are typed, and its own count and checks no longer hold.
+        from tools.autoflash import cli, context, prompts, readout, signup
+        from tools.autoflash.routes import source
+        shown = [source.CHOOSE, readout.CHOOSE, prompts.SUDO_PASSWORD, f"{prompts.PRESS_ANY_KEY} to continue",
+                 prompts.GO_AHEAD.format("PROCEED"), context.WHICH_ACCOUNT, context.EWELINK_ACCOUNT,
+                 context.EWELINK_PASSWORD.format("someone@example.invalid"), cli.WHAT_NEXT, signup.QUESTION]
+        shared = [answer["when"] for answer in attended_suite.SHARED_ANSWERS[:len(shown)]]
+        for folder in attended_suite.SCENARIOS.values():
+            for path in sorted(folder.glob("*.json")):
+                scenario = json.loads(path.read_text(encoding="utf-8"))
+                for run in (scenario, *([scenario["again"]] if "again" in scenario else [])):
+                    for answer in run.get("answers", []):
+                        for question, when in zip(shown, shared):
+                            if re.search(answer["when"], question):
+                                with self.subTest(scenario=path.stem, question=question):
+                                    self.assertEqual(answer["when"], when)
+
     def test_a_scenarios_own_answer_to_a_question_replaces_the_shared_one(self):
         # Its count and checks hold: one "What next" answered once, a second
         # is unanswered, not quit by the shared one.
