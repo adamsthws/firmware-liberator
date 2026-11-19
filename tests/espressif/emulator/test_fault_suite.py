@@ -261,6 +261,51 @@ class CloudTurnTests(unittest.TestCase):
         # Held a whole turn past the attempt sent at 1200.
         self.assertGreaterEqual(clock[0], 1200 + fs.HOLD_AT_MOST)
 
+    def test_a_turn_ends_once_its_run_is_killed_and_the_next_has_started(self):
+        # Seen against the real cloud: a run killed at C2 (crash) held its turn
+        # a minute more, until its device had fetched nothing for TURN_IDLE,
+        # while a run back on Sonoff's firmware queued behind it.
+        with tempfile.TemporaryDirectory() as state:
+            (Path(state) / "logs").mkdir()
+            (Path(state) / "logs/uart.log").write_text("", encoding="utf-8")
+            monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path(state), sc={"step": "C2"}, say=lambda _: None))
+            text = ["=== run started, tool version 3.0.0 ===\n", "[18:01:33] C2  Stock to recovery bridge\n"]
+            clock = [1000.0]
+
+            def wait(_):
+                clock[0] += 10
+                if clock[0] == 1030:   # killed, and run again
+                    text.append("=== run started, tool version 3.0.0 ===\n")
+            with mock.patch.object(monitor, "run_text", side_effect=lambda: "".join(text)), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", return_value=set()), \
+                    mock.patch.object(fs, "device_fetching", return_value=False), \
+                    mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(monitor.stop, "wait", side_effect=wait):
+                monitor.hold("fresh", run="run")
+        self.assertEqual(clock[0], 1030)
+
+    def test_a_turn_before_its_run_is_held_as_the_run_starts(self):
+        # A fresh device's turn comes before its run: that run starting is the turn's own.
+        with tempfile.TemporaryDirectory() as state:
+            (Path(state) / "logs").mkdir()
+            (Path(state) / "logs/uart.log").write_text("", encoding="utf-8")
+            monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path(state), sc={"step": "C2"}, say=lambda _: None))
+            text = []
+            clock = [1000.0]
+
+            def wait(_):
+                clock[0] += 10
+                if clock[0] == 1030:
+                    text.append("=== run started, tool version 3.0.0 ===\n")
+            with mock.patch.object(monitor, "run_text", side_effect=lambda: "".join(text)), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", return_value=set()), \
+                    mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(monitor.stop, "wait", side_effect=wait):
+                monitor.hold("from the start")
+        self.assertGreaterEqual(clock[0], 1000 + fs.HOLD_AT_MOST)
+
 
 class SavedDeviceTests(unittest.TestCase):
     def setUp(self):

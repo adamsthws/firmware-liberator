@@ -784,7 +784,10 @@ wrong.
   fetched nothing for a minute since its command went out (`TURN_IDLE`), as
   eWeLink does not pass a lost command on again; the run's sender, still
   waiting, asks for another turn to send it again, and a later run asks
-  again too.
+  again too. A run killed part way (`crash`) writes no end: its turn ends
+  once the next run starts, which asks for turns of its own. Seen before,
+  a turn held a minute on for a run killed at C2, until its device had
+  fetched nothing for `TURN_IDLE`.
 - Time a run spends waiting for a turn is not taken from its waits for the
   device (`get_device_key.own_time`): Sonoff's firmware back
   (`arrival.SONOFF_WAIT`), eWeLink showing it online, the readout's wait for

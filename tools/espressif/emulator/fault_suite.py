@@ -1032,6 +1032,8 @@ BOOTS = re.compile(r"(?P<sonoff>\[BUILD TIME\]|colinkTcp|tmp ip = )|(?P<bridge>a
                    r"(?P<tasmota>Project tasmota)|(?P<esphome>\[I\]\[app)")
 INTENT = re.compile(rf"\] (?:A1|A2|C2)  |(?i:{re.escape(SAID['installer_again'])})")
 HOLD_AT_MOST = 240.0
+# The line each run of the tool starts its log with (and ends it with "=== run ended ===").
+RUN_STARTED = "=== run started"
 # A step after C2 under way: its device has left Sonoff's firmware, so the turn is free.
 PAST_THE_CLOUD = re.compile(r"\] (?!A\d|C2\b)[A-Z]\d\w*  ")
 # A sign-in with no device needing the cloud: time for it and the list it asks for.
@@ -1165,7 +1167,7 @@ class DeviceMonitor:
 
     def live_run(self):
         text = self.run_text()
-        at = text.rfind("=== run started")
+        at = text.rfind(RUN_STARTED)
         if at < 0 or "=== run ended ===" in text[at:]:
             return None
         line = text[text.rfind("\n", 0, at) + 1:text.find("\n", at)]
@@ -1289,7 +1291,11 @@ class DeviceMonitor:
         (device_absent), looked for on until it is."""
         uart = self.state / "logs/uart.log"
         pos = uart.stat().st_size if uart.exists() else 0
-        ended = self.run_text().count("=== run ended ===")
+        text = self.run_text()
+        ended = text.count("=== run ended ===")
+        # The run the turn is for: the one under way, or the first to start
+        # within it (a fresh device's turn comes before its run).
+        holder = max(text.count(RUN_STARTED), 1)
         # Asked for again while it waited: this turn is theirs too.
         asked = self.intents(run)
         steps_from = len(self.run_text())
@@ -1346,7 +1352,7 @@ class DeviceMonitor:
                     if back_at is not None and not until_done:
                         # This run's sends: one before it, cancelled say, is not this turn's to wait on.
                         text = self.run_text()
-                        sent = len(SENT.findall(text, max(text.rfind("=== run started"), 0)))
+                        sent = len(SENT.findall(text, max(text.rfind(RUN_STARTED), 0)))
                         if sent > sent_seen or (sent and device_fetching(self.n)):
                             sent_seen, idle_from = sent, now
                         if sent and now - max(idle_from, back_at) >= TURN_IDLE and not blind:
@@ -1391,7 +1397,12 @@ class DeviceMonitor:
                     # after this turn began: counted from here.
                     ended = now_ended
                     steps_from = 0
-                elif now_ended > ended or PAST_THE_CLOUD.search(text, steps_from):
+                    holder = max(text.count(RUN_STARTED), 1)
+                elif now_ended > ended or PAST_THE_CLOUD.search(text, steps_from) \
+                        or text.count(RUN_STARTED) > holder:
+                    # A run started after the turn's own: that one was killed
+                    # part way (crash), writing no end, and is gone with the
+                    # server its device fetched from. The next asks for its own.
                     break
                 try:
                     with open(uart, encoding="utf-8", errors="replace") as f:
@@ -1576,15 +1587,15 @@ class Scenario:
         if not logs:
             return None
         text = logs[-1][2]
-        if headers is not None and text.count("=== run started") <= headers:
+        if headers is not None and text.count(RUN_STARTED) <= headers:
             return None
-        return text[text.rfind("=== run started"):]
+        return text[text.rfind(RUN_STARTED):]
 
     def current_events(self, since, headers):
         """The events (output.EVENTS) of the run current_run gives: None where
         its log has none - an earlier release's, which wrote none."""
         logs = [(m, p, t) for m, p, t in run_logs(self.state) if m >= since]
-        if not logs or (headers is not None and logs[-1][2].count("=== run started") <= headers):
+        if not logs or (headers is not None and logs[-1][2].count(RUN_STARTED) <= headers):
             return None
         found = output.events(logs[-1][1].parent)
         return fault_verdicts.last_run_events(found) if found else None
@@ -1600,7 +1611,7 @@ class Scenario:
 
     def headers_now(self):
         logs = run_logs(self.state)
-        return logs[-1][2].count("=== run started") if logs else 0
+        return logs[-1][2].count(RUN_STARTED) if logs else 0
 
     def wait_for_step(self, since, headers, stop, step=None):
         step = step or self.sc["step"]
@@ -2814,7 +2825,7 @@ class Scenario:
         off and on", the advice beside "What now", never followed)."""
         screen = Path(self.log).read_text(encoding="utf-8", errors="replace").split("--- ")[-1]
         logs = run_logs(self.state)
-        own = logs[-1][2].split("=== run started")[-1] if logs else ""
+        own = logs[-1][2].split(RUN_STARTED)[-1] if logs else ""
         return re.sub(r"\s+", " ", screen + "\n" + own)
 
     def advised_to_switch(self):
@@ -3009,7 +3020,7 @@ class Scenario:
                 special = "NOT-FIRED"  # F4 took the name and template at the save after all
             elif any(len(re.findall(r"Type PROCEED to go ahead", run)) > 1
                      for m, p, t in run_logs(self.state) if m >= self.started
-                     for run in self.ours(p, t).split("=== run started")):
+                     for run in self.ours(p, t).split(RUN_STARTED)):
                 special = "FAIL-ASKED-AGAIN"  # the go-ahead is asked once a run
             elif fault == "safemode" and "ESPHome in safe mode" not in ours:
                 special = "FAIL-TAKEN-FOR-MOVER"  # sent the startup firmware, even to stay on ESPHome
