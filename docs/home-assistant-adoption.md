@@ -1,10 +1,14 @@
 # Adopting a device into Home Assistant
 
 This guide is for any device the tool has converted to ESPHome. Home Assistant's
-ESPHome builder finds the device on your network and offers to adopt it. If you
-accept, the builder writes a short config for your device, with its name, a new
-API key and your Wi-Fi details. Everything else comes from this project's config
-for your kind of device:
+ESPHome builder finds the device on your network and offers to adopt it - but
+not an S61, which you add to the builder by hand
+([how](../devices/sonoff-s61/esphome.md#adopted-into-home-assistant)). If you
+accept, the builder writes a short config for your device, with its name and your
+Wi-Fi details. It adds no API key, as this project's ESPHome has none: Home
+Assistant connects without one, and you can add one yourself
+([Customising the config](#customising-the-config)). Everything else comes from
+this project's config for your kind of device:
 
 ```yaml
 packages:
@@ -12,8 +16,9 @@ packages:
 ```
 
 From then on you update the device from the builder. The tool does not update an
-adopted device, because the builder holds its API key
-([Changing firmware later](what-happens.md#changing-firmware-later)).
+adopted device: it is your build now, and this project's would take away what you
+changed and any key you added. It says so, and how to go back, if you run it on
+one ([Changing firmware later](what-happens.md#changing-firmware-later)).
 
 ## Config versions are pinned
 
@@ -36,10 +41,12 @@ To stop using the builder for a device, run the tool with `--replace-own-build`.
 installs this project's ESPHome over your build, after telling you what you lose
 and asking you to confirm.
 
-You lose any changes in your config, and the device's API key. If the device has a
-key, the tool asks for it, or you can give it with `--esphome-api-key`. Afterwards
-remove the device from Home Assistant and add it again, and delete its config from
-the builder. The tool can then update the device again.
+You lose any changes in your config, and the device's API key if you gave it one.
+If the device has a key, the tool asks for it, or you can give it with
+`--esphome-api-key`; afterwards remove the device from Home Assistant and add it
+again. Without a key, Home Assistant carries on with the device by itself. Either
+way, delete its config from the builder. The tool can then update the device
+again.
 
 If you renamed the relay, it goes back to how it was before you renamed it, because
 ESPHome saves a relay's state under its name. That may switch whatever the device

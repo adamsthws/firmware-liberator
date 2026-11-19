@@ -17,10 +17,56 @@ through `autoflash_calibration`, nine numbers) or `missing`.
 
 ## Adopted into Home Assistant
 
-Home Assistant's ESPHome builder can adopt a converted device. It uses this config,
-at the release the device's firmware came from, and your device keeps that config until
-you choose a newer release: [how it works, how to take a fix and how to customise
+Home Assistant finds a converted S61 on your network by itself and offers to add
+it, with no key to type: its relay, meter, energy totals and `Calibration` all
+work from there. To build its firmware yourself, add it to the ESPHome builder
+by hand, as below: the builder does not offer to adopt an S61. Once it is there,
+your device keeps this config at the release its firmware came from until you
+choose a newer one: [how it works, how to take a fix and how to customise
 it](../../docs/home-assistant-adoption.md).
+
+**Why the builder does not offer it.** The builder offers to adopt a device that
+says on the network where its config is (`package_import_url`). An S61's ESPHome
+runs on LibreTiny, whose mDNS takes no announcement over 63 characters, and that
+one is longer: `package_import_url=github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0`.
+It is left out and the rest announced, so the device shows in Home Assistant but
+not in the builder's list of devices to adopt. An S60's ESPHome has no such limit.
+
+**Adding it by hand.** In the builder, add a new device and replace its config
+with this one, using your device's name, which Home Assistant shows
+(`esphome-` and the last six characters of its MAC), and the release your
+device's firmware came from:
+
+```yaml
+substitutions:
+  name: esphome-abcdef
+  friendly_name: esphome abcdef
+
+packages:
+  liberator.sonoff-s61: "github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0"
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+That is the config the builder writes when it adopts a device. Install it
+wirelessly: the builder sends it to ESPHome's update service on the S61's port,
+8892, by itself. The device restarts on your build, on the Wi-Fi your builder's
+secrets name, keeps its calibration, and Home Assistant carries on with it as
+before.
+
+Tried in the emulator with Home Assistant 2026.11.2 and the ESPHome Device
+Builder 1.25.0 (ESPHome 2026.10.0): found and added, switched and read; not
+offered for adoption; added by hand, built and installed over the air in about
+two minutes; the tool then said the device runs a build of its own, and
+`--replace-own-build` put this project's back, Home Assistant reconnecting by
+itself both times.
 
 ## Changing it
 
