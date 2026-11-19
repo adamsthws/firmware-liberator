@@ -191,8 +191,8 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { SITE, page as shellPage } from "../src/shell.mjs";
 import { nightly } from "./nightly.js";
-import { CLOUDS, fetchNamed, fetchOffer, firstSightOf, linkParts, linksNotKeptOn, peekNamed, PENDING_LINKS_MOST,
-  PENDING_LINKS_PER_SENDER, reviewLinksOf, SENT_AS } from "./offered.js";
+import { AFTER_ANSWER_MS, CLOUDS, fetchNamed, fetchOffer, firstSightOf, linkParts, linksNotKeptOn, peekNamed, PENDING_LINKS_MOST,
+  PENDING_LINKS_PER_SENDER, PENDING_LINKS_RENTED, reviewLinksOf, SENT_AS } from "./offered.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
 export { work };
@@ -932,7 +932,7 @@ export async function readout(request, env, now = new Date(), context = null, fe
   }
   try {
     if (links.length) {
-      await keepLinks(env, request, id, LINKED_CLOUD, links, now);
+      await keepLinks(env, request, id, LINKED_CLOUD, links, now, network === null);
     }
     await keep(env, key, body, manifest, id, offered);
   } catch (error) {
@@ -966,20 +966,22 @@ async function unkeep(env, id, object) {
 // not held, first sight's held to the sender's day (OFFER_FIRST_SIGHT_PER_SENDER,
 // by firstSightSender) and, from a network that counts as none, to rented
 // networks' share (offered.js FIRST_SIGHT_RENTED_DAILY).
-// After the answer, where the Worker gives a `context` to wait on, else before it.
+// After the answer, where the Worker gives a `context` to wait on, for
+// offered.js AFTER_ANSWER_MS at most; else before it.
 async function fetchFiles(env, request, named, agreed, now, context, fetcher) {
   const day = now.toISOString().slice(0, 10);
+  const until = context ? Date.now() + AFTER_ANSWER_MS : Infinity;
   const sight = named.length ? { sender: firstSightOf(await keyedHash(env, `first-sight|${firstSightSender(request)}`),
     day), rented: (await countedNetwork(env, request)) === null } : null;
   const fetching = (async () => {
     for (const id of named) {
-      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sight, fetcher })).capped
-          || (await peekNamed(env, id, now, { sight, fetcher })).capped) {
+      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sight, fetcher, until })).capped
+          || (await peekNamed(env, id, now, { sight, fetcher, until })).capped) {
         break;
       }
     }
     for (const [key, offer] of agreed) {
-      await fetchOffer(env, key, offer, now, { totalBytes: TOTAL_BYTES, fetcher });
+      await fetchOffer(env, key, offer, now, { totalBytes: TOTAL_BYTES, fetcher, until });
     }
   })();
   if (context) {
@@ -1036,47 +1038,82 @@ function offerProblem(offer, cloud) {
   return null;
 }
 
+// One link and another the same: its file, cloud (bound as `cloud`) and
+// every part of it.
+const SAME_LINK = (a, b, cloud) => `${a}.sha = ${b}.sha AND ${a}.cloud = ${cloud} AND ${a}.path = ${b}.path
+  AND ${a}.scheme = ${b}.scheme AND ${a}.host = ${b}.host AND ${a}.port IS ${b}.port`;
+// Links as linkRow gives them, bound as JSON at `json`, read out of it by
+// the database, never written into the SQL.
+const GIVEN = (json) => `SELECT json_extract(value, '$.sha256') AS sha, json_extract(value, '$.path') AS path,
+  json_extract(value, '$.scheme') AS scheme, json_extract(value, '$.host') AS host,
+  json_extract(value, '$.port') AS port, json_extract(value, '$.review') AS review FROM json_each(${json})`;
+// Of links to review (?1 the cloud, ?2 the links), those waiting already or
+// decided: they take no place in the queue, so none of a sender's day.
+const KNOWN_LINKS = `SELECT sha, path, scheme, host, port FROM (${GIVEN("?2")}) AS given
+  WHERE EXISTS (SELECT 1 FROM rejected_links WHERE rejected_links.sha = given.sha AND rejected_links.cloud = ?1
+      AND rejected_links.link = ${SENT_AS("given")})
+    OR EXISTS (SELECT 1 FROM offer_links AS known WHERE ${SAME_LINK("known", "given", "?1")}
+      AND known.review IN ('pending', 'approved', 'rejected'))`;
+// Links waiting for review: each once, however many sent it.
+const WAITING = `SELECT DISTINCT sha, cloud, path, scheme, host, port FROM offer_links AS waiting
+  WHERE waiting.review = 'pending'`;
+
 // The links of an offer's files, as offer_links keeps them: ?1 the readout,
-// ?2 the cloud, ?3 its files as JSON, each as linkRow gives it - bound, and
-// read out of the JSON by the database, never written into the SQL. A link
-// to review already approved or rejected, sent again, is taken as decided:
-// rejected too where only its rejection is left (rejected_links). One still
-// to review is kept only if it is waiting already, or fewer than ?4
-// (offered.js PENDING_LINKS_MOST) are. The SHA-256 of each kept.
+// ?2 the cloud, ?3 its files as JSON (GIVEN). A link to review already
+// approved or rejected, sent again, is taken as decided: rejected too where
+// only its rejection is left (rejected_links). One still to review is kept
+// only if it is waiting already, or fewer than ?4 (offered.js
+// PENDING_LINKS_MOST) are, and, sent from a network that counts as none,
+// fewer than ?5 (offered.js PENDING_LINKS_RENTED) of those waiting were sent from no
+// other: so a few rented servers' made-up links cannot fill the queue that
+// owners' new links need. ?5 is null for a sender on a network that counts.
+// Each kept, as RETURNING gives it.
 const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
   SELECT ?1, sha, path, ?2, scheme, host, port, kept_as FROM (SELECT given.*,
     CASE WHEN EXISTS (SELECT 1 FROM rejected_links WHERE rejected_links.sha = given.sha AND rejected_links.cloud = ?2
       AND rejected_links.link = ${SENT_AS("given")}) THEN 'rejected'
     ELSE coalesce((SELECT decided.review FROM offer_links AS decided
-      WHERE decided.sha = given.sha AND decided.cloud = ?2 AND decided.path = given.path
-        AND decided.scheme = given.scheme AND decided.host = given.host AND decided.port IS given.port
-        AND decided.review IN ('approved', 'rejected') LIMIT 1), given.review) END AS kept_as
-    FROM (SELECT json_extract(value, '$.sha256') AS sha, json_extract(value, '$.path') AS path,
-      json_extract(value, '$.scheme') AS scheme, json_extract(value, '$.host') AS host,
-      json_extract(value, '$.port') AS port, json_extract(value, '$.review') AS review FROM json_each(?3)) AS given) AS link
+      WHERE ${SAME_LINK("decided", "given", "?2")} AND decided.review IN ('approved', 'rejected') LIMIT 1),
+      given.review) END AS kept_as
+    FROM (${GIVEN("?3")}) AS given) AS link
   WHERE kept_as != 'pending'
-    OR EXISTS (SELECT 1 FROM offer_links AS waiting WHERE waiting.review = 'pending' AND waiting.sha = link.sha
-      AND waiting.cloud = ?2 AND waiting.path = link.path AND waiting.scheme = link.scheme AND waiting.host = link.host
-      AND waiting.port IS link.port)
-    OR (SELECT count(*) FROM (SELECT DISTINCT sha, cloud, path, scheme, host, port FROM offer_links
-      WHERE review = 'pending')) < ?4
-  RETURNING sha`;
+    OR EXISTS (SELECT 1 FROM offer_links AS waiting WHERE waiting.review = 'pending' AND ${SAME_LINK("waiting", "link", "?2")})
+    OR ((SELECT count(*) FROM (${WAITING})) < ?4
+      AND (?5 IS NULL OR (SELECT count(*) FROM (${WAITING} AND NOT EXISTS (SELECT 1 FROM offer_links AS other
+        JOIN readout_networks ON readout_networks.id = other.readout
+        WHERE other.review = 'pending' AND ${SAME_LINK("other", "waiting", "waiting.cloud")}))) < ?5))
+  RETURNING sha, path, scheme, host, port, review`;
 
-// Readout `id`'s links of `cloud`, sent by `request`, kept (LINKS, each as
-// linkRow gives it): of its links to review, as many as its sender has left
-// of PENDING_LINKS_PER_SENDER today. Each link to review not kept, the queue
-// being full or its sender's day, counted for the day (offered.js
+// One link as LINKS and KNOWN_LINKS name it, to tell them apart.
+const linkName = (link) => JSON.stringify([link.sha256 ?? link.sha, link.path, link.scheme ?? null, link.host ?? null,
+  link.port ?? null]);
+
+// Readout `id`'s links of `cloud`, sent by `request` (from a network that
+// counts as none if `rented`), kept (LINKS, each as linkRow gives it). Each
+// link to review new to the queue takes one of PENDING_LINKS_PER_SENDER
+// today, given back if the queue has no room for it. Each one not kept, the
+// queue being full or its sender's day, counted for the day (offered.js
 // linksNotKeptOn) for the admin view.
-async function keepLinks(env, request, id, cloud, links, now) {
+async function keepLinks(env, request, id, cloud, links, now, rented) {
   const day = now.toISOString().slice(0, 10);
   const toReview = links.filter((link) => link.review === "pending");
-  const allowed = toReview.length ? await reserveUpTo(env.DB,
-    reviewLinksOf(await keyedHash(env, `review-links|${firstSightSender(request)}`), day), day, toReview.length,
-    PENDING_LINKS_PER_SENDER) : 0;
-  const given = [...links.filter((link) => link.review !== "pending"), ...toReview.slice(0, allowed)];
-  const { results } = given.length
-    ? await env.DB.prepare(LINKS).bind(id, cloud, JSON.stringify(given), PENDING_LINKS_MOST).all() : { results: [] };
-  const left = toReview.length - allowed + new Set(given.map((link) => link.sha256)).size - results.length;
+  const known = new Set(toReview.length ? (await env.DB.prepare(KNOWN_LINKS).bind(cloud, JSON.stringify(toReview))
+    .all()).results.map(linkName) : []);
+  const fresh = toReview.filter((link) => !known.has(linkName(link)));
+  const senderDay = reviewLinksOf(await keyedHash(env, `review-links|${firstSightSender(request)}`), day);
+  const allowed = fresh.length ? await reserveUpTo(env.DB, senderDay, day, fresh.length, PENDING_LINKS_PER_SENDER) : 0;
+  const given = [...links.filter((link) => link.review !== "pending" || known.has(linkName(link))),
+    ...fresh.slice(0, allowed)];
+  const { results } = given.length ? await env.DB.prepare(LINKS).bind(id, cloud, JSON.stringify(given),
+    PENDING_LINKS_MOST, rented ? PENDING_LINKS_RENTED : null).all() : { results: [] };
+  // A link one readout gives twice is kept once (offer_links' key): only one
+  // whose file was kept by no link of it was refused.
+  const keptShas = new Set(results.map((row) => row.sha));
+  const refused = fresh.slice(0, allowed).filter((link) => !keptShas.has(link.sha256)).length;
+  if (refused) {
+    await release(env.DB, senderDay, 0, refused);
+  }
+  const left = fresh.length - allowed + refused;
   if (left > 0) {
     await reserve(env.DB, linksNotKeptOn(day), day, { by: left });
   }
@@ -1223,7 +1260,8 @@ export async function offers(request, env, now = new Date(), context = null, fet
       continue;
     }
     try {
-      await keepLinks(env, request, id, asked.cloud, each.offer.files.map((file) => linkRow(file, cloud)), now);
+      await keepLinks(env, request, id, asked.cloud, each.offer.files.map((file) => linkRow(file, cloud)), now,
+        each.network === null);
       await env.READOUTS.put(object, each.body, { httpMetadata: { contentType: "application/json" },
         customMetadata: { tool: each.manifest.tool.slice(0, 16), model: each.offer.model, read: "false" } });
     } catch (error) {

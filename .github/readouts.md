@@ -207,7 +207,11 @@ one released before it, sends files, so the file path always stays.
   link that does not give its file is noted (`offer_fetch_failures`) and not
   tried again for that SHA-256 on first sight, so the same made-up link sent
   again costs nothing. Each fetch is given up after
-  `OFFER_FETCH_TIMEOUT_MS`. A file kept is its mark under `readouts/firmware/`,
+  `OFFER_FETCH_TIMEOUT_MS`, and a request's all end by `AFTER_ANSWER_MS`
+  after its answer, as Cloudflare lets a Worker go on only so long: one with
+  too little time left waits for its file to be sent again, or its offer to
+  agree. A file listed whose keeping was cut off even so is put in the store
+  by its next fetch. A file kept is its mark under `readouts/firmware/`,
   listed under the readout whose link fetched it, with the firmware names its
   Sonoff wrapper gives (custom metadata `names`, joined by `+`; none for an
   ESP8266 file, and only as many whole names as fit `NAMES_KEPT_MOST`, as
@@ -247,8 +251,11 @@ one released before it, sends files, so the file path always stays.
   until you approve it.
 - **The queue is bounded.** `PENDING_LINKS_MOST` links wait at most, each
   once however many sent it, so the list stays one you can read through;
-  one sender (by /24, as first sight counts it) adds
-  `PENDING_LINKS_PER_SENDER` a day. A link to review past either is not
+  of them, `PENDING_LINKS_RENTED` sent only from networks that count as
+  none, so a few rented servers cannot fill it. One sender (by /24, as first
+  sight counts it) adds `PENDING_LINKS_PER_SENDER` new ones a day: a link
+  waiting already, or decided, takes none, and one the full queue refuses
+  is given back. A link to review past either is not
   kept and not peeked at; its offer or readout is taken as ever, and the
   admin view counts those not kept over the last `COUNTER_DAYS`
   (`nightly.js`). A link one more
@@ -261,7 +268,8 @@ one released before it, sends files, so the file path always stays.
   server that answered, what the bytes start like (`PEEK_KINDS`: Beken's
   FOTA container, Sonoff's wrapper with its firmware names, an ESP8266
   image, a zip, or unknown) and the bytes as hex. A redirect is recorded,
-  with where it pointed, and not followed.
+  with where it pointed, and not followed. A peek cut off before it was
+  kept is made again when the link is next sent, a later day.
 - **Approving or rejecting it** is the admin view's Links to review. Each
   link pending is there once, however many sent it, with its device, its
   SHA-256, how many networks sent it, when it was first seen, its peek, and

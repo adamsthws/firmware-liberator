@@ -11,11 +11,12 @@ import { test } from "node:test";
 import { read } from "../api/counters.js";
 import worker, * as api from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
-import { CLOUDS, FIRST_SIGHT_DAILY, FIRST_SIGHT_RENTED_DAILY, OFFER_FETCH_MAX_BYTES, OFFER_FETCH_PATHS,
-  OFFER_FETCH_TIMEOUT_MS, OFFER_FETCHES_DAILY, OFFER_FIRST_SIGHT_PER_SENDER, OFFER_RETRY_DAYS, OFFER_RETRY_EACH_NIGHT,
-  NAMES_KEPT_MOST, PEEK_BYTES, PENDING_LINK_DAYS, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER, REJECTED_LINKS_MOST,
-  URL_MOST, URL_PATH_MOST, approveLink, fetchOffer, firmwareNames, firstSightsOn, isPublicAddress, kindOf, linkParts,
-  linkPruning, linksNotKeptOn, linksToReview, namesKept, rejectLink, rentedFirstSightsOn, retryOffers } from "../api/offered.js";
+import { AFTER_ANSWER_MS, CLOUDS, FIRST_SIGHT_DAILY, FIRST_SIGHT_RENTED_DAILY, OFFER_FETCH_MAX_BYTES,
+  OFFER_FETCH_PATHS, OFFER_FETCH_TIMEOUT_MS, OFFER_FETCHES_DAILY, OFFER_FIRST_SIGHT_PER_SENDER, OFFER_RETRY_DAYS,
+  OFFER_RETRY_EACH_NIGHT, NAMES_KEPT_MOST, PEEK_BYTES, PENDING_LINK_DAYS, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER,
+  PENDING_LINKS_RENTED, REJECTED_LINKS_MOST, URL_MOST, URL_PATH_MOST, approveLink, fetchOffer, firmwareNames,
+  firstSightsOn, isPublicAddress, kindOf, linkParts, linkPruning, linksNotKeptOn, linksToReview, namesKept, peekNamed,
+  rejectLink, rentedFirstSightsOn, retryOffers } from "../api/offered.js";
 import { PENDING, READOUTS_EVER, prunePending } from "../api/pending.js";
 import { work } from "../api/proof-of-work.js";
 
@@ -1094,6 +1095,56 @@ test("one sender puts PENDING_LINKS_PER_SENDER links to review in the queue a da
   assert.equal(waiting(bindings), PENDING_LINKS_PER_SENDER + 1);
 });
 
+test("links sent only from networks that count as none hold RENTED_SHARE of the queue at most, owners' the rest",
+  async () => {
+    const share = (PENDING_LINKS_MOST * api.RENTED_SHARE) / 100;
+    assert.equal(PENDING_LINKS_RENTED, share);
+    const bindings = env();
+    // Waiting, sent by a readout from no network that counts (no readout_networks row).
+    const fill = bindings.DB.db.prepare(`INSERT INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
+      VALUES ('2026-11-01-000000000000', ?, ?, 'ewelink', 'http', '5.6.7.8', NULL, 'pending')`);
+    for (let n = 0; n < share - 1; n += 1) {
+      fill.run(sha(`rented ${n}`), `/r${n}.bin`);
+    }
+    const fetcher = server();
+    await results(bindings, [reviewOffer(1)], { address: "198.51.100.2", asn: 16509, fetcher });
+    assert.equal(waiting(bindings), share, "the share's last place");
+    await results(bindings, [reviewOffer(2)], { address: "203.0.113.2", asn: 16509, fetcher });
+    assert.equal(waiting(bindings), share, "past the share: not kept");
+    assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 1);
+    await results(bindings, [reviewOffer(3)], { address: "192.0.2.3", asn: 64503, fetcher });
+    assert.equal(waiting(bindings), share + 1, "an owner's network still has room");
+    // A rented link an owner's network sends too is the owners' now, freeing a rented place.
+    await results(bindings, [reviewOffer(1)], { address: "192.0.2.4", asn: 64504, fetcher });
+    await results(bindings, [reviewOffer(2)], { address: "203.0.113.9", asn: 16509, fetcher });
+    assert.equal(waiting(bindings), share + 2, "another rented sender's, now within the share");
+  });
+
+test("a link to review waiting already takes none of its sender's day, and one the full queue refuses is given back",
+  async () => {
+    const bindings = env();
+    const fetcher = server();
+    // One new link, in six offers: one of the day's places.
+    const same = [0, 1, 2, 3, 4, 5].map((n) => ({ ...reviewOffer(0), stock_version: `8.0.${n}` }));
+    assert.deepEqual(await results(bindings, same, { address: "198.51.100.7", fetcher }), Array(6).fill("taken"));
+    assert.equal(rows(bindings, "SELECT * FROM offer_links WHERE review = 'pending'").length, 6, "each kept");
+    assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 0);
+    // The queue full, a new one is refused and its place given back.
+    const fill = bindings.DB.db.prepare(`INSERT INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
+      VALUES ('2026-11-01-000000000000', ?, ?, 'ewelink', 'http', '5.6.7.8', NULL, 'pending')`);
+    for (let n = 0; n < PENDING_LINKS_MOST - 1; n += 1) {
+      fill.run(sha(`filler ${n}`), `/f${n}.bin`);
+    }
+    await results(bindings, [reviewOffer(1)], { address: "198.51.100.7", fetcher });
+    assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 1);
+    bindings.DB.db.prepare("DELETE FROM offer_links WHERE readout = '2026-11-01-000000000000'").run();
+    // Room again: the sender's day has every place but the first link's.
+    const five = [2, 3, 4, 5, 6].map(reviewOffer);
+    await results(bindings, five, { address: "198.51.100.7", fetcher });
+    assert.equal(waiting(bindings), PENDING_LINKS_PER_SENDER);
+    assert.equal((await read(bindings.DB, linksNotKeptOn(DAY))).count, 2, "the sixth new link, past the day's");
+  });
+
 // Each of linkPruning's statements run as the nightly job runs them: how many each deleted.
 async function prune(bindings, today) {
   const named = Object.entries(linkPruning(bindings.DB, today));
@@ -1280,6 +1331,90 @@ test("a link that gave another file is not retried, and takes no night's place",
   await agree(bindings, OFFER, wrong);
   assert.deepEqual(rows(bindings, "SELECT why FROM offer_fetch_failures"), [{ why: "other" }]);
   assert.equal((await retryOffers(bindings, TOMORROW, { totalBytes: api.TOTAL_BYTES, fetcher: wrong })).offers, 0);
+});
+
+test("a link that no longer keeps the rules is noted as failed, and takes no night's place", async () => {
+  const bindings = env();
+  await agree(bindings, OFFER, cloud({}));
+  // As if the rules changed since it was kept: its path no longer of eWeLink's shape.
+  bindings.DB.db.prepare("UPDATE offer_links SET path = '/not/a/link.bin'").run();
+  bindings.DB.db.prepare("DELETE FROM offer_fetch_failures").run();
+  const fetcher = cloud();
+  assert.equal((await retryOffers(bindings, TOMORROW, { totalBytes: api.TOTAL_BYTES, fetcher })).offers, 1);
+  assert.deepEqual(fetcher.asked, [], "never fetched");
+  assert.deepEqual(rows(bindings, "SELECT why FROM offer_fetch_failures"), [{ why: "other" }]);
+  const night = new Date(TOMORROW.getTime() + 86_400_000);
+  assert.equal((await retryOffers(bindings, night, { totalBytes: api.TOTAL_BYTES, fetcher })).offers, 0);
+});
+
+test("fetches after the answer end by AFTER_ANSWER_MS: one with too little time left is not begun", async () => {
+  assert.equal(AFTER_ANSWER_MS, 25_000);
+  const bindings = env();
+  const OTHER = Buffer.from("another file eWeLink offers");
+  const path = `/ota/rom/${TOKEN}/user2.1024.new.2.bin`;
+  const two = { ...OFFER, files: [FILE, { ...FILE, name: "user2.bin", sha256: sha(OTHER), path }] };
+  const files = cloud({ [URL_OF(PATH)]: APP, [URL_OF(path)]: OTHER });
+  const realNow = Date.now;
+  let clock = realNow();
+  // Each fetch takes 24 seconds of the clock.
+  const slow = async (url, init) => {
+    clock += 24_000;
+    return files(url);
+  };
+  const waits = [];
+  Date.now = () => clock;
+  try {
+    const response = await api.offers(request({ offers: [two] }), bindings, NOW, { waitUntil: (p) => waits.push(p) },
+      slow);
+    assert.equal(response.status, 200);
+    await Promise.all(waits);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(files.asked.length, 1, "the second not begun with a second left");
+  assert.equal(rows(bindings, "SELECT * FROM readout_firmware").length, 1);
+  assert.deepEqual(rows(bindings, "SELECT * FROM offer_fetch_failures"), [], "and not noted as failed");
+});
+
+test("a peek cut off before it was kept is claimed again a later day, not the same one", async () => {
+  const bindings = env();
+  const id = await pending(bindings);
+  // As a Worker stopped after its claim leaves it.
+  const cut = (day) => bindings.DB.db.prepare(`UPDATE link_peeks SET server = NULL, outcome = 'failed', status = NULL,
+    day = ?`).run(day);
+  cut(DAY);
+  const today = server();
+  await peekNamed(bindings, id, NOW, { sight: null, fetcher: today });
+  assert.deepEqual(today.asked, [], "claimed today already");
+  const later = server();
+  await peekNamed(bindings, id, TOMORROW, { sight: null, fetcher: later });
+  assert.ok(later.asked.length > 0);
+  assert.equal(peeks(bindings)[0].server !== null, true, "kept this time");
+});
+
+test("a file listed but not in the store, its keeping cut off, is put there when next fetched", async () => {
+  const bindings = env();
+  await results(bindings, [OFFER], { address: "192.0.2.1", asn: 64501 });
+  const [{ object }] = rows(bindings, "SELECT object FROM readouts");
+  bindings.READOUTS.objects.delete(`readouts/firmware/${sha(APP)}`);
+  await results(bindings, [OFFER], { address: "203.0.113.3", asn: 64503 });
+  const mark = bindings.READOUTS.objects.get(`readouts/firmware/${sha(APP)}`);
+  assert.ok(mark, "put again");
+  assert.equal(mark.options.customMetadata.readout, object, "under the readout that lists it");
+  await countersMatch(bindings);
+});
+
+test("rejecting a link notes it apart in the same batch, or does neither", async () => {
+  const bindings = env();
+  const id = await pending(bindings);
+  const batch = bindings.DB.batch;
+  bindings.DB.batch = async () => { throw new Error("D1 is down"); };
+  await assert.rejects(rejectLink(bindings.DB, id, sha(APP), NOW));
+  bindings.DB.batch = batch;
+  assert.deepEqual([linkRows(bindings)[0].review, rows(bindings, "SELECT * FROM rejected_links").length], ["pending", 0]);
+  assert.equal(await rejectLink(bindings.DB, id, sha(APP), NOW), true);
+  assert.equal(await rejectLink(bindings.DB, id, sha(APP), NOW), false, "not pending: nothing more");
+  assert.equal(rows(bindings, "SELECT * FROM rejected_links").length, 1);
 });
 
 test("a fetch is given up after OFFER_FETCH_TIMEOUT_MS, and a timeout keeps nothing", async () => {

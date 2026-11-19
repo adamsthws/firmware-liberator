@@ -551,7 +551,7 @@ test("links to review not kept, the queue full, are counted over the days the co
   }
   const review = sectionOf(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), "review");
   assert.match(review, new RegExp(`5 not kept in the last ${COUNTER_DAYS} days: the\\s+queue was full, `
-    + `or their sender had sent ${PENDING_LINKS_PER_SENDER} that day\\.`));
+    + `or their sender had sent ${PENDING_LINKS_PER_SENDER} new ones that day\\.`));
 });
 
 test("a link a test makes from markup-looking parts is escaped wherever it is shown", async () => {

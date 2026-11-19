@@ -81,6 +81,11 @@ export const CLOUDS = {
 // (linksNotKeptOn), for the admin view. A readout's own links, MAX_FIRMWARE
 // at most (index.js), are weighed together, so may pass it by as many less one.
 export const PENDING_LINKS_MOST = 100;
+// Of those, how many may wait that were sent only from networks that count
+// as none (networks.js: a host's, a VPN's): index.js RENTED_SHARE of
+// PENDING_LINKS_MOST (a test holds the two alike), so a few rented servers'
+// made-up links cannot fill the queue owners' new links need.
+export const PENDING_LINKS_RENTED = 10;
 export const linksNotKeptOn = (day) => `links-not-kept:${day}`;
 // Links to review one sender may put in the queue a day, counted as
 // first sight's fetches are (index.js firstSightSender): an account's devices
@@ -209,6 +214,20 @@ export const OFFER_FIRST_SIGHT_PER_SENDER = 5;
 // answers slowly, or never ends its body, holds up the Worker no longer.
 // Ample for OFFER_FETCH_MAX_BYTES from eWeLink's servers.
 export const OFFER_FETCH_TIMEOUT_MS = 20_000;
+// How long after its answer a request's fetches and peeks may go on (index.js
+// fetchFiles: their `until`): Cloudflare gives what a Worker waits on after
+// its answer 30 seconds, and the rest is for keeping what the last fetched.
+// Each fetch's own timeout is cut to end by then, and none is begun with
+// less than FETCH_LEAST_MS left: one past it is fetched when its file is
+// next sent, or its offer agrees.
+export const AFTER_ANSWER_MS = 25_000;
+const FETCH_LEAST_MS = 2000;
+// How long a fetch may take, `most` at most, to end by `until` (epoch
+// milliseconds): null where too little time is left to begin one.
+const timeFor = (most, until) => {
+  const left = Math.min(most, until - Date.now());
+  return left >= FETCH_LEAST_MS ? left : null;
+};
 // The most a file fetched may be: as tools/ewelink/offered_firmware.py's
 // MAX_SIZE, more than any Sonoff update file.
 export const OFFER_FETCH_MAX_BYTES = 8 * 1024 * 1024;
@@ -295,10 +314,10 @@ const firmwareKey = (sha) => `readouts/firmware/${sha}`;
 
 // What `url` gave: {bytes}, or {why}: "none", nothing given, or "other",
 // more than OFFER_FETCH_MAX_BYTES, which no file of the cloud's is.
-async function download(fetcher, url, init = {}) {
+async function download(fetcher, url, init, timeout) {
   let response;
   try {
-    response = await fetcher(url, { ...init, signal: AbortSignal.timeout(OFFER_FETCH_TIMEOUT_MS) });
+    response = await fetcher(url, { ...init, signal: AbortSignal.timeout(timeout) });
   } catch {
     return { why: "none" };
   }
@@ -345,7 +364,9 @@ const FAILED = `INSERT INTO offer_fetch_failures (sha, cloud, path, why, day, si
 
 // Whether a link may be fetched: one of its cloud's shape, or one to review
 // approved that still keeps every rule (linkParts). A link pending or
-// rejected never is.
+// rejected never is; one that no longer keeps the rules is noted as failed
+// (tryLink), as though it gave another file, so the nightly retry
+// (UNFETCHED) does not keep a place for it.
 function fetchable(link, cloud) {
   if (link.host == null) {
     return (link.review ?? "auto") === "auto" && cloud.link.test(link.path);
@@ -380,20 +401,25 @@ async function counted(env, day, sight) {
 // gives the file; from each place it is fetched from (fetchedFrom) in turn,
 // each fetch counted (counted; `sight` on first sight). "kept"; "held", kept
 // meanwhile by another; "failed"; or "capped", where the day's fetches, or the
-// store, ran out. A link to review is fetched with no redirect followed: only
-// the server approved answers.
-async function tryLink(env, link, day, { totalBytes, fetcher, sight = null }) {
+// store, or the time after the answer (`until`, AFTER_ANSWER_MS), ran out. A
+// link to review is fetched with no redirect followed: only the server
+// approved answers.
+async function tryLink(env, link, day, { totalBytes, fetcher, sight = null, until = Infinity }) {
   const cloud = Object.hasOwn(CLOUDS, link.cloud) ? CLOUDS[link.cloud] : null;
   if (!cloud || !fetchable(link, cloud)) {
+    if (cloud && link.review !== "pending" && link.review !== "rejected") {
+      await env.DB.prepare(FAILED).bind(link.sha, link.cloud, sentAs(link), "other", day).run();
+    }
     return "failed";
   }
   let bytes = null;
   let failed = "none";
   for (const url of fetchedFrom(link, cloud)) {
-    if (!(await counted(env, day, sight))) {
+    const timeout = timeFor(OFFER_FETCH_TIMEOUT_MS, until);
+    if (timeout === null || !(await counted(env, day, sight))) {
       return "capped";
     }
-    const got = await download(fetcher, url, link.host == null ? {} : { redirect: "manual" });
+    const got = await download(fetcher, url, link.host == null ? {} : { redirect: "manual" }, timeout);
     if (got.bytes && hex(await sha256(got.bytes)) === link.sha) {
       bytes = got.bytes;
       break;
@@ -422,7 +448,7 @@ const FOUND = new Set(["kept", "held"]);
 // link has not failed for it before, fetched by that link: first sight.
 // `totalBytes`: the store's limit (index.js TOTAL_BYTES); `sight`, its sender
 // as counted takes it. What it did: {fetched, missing, capped}.
-export async function fetchNamed(env, readout, now, { totalBytes, sight, fetcher = fetch }) {
+export async function fetchNamed(env, readout, now, { totalBytes, sight, fetcher = fetch, until }) {
   const day = now.toISOString().slice(0, 10);
   const done = { fetched: [], missing: [], capped: false };
   const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, readout, review FROM offer_links
@@ -433,7 +459,7 @@ export async function fetchNamed(env, readout, now, { totalBytes, sight, fetcher
     if ((await env.READOUTS.head(firmwareKey(link.sha))) !== null) {
       continue;
     }
-    const outcome = await tryLink(env, link, day, { totalBytes, fetcher, sight });
+    const outcome = await tryLink(env, link, day, { totalBytes, fetcher, sight, until });
     if (outcome === "capped") {
       done.capped = true;
       break;
@@ -448,7 +474,7 @@ export async function fetchNamed(env, readout, now, { totalBytes, sight, fetcher
 // Each file of offer `offer` of `key` that links were given for and is not
 // held, fetched and kept if it is what the offer agreed on. `totalBytes` as
 // fetchNamed takes it. What it did: {fetched, missing, capped}.
-export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = fetch }) {
+export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = fetch, until }) {
   const day = now.toISOString().slice(0, 10);
   const done = { fetched: [], missing: [], capped: false };
   // The files links that may be fetched were given for, by readouts of it
@@ -479,7 +505,7 @@ export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = f
       .bind(key, offer, sha, OFFER_FETCH_PATHS, day, retrySince(day)).all();
     let outcome = "failed";
     for (const link of links) {
-      outcome = await tryLink(env, link, day, { totalBytes, fetcher });
+      outcome = await tryLink(env, link, day, { totalBytes, fetcher, until });
       if (outcome === "capped") {
         done.capped = true;
       }
@@ -501,13 +527,23 @@ export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = f
 // its link's, so deleting the readout gives them back, and to those of
 // readouts waiting for review (PENDING) while its readout is one, as taking
 // it as right or deleting it gives back its bytes from there. Whether it was
-// kept: if not, the store's bytes reserved for it are given back.
+// kept: if not, the store's bytes reserved for it are given back. Listed but
+// not in the store, its keeping cut off (a Worker stopped after its answer),
+// it is put there now, under the readout that lists it.
 async function keepFile(env, { readout, sha }, bytes) {
   const size = bytes.byteLength;
   const claimed = await env.DB.prepare(`INSERT INTO readout_firmware (readout, sha) SELECT ?1, ?2
     WHERE NOT EXISTS (SELECT 1 FROM readout_firmware WHERE sha = ?2) RETURNING sha`).bind(readout, sha).first();
   if (!claimed) {
     await release(env.DB, READOUTS_EVER, size, 0);
+    if ((await env.READOUTS.head(firmwareKey(sha))) === null) {
+      const lister = await env.DB.prepare(`SELECT readouts.object FROM readout_firmware
+        JOIN readouts ON readouts.id = readout_firmware.readout WHERE readout_firmware.sha = ?1
+        ORDER BY readout_firmware.readout LIMIT 1`).bind(sha).first("object");
+      const names = namesKept(firmwareNames(bytes));
+      await env.READOUTS.put(firmwareKey(sha), bytes, { customMetadata: { readout: lister ?? "", fetched: "true",
+        ...(names ? { names } : {}) } });
+    }
     return false;
   }
   const object = await env.DB.prepare("SELECT object FROM readouts WHERE id = ?").bind(readout).first("object");
@@ -626,11 +662,11 @@ const CONTENT_RANGE = /^bytes \d+-\d+\/(\d+)$/;
 
 // The first PEEK_BYTES of `url`, or fewer: {outcome, status, size, location,
 // bytes}, outcome "answered", "redirect", "timeout" or "failed".
-async function peekAt(fetcher, url) {
+async function peekAt(fetcher, url, timeout) {
   let response;
   try {
     response = await fetcher(url, { headers: { Range: `bytes=0-${PEEK_BYTES - 1}` }, redirect: "manual",
-      signal: AbortSignal.timeout(PEEK_TIMEOUT_MS) });
+      signal: AbortSignal.timeout(timeout) });
   } catch (error) {
     return { outcome: error?.name === "TimeoutError" || error?.name === "AbortError" ? "timeout" : "failed" };
   }
@@ -664,8 +700,10 @@ async function peekAt(fetcher, url) {
 }
 
 // A link claimed for its one peek, before it is made: whether this call
-// claimed it, so two sent at once peek once.
-const PEEK_CLAIMED = `INSERT INTO link_peeks (cloud, link, day) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING
+// claimed it, so two sent at once peek once. A claim whose peek was never
+// kept (no server: the Worker stopped first) may be claimed again a later day.
+const PEEK_CLAIMED = `INSERT INTO link_peeks (cloud, link, day) VALUES (?1, ?2, ?3)
+  ON CONFLICT DO UPDATE SET day = excluded.day WHERE link_peeks.server IS NULL AND link_peeks.day < excluded.day
   RETURNING link`;
 const PEEK_KEPT = `UPDATE link_peeks SET outcome = ?3, status = ?4, size = ?5, server = ?6, location = ?7, kind = ?8,
   names = ?9, hex = ?10 WHERE cloud = ?1 AND link = ?2`;
@@ -675,14 +713,16 @@ const PEEK_KEPT = `UPDATE link_peeks SET outcome = ?3, status = ?4, size = ?5, s
 // named by address is never connected to, the first of them that answers
 // 2xx kept, or the last's answer. Each request counted as a first-sight
 // fetch (`sight`, as fetchNamed takes it); a link the day has no room for is
-// peeked at when next sent. What it did: {peeked, capped}.
-export async function peekNamed(env, readout, now, { sight, fetcher = fetch }) {
+// peeked at when next sent, as is one past the time after the answer
+// (`until`, as tryLink takes it). What it did: {peeked, capped}.
+export async function peekNamed(env, readout, now, { sight, fetcher = fetch, until = Infinity }) {
   const day = now.toISOString().slice(0, 10);
   const done = { peeked: 0, capped: false };
   const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, scheme, host, port FROM offer_links
     WHERE readout = ?1 AND review = 'pending' AND NOT EXISTS (SELECT 1 FROM link_peeks
-      WHERE link_peeks.cloud = offer_links.cloud AND link_peeks.link = ${SENT_AS("offer_links")})
-    ORDER BY sha`).bind(readout).all();
+      WHERE link_peeks.cloud = offer_links.cloud AND link_peeks.link = ${SENT_AS("offer_links")}
+        AND (link_peeks.server IS NOT NULL OR link_peeks.day >= ?2))
+    ORDER BY sha`).bind(readout, day).all();
   for (const link of links) {
     const cloud = Object.hasOwn(CLOUDS, link.cloud) ? CLOUDS[link.cloud] : null;
     if (!cloud || !linkParts(sentAs(link), cloud)) {
@@ -693,11 +733,12 @@ export async function peekNamed(env, readout, now, { sight, fetcher = fetch }) {
     }
     let seen = null;
     for (const url of fetchedFrom(link, cloud)) {
-      if (!(await counted(env, day, sight))) {
+      const timeout = timeFor(PEEK_TIMEOUT_MS, until);
+      if (timeout === null || !(await counted(env, day, sight))) {
         done.capped = true;
         break;
       }
-      seen = { ...(await peekAt(fetcher, url)), server: new URL(url).host };
+      seen = { ...(await peekAt(fetcher, url, timeout)), server: new URL(url).host };
       if (seen.outcome === "answered" && seen.status >= 200 && seen.status < 300) {
         break;
       }
@@ -728,14 +769,16 @@ const SAME_LINK = `sha = ?2 AND (cloud, path, scheme, host, port IS NULL, coales
 // apart from the readouts that sent it (rejected_links), so sent again after
 // they are deleted it is still taken as rejected. Whether one was.
 export async function rejectLink(db, readout, sha, now = new Date()) {
-  const { results } = await db.prepare(`UPDATE offer_links SET review = 'rejected'
-    WHERE review = 'pending' AND ${SAME_LINK} RETURNING readout`).bind(readout, sha).all();
-  if (results.length) {
-    await db.prepare(`INSERT OR REPLACE INTO rejected_links (sha, cloud, link, day)
-      SELECT sha, cloud, ${SENT_AS("offer_links")}, ?3 FROM offer_links WHERE readout = ?1 AND sha = ?2 AND host IS NOT NULL`)
-      .bind(readout, sha, now.toISOString().slice(0, 10)).run();
-  }
-  return results.length > 0;
+  // Both or neither: noted apart first, while it is still pending.
+  const [, rejected] = await db.batch([
+    db.prepare(`INSERT OR REPLACE INTO rejected_links (sha, cloud, link, day)
+      SELECT sha, cloud, ${SENT_AS("offer_links")}, ?3 FROM offer_links WHERE readout = ?1 AND sha = ?2 AND host IS NOT NULL
+        AND EXISTS (SELECT 1 FROM offer_links WHERE review = 'pending' AND ${SAME_LINK})`)
+      .bind(readout, sha, now.toISOString().slice(0, 10)),
+    db.prepare(`UPDATE offer_links SET review = 'rejected'
+      WHERE review = 'pending' AND ${SAME_LINK} RETURNING readout`).bind(readout, sha),
+  ]);
+  return rejected.results.length > 0;
 }
 
 // A link to review approved, wherever it was sent (or one approved tried

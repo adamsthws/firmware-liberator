@@ -16,6 +16,7 @@ import { CLOUD_ASNS } from "../api/networks.js";
 import { COUNTER_DAYS } from "../api/nightly.js";
 import { approveLink, everyLink, fetchedFrom, fetchesOn, FIRST_SIGHT_DAILY, firstSightsOn, linkFigures, linksNotKeptOn,
   linksToReview, OFFER_FETCHES_DAILY, PEEK_BYTES, PENDING_LINK_DAYS, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER,
+  PENDING_LINKS_RENTED,
   rejectLink, sentAs, unfetched } from "../api/offered.js";
 import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
@@ -559,10 +560,11 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       sent, never fetched until you approve one; approving fetches its file by it (a server named by address never:
       its path from each of eWeLink's servers by name), kept only if it is the SHA-256 given. Its first ${PEEK_BYTES}
       bytes were asked for once, when first sent. Approved ones whose file is not held are listed until it is.
-      ${number(PENDING_LINKS_MOST)} wait at most; one not settled is deleted ${PENDING_LINK_DAYS} days after it was
+      ${number(PENDING_LINKS_MOST)} wait at most, ${PENDING_LINKS_RENTED} of them sent only from networks that count as
+      none; one not settled is deleted ${PENDING_LINK_DAYS} days after it was
       sent, and comes back if sent again. Those sent from the most networks first, then the longest waiting.</p>`
       + (data.notKept ? `<p class="sub"><strong>${number(data.notKept)} not kept in the last ${COUNTER_DAYS} days: the
-      queue was full, or their sender had sent ${PENDING_LINKS_PER_SENDER} that day.</strong></p>` : "")
+      queue was full, or their sender had sent ${PENDING_LINKS_PER_SENDER} new ones that day.</strong></p>` : "")
       + table([["Device", (row) => String(row.key ?? "").split("|").slice(0, 3).join(" · ")],
         ["SHA-256", "sha", "text"], ["Networks", "networks", "number"],
         ["First seen", (row) => String(row.first ?? "").slice(0, 10)],
