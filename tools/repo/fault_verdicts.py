@@ -493,25 +493,36 @@ def verdict(row: dict) -> str:
     return row.get(VERDICT) or row.get(OLD_VERDICT) or "HARNESS-ERROR"
 
 
-def latest(results: Path) -> dict[str, dict]:
-    """Each scenario's newest row in a suite's results file (JSON lines), by
-    id, its verdict under VERDICT however old the row (verdict); none for a
+# The verdicts a batch takes as done, and does not run again: a pass, and a
+# packet to change that the step never sent (NO-TRAFFIC), which a run again
+# would find the same.
+DONE = frozenset({"PASS", "NO-TRAFFIC"})
+
+
+def rows(results: Path) -> list[dict]:
+    """A suite's results file's rows (JSON lines), in the order written, each
+    with its verdict under VERDICT however old the row (verdict); none for a
     file not there. A line that is not a whole row - one cut short by a full
-    disk before append_row took it back - is passed over, not every row after
-    it lost."""
-    found: dict[str, dict] = {}
+    disk before append_row took it back, or one being written - is passed
+    over, not every row after it lost."""
     try:
         lines = results.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return found
+        return []
+    found: list[dict] = []
     for line in lines:
         try:
             row = json.loads(line)
         except ValueError:
             continue
         if isinstance(row, dict) and isinstance(row.get("id"), str):
-            found[row["id"]] = {**row, VERDICT: verdict(row)}
+            found.append({**row, VERDICT: verdict(row)})
     return found
+
+
+def latest(results: Path) -> dict[str, dict]:
+    """Each scenario's newest row in a suite's results file, by id (rows)."""
+    return {row["id"]: row for row in rows(results)}
 
 
 # One row written at a time: a row taken back must not take another's with it.

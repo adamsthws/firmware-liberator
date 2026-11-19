@@ -22,7 +22,7 @@ does for the Espressif devices.
                                         (docs/updating-firmware.md)
     fault_suite.py batch [FILE] [--first-instance N]
                                         the scenarios in FILE (one id a line; every
-                                        scenario without), skipping those passed,
+                                        scenario without), skipping those done,
                                         and those its skip.txt names as it runs
     fault_suite.py report               the latest result of each
     fault_suite.py found                what each fault and length has found, in the
@@ -1727,9 +1727,10 @@ def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
 
 
 def all_passed(ids_file: str | None = None) -> bool:
-    """Whether every scenario of `ids_file` (else every one) has passed last."""
+    """Whether every scenario of `ids_file` (else every one) is done
+    (fault_verdicts.DONE) by its latest result."""
     wanted = scenario_times.read_ids(ids_file) if ids_file else [sc["id"] for sc in scenarios()]
-    passed = {i for i, entry in fault_verdicts.latest(RESULTS).items() if entry.get("verdict") == "PASS"}
+    passed = {i for i, entry in fault_verdicts.latest(RESULTS).items() if entry["verdict"] in fault_verdicts.DONE}
     return all(i in passed for i in wanted)
 
 
@@ -1741,7 +1742,7 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
     every = {sc["id"]: sc for sc in scenarios()}
     wanted = scenario_times.read_ids(ids_file) if ids_file else list(every)
     earlier = fault_verdicts.latest(RESULTS)   # those run here before: a re-run's pass rate is apart (emulator_stats)
-    passed = {i for i, entry in earlier.items() if entry.get("verdict") == "PASS"}
+    passed = {i for i, entry in earlier.items() if entry["verdict"] in fault_verdicts.DONE}
     todo: queue.Queue = queue.Queue()
     # The longest first, so the batch does not end on one started last (scenario_times).
     for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],

@@ -1021,7 +1021,8 @@ which must be refused (FAIL-NOT-REFUSED) and leave it be (FAIL-DISTURBED);
 the computer asleep for 10 minutes (`sleep`, its container paused and off the
 Wi-Fi), or off the Wi-Fi for 30 s or 2 minutes (`pcoff`); one packet in ten
 lost for a minute (`weak`), a packet changed with its checksum made good
-(`corrupt`, NO-TRAFFIC where none passed), and an outage twice running, as the
+(`corrupt`, NO-TRAFFIC where none passed, which a batch does not run again, as
+on the Espressif suite: `fault_verdicts.DONE`), and an outage twice running, as the
 device fetches on (`double-outage`). The signals go to the tool itself, not the
 recorder around it. And at B2, the eWeLink account signed in to again beside
 the run (`token-login`); at B4, the backup, the run's files held to 1 MB for a

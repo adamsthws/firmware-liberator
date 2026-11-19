@@ -333,6 +333,9 @@ class BatchResultTests(unittest.TestCase):
                 self.assertFalse(fault_suite.all_passed(str(ids)))
             with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"verdict": "PASS"}, "b": {"verdict": "PASS"}}):
                 self.assertTrue(fault_suite.all_passed(str(ids)))
+            # A packet to change that the step never sent: done, as on the Espressif suite.
+            with mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={"a": {"verdict": "PASS"}, "b": {"verdict": "NO-TRAFFIC"}}):
+                self.assertTrue(fault_suite.all_passed(str(ids)))
 
     def test_a_result_is_recorded_as_the_espressif_suites_and_older_ones_still_count(self):
         with tempfile.TemporaryDirectory() as temp:
