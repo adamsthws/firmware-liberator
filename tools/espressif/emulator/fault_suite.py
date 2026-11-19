@@ -8,7 +8,8 @@ device, every fault - on emulators side by side, on one machine or several
     fault_suite.py list quick             those of a routine run (QUICK_OUTAGES)
     fault_suite.py --device MAC batch [FILE]
                                           the scenarios in FILE (one id a line; every
-                                          scenario without), skipping those passed
+                                          scenario without), skipping those passed,
+                                          and those its skip.txt names as it runs
     fault_suite.py report                 the latest result of each
     fault_suite.py found                  what each fault and length has found, in the
                                           results here and kept (tools/repo/fault_yield.py)
@@ -3110,8 +3111,7 @@ def worker(n, todo, lock, cloud=False, room=None, crew=None):
             sc = todo.get_nowait()
         except queue.Empty:
             return
-        skip = OUT / "skip.txt"
-        if skip.exists() and sc["id"] in skip.read_text().split():
+        if scenario_times.skipped(OUT, sc["id"]):
             continue
         while memory_now()[0] < LOW_MEMORY_KB:
             time.sleep(10)
@@ -3156,12 +3156,6 @@ def cloud_of(sc):
     return "stub" if STUB_CLOUD else "real" if needs_cloud(sc) else "none"
 
 
-def read_ids(path) -> list[str]:
-    """The scenario ids in a file, one to a line - as `list` writes them, each
-    with whether it needs the cloud after it."""
-    return [line.split()[0] for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
 def batch(ids_file=None):
     """The scenarios in ids_file (every one without) not yet passed here: the
     cloud ones on AUTOFLASH_EMU_CLOUD_WORKERS emulators from instance 1, the rest on
@@ -3173,7 +3167,7 @@ def batch(ids_file=None):
     EARLIER = set(earlier)
     done = {i for i, row in earlier.items() if row["verdict"] in ("PASS", "NO-TRAFFIC")}
     cloud, anywhere = queue.Queue(), queue.Queue()
-    ids = read_ids(ids_file) if ids_file else list(known)
+    ids = scenario_times.read_ids(ids_file) if ids_file else list(known)
     stale = stale_starts(known[i] for i in ids if i not in done)
     if stale:
         raise SystemExit(f"Saved devices not on the firmware this checkout installs: {', '.join(stale)}. Run prep.")

@@ -1,5 +1,6 @@
 """How long each fault-suite scenario took when it last ran, so a batch can
-start the longest first.
+start the longest first; and what a batch is given to run (read_ids) and told
+to leave out as it runs (skipped), alike in every suite.
 
 A batch ends when its last scenario does: one of half an hour started near the
 end keeps a machine going alone while the others are done. Started first, the
@@ -120,13 +121,35 @@ def shares(scenarios: Iterable[dict[str, Any]], took: dict[str, float], workers:
     return [(share, load[n] / workers[n]) for n, share in enumerate(found)]
 
 
+def read_ids(path: str | Path) -> list[str]:
+    """The scenario ids in a file, one to a line: its first word, as `list`
+    writes it (an Espressif fault scenario's with whether it needs the cloud
+    after it) and `write_shares` does."""
+    return [line.split()[0] for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+# A file in a batch's results folder naming scenarios, one to a line, that the
+# batch leaves out from then on, as it runs: one found stuck, say, or moved to
+# another machine.
+SKIP = "skip.txt"
+
+
+def skipped(folder: Path, scenario_id: str) -> bool:
+    """Whether the batch writing to `folder` is told to leave `scenario_id`
+    out (SKIP): read as each scenario is about to start."""
+    try:
+        return scenario_id in read_ids(Path(folder) / SKIP)
+    except OSError:
+        return False
+
+
 def write_shares(ids_file: str, workers: list[int], every: Iterable[dict[str, Any]],
                  took: dict[str, float]) -> list[str]:
     """`ids_file`'s scenarios (its first word on each line, as `list` writes
     it) shared out (shares), each share written beside it as `ids_file`.1,
     .2, ...; what to say of each."""
     known = {sc["id"]: sc for sc in every}
-    ids = [line.split()[0] for line in Path(ids_file).read_text(encoding="utf-8").splitlines() if line.strip()]
+    ids = read_ids(ids_file)
     unknown = [i for i in ids if i not in known]
     if unknown:
         raise ValueError(f"not scenarios of this suite: {', '.join(unknown[:5])}")

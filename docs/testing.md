@@ -306,6 +306,9 @@ Both suites run a batch the same way:
   long one started last, by how long each last took (from the suite's
   results in `captures/emulation/*/`, and those kept from other machines);
   one never run counts as a typical one plus its fault's length.
+- A running batch leaves out each scenario named in `skip.txt` in its
+  suite's folder (`scenario_times.SKIP`), one a line, from when the file
+  names it: one found stuck, say, or moved to another machine.
 - `share` splits a list between machines by the same times, so that they end
   together. After the list it takes each machine's number of emulators, and
   `--times-from` for each other machine's suite folders copied here (each

@@ -480,6 +480,12 @@ class BatchResultTests(unittest.TestCase):
                                                              stop_reason=mock.Mock(return_value="disk full")))
         self.assertEqual((ran, code), ([], "batch stopped before its end: disk full"))
 
+    def test_a_scenario_its_skip_file_names_is_left_out_as_the_batch_runs(self):
+        with tempfile.TemporaryDirectory() as out:
+            Path(out, "skip.txt").write_text("a\n", encoding="utf-8")
+            ran, _, _ = self.batch_of([{"id": i, "arg": 1} for i in "ab"], workers="1", OUT=Path(out))
+        self.assertEqual(ran, ["b"])
+
     def test_a_scenario_that_raises_is_recorded_with_where(self):
         from unittest import mock
 

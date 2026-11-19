@@ -22,7 +22,8 @@ does for the Espressif devices.
                                         (docs/updating-firmware.md)
     fault_suite.py batch [FILE] [--first-instance N]
                                         the scenarios in FILE (one id a line; every
-                                        scenario without), skipping those passed
+                                        scenario without), skipping those passed,
+                                        and those its skip.txt names as it runs
     fault_suite.py report               the latest result of each
     fault_suite.py found                what each fault and length has found, in the
                                         results here and kept (tools/repo/fault_yield.py)
@@ -1708,7 +1709,7 @@ def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
 
 def all_passed(ids_file: str | None = None) -> bool:
     """Whether every scenario of `ids_file` (else every one) has passed last."""
-    wanted = Path(ids_file).read_text(encoding="utf-8").split() if ids_file else [sc["id"] for sc in scenarios()]
+    wanted = scenario_times.read_ids(ids_file) if ids_file else [sc["id"] for sc in scenarios()]
     passed = {i for i, entry in fault_verdicts.latest(RESULTS).items() if entry.get("verdict") == "PASS"}
     return all(i in passed for i in wanted)
 
@@ -1719,7 +1720,7 @@ def record(sc: dict, outcome: dict) -> None:
 
 def batch(ids_file: str | None = None, first: int = 1) -> None:
     every = {sc["id"]: sc for sc in scenarios()}
-    wanted = (Path(ids_file).read_text(encoding="utf-8").split() if ids_file else list(every))
+    wanted = scenario_times.read_ids(ids_file) if ids_file else list(every)
     earlier = fault_verdicts.latest(RESULTS)   # those run here before: a re-run's pass rate is apart (emulator_stats)
     passed = {i for i, entry in earlier.items() if entry.get("verdict") == "PASS"}
     todo: queue.Queue = queue.Queue()
@@ -1740,6 +1741,8 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
                     sc = todo.get_nowait()
                 except queue.Empty:
                     return
+                if scenario_times.skipped(OUT, sc["id"]):
+                    continue
                 if not disk_space.wait_for_room(OUT, lambda line: print(line, flush=True), workers.stopping):
                     if workers.going():
                         workers.stop(disk_space.stop_reason(OUT))

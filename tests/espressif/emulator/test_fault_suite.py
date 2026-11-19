@@ -379,6 +379,30 @@ class SavedDeviceTests(unittest.TestCase):
             self.assertEqual(took.call_args.args, (emulation, emulation / "kept" / "second", Path("elsewhere")))
             self.assertEqual([Path(f"{ids}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\n"])
 
+    def test_a_scenario_its_skip_file_names_is_left_out_as_the_batch_runs(self):
+        import queue
+        import threading
+        todo = queue.Queue()
+        for i in "ab":
+            todo.put({"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60})
+        ran = []
+
+        class Started:
+            def __init__(self, n, sc, log):
+                ran.append(sc["id"])
+
+            def go(self):
+                return {"verdict": "PASS"}
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(fs, "OUT", Path(out)), mock.patch.object(fs, "LOGS", Path(out)), \
+                mock.patch.object(fs, "memory_now", return_value=(fs.LOW_MEMORY_KB * 2, None)), \
+                mock.patch.object(fs.cpu_load, "wait_for_room"), \
+                mock.patch.object(fs, "Scenario", Started), mock.patch.object(fs, "TUNER"), \
+                mock.patch("builtins.print"):
+            Path(out, "skip.txt").write_text("a\n", encoding="utf-8")
+            fs.worker(1, todo, threading.Lock())
+        self.assertEqual(ran, ["b"])
+
     def test_a_scenario_waits_for_room_before_it_starts(self):
         import queue
         import threading
@@ -690,15 +714,6 @@ class ScaledBatchTests(unittest.TestCase):
 
 
 class ScenarioTests(unittest.TestCase):
-    def test_batch_takes_the_file_list_writes(self):
-        # `list > all.txt` then `batch all.txt`, as docs/testing.md runs them:
-        # each line an id and whether it needs the cloud.
-        with tempfile.TemporaryDirectory() as tmp:
-            listed = Path(tmp, "all.txt")
-            listed.write_text("sonoff>tasmota:C3:outage-5 cloud\ntasmota>esphome:L1:outage-5 any\n\n",
-                              encoding="utf-8")
-            self.assertEqual(fs.read_ids(listed), ["sonoff>tasmota:C3:outage-5", "tasmota>esphome:L1:outage-5"])
-
     def test_every_scenario_has_its_own_id(self):
         ids = [sc["id"] for sc in fs.scenarios()]
         self.assertEqual(len(ids), len(set(ids)))

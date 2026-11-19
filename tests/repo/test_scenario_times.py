@@ -118,5 +118,25 @@ class ShareTests(unittest.TestCase):
             self.assertEqual(scenario_times.times(Path(one), Path(two)), {"a": 100.0, "b": 200.0})
 
 
+class BatchListTests(unittest.TestCase):
+    def test_a_list_is_read_by_each_lines_first_word(self):
+        # `list > all.txt` then `batch all.txt`, as docs/testing.md runs them:
+        # an Espressif line says whether it needs the cloud after its id.
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp, "all.txt")
+            listed.write_text("sonoff>tasmota:C3:outage-5 cloud\ntasmota>esphome:L1:outage-5 any\n\n",
+                              encoding="utf-8")
+            self.assertEqual(scenario_times.read_ids(listed),
+                             ["sonoff>tasmota:C3:outage-5", "tasmota>esphome:L1:outage-5"])
+
+    def test_a_scenario_named_in_the_skip_file_is_left_out_as_the_batch_runs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertFalse(scenario_times.skipped(Path(folder), "a"))
+            Path(folder, scenario_times.SKIP).write_text("a\nb any\n", encoding="utf-8")
+            self.assertTrue(scenario_times.skipped(Path(folder), "a"))
+            self.assertTrue(scenario_times.skipped(Path(folder), "b"))
+            self.assertFalse(scenario_times.skipped(Path(folder), "c"))
+
+
 if __name__ == "__main__":
     unittest.main()
