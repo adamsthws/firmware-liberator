@@ -244,7 +244,15 @@ backup.
   would otherwise pass. Sampled with `docker stats` every 2 seconds through
   whole conversions, an S60's emulator, its computer included, took about 0.6
   of a CPU and about 115 MB, peaking near 150 MB; a classic ESP32's runs two
-  cores and peaked at 250 MB.
+  cores and peaked at 250 MB. An S61's idles while its firmware waits, its
+  clock held to real time, yet more than one a core still loses. The same
+  16 Beken fault scenarios on 8 cores: at 8 at once all passed, in 1375 s; at
+  12, two batches of 13 and 15 passed, in about 1580 s; at 16, 14 passed, in
+  1702 s. Each scenario took longer, so the batch ended later, and the faults
+  that hang on timing - a cut between quick boots for safe mode, ESPHome's
+  fallback network - missed and came back NOT-FIRED. Booting, flashing and
+  serving each emulator still takes most of a core, and each took about
+  330 MB. The S60's was not tried above one a core: its QEMU never idles.
 - **A busy computer's emulated device can answer ARP late**: one sweep of
   the network then misses it. A readout looks for the device by its hardware
   address again until `readout.LOOK_FOR` is up, before asking for its
