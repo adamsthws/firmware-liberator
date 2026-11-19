@@ -347,7 +347,9 @@ Both suites run a batch the same way:
 - Before a machine that ran a batch is wiped, copy its results back to
   `captures/emulation/kept/NAME/` (`scenario_times.KEPT`), one folder a
   machine, laid out as its `captures/emulation/` is. `batch` and `share` take
-  their times from it too, and `found` what it found:
+  their times from it too, and `found` what it found. A tree
+  `tools/repo/remote_tree.py` made there is fetched with more than its
+  results ([Running it](#running-it-espressif)); a machine of your own, so:
 
   ```sh
   mkdir -p captures/emulation/kept
@@ -790,6 +792,59 @@ run on any machine with Docker, given the repository, the saved devices
 (`captures/emulation/saved/`), its part of the list (`share`, above) and
 `AUTOFLASH_EMU_NO_CLOUD=1`. Only one machine may let its devices reach
 eWeLink.
+
+`tools/repo/remote_tree.py` does this for you over ssh, in a tree of its
+own on the other machine (in `~/autoflash-trees/`), so two of you testing
+there never share a checkout. HOST is as ssh takes it, from your ssh config
+or `--ssh-config FILE`:
+
+```sh
+tools/repo/remote_tree.py HOST send try                  # this branch, only what it lacks sent
+tools/repo/remote_tree.py HOST devices try --from SOMEWHERE/captures/devices 12:34:56:ab:cd:ef
+tools/repo/remote_tree.py HOST prep try espressif --device 12:34:56:ab:cd:ef   # once
+tools/repo/remote_tree.py HOST run try --family espressif --emulators 4 -- \
+    tools/espressif/emulator/fault_suite.py --stub-cloud --first-instance {first} batch all.txt.2
+tools/repo/remote_tree.py HOST fetch try                 # to captures/emulation/kept/HOST-try/
+tools/repo/remote_tree.py HOST remove try                # fetched first, then deleted there
+```
+
+`send` also makes the tree's `.venv` with `tools/repo/setup-dev`, as you make
+your own ([Setting up](../CONTRIBUTING.md#setting-up)), for the Espressif
+emulator and the linters; it is made again only when `setup-dev` or
+`requirements/` changed, and pip's cache there keeps the packages between
+trees. The other machine's `python3` needs its venv module (`python3-venv`
+on Debian and Ubuntu); `send` says so where it is missing.
+
+`devices` links each device's backup from where it is kept there rather than
+copying it, so nothing in the tree is ever the only copy of yours. `run`
+gives `{first}` the first of `--emulators` instances no emulator or suite
+there holds (`emulator_instances.py`), runs the command apart from the ssh
+connection, and waits for it unless `--detach`; its output is kept beside
+the tree.
+
+`fetch` brings back what the runs left worth keeping, laid out as the
+tree's `captures/emulation/`, where `batch`, `share` and `found` read a
+machine's copy: every suite's results and logs, the emulator check's and the
+attended suite's, and of each emulator's state its own logs, what the API
+beside it kept and the tool's runs on its computer (`run.log`,
+`events.jsonl`, `outcomes.jsonl`), with the commands' output in `runs/`.
+What the next prep or check makes again stays behind: backups, firmware
+images, the devices' flash, the computers' copies of the checkout, saved
+starts and public dumps (`remote_tree.FETCHED` lists it). It is sent
+compressed and kept as it came, in the main checkout's `captures/` even when
+you run it from a linked worktree, whose own `captures/` goes with it.
+
+`remove` fetches first, and deletes nothing if that fails; `--no-fetch` skips
+it for a tree with nothing worth keeping. It then deletes the tree, its
+commands' output and its ref in the trees' repository (whose commits `git gc`
+then prunes when enough has gathered), and moves what was fetched to
+`kept/HOST-try-<when>/`, so a later tree of the same name starts a folder of
+its own. A backup file in the tree that has no other copy is left there and
+listed, unless it is an emulated device's: one in the emulators' own folders
+(`captures/emulation/`: what the tool backed up from an emulated device, and
+the saved starts), or a test device the emulator's tooling made
+(`public_dump.py`, `copy_device.py`), which its `device.json` says
+(`test_copy_of`). Anything it cannot delete it names, and fails.
 
 #### Reading its results (Espressif)
 
