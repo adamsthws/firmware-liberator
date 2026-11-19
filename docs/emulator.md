@@ -231,7 +231,8 @@ backup.
   attended suite alike. One asked to start on an instance already running
   refuses, naming a first instance that is free
   (`tools/repo/emulator_instances.py`), so suites sharing a computer keep
-  clear of each other's.
+  clear of each other's. So does one whose last instance would be past what
+  the emulator takes (`emulator_instances.LAST`).
 - **Run no more at once than your computer has cores**, or runs fail that
   would otherwise pass. Sampled with `docker stats` every 2 seconds through
   whole conversions, an S60's emulator, its computer included, took about 0.6

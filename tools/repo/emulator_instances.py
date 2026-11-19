@@ -19,6 +19,11 @@ NAMES = {
     "beken": re.compile(r"^autoflash-beken-emu-(?:computer-)?(\d+)(?:-api)?$"),
 }
 
+# The highest instance emu.sh, beken-emu.sh and unattended-test.sh take
+# (--instance 1-99): a suite given more has every run refused with usage,
+# each scenario then NOT-FIRED in seconds.
+LAST = 99
+
 
 # What gave a suite its first instance before --first-instance: set, it would
 # now be passed over, and the batch run on instances from 1, another's perhaps.
@@ -36,26 +41,34 @@ def running(family: str) -> set[int]:
     return {int(found[1]) for found in map(NAMES[family].match, names) if found}
 
 
-def first_free(taken: set[int], count: int) -> int:
-    """The first number from which `count` instances in a row are free."""
+def first_free(taken: set[int], count: int) -> int | None:
+    """The first number from which `count` instances in a row are free, or
+    None where no such run fits below LAST."""
     first = 1
     while any(n in taken for n in range(first, first + count)):
         first += 1
-    return first
+    return first if first + count - 1 <= LAST else None
 
 
 def refuse_taken(family: str, numbers: Iterable[int]) -> None:
     """SystemExit, naming a free first instance, where any of `numbers` is
-    already running - or where an OLD_SETTINGS variable is set, which no
+    already running or above LAST - or where an OLD_SETTINGS variable is set, which no
     longer chooses them."""
     old = [name for name in OLD_SETTINGS if name in os.environ]
     if old:
         raise SystemExit(f"{', '.join(old)} is no longer read: unset it and give --first-instance "
                          f"{os.environ[old[0]]} instead")
     wanted = sorted(set(numbers))
+    outside = [n for n in wanted if not 1 <= n <= LAST]
+    if outside:
+        raise SystemExit(f"{family} emulator instance{'s' if len(outside) > 1 else ''} "
+                         f"{', '.join(map(str, outside))} out of range: the emulator takes 1-{LAST}, "
+                         f"so give a --first-instance at most {LAST - len(wanted) + 1} for {len(wanted)}")
     taken = running(family)
     clash = [n for n in wanted if n in taken]
     if clash:
+        free = first_free(taken, len(wanted))
+        instead = f"give --first-instance {free} to keep clear of it, or stop it" if free \
+            else "stop it, or run fewer at once"
         raise SystemExit(f"{family} emulator instance{'s' if len(clash) > 1 else ''} "
-                         f"{', '.join(map(str, clash))} already running here: give --first-instance "
-                         f"{first_free(taken, len(wanted))} to keep clear of it, or stop it")
+                         f"{', '.join(map(str, clash))} already running here: {instead}")

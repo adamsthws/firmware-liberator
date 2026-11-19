@@ -2,6 +2,7 @@
 
 import subprocess
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tools.repo import emulator_instances
@@ -51,6 +52,36 @@ class RefuseTests(unittest.TestCase):
     def test_free_numbers_pass(self):
         with docker_ps("autoflash-beken-emu-1", "autoflash-emu-2"):
             emulator_instances.refuse_taken("beken", [2, 3])
+
+    def test_numbers_the_emulator_does_not_take_are_refused_before_docker_is_asked(self):
+        # --first-instance 101: unattended-test.sh refused every run with its usage.
+        with mock.patch.object(emulator_instances, "running") as running:
+            with self.assertRaises(SystemExit) as refused:
+                emulator_instances.refuse_taken("espressif", range(101, 105))
+        running.assert_not_called()
+        self.assertIn("101, 102, 103, 104 out of range", str(refused.exception))
+        self.assertIn("--first-instance at most 96 for 4", str(refused.exception))
+        with docker_ps(), self.assertRaises(SystemExit):
+            emulator_instances.refuse_taken("beken", [0])
+        with docker_ps():
+            emulator_instances.refuse_taken("beken", range(96, 100))
+
+    def test_no_free_number_is_suggested_past_the_last(self):
+        taken = set(range(1, emulator_instances.LAST - 1))
+        self.assertIsNone(emulator_instances.first_free(taken, 3))
+        with docker_ps(*(f"autoflash-emu-{n}" for n in taken)):
+            with self.assertRaises(SystemExit) as refused:
+                emulator_instances.refuse_taken("espressif", [1, 2, 3])
+        self.assertIn("stop it, or run fewer at once", str(refused.exception))
+
+    def test_the_last_is_what_the_emulator_scripts_take(self):
+        root = Path(__file__).resolve().parents[2]
+        for script in ("tools/espressif/emulator/emu.sh", "tools/beken/emulator/beken-emu.sh",
+                       "tools/espressif/emulator/unattended-test.sh"):
+            text = (root / script).read_text(encoding="utf-8")
+            self.assertIn("[1-9][0-9]", text, script)
+            self.assertNotIn("[1-9][0-9][0-9]", text, script)
+        self.assertEqual(emulator_instances.LAST, 99)
 
     def test_the_first_free_run_of_numbers_is_found(self):
         self.assertEqual(emulator_instances.first_free(set(), 3), 1)
