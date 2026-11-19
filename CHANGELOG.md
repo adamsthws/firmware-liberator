@@ -118,6 +118,10 @@ check.
 - When the installer is not fully delivered, what the sender reported shows
   each line once. Before, a device timing out again and again on one part of
   the file showed the same "Request timed out" line two or three times.
+- A device that does not answer when asked which release it runs, at the end
+  of a run, has its Release line say it "could not be checked", and the checks
+  fail, as when the relay could not be checked. Before, it said the device ran
+  a release not this project's.
 
 ## 3.0.0
 

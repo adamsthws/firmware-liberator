@@ -481,6 +481,13 @@ class EndOfRunCheckTests(unittest.TestCase):
         result = self.release(self.ctx(), [None] * report.RELEASE_TRIES)
         self.assertEqual(result, {"Release": "not this project's 16.0.0"})
 
+    def test_a_device_that_never_answers_could_not_be_checked_and_fails(self):
+        # Not taken for another's build: an ESPHome whose API stayed silent
+        # once said "not this project's" of the very release it had installed.
+        result = self.release(self.ctx(), [report.update.NoAnswer("silent")] * report.RELEASE_TRIES)
+        self.assertEqual(result, {"Release": report.UNCHECKED_LINE})
+        self.assertEqual(report.checks_passed({"Relay": "switches", **result}), "fail")
+
     def test_an_esphome_still_starting_is_asked_again(self):
         self.assertEqual(self.release(self.ctx(), [OSError("refused"), "16.0.0"]), {"Release": "16.0.0, as installed"})
 

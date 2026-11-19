@@ -1,11 +1,12 @@
-"""Updates (tools/autoflash/routes/update.py): replacing a person's own build."""
+"""Updates (tools/autoflash/routes/update.py): replacing a person's own build,
+and asking the device its release."""
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import esphome, kinds, prompts
+from tools.autoflash import esphome, kinds, openbeken, prompts
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes import update
 from tools.autoflash.state import RunState
@@ -74,6 +75,41 @@ class ReplaceOnlyEsphomeTests(unittest.TestCase):
             # Nor an ESPHome with no build of this project's published for its kind.
             with self.assertRaisesRegex(Abort, "is for this project's ESPHome"):
                 update.replace_own_build(ctx, "esphome", None)
+
+
+class ReleaseAskedTests(unittest.TestCase):
+    """Each RELEASE asker tells a device that did not answer (NoAnswer) from one
+    that answered as a build not this project's (None); what asks only whether
+    an update is due takes either as none."""
+
+    def ctx(self, firmware, version=""):
+        state = SimpleNamespace(input={"device_ip": "192.0.2.50", "device_kind": "sonoff-s60",
+                                       "firmware": firmware}.get)
+        return SimpleNamespace(state=state, esphome_key=None, esphome_firmware=None,
+                               device=SimpleNamespace(firmware_version=lambda: version))
+
+    def test_a_silent_device_is_no_answer_on_every_firmware(self):
+        with mock.patch.object(esphome, "api_device_info", return_value=None):
+            self.assertRaises(update.NoAnswer, update.esphome_release, self.ctx("esphome"))
+        with mock.patch.object(openbeken, "info", return_value=None):
+            self.assertRaises(update.NoAnswer, update.openbeken_release, self.ctx("openbeken"))
+        self.assertRaises(update.NoAnswer, update.tasmota_release, self.ctx("tasmota"))
+
+    def test_another_projects_build_is_none(self):
+        info = {"project_name": "someone.else", "built": "x", "encrypted": False, "project_version": "1.0"}
+        with mock.patch.object(esphome, "api_device_info", return_value=info):
+            self.assertIsNone(update.esphome_release(self.ctx("esphome")))
+        with mock.patch.object(openbeken, "info", return_value={"chipset": "BK7238", "build": "x version 1.0"}), \
+                mock.patch.object(openbeken, "kind", return_value=None):
+            self.assertIsNone(update.openbeken_release(self.ctx("openbeken")))
+        self.assertIsNone(update.tasmota_release(self.ctx("tasmota", "16.0.0(someone-own)")))
+
+    def test_a_silent_device_is_offered_no_update_and_shows_no_release(self):
+        ctx = self.ctx("tasmota")
+        self.assertIsNone(update.earlier_release(ctx, "tasmota", "16.0.0"))
+        self.assertFalse(update.outdated(ctx, "tasmota", "16.0.0"))
+        with mock.patch.object(update.runs, "run_firmware", return_value="tasmota"):
+            self.assertIsNone(update.release(ctx))
 
 
 if __name__ == "__main__":

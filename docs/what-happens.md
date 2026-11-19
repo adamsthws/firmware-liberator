@@ -310,6 +310,8 @@ seconds, and the device ends as it started.
 
 On Tasmota, ESPHome or OpenBeken the tool then asks the device which release it
 runs, and checks it is the one this version installs, as this project built it.
+A device that does not answer, after a few tries, fails the check: its release
+could not be checked, as a relay that does not answer could not be.
 On a device with sensors, such as a TH Elite with a probe plugged in, it reads
 them and checks each reading is one the sensor can give. A device with no
 probe plugged in fails nothing. The report's Checks line says whether every

@@ -274,10 +274,12 @@ SONOFF_IDENTITY = {"backup": "backup", "kept": "device", "account": "eWeLink acc
 RELAY_SWITCHES = "switches"
 METER_CONFIRMS = "switches (meter confirms)"
 SWITCHES_THROUGH_EWELINK = "switches (through eWeLink)"
-DID_NOT_SWITCH, RELAY_UNCHECKED, RELAY_NOT_CHECKED, MOTOR_MODE = (
-    "did not switch", "could not be checked", "not checked", "motor mode")
+# What a check says where the device did not answer it - the relay's, the
+# meter's or the release's: a failure, as nothing shows the device works.
+UNCHECKED_LINE = "could not be checked"
+DID_NOT_SWITCH, RELAY_NOT_CHECKED, MOTOR_MODE = "did not switch", "not checked", "motor mode"
 RELAY_LINES = {RELAY_SWITCHES: True, METER_CONFIRMS: True, "switches (meter unchanged)": True,
-               SWITCHES_THROUGH_EWELINK: True, DID_NOT_SWITCH: False, RELAY_UNCHECKED: False,
+               SWITCHES_THROUGH_EWELINK: True, DID_NOT_SWITCH: False, UNCHECKED_LINE: False,
                RELAY_NOT_CHECKED: None, MOTOR_MODE: None}
 # How the release check's line ends where the device runs the release installed.
 AS_INSTALLED = ", as installed"
@@ -571,7 +573,7 @@ def for_device(result: dict[str, str], metered: bool) -> dict[str, str]:
 
 
 # What a check the device did not answer found.
-UNCHECKED = {"Relay": RELAY_UNCHECKED, "Power meter": "could not be checked"}
+UNCHECKED = {"Relay": UNCHECKED_LINE, "Power meter": UNCHECKED_LINE}
 
 
 def said(result: dict[str, str], metered: bool = True) -> dict[str, str]:
@@ -633,7 +635,7 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
                    "could not be switched there. Check the eWeLink app.")
         checked = None
     if checked is None:
-        return said({"Relay": RELAY_UNCHECKED, "Power meter": "not checked"}, metered)
+        return said({"Relay": UNCHECKED_LINE, "Power meter": "not checked"}, metered)
     if checked.on is None and checked.off is None:
         relay = SWITCHES_THROUGH_EWELINK if checked.switched and checked.restored else DID_NOT_SWITCH
         return said({"Relay": relay, "Power meter": "not checked"}, metered)
@@ -651,23 +653,28 @@ def check_release(ctx: Context) -> dict[str, str]:
     """The Release line: whether the device runs the release of its firmware
     this version installs, as this project built it (update.RELEASE says only
     of a build it published). Nothing for Sonoff's firmware, whose release is
-    eWeLink's to choose, or an ESPHome the person gave (--esphome)."""
+    eWeLink's to choose, or an ESPHome the person gave (--esphome).  A device
+    that answers none of the asks could not be checked: a failure, as the
+    relay's is, not taken for another's build."""
     firmware = runs.run_firmware(ctx.state)
     if firmware not in update.RELEASE or (firmware == "esphome" and ctx.esphome_firmware):
         return {}
     published = routes.family_of(ctx.state).published_version(kinds.of_run(ctx.state), firmware)
     if not published:
         return {}
-    running = None
+    running, answered = None, False
     for attempt in range(RELEASE_TRIES):
         if attempt:
             time.sleep(RELEASE_PAUSE)
         try:
-            running = update.RELEASE[firmware](ctx)
+            running = update.RELEASE[firmware](ctx)   # update.NoAnswer is an OSError
         except (DeviceError, OSError, ValueError):
-            running = None
+            continue
+        answered = True
         if running is not None:
             break
+    if not answered:
+        return {"Release": UNCHECKED_LINE}
     if running == published:
         return {"Release": f"{published}{AS_INSTALLED}"}
     return {"Release": f"{running}, not {published}" if running else f"not this project's {published}"}

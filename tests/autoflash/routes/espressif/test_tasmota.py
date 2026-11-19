@@ -99,9 +99,12 @@ class TasmotaUpdateTests(RouteTestCase):
     def test_its_release_is_read_from_an_official_builds_version_alone(self):
         for version, release in (("15.6.0(release-tasmota32)", "15.6.0"), ("16.0.0 (release-tasmota32)", "16.0.0"),
                                  ("15.6.0.1(f5b34a2-bluetooth)", None), ("16.0.0(release-safeboot)", None),
-                                 ("14.0.0(tasmota32c3-mine)", None), ("", None)):
+                                 ("14.0.0(tasmota32c3-mine)", None)):
             ctx = SimpleNamespace(device=SimpleNamespace(firmware_version=lambda version=version: version))
             self.assertEqual(update.tasmota_release(ctx), release, version)
+        # No version at all is a device that did not answer, not another's build.
+        with self.assertRaises(update.NoAnswer):
+            update.tasmota_release(SimpleNamespace(device=SimpleNamespace(firmware_version=lambda: "")))
 
     def test_it_waits_for_the_safeboot_and_gives_up_with_nothing_changed(self):
         clock = [0.0]

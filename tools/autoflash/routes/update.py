@@ -57,17 +57,24 @@ def published_builds(kind: kinds.Kind) -> set[str]:
     return {pin["built"], *pin.get("earlier_builds", ())}
 
 
+class NoAnswer(OSError):
+    """A RELEASE asker's device did not answer at all: not the same as one
+    that answered as another's build (None), which is no release of ours."""
+
+
 def esphome_release(ctx: Context) -> str | None:
     """The release of this tool's ESPHome for the run's kind the device runs
     (esphome.api_device_info), or None: another project's, an encrypted one, or
-    a build this project did not publish."""
+    a build this project did not publish.  NoAnswer where its API is silent."""
     host = ctx.state.input("device_ip")
     try:
         info = esphome.api_device_info(host, key=ctx.esphome_key) if host else None
     except esphome.ApiLocked:
         return None
+    if not info:
+        raise NoAnswer("its ESPHome API did not answer")
     kind = kinds.of_run(ctx.state)
-    if not info or info["project_name"] not in kind.esphome_projects:
+    if info["project_name"] not in kind.esphome_projects:
         return None
     if info["built"] == ctx.state.input("replaced_build"):
         return OWN_BUILD
@@ -79,23 +86,30 @@ def esphome_release(ctx: Context) -> str | None:
 def openbeken_release(ctx: Context) -> str | None:
     """The release of this tool's OpenBeken the device runs: the version its
     build string gives (each is built at its release's), where its driver
-    says it is on the run's kind of device - or None."""
+    says it is on the run's kind of device - or None.  NoAnswer where
+    nothing answers as OpenBeken."""
     host = ctx.state.input("device_ip")
     found = openbeken.info(host) if host else None
-    if not found or openbeken.kind(host, found) is not kinds.of_run(ctx.state):
+    if not found:
+        raise NoAnswer("its OpenBeken did not answer")
+    if openbeken.kind(host, found) is not kinds.of_run(ctx.state):
         return None
     return openbeken.version(found)
 
 
 def tasmota_release(ctx: Context) -> str | None:
     """The release of official Tasmota the device runs, as its version says
-    (16.0.0(release-tasmota32)) - or None: anyone's own build, its
-    safeboot, or nothing answering."""
-    found = re.fullmatch(r"(\d+(?:\.\d+)+)\s*\(release-tasmota32\)", ctx.device.firmware_version())
+    (16.0.0(release-tasmota32)) - or None: anyone's own build, or its
+    safeboot.  NoAnswer where nothing gives a version."""
+    version = ctx.device.firmware_version()
+    if not version:
+        raise NoAnswer("Tasmota did not answer")
+    found = re.fullmatch(r"(\d+(?:\.\d+)+)\s*\(release-tasmota32\)", version)
     return found.group(1) if found else None
 
 
-# How each firmware this tool installs says which release of it the device runs.
+# How each firmware this tool installs says which release of it the device runs:
+# None for a build not this project's, NoAnswer for a device that is silent.
 RELEASE: dict[str, Callable[["Context"], str | None]] = {"esphome": esphome_release,
                                                           "openbeken": openbeken_release,
                                                           "tasmota": tasmota_release}
@@ -103,10 +117,13 @@ RELEASE: dict[str, Callable[["Context"], str | None]] = {"esphome": esphome_rele
 
 def earlier_release(ctx: Context, firmware: str, published: str | None) -> str | None:
     """The release the device runs, where that is this tool's `firmware` for its
-    kind, older than the `published` one; else None."""
+    kind, older than the `published` one; else None, a silent device too."""
     if firmware not in RELEASE or not published or (firmware == "esphome" and ctx.esphome_firmware):
         return None
-    release = RELEASE[firmware](ctx)
+    try:
+        release = RELEASE[firmware](ctx)
+    except NoAnswer:
+        return None
     return release if release is not None and older(release, published) else None
 
 
@@ -183,8 +200,12 @@ def versions(ctx: Context) -> tuple[str, str]:
 
 
 def release(ctx: Context) -> str | None:
-    """The release of the run's firmware the device says it runs now."""
-    return RELEASE[runs.run_firmware(ctx.state)](ctx)
+    """The release of the run's firmware the device says it runs now: None
+    where it says none of ours, or nothing."""
+    try:
+        return RELEASE[runs.run_firmware(ctx.state)](ctx)
+    except NoAnswer:
+        return None
 
 
 def evidence_updated(ctx: Context) -> tuple[bool | None, str]:
