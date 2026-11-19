@@ -1257,9 +1257,10 @@ CHOOSE = "Which device should be read out"
 
 def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The device to read out, or None for every device in the account
-    (run_all), offered first where there are two or more: those the tool
-    converts too, as one may run a firmware version the website has no
-    readout of - new firmware is what a conversion meets unready."""
+    (run_all), the option offered first where there are two or more. Every
+    device takes in those the tool converts too, as one may run a firmware
+    version the website has no readout of - new firmware is what a
+    conversion meets unready. The rest are listed as the account lists them."""
     if len(devices) == 1:
         return devices[0]
     every = [f"Every device in the account ({len(devices)})"]
