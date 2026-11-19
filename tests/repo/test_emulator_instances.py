@@ -1,11 +1,37 @@
 """Which emulator instances already run here (tools/repo/emulator_instances.py)."""
 
+import fcntl
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from tools.repo import emulator_instances
+
+
+def own_locks(test):
+    """Claims made in a folder of the test's own, none held yet: never the
+    computer's."""
+    folder = tempfile.TemporaryDirectory()
+    test.addCleanup(folder.cleanup)
+    for patcher in (mock.patch.dict(emulator_instances.os.environ, {"AUTOFLASH_EMU_NO_CLAIMS": "0"}),
+                    mock.patch.object(emulator_instances, "LOCKS", Path(folder.name)),
+                    mock.patch.object(emulator_instances, "HELD", {})):
+        patcher.start()
+        test.addCleanup(patcher.stop)
+    test.addCleanup(lambda: [handle.close() for handle in emulator_instances.HELD.values()])
+
+
+def held_elsewhere(test, family, number):
+    """`number` claimed as another suite would: its own open lock file."""
+    emulator_instances.LOCKS.mkdir(parents=True, exist_ok=True)
+    handle = open(emulator_instances.lock_path(family, number), "a+", encoding="utf-8")  # noqa: SIM115
+    test.addCleanup(handle.close)
+    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    handle.write("4242 /home/someone/their-checkout 2026-11-19T01:00:00\n")
+    handle.flush()
 
 
 def docker_ps(*names):
@@ -34,6 +60,7 @@ class RefuseTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         for name in emulator_instances.OLD_SETTINGS:
             emulator_instances.os.environ.pop(name, None)
+        own_locks(self)
 
     def test_numbers_in_use_are_refused_naming_where_to_start_instead(self):
         with docker_ps("autoflash-beken-emu-1", "autoflash-beken-emu-4"):
@@ -87,6 +114,61 @@ class RefuseTests(unittest.TestCase):
         self.assertEqual(emulator_instances.first_free(set(), 3), 1)
         self.assertEqual(emulator_instances.first_free({1, 4}, 2), 2)
         self.assertEqual(emulator_instances.first_free({2, 5}, 3), 6)
+
+
+
+class ClaimTests(unittest.TestCase):
+    def setUp(self):
+        own_locks(self)
+
+    def test_a_number_another_suite_holds_is_refused_while_its_emulator_is_stopped(self):
+        # Seen: a suite restarting its emulator between scenarios left a gap
+        # docker ps could not show, and another suite took its number.
+        held_elsewhere(self, "espressif", 1)
+        with docker_ps(), self.assertRaises(SystemExit) as refused:
+            emulator_instances.refuse_taken("espressif", [1, 2])
+        self.assertIn("espressif emulator instance 1 claimed by another suite", str(refused.exception))
+        self.assertIn("--first-instance 2", str(refused.exception))
+        self.assertEqual(emulator_instances.HELD, {}, "none claimed where one is refused")
+
+    def test_each_family_claims_its_own_numbers(self):
+        held_elsewhere(self, "beken", 81)
+        with docker_ps():
+            emulator_instances.refuse_taken("espressif", [81])
+        self.assertIn(("espressif", 81), emulator_instances.HELD)
+
+    def test_a_suite_claims_again_what_it_holds_already(self):
+        with docker_ps():
+            emulator_instances.refuse_taken("espressif", [1, 2])
+            emulator_instances.refuse_taken("espressif", [2])
+        self.assertEqual(sorted(emulator_instances.HELD), [("espressif", 1), ("espressif", 2)])
+
+    def test_a_claim_ends_with_the_suite_that_made_it(self):
+        script = ("import os, sys; os.environ.pop('AUTOFLASH_EMU_NO_CLAIMS', None); from pathlib import Path; from tools.repo import emulator_instances as e; "
+                  "e.LOCKS = Path(sys.argv[1]); print(e.claim('beken', [5]))")
+        root = Path(__file__).resolve().parents[2]
+        ended = subprocess.run([sys.executable, "-c", script, str(emulator_instances.LOCKS)], cwd=root,
+                               capture_output=True, text=True, check=True, timeout=60)
+        self.assertEqual(ended.stdout.strip(), "[]")
+        self.assertEqual(emulator_instances.claim("beken", [5]), [])
+
+    def test_the_tests_claim_nothing_on_the_computer(self):
+        # Seen: the suites' own tests, Docker stubbed, took real locks under
+        # the home folder, and tests run side by side refused each other.
+        with mock.patch.dict(emulator_instances.os.environ, {"AUTOFLASH_EMU_NO_CLAIMS": "1"}):
+            self.assertEqual(emulator_instances.claim("espressif", [1]), [])
+        self.assertEqual(emulator_instances.HELD, {})
+        self.assertFalse(any(emulator_instances.LOCKS.iterdir()))
+
+    def test_the_claims_listed_say_whose_each_is(self):
+        held_elsewhere(self, "beken", 81)
+        emulator_instances.claim("espressif", [3])
+        listed = emulator_instances.claims()
+        self.assertIn("beken-81  4242 /home/someone/their-checkout 2026-11-19T01:00:00", listed)
+        mine = next(line for line in listed if line.startswith("espressif-3 "))
+        self.assertIn(f" {emulator_instances.os.getpid()} {emulator_instances.CHECKOUT} ", mine)
+        emulator_instances.HELD.pop(("espressif", 3)).close()
+        self.assertEqual([line for line in emulator_instances.claims() if line.startswith("espressif")], [])
 
 
 if __name__ == "__main__":

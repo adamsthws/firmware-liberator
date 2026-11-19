@@ -232,7 +232,11 @@ backup.
   refuses, naming a first instance that is free
   (`tools/repo/emulator_instances.py`), so suites sharing a computer keep
   clear of each other's. So does one whose last instance would be past what
-  the emulator takes (`emulator_instances.LAST`).
+  the emulator takes (`emulator_instances.LAST`). A suite claims its
+  instances for as long as it runs, its emulators stopped between scenarios
+  included, and one asked for an instance another suite claims refuses too.
+  To see the claims on your computer - each suite's process and checkout,
+  so you stop only your own - run `python3 tools/repo/emulator_instances.py`.
 - **Run no more at once than your computer has cores**, or runs fail that
   would otherwise pass. Sampled with `docker stats` every 2 seconds through
   whole conversions, an S60's emulator, its computer included, took about 0.6

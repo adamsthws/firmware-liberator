@@ -1,16 +1,30 @@
+#!/usr/bin/env python3
 """Which emulator instances already run on this computer, so a suite keeps
 clear of another's: each suite is given its numbers with --first-instance,
 and one asked to start on a number in use refuses rather than restart it.
 Starting a Beken instance afresh stops everything on that instance's network,
 and an Espressif one already running refuses to start (emu.sh), so a batch
-sharing another's numbers fails it or itself."""
+sharing another's numbers fails it or itself.
+
+A suite also claims its numbers for as long as it runs (claim), as its
+emulators are not running all that time: a suite that restarts its
+emulator between scenarios leaves a gap Docker cannot show. Run as a
+script, it lists the claims on this computer - each suite's number, its
+process and its checkout - so a suite started detached is stopped by its
+own process alone:
+
+    python3 tools/repo/emulator_instances.py"""
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import subprocess
+import time
 from collections.abc import Iterable
+from pathlib import Path
+from typing import IO
 
 # Each family's containers for instance N, as emu.sh and beken-emu.sh
 # --instance N name them: the device's, and its API or computer beside it.
@@ -28,6 +42,69 @@ LAST = 99
 # What gave a suite its first instance before --first-instance: set, it would
 # now be passed over, and the batch run on instances from 1, another's perhaps.
 OLD_SETTINGS = ("AUTOFLASH_EMU_FIRST_INSTANCE", "AUTOFLASH_BEKEN_EMU_FIRST_INSTANCE", "AUTOFLASH_EMU_PREP_INSTANCE")
+
+
+# Where suites claim their numbers: one lock file each, for every checkout of
+# this user on this computer alike, as Docker's containers are.
+LOCKS = Path.home() / ".local/share/autoflash-emu/instances"
+
+# The checkout a claim is made from, written in it to tell whose it is.
+CHECKOUT = Path(__file__).resolve().parents[2]
+
+# The claims this process holds, by family and number: open, as closing one
+# lets it go. The system lets them all go as the process ends, however.
+HELD: dict[tuple[str, int], IO[str]] = {}
+
+
+def lock_path(family: str, number: int) -> Path:
+    return LOCKS / f"{family}-{number}.lock"
+
+
+def claim(family: str, numbers: Iterable[int]) -> list[int]:
+    """Claim `numbers` for this process, as long as it runs: [] once each is
+    held, else those another process holds (and none is claimed). None is
+    made where AUTOFLASH_EMU_NO_CLAIMS=1: the tests (tests/no_network.py),
+    which run side by side and touch nothing computer-wide."""
+    if os.environ.get("AUTOFLASH_EMU_NO_CLAIMS") == "1":
+        return []
+    LOCKS.mkdir(parents=True, exist_ok=True)
+    taken, got = [], []
+    for number in sorted(set(numbers)):
+        if (family, number) in HELD:
+            continue
+        handle = open(lock_path(family, number), "a+", encoding="utf-8")  # noqa: SIM115 - held open
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            taken.append(number)
+            continue
+        got.append((number, handle))
+    if taken:
+        for _, handle in got:
+            handle.close()
+        return taken
+    for number, handle in got:
+        handle.truncate(0)
+        handle.write(f"{os.getpid()} {CHECKOUT} {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
+        handle.flush()
+        HELD[(family, number)] = handle
+    return []
+
+
+def claims() -> list[str]:
+    """Each claim held on this computer: family and number, the process
+    holding it, its checkout, and since when."""
+    found = []
+    for path in sorted(LOCKS.glob("*.lock")) if LOCKS.is_dir() else []:
+        with open(path, encoding="utf-8") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:   # held: what its holder wrote
+                found.append(f"{path.stem}  {handle.read().strip()}")
+                continue
+            fcntl.flock(handle, fcntl.LOCK_UN)
+    return found
 
 
 def running(family: str) -> set[int]:
@@ -72,3 +149,20 @@ def refuse_taken(family: str, numbers: Iterable[int]) -> None:
             else "stop it, or run fewer at once"
         raise SystemExit(f"{family} emulator instance{'s' if len(clash) > 1 else ''} "
                          f"{', '.join(map(str, clash))} already running here: {instead}")
+    claimed = claim(family, wanted)
+    if claimed:
+        free = first_free(taken | claimed_elsewhere(family), len(wanted))
+        instead = f"give --first-instance {free} to keep clear of it" if free else "run fewer at once"
+        raise SystemExit(f"{family} emulator instance{'s' if len(claimed) > 1 else ''} "
+                         f"{', '.join(map(str, claimed))} claimed by another suite here "
+                         f"(python3 tools/repo/emulator_instances.py lists them): {instead}")
+
+
+def claimed_elsewhere(family: str) -> set[int]:
+    """The numbers of `family` another process holds."""
+    return {int(line.split()[0].rsplit("-", 1)[1]) for line in claims()
+            if line.split()[0].rsplit("-", 1)[0] == family}
+
+
+if __name__ == "__main__":
+    print("\n".join(claims()) or "No emulator instance is claimed on this computer.")
