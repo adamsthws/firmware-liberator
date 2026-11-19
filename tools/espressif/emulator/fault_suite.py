@@ -787,11 +787,31 @@ def established(conntrack, addresses):
                           conntrack))
 
 
+# Read in the emulator where its kernel has no /proc/net/nf_conntrack.
+CONNTRACK_DUMP = Path(__file__).with_name("conntrack.py")
+# What docker exec says of an emulator not started yet, or gone.
+NOT_UP = re.compile(r"No such container|is not running")
+
+
+def conntrack(container, timeout=None):
+    """The connections emulator `container`'s firewall tracks, as
+    /proc/net/nf_conntrack lists them; None when they cannot be read at all,
+    which the suite says rather than take for no connections."""
+    found = sh("docker", "exec", container, "cat", "/proc/net/nf_conntrack", timeout=timeout)
+    if NOT_UP.search(found.stderr or ""):
+        return ""  # an emulator still starting: its device has no connections yet
+    if found.returncode:
+        # A kernel built without the file (Ubuntu's): asked over netlink instead.
+        found = subprocess.run(["docker", "exec", "-i", container, "python3", "-"], capture_output=True, text=True,
+                               timeout=timeout, input=CONNTRACK_DUMP.read_text(encoding="utf-8"))
+    return None if found.returncode else found.stdout
+
+
 def device_fetching(n):
     """The device's connection to this computer up: what a run serves it."""
-    conntrack = sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout
+    tracked = conntrack(name(n)) or ""
     return bool(re.search(r"\btcp\b.*\bESTABLISHED " + from_device(device_addresses(n)) +
-                          rf" dst={re.escape(NET)}\.1 ", conntrack))
+                          rf" dst={re.escape(NET)}\.1 ", tracked))
 
 
 def connection_changes(seen, emulator, conntrack, at, addresses):
@@ -825,19 +845,23 @@ def log_connections(path, every, stop):
                 if not emulator.startswith("autoflash-emu-"):
                     continue
                 try:
-                    conntrack = sh("docker", "exec", emulator, "cat", "/proc/net/nf_conntrack", timeout=10).stdout
+                    tracked = conntrack(emulator, timeout=10)
                 except subprocess.TimeoutExpired:
                     continue
+                if tracked is None:
+                    out.write(f"{time.strftime('%T')} {emulator} connections cannot be read\n")
+                    continue
                 out.writelines(line + "\n" for line in connection_changes(
-                    seen, emulator, conntrack, time.strftime("%T"), device_addresses(emulator)))
+                    seen, emulator, tracked, time.strftime("%T"), device_addresses(emulator)))
             out.flush()
 
 
 def cloud_connections(n):
     """The device's open connections to the internet, as its emulator's firewall
-    tracks them. Sonoff's firmware prints nothing when it signs on to eWeLink."""
-    out = sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout
-    return established(out, device_addresses(n))
+    tracks them, or None when they cannot be read. Sonoff's firmware prints
+    nothing when it signs on to eWeLink."""
+    out = conntrack(name(n))
+    return None if out is None else established(out, device_addresses(n))
 
 
 class CloudQueue:
@@ -1165,14 +1189,19 @@ class DeviceMonitor:
                     self.hold("a sign-in", limit=SIGN_IN_TURN)
             self.stop.wait(1.0)
 
+
     def intents(self, run):
         live = self.live_run()
         return len(INTENT.findall(live[1])) if live and live[0] == run else None
 
     def connections_seen(self, seen, before, now):
         """The device's connections begun in this turn, each with when it was
-        first seen, saying which came and went: nothing else shows them."""
-        live = cloud_connections(self.n) - before
+        first seen, saying which came and went: nothing else shows them. None
+        when they cannot be read."""
+        live = cloud_connections(self.n)
+        if live is None:
+            return None
+        live -= before
         for connection in sorted(live - seen.keys()):
             self.sc.say(f"CLOUD: device connected to {connection[0]}")
         for connection in sorted(seen.keys() - live):
@@ -1193,8 +1222,9 @@ class DeviceMonitor:
         asked = self.intents(run)
         steps_from = len(self.run_text())
         watched = device_first = limit > SIGN_IN_TURN  # a short turn is a sign-in no device needs
-        before = cloud_connections(self.n) if watched else set()
+        before = (cloud_connections(self.n) or set()) if watched else set()
         first_seen = {}
+        blind = said_blind = False
         looked = 0.0
         device_internet(self.n, True)
         self.sc.say(f"CLOUD: turn taken ({why})")
@@ -1208,11 +1238,20 @@ class DeviceMonitor:
                 now = time.time()
                 if watched and now - looked >= 1:
                     looked = now
-                    first_seen = self.connections_seen(first_seen, before, now)
+                    seen = self.connections_seen(first_seen, before, now)
+                    blind = seen is None
+                    if blind and not said_blind:
+                        # Said, not taken for a device with no connections: one
+                        # switched off and on, or a turn freed, for nothing.
+                        said_blind = True
+                        self.sc.say("CLOUD: the device's connections cannot be read (no /proc/net/nf_conntrack, "
+                                    "nor conntrack over netlink): while so, not switched off and on, nor its "
+                                    "turn freed for fetching nothing")
+                    first_seen = first_seen if seen is None else seen
                     if device_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
                         device_first, back_at = False, now
                         self.sc.say(f"CLOUD: device back after {now - opened_at:.0f}s")
-                    elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST and restart_once:
+                    elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST and restart_once and not blind:
                         # Seen against the real cloud: a fresh device's every TLS
                         # dial to eWeLink timing out, the run then stopping at
                         # A1 to ask, its fault never come (NOT-FIRED).
@@ -1221,7 +1260,7 @@ class DeviceMonitor:
                                     "as a person would, and waited for again")
                         self.sc.notes["fresh_device_restarted"] = True
                         self.sc.ex(DEVICE_CMD, "restart")
-                        before, first_seen = cloud_connections(self.n), {}
+                        before, first_seen = cloud_connections(self.n) or set(), {}
                         opened_at = time.time()
                     elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST:
                         device_first, back_at = False, now
@@ -1232,7 +1271,7 @@ class DeviceMonitor:
                         sent = len(SENT.findall(text, max(text.rfind("=== run started"), 0)))
                         if sent > sent_seen or (sent and device_fetching(self.n)):
                             sent_seen, idle_from = sent, now
-                        if sent and now - max(idle_from, back_at) >= TURN_IDLE:
+                        if sent and now - max(idle_from, back_at) >= TURN_IDLE and not blind:
                             self.sc.say(f"CLOUD: nothing fetched for {TURN_IDLE:.0f}s; the turn is free")
                             break
                 if not device_first:

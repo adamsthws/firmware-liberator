@@ -765,6 +765,13 @@ wrong.
   switched off and on once, as a person would, and waited for again
   (`fresh_device_restarted`): such devices had every dial to eWeLink time
   out, and their runs stopped at A1 to ask before the fault came.
+- The suite sees a device's connections through its emulator's firewall:
+  `/proc/net/nf_conntrack`, or on a kernel built without it (Ubuntu's) the
+  same table read over netlink (`tools/espressif/emulator/conntrack.py`, run
+  by the emulator's own Python). Where neither can be read, the turn says
+  so, and switches no device off and on and frees no turn for fetching
+  nothing: blind, every fresh device had been switched off and on, and every
+  turn freed a minute after its command.
 
 The suite can feel out how many the cloud allows, one more while the cloud
 scenarios pass (`AUTOFLASH_EMU_CLOUD_MOST`) or one fewer at each trouble

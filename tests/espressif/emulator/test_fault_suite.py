@@ -114,8 +114,9 @@ class CloudTurnTests(unittest.TestCase):
         self.assertEqual(self.turns_from_the_start({"step": "C2", "fault": "crash"}), ["from the start"])
         self.assertEqual(self.turns_from_the_start({"step": "C3", "fault": "crash"}), [])
 
-    def hold_while_never_back(self, **hold):
-        """A turn whose device never reaches eWeLink; what was said and done."""
+    def hold_while_never_back(self, connections=frozenset(), **hold):
+        """A turn whose device never reaches eWeLink, its connections read as
+        `connections` (None: unreadable); what was said and done."""
         with tempfile.TemporaryDirectory() as state:
             (Path(state) / "logs").mkdir()
             (Path(state) / "logs/uart.log").write_text("", encoding="utf-8")
@@ -129,7 +130,8 @@ class CloudTurnTests(unittest.TestCase):
             with mock.patch.object(monitor, "live_run", return_value=None), \
                     mock.patch.object(monitor, "run_text", return_value=""), \
                     mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
-                    mock.patch.object(fs, "cloud_connections", return_value=set()), \
+                    mock.patch.object(fs, "cloud_connections",
+                                      side_effect=lambda _n: None if connections is None else set(connections)), \
                     mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
                     mock.patch.object(monitor.stop, "wait", side_effect=wait):
                 monitor.hold("from the start", **hold)
@@ -146,6 +148,13 @@ class CloudTurnTests(unittest.TestCase):
         said, sc = self.hold_while_never_back()
         sc.ex.assert_not_called()
         self.assertTrue(any("the run goes on" in line for line in said))
+
+    def test_a_device_whose_connections_cannot_be_read_is_not_switched_blind(self):
+        # Seen where the kernel has no /proc/net/nf_conntrack: every fresh device
+        # switched off and on a minute into its turn, connected or not.
+        said, sc = self.hold_while_never_back(connections=None, restart_once=True)
+        sc.ex.assert_not_called()
+        self.assertEqual(sum("connections cannot be read" in line for line in said), 1)
 
     def test_the_turn_from_the_start_may_switch_its_device(self):
         monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C2", "fault": "crash"},
@@ -1268,9 +1277,30 @@ class ScenarioTests(unittest.TestCase):
             "src=192.168.60.1 dst=192.168.60.50 sport=8088 dport=4 [ASSURED] mark=0 zone=0 use=2",
             "ipv4 2 udp 17 29 src=192.168.60.50 dst=192.0.2.81 sport=5 dport=53",
         ))
-        with mock.patch.object(fs, "sh", return_value=mock.Mock(stdout=table)):
+        with mock.patch.object(fs, "sh", return_value=mock.Mock(stdout=table, returncode=0, stderr="")):
             connections = fs.cloud_connections(1)
         self.assertEqual(connections, {("192.0.2.80", "1", "443")})
+
+    def test_connections_are_read_over_netlink_where_the_kernel_has_no_proc_file(self):
+        # Ubuntu's kernels are built without /proc/net/nf_conntrack: read as it
+        # was, every device looked unconnected, and was switched off and on.
+        table = "ipv4     2 tcp      6 300 ESTABLISHED src=192.168.60.50 dst=192.0.2.80 sport=1 dport=443"
+        missing = mock.Mock(returncode=1, stdout="", stderr="cat: /proc/net/nf_conntrack: No such file or directory")
+        with mock.patch.object(fs, "sh", return_value=missing), \
+                mock.patch.object(fs.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=table)) as run:
+            self.assertEqual(fs.conntrack("autoflash-emu-1"), table)
+        self.assertEqual(run.call_args.args[0], ["docker", "exec", "-i", "autoflash-emu-1", "python3", "-"])
+        self.assertEqual(run.call_args.kwargs["input"], fs.CONNTRACK_DUMP.read_text(encoding="utf-8"))
+        with mock.patch.object(fs, "sh", return_value=missing), \
+                mock.patch.object(fs.subprocess, "run", return_value=mock.Mock(returncode=1, stdout="")), \
+                mock.patch.object(fs, "device_addresses", return_value=["192.168.60.50"]):
+            self.assertIsNone(fs.conntrack("autoflash-emu-1"))
+            self.assertIsNone(fs.cloud_connections(1))   # unreadable, not "none"
+        # An emulator still starting has no connections: not unreadable.
+        not_up = mock.Mock(returncode=1, stdout="", stderr="Error response from daemon: container abc is not running")
+        with mock.patch.object(fs, "sh", return_value=not_up), mock.patch.object(fs.subprocess, "run") as run:
+            self.assertEqual(fs.conntrack("autoflash-emu-1"), "")
+        run.assert_not_called()
 
     def test_a_turn_ends_once_a_step_after_c2_is_under_way(self):
         for step, ends in (("C3", True), ("C3fb", True), ("D1", True), ("A2", False), ("C2", False)):
@@ -2478,7 +2508,7 @@ class ReaddressTests(unittest.TestCase):
                          ["1 autoflash-emu-1 ESTABLISHED 192.0.2.81:443"])
         fetching = "ipv4 2 tcp 6 300 ESTABLISHED src=192.168.60.55 dst=192.168.60.1 sport=1 dport=8089 "
         with mock.patch.object(fs, "device_addresses", return_value=moved), \
-                mock.patch.object(fs, "sh", return_value=mock.Mock(stdout=fetching)):
+                mock.patch.object(fs, "sh", return_value=mock.Mock(stdout=fetching, returncode=0, stderr="")):
             self.assertTrue(fs.device_fetching(1))
 
     def test_no_step_reaches_the_device_at_the_address_it_starts_at_alone(self):
