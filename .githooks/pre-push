@@ -1,5 +1,6 @@
 #!/bin/sh
-# Stops every commit the push sends holding a secret or a real identifier: tools/repo/leak_scan.py
+# Warns of a change to the tool the changelog says nothing of: tools/repo/changelog_check.py.
+# Then stops every commit the push sends holding a secret or a real identifier: tools/repo/leak_scan.py
 # (docs/technical-details.md#keeping-secrets-out-of-git). Installed by
 # python3 tools/repo/leak_scan.py install; --no-verify skips it, for what is meant to be there.
 root=$(git rev-parse --show-toplevel) || exit 1
@@ -13,4 +14,7 @@ for venv in "$root/.venv" "$main/.venv"; do
         [ -x "$candidate" ] && { python=$candidate; break 2; }
     done
 done
-exec "$python" -I "$root/tools/repo/leak_scan.py" push
+# Both read the refs pushed from stdin.
+refs=$(cat)
+printf '%s\n' "$refs" | "$python" -I "$root/tools/repo/changelog_check.py" push
+printf '%s\n' "$refs" | "$python" -I "$root/tools/repo/leak_scan.py" push

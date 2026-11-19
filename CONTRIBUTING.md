@@ -116,7 +116,10 @@ eWeLink accounts and devices' identities.
   so: as with the Linux kernel, whoever submits a change answers for it -
   its correctness, its tests and its licence - however it was written.
 - **A change people will notice** gets a line in `CHANGELOG.md`. The
-  maintainer sets the version and releases.
+  maintainer sets the version and releases. A push changing `tools/autoflash/`
+  with no changelog change is warned of, never stopped
+  (`tools/repo/changelog_check.py`, run by the pre-push hook); a commit that
+  changes nothing a person sees says so with a `Changelog: none` trailer.
 
 ## Code
 

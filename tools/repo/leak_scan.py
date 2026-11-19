@@ -357,16 +357,24 @@ def command_staged(scanner: Scanner) -> None:
         (scanner.data if path in binary else scanner.raw)(path, blob)
 
 
-def command_push(scanner: Scanner, lines: list[str]) -> None:
+def pushed(lines: list[str]) -> list[str]:
+    """The commits a push sends, from the pre-push hook's stdin: each ref's
+    not yet on the remote. Also tools/repo/changelog_check.py's."""
     zero = "0" * 40
+    commits: list[str] = []
     for line in lines:
         parts = line.split()
         if len(parts) != 4 or parts[1] == zero:
             continue  # a deletion sends nothing
         local, remote = parts[1], parts[3]
         excluded = [f"^{remote}"] if remote != zero else ["--not", "--remotes"]
-        for commit in git("rev-list", local, *excluded).decode().split():
-            scan_commit(scanner, commit)
+        commits += [commit for commit in git("rev-list", local, *excluded).decode().split() if commit not in commits]
+    return commits
+
+
+def command_push(scanner: Scanner, lines: list[str]) -> None:
+    for commit in pushed(lines):
+        scan_commit(scanner, commit)
 
 
 def command_tree(scanner: Scanner) -> None:

@@ -44,7 +44,7 @@ class WorktreeVenvTests(unittest.TestCase):
         path.chmod(0o755)
 
     def hook(self, name, cwd):
-        return subprocess.run(["sh", str(HOOKS / name)], cwd=cwd, env=GIT_ENV, check=True,
+        return subprocess.run(["sh", str(HOOKS / name)], cwd=cwd, env=GIT_ENV, check=True, input="",
                               capture_output=True, text=True).stdout.splitlines()
 
     def test_lint_finds_the_main_checkouts_venv_from_a_worktree(self):
@@ -61,18 +61,18 @@ class WorktreeVenvTests(unittest.TestCase):
         python = self.main / ".venv" / "bin" / "python"
         self.fake_python(python)
         self.assertEqual(self.hook("pre-commit", self.worktree), [str(python)] * 2)   # leak scan, lint
-        self.assertEqual(self.hook("pre-push", self.worktree), [str(python)])
+        self.assertEqual(self.hook("pre-push", self.worktree), [str(python)] * 2)   # changelog, leak scan
 
     def test_the_hooks_prefer_the_worktrees_own_venv(self):
         self.fake_python(self.main / ".venv" / "bin" / "python")
         own = self.worktree / ".venv" / "bin" / "python"
         self.fake_python(own)
-        self.assertEqual(self.hook("pre-push", self.worktree), [str(own)])
+        self.assertEqual(self.hook("pre-push", self.worktree), [str(own)] * 2)
 
     def test_the_hooks_find_a_windows_venv(self):
         python = self.main / ".venv" / "Scripts" / "python.exe"
         self.fake_python(python)
-        self.assertEqual(self.hook("pre-push", self.worktree), [str(python)])
+        self.assertEqual(self.hook("pre-push", self.worktree), [str(python)] * 2)   # changelog, leak scan
 
 
 class CompileTests(unittest.TestCase):
