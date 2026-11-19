@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.espressif.emulator import attended_suite
+from tools.repo import suite_coverage
 
 ROOT = Path(__file__).resolve().parents[3]
 HINT = "\x1b[2m(q to quit)\x1b[0m"
@@ -606,16 +607,12 @@ class ScenarioTests(unittest.TestCase):
                                     or answer.get("anywhere") and shows_as_a_stage(pattern, texts),
                                     f"{name}: nothing the tool shows says {answer['when']!r}")
 
-    def test_every_situation_is_covered_in_every_cell_it_is_for(self):
-        # A conversion and a readout, in each chip family: a situation tried in
-        # one is tried in each, or attended_suite.NOT_EVERYWHERE says why not.
-        self.assertEqual(attended_suite.coverage_gaps(attended_suite.scenarios()), [])
-        covered = {situation for _, scenario in attended_suite.scenarios().values()
-                   for situation in scenario.get("covers", [])}
-        self.assertLessEqual(set(attended_suite.NOT_EVERYWHERE), covered, "a reason for a situation no scenario has")
-        for situation, (within, why) in attended_suite.NOT_EVERYWHERE.items():
-            self.assertTrue(why and within, situation)
-            self.assertLessEqual(set(within), {"conversion", "readout", *attended_suite.SCENARIOS}, situation)
+    def test_a_scenario_is_in_the_cell_of_its_family_and_command(self):
+        # Its situations each in every cell, or NOT_EVERYWHERE says why not:
+        # tests/repo/test_suite_coverage.py.
+        self.assertEqual(attended_suite.cell("beken", {"command": "readout"}), ("readout", "beken"))
+        self.assertEqual(attended_suite.cell("espressif", {}), ("conversion", "espressif"))
+        self.assertEqual(set(attended_suite.SCENARIOS), set(suite_coverage.FAMILIES))
 
     def test_a_key_one_family_alone_takes_is_said_by_that_familys_scenarios_alone(self):
         for name, (family, scenario) in attended_suite.scenarios().items():

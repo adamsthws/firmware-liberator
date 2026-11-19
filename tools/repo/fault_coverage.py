@@ -1,29 +1,16 @@
-#!/usr/bin/env python3
-"""The fault suites tried alike: each situation one tries - a kind of fault, or
-a way a readout ends - is to be tried in every cell, a conversion and a
-readout on each chip family's suite, as the attended suite's scenarios are
-(attended_suite.coverage_gaps). NOT_EVERYWHERE names a situation that cannot
-be, with the cells it is for and why, and NOT_IN one cell alone it cannot be
-tried in; NOT_YET, each cell a situation could be tried in and is not yet. tests/repo/test_fault_coverage.py fails on a gap in
-neither, and on one in NOT_YET filled since - so a fault added to one suite
-asks for the other, and the list of what is left only shrinks.
-
-    tools/repo/fault_coverage.py      the cells each situation is tried in, and the gaps
+"""The fault suites' situations and reasons for tools/repo/suite_coverage.py: a
+situation is a kind of fault, or a way a readout ends, tried in a cell - a
+conversion and a readout on each chip family's suite, as the attended
+scenarios are. Their tables say which cells a situation cannot be tried in
+(NOT_EVERYWHERE, NOT_IN) and which it is not yet (NOT_YET), with why.
 """
 
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 from typing import Any, Iterable
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-Cell = tuple[str, str]   # (what it runs: "conversion" or "readout", the chip family)
-COMMANDS = ("conversion", "readout")
-FAMILIES = ("espressif", "beken")
+from tools.repo.suite_coverage import Cell, Suite
 
 TASMOTA = "only the S60 runs Tasmota"
 INSTALLER = ("the S60's installer, which no S61 route has: an S61 is sent its firmware through eWeLink, and its "
@@ -108,29 +95,8 @@ def covered(found: dict[str, Iterable[dict[str, Any]]]) -> dict[str, set[Cell]]:
     return cells
 
 
-def gaps(cells: dict[str, set[Cell]]) -> dict[str, set[Cell]]:
-    """Each situation's cells it is for (NOT_EVERYWHERE, NOT_IN) that try it not."""
-    every = {(command, family) for command in COMMANDS for family in FAMILIES}
-    found = {}
-    for name, tried in cells.items():
-        within = NOT_EVERYWHERE.get(name, ((), ""))[0]
-        missing = {where for where in every if all(narrowing in where for narrowing in within)} - tried
-        missing -= set(NOT_IN.get(name, {}))
-        if missing:
-            found[name] = missing
-    return found
+def tried() -> dict[str, set[Cell]]:
+    return covered(suites())
 
 
-def main() -> int:
-    cells = covered(suites())
-    for name in sorted(cells):
-        print(f"{name:20} {', '.join(f'{c} {f}' for c, f in sorted(cells[name]))}")
-    left = gaps(cells)
-    print(f"\n{sum(map(len, left.values()))} cells left to try (NOT_YET):")
-    for name in sorted(left):
-        print(f"{name:20} {', '.join(f'{c} {f}' for c, f in sorted(left[name]))}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+SUITE = Suite("fault suites", tried, NOT_EVERYWHERE, NOT_IN, NOT_YET)

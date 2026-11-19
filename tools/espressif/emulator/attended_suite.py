@@ -20,8 +20,8 @@ in the Espressif emulator) or tools/beken/emulator/attended/ (an S61's):
 
 `covers`: the situations it tries, each to be tried in every cell - a
 conversion and a readout, in each chip family - or NOT_EVERYWHERE says why
-not (coverage_gaps). Every key is taken by both families' runners alike, but
-those ONE_FAMILY_KEYS names, with why.
+not (SUITE, tools/repo/suite_coverage.py). Every key is taken by both
+families' runners alike, but those ONE_FAMILY_KEYS names, with why.
 
 `answers`: the scenario's own, before SHARED_ANSWERS - what every run is
 answered alike - for each question it does not answer itself (with_shared).
@@ -133,7 +133,7 @@ sys.path.insert(0, str(ROOT))
 from tools.autoflash import kinds, readout, records  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import emulator_instances, emulator_stats, fault_verdicts, unattended_run  # noqa: E402
+from tools.repo import emulator_instances, emulator_stats, fault_verdicts, suite_coverage, unattended_run  # noqa: E402
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
              "beken": ROOT / "tools/beken/emulator/attended"}
@@ -169,8 +169,8 @@ ONE_FAMILY_KEYS = {
 # Each scenario names the situations it covers (`covers`). Every situation one
 # covers is to be covered in every cell - a conversion and a readout, in each
 # chip family - so the families, and conversions and readouts, are tried
-# alike and cannot drift apart: coverage_gaps() lists any cell without it,
-# and tests/espressif/emulator/test_attended_suite.py fails on one. A
+# alike and cannot drift apart: tools/repo/suite_coverage.py lists any
+# cell without it, and tests/repo/test_suite_coverage.py fails on one. A
 # situation that cannot be in every cell is named here, with the cells it is
 # for - "conversion", "readout", "espressif", "beken", each narrowing - and why.
 NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
@@ -215,25 +215,21 @@ NOT_EVERYWHERE: dict[str, tuple[tuple[str, ...], str]] = {
 }
 
 
-def cell(family: str, scenario: dict[str, Any]) -> tuple[str, str]:
+def cell(family: str, scenario: dict[str, Any]) -> suite_coverage.Cell:
     """Where a scenario is in the coverage matrix: what it runs, in which chip family."""
     return ("readout" if scenario.get("command") == "readout" else "conversion", family)
 
 
-def coverage_gaps(found: dict[str, tuple[str, dict[str, Any]]]) -> list[str]:
-    """Each situation the scenarios cover that a cell it is for has no
-    scenario of (NOT_EVERYWHERE): [] for none."""
-    covered: dict[tuple[str, str], set[str]] = {}
-    for family, scenario in found.values():
-        covered.setdefault(cell(family, scenario), set()).update(scenario.get("covers", []))
-    cells = [(command, family) for command in ("conversion", "readout") for family in SCENARIOS]
-    gaps = []
-    for situation in sorted(set().union(*covered.values()) if covered else set()):
-        within = NOT_EVERYWHERE.get(situation, ((), ""))[0]
-        for where in cells:
-            if all(narrowing in where for narrowing in within) and situation not in covered.get(where, set()):
-                gaps.append(f"{situation}: no {where[0]} scenario of {where[1]} covers it")
-    return gaps
+def tried() -> dict[str, set[suite_coverage.Cell]]:
+    """The cells each situation a scenario covers is tried in."""
+    cells: dict[str, set[suite_coverage.Cell]] = {}
+    for family, scenario in scenarios().values():
+        for situation in scenario.get("covers", []):
+            cells.setdefault(situation, set()).add(cell(family, scenario))
+    return cells
+
+
+SUITE = suite_coverage.Suite("attended scenarios", tried, NOT_EVERYWHERE)
 
 
 # The readout's question when the account holds several devices: its first

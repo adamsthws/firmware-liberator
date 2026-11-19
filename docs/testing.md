@@ -266,18 +266,20 @@ runs have failed. A fault that never happened is NOT-FIRED, never a pass.
 **Tried alike everywhere.** Each kind of fault, and each way a readout ends
 without reading the device whole, is to be tried in every cell - a
 conversion and a readout, in each family's suite - as the attended
-scenarios are. `tools/repo/fault_coverage.py` names the cells each is tried
-in. Its `NOT_EVERYWHERE` gives the cells a fault can only be for, and why (a
-Tasmota's settings erased by seven power cuts, on an S60 alone), and its
+scenarios are. `tools/repo/fault_coverage.py` holds the fault suites'
+reasons: its `NOT_EVERYWHERE` gives the cells a fault can only be for, and
+why (a Tasmota's settings erased by seven power cuts, on an S60 alone), its
 `NOT_IN` a single cell one cannot be tried in (a fallback network in an S61's
-readout, where nothing raises one). Its `NOT_YET` lists every cell a fault
-could be tried in and is not yet.
-`tests/repo/test_fault_coverage.py` fails on a cell missing from both, so a
-fault added to one suite asks for the others, and on one tried since, so the
-list only gets shorter:
+readout, where nothing raises one), and its `NOT_YET` every cell a fault
+could be tried in and is not yet. Both suites are checked by one module,
+`tools/repo/suite_coverage.py`, and `tests/repo/test_suite_coverage.py` fails
+on a cell missing from all of them, so a fault added to one suite asks for
+the others, and on one tried since, so the list only gets shorter. It prints
+the cells each situation is tried in, the attended scenarios' and the fault
+suites', and the gaps:
 
 ```sh
-tools/repo/fault_coverage.py
+tools/repo/suite_coverage.py
 ```
 
 A run is followed by its events, not its words: `events.jsonl` beside its
@@ -1163,9 +1165,9 @@ or from a device the Beken fault suite's `prep` saved (`"start"`).
 (`"covers"`): a window too short, a question stopped at with Ctrl-C, the
 device switched off part way, a readout not sent, and so on. Each one is
 to be tried in every cell - a conversion and a readout, on an S60 and on an
-S61 - and `tests/espressif/emulator/test_attended_suite.py` fails on a cell
-without it, unless `NOT_EVERYWHERE` in `attended_suite.py` names the cells it
-is for and says why (an update is a conversion's alone; only the Beken
+S61 - and `tests/repo/test_suite_coverage.py` fails on a cell without it,
+unless `NOT_EVERYWHERE` in `attended_suite.py` names the cells it is for and
+says why (an update is a conversion's alone; only the Beken
 emulator's router can change the Wi-Fi's password). A situation added in
 one cell so asks to be added in the others. Every scenario key is taken by
 both families' runners, through one `run_environment`, but those
