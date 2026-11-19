@@ -114,8 +114,11 @@ test("sent as links, an offer's files are fetched from the cloud stub on first s
     assert.deepEqual(await sent.json(), { send: "links", offers: [{ result: "taken" }] });
     const kept = fs.readdirSync(folder).find((name) => /^readouts__\d{4}-\d{2}-\d{2}__[0-9a-f]{24}\.json$/.test(name));
     assert.equal(JSON.parse(fs.readFileSync(path.join(folder, kept), "utf8")).offered[0].link, files[0].path);
-    // Here no request names its network, so none is agreed: approved, as the maintainer would; held already.
+    // Here every request is from one network, an owner's, so none is agreed: approved, as the maintainer
+    // would; held already.
     const db = new (await import("node:sqlite")).DatabaseSync(path.join(folder, "api.sqlite"));
+    assert.deepEqual(db.prepare("SELECT name FROM counters WHERE name GLOB 'rented-*'").all(), [],
+      "counted as an owner's network's, never as a rented server's");
     db.prepare("UPDATE readouts SET review = 'approved' WHERE stage = 'first'").run();
     db.close();
     const retried = await fetch(`http://127.0.0.1:${port}/local/retry-offers`, { method: "POST" });

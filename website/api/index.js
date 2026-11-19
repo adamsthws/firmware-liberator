@@ -51,7 +51,9 @@
 //   limiter, never stored), and DAILY_COUNT readouts and DAILY_BYTES a day from
 //   everyone, counted in the database (counters.js), where two at once can
 //   never both pass the limit. /wanted reads that count too, and says so once
-//   the day is full. NOTIFY_DAILY addresses a day may be given. /wanted,
+//   the day is full. Of those and OFFERS_DAILY, requests from a network that
+//   counts as none (networks.js) take RENTED_SHARE at most, so rented servers
+//   cannot fill a day. NOTIFY_DAILY addresses a day may be given. /wanted,
 //   /offers and /notify are not held to READOUT_LIMIT, which a batch's
 //   questions would use up before its readouts: the hostname's rate-limiting rule
 //   (tools/repo/cloudflare_settings.py) holds them, as it does every path.
@@ -80,6 +82,12 @@ export const PROOF_BITS = 24;
 export const PROOF_AGE = 15 * 60;
 export const DAILY_COUNT = 100;
 export const DAILY_BYTES = 250 * 1024 * 1024;
+// What of a day's readouts (DAILY_COUNT, DAILY_BYTES) and offers
+// (OFFERS_DAILY) requests from a network that counts as none may take
+// (networks.js: a host's, a VPN's, or none named): owners send from their
+// own networks, so a flood from rented servers can use up only this, never
+// the day the rest need. One past it waits a day, as past the day's limit.
+export const RENTED_SHARE = 10;   // percent
 export const TOTAL_BYTES = 50 * 1024 * 1024 * 1024;
 export const FORMAT = 1;
 export const LIGHT_PROOF_BITS = 20;
@@ -164,6 +172,8 @@ export const SENDER_OFFERS_DAILY = 20;
 // Offers kept a day from everyone: what bounds the readouts table's growth
 // from them. One held already, or its sender's again, counts against neither.
 export const OFFERS_DAILY = 2000;
+// Each day's limit's share for networks that count as none (RENTED_SHARE).
+const rentedShare = (limit) => Math.floor((limit * RENTED_SHARE) / 100);
 // What /v1/wanted tells the tool a first stage sends: its offered files, or
 // their links (/v1/offers) - OFFERED_SEND in wrangler.jsonc, the first of
 // these when it is anything else. A tool told nothing sends files.
@@ -667,17 +677,21 @@ async function senderOn(env, request, day) {
 // The names of the counts (counters.js): the day's readouts kept, and
 // addresses given, and the bytes of every readout ever kept.
 const readoutsOn = (day) => `readouts:${day}`;
+const rentedReadoutsOn = (day) => `rented-readouts:${day}`;
 const notifyOn = (day) => `notify:${day}`;
 const READOUTS_EVER = "readouts:all";
 
 // Why no readout can be kept now, or null: "store-full", the store's limit
-// reached, which waiting a day will not change, or "full", the day's.
-const fullness = async (env, day) => {
-  const [today, ever] = await Promise.all([read(env.DB, readoutsOn(day)), read(env.DB, READOUTS_EVER)]);
+// reached, which waiting a day will not change, or "full", the day's - of a
+// sender on a network that counts as none (`rented`), its share's.
+const fullness = async (env, day, rented) => {
+  const [today, ever, theirs] = await Promise.all([read(env.DB, readoutsOn(day)), read(env.DB, READOUTS_EVER),
+    rented ? read(env.DB, rentedReadoutsOn(day)) : { count: 0, bytes: 0 }]);
   if (ever.bytes >= TOTAL_BYTES) {
     return "store-full";
   }
-  return today.count >= DAILY_COUNT || today.bytes >= DAILY_BYTES ? "full" : null;
+  const over = (count, bytes, share = (limit) => limit) => count >= share(DAILY_COUNT) || bytes >= share(DAILY_BYTES);
+  return over(today.count, today.bytes) || over(theirs.count, theirs.bytes, rentedShare) ? "full" : null;
 };
 
 // A question of the tool's, its light work done: the parsed JSON, or a
@@ -757,7 +771,7 @@ export async function wanted(request, env, now = new Date()) {
     return no("held");
   }
   const day = now.toISOString().slice(0, 10);
-  const full = await fullness(env, day);
+  const full = await fullness(env, day, (await countedNetwork(env, request)) === null);
   if (full) {
     return no(full);
   }
@@ -859,7 +873,9 @@ export async function readout(request, env, now = new Date(), context = null, fe
     return answer(503, { error: `${SENDER_DAILY} readouts a day from one address: try again tomorrow`, limit: true },
       { "Retry-After": "86400" });
   }
-  if (!(await take(readoutsOn(day), day, { most: DAILY_COUNT, mostBytes: DAILY_BYTES }, body.byteLength))) {
+  if (!(await take(readoutsOn(day), day, { most: DAILY_COUNT, mostBytes: DAILY_BYTES }, body.byteLength))
+      || (network === null && !(await take(rentedReadoutsOn(day), day,
+        { most: rentedShare(DAILY_COUNT), mostBytes: rentedShare(DAILY_BYTES) }, body.byteLength)))) {
     await giveBack();
     return answer(503, { error: "enough readouts for today: try again tomorrow" }, { "Retry-After": "86400" });
   }
@@ -992,6 +1008,7 @@ const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud)
 
 // The day's count of offers kept (counters.js).
 const offersOn = (day) => `offers:${day}`;
+const rentedOffersOn = (day) => `rented-offers:${day}`;
 
 // First stages sent as links, in place of their files (.github/readouts.md):
 // {"format": 1, "tool_version", "cloud": one of CLOUDS, "offers": [{"model",
@@ -1068,11 +1085,18 @@ export async function offers(request, env, now = new Date(), context = null, fet
         link: file.path })) };
     fresh.push({ index, offer, key, sender, network, offerHash, manifest, body: JSON.stringify(manifest) });
   }
-  // The sender's day first, then everyone's: what everyone's has no room for
-  // is given back to the sender's. Then the store's room, for them all at once.
+  // The sender's day first, then everyone's, then - from a network that
+  // counts as none - its share's: what a later one has no room for is given
+  // back to those before. Then the store's room, for them all at once.
   const senderDay = `offer-sender:${await keyedHash(env, `offers|${addressOf(request)}`)}:${day}`;
+  const rented = (await countedNetwork(env, request)) === null;
   const theirs = fresh.length ? await reserveUpTo(env.DB, senderDay, day, fresh.length, SENDER_OFFERS_DAILY) : 0;
-  const granted = theirs ? await reserveUpTo(env.DB, offersOn(day), day, theirs, OFFERS_DAILY) : 0;
+  const everyones = theirs ? await reserveUpTo(env.DB, offersOn(day), day, theirs, OFFERS_DAILY) : 0;
+  const granted = rented && everyones
+    ? await reserveUpTo(env.DB, rentedOffersOn(day), day, everyones, rentedShare(OFFERS_DAILY)) : everyones;
+  if (granted < everyones) {
+    await release(env.DB, offersOn(day), 0, everyones - granted);
+  }
   if (granted < theirs) {
     await release(env.DB, senderDay, 0, theirs - granted);
   }
@@ -1095,6 +1119,9 @@ export async function offers(request, env, now = new Date(), context = null, fet
     }
     await release(env.DB, senderDay, 0, count);
     await release(env.DB, offersOn(day), 0, count);
+    if (rented) {
+      await release(env.DB, rentedOffersOn(day), 0, count);
+    }
   };
   if (reserved.length < room.length) {
     await giveBack(taking.length, bytes);

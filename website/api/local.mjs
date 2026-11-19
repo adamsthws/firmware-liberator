@@ -15,8 +15,9 @@
 // Without it every fetch fails: nothing here asks eWeLink's own server.
 // POST /local/retry-offers, its own path and not the Worker's, fetches the
 // files of offers taken as right as the nightly job does (offered.js
-// retryOffers): here no offer is agreed, as no request names its network, so
-// one is taken as right by approving its first stage in api.sqlite. Refused
+// retryOffers): here no offer is agreed, as every request comes from one
+// made-up network (NETWORK), so one is taken as right by approving its first
+// stage in api.sqlite. Refused
 // without AUTOFLASH_LOCAL_OTA_BASE.
 import fs from "node:fs";
 import http from "node:http";
@@ -105,6 +106,11 @@ if (process.env.PARENT) {
   }, 2000).unref();
 }
 
+// The network every request comes from, as Cloudflare names one (cf.asn): one
+// for documentation (RFC 5398), so each counts as an owner's would, never as
+// a rented server's (index.js RENTED_SHARE).
+const NETWORK = 64496;
+
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -115,9 +121,9 @@ const server = http.createServer(async (request, response) => {
   const answer = retrying && !process.env.AUTOFLASH_LOCAL_OTA_BASE
     ? Response.json({ error: "AUTOFLASH_LOCAL_OTA_BASE is not set: nothing is fetched from eWeLink" }, { status: 409 })
     : retrying ? Response.json(await retryOffers(env, new Date(), { totalBytes: TOTAL_BYTES }))
-    : await worker.fetch(new Request(`https://api.firmwareliberator.com${request.url}`, {
+    : await worker.fetch(Object.defineProperty(new Request(`https://api.firmwareliberator.com${request.url}`, {
       method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : body,
-    }), env);
+    }), "cf", { value: { asn: NETWORK } }), env);
   const text = await answer.text();
   fs.appendFileSync(path.join(folder, "requests.log"),
     `${new Date().toISOString()} ${request.method} ${request.url} ${body.length} -> ${answer.status} ${text}\n`);

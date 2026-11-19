@@ -136,6 +136,10 @@ let past, and only a readout that adds something is kept:
 - Until three agree, a key has three more places, each for a readout from a
   network none of those held came from: three made up on one rented server's
   network cannot keep out the owners who would outvote them.
+- Requests from a network that counts as none, a host's or a VPN's, take
+  `RENTED_SHARE` of each day's readouts and offers at most
+  (`website/api/index.js`): a flood from rented servers uses up only that,
+  and owners on their own networks still have the rest of the day.
 - Once a key's whole readouts agree (or you approve them), those places are
   still given, one each `CHECK_DAYS` (`website/api/index.js`), to check them:
   one made up from owners' networks, or approved by mistake, is found by a

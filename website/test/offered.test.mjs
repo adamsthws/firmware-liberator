@@ -423,6 +423,20 @@ test("OFFERS_DAILY offers a day are kept from everyone, a sender's place given b
   assert.deepEqual(counted, [{ count: 1 }], "the sender's count is of the one kept");
 });
 
+test("offers from a network that counts as none take RENTED_SHARE of OFFERS_DAILY, the rest kept for owners", async () => {
+  const share = (api.OFFERS_DAILY * api.RENTED_SHARE) / 100;
+  const bindings = env();
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)")
+    .run(`rented-offers:${DAY}`, DAY, share - 1);
+  assert.deepEqual(await results(bindings, devices(3), { asn: 16509 }), ["taken", "full", "full"]);
+  assert.equal((await read(bindings.DB, `offers:${DAY}`)).count, 1, "everyone's day holds only the one kept");
+  assert.deepEqual(rows(bindings, "SELECT count FROM counters WHERE name GLOB 'offer-sender:*'"), [{ count: 1 }],
+    "and the sender's");
+  assert.deepEqual(await results(bindings, devices(2, 3), { address: "192.0.2.77" }), ["taken", "taken"],
+    "an owner's network's");
+  assert.equal((await read(bindings.DB, `rented-offers:${DAY}`)).count, share, "counted nowhere in the share");
+});
+
 test("past the store's limits offers are answered full, and their places given back", async () => {
   for (const [name, most] of [[READOUTS_EVER, api.TOTAL_BYTES], [PENDING, api.PENDING_BYTES]]) {
     const bindings = env();

@@ -4,9 +4,9 @@
 // or a VPN's exits on counts as none: else made-up readouts from three
 // clouds, or from one VPN switched between three countries, would be three
 // networks. Such a request is still taken, as one Cloudflare names no network
-// for is: an owner behind a VPN, or at work at a host, loses nothing but that
-// vote, and readouts alike from too few networks wait for one more or for the
-// maintainer. Nothing here stops residential proxies, which really are
+// for is: an owner behind a VPN, or at work at a host, loses only that vote
+// and a day's room past its share (index.js RENTED_SHARE), and readouts alike
+// from too few networks wait for one more or for the maintainer. Nothing here stops residential proxies, which really are
 // owners' networks: the later checks of agreed readouts (index.js) are what
 // would catch what came through them.
 //

@@ -906,8 +906,8 @@ test("asked first, the answer says whether a first stage sends its files or thei
 test("twenty readouts a day are kept from one sender, counted under a keyed hash", async () => {
   assert.equal(readout.SENDER_DAILY, 20);
   const bindings = env();
-  const from = (address, tool) => send(post(readoutOf({ ...MANIFEST, tool, stock_version: tool }),
-    { "CF-Connecting-IP": address }), bindings);
+  const from = (address, tool) => send(onNetwork(post(readoutOf({ ...MANIFEST, tool, stock_version: tool }),
+    { "CF-Connecting-IP": address }), 64496), bindings);
   for (let n = 0; n < readout.SENDER_DAILY; n += 1) {
     assert.equal((await from("192.0.2.9", `1.0.${n}`)).status, 201, `readout ${n + 1}`);
   }
@@ -922,6 +922,27 @@ test("twenty readouts a day are kept from one sender, counted under a keyed hash
   const names = (await bindings.DB.prepare("SELECT name FROM counters").all()).results.map((row) => row.name);
   assert.ok(names.some((name) => name.startsWith("sender:")));
   assert.ok(!names.some((name) => name.includes("192.0.2")), "never the address itself");
+});
+
+test("readouts from networks that count as none take RENTED_SHARE of the day, the rest of it kept for owners", async () => {
+  assert.equal(readout.RENTED_SHARE, 10);
+  const bindings = env();
+  const share = readout.DAILY_COUNT / 10;
+  const rented = (n) => from(bindings, `198.51.100.${n}`, { stock_version: `1.0.${n}` }, 16509);
+  for (let n = 0; n < share; n += 1) {
+    assert.equal((await rented(n)).status, 201, `rented ${n + 1}`);
+  }
+  const over = await rented(share);
+  assert.equal(over.status, 503);
+  assert.match((await over.json()).error, /enough readouts for today/);
+  assert.equal((await read(bindings.DB, `readouts:${NOW.toISOString().slice(0, 10)}`)).count, share, "its place in the day's given back");
+  const asked = (asn) => readout.wanted(onNetwork(question(fresh({ ...ASKED, stock_version: "3.0.0" })), asn), bindings,
+    NOW);
+  assert.equal((await (await asked(16509)).json()).why, "full", "asked from a rented network");
+  assert.equal((await (await asked(64496)).json()).wanted, true, "and from an owner's");
+  assert.equal((await from(bindings, "192.0.2.1", { stock_version: "2.0.0" }, 64496)).status, 201, "an owner's taken");
+  assert.equal((await from(bindings, "192.0.2.2", { stock_version: "2.0.1" }, null)).status, 503,
+    "one with no network named is held to the share too");
 });
 
 test("a readout not kept gives its sender's place back", async () => {
