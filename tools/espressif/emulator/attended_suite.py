@@ -146,8 +146,8 @@ from tools.autoflash import cli, context, kinds, prompts, readout, records, sign
 from tools.autoflash.routes import source  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import (emulator_instances, emulator_stats, fault_verdicts, scenario_times,  # noqa: E402
-                        suite_coverage, unattended_run)
+from tools.repo import (disk_space, emulator_instances, emulator_stats, fault_verdicts,  # noqa: E402
+                        scenario_times, suite_coverage, unattended_run)
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
              "beken": ROOT / "tools/beken/emulator/attended"}
@@ -944,8 +944,10 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
     there carries on), `workers` at once, the longest first
     (scenario_times), each on an emulator of its family numbered from
     `first` that no scenario under way is using; one its skip file names
-    (scenario_times.SKIP) as it is about to start is left out. A result line
-    for each run, printed as it comes."""
+    (scenario_times.SKIP) as it is about to start is left out. Each waits
+    for room on the disk first, as the fault suites' do, and the batch stops,
+    saying so, if there is none (disk_space). A result line for each run,
+    printed as it comes."""
     earlier = fault_verdicts.latest(results / ROWS)
     done = passed(results)
     todo = [sc["id"] for sc in scenario_times.longest_first([{"id": name} for name in chosen if name not in done],
@@ -966,8 +968,15 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
         for n in range(first, first + count):
             free[family].put(n)
 
+    stopping, stopped = threading.Event(), []
+
     def one(name: str) -> str | None:
-        if scenario_times.skipped(results, name):
+        if stopping.is_set() or scenario_times.skipped(results, name):
+            return None
+        if not disk_space.wait_for_room(results, lambda line: print(line, flush=True), stopping):
+            if not stopping.is_set():
+                stopping.set()
+                stopped.append(disk_space.stop_reason(results))
             return None
         family = found[name][0]
         n = free[family].get()
@@ -983,6 +992,8 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
             if line is not None:
                 lines.append(line)
                 print(line, flush=True)
+    if stopped:
+        print(f"batch stopped before its end: {stopped[0]}", flush=True)
     return lines
 
 

@@ -1298,6 +1298,8 @@ A batch is run, resumed and shared out as the fault suites' batches are
   last (in any batch's folder here, and those kept from other machines in
   `captures/emulation/kept/NAME/attended/`).
 - As it runs, it leaves out each scenario named in `skip.txt` in its folder.
+- Each scenario waits for room on the disk holding its folder, and the batch
+  stops if there is none, as the fault suites' do (`tools/repo/disk_space.py`).
 - `share` splits a list of scenarios between machines, so that they end
   together, by those times; `run --file` takes a machine's share:
 

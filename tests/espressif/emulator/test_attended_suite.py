@@ -597,6 +597,21 @@ class BatchTests(unittest.TestCase):
         (self.results / "skip.txt").write_text("b\nc\n", encoding="utf-8")
         self.assertEqual(sorted(self.run_all()), [("a", False), ("d", False)])
 
+    def test_a_scenario_waits_for_room_on_the_disk_and_a_disk_that_stays_full_stops_the_batch(self):
+        # As the fault suites: on 2026-11-19 another job filled a test machine's
+        # disk during a batch, and writes failed part way.
+        with mock.patch.object(attended_suite.disk_space, "wait_for_room", return_value=True) as wait:
+            self.assertEqual(len(self.run_all()), len(self.FOUND))
+        self.assertEqual(wait.call_count, len(self.FOUND))
+        self.assertEqual(wait.call_args.args[0], self.results)
+        screen = io.StringIO()
+        with mock.patch.object(attended_suite.disk_space, "wait_for_room", return_value=False), \
+                mock.patch.object(attended_suite.disk_space, "stop_reason", return_value="disk full"), \
+                mock.patch.object(attended_suite, "run_one") as run_one, redirect_stdout(screen):
+            attended_suite.run_all(list(self.FOUND), self.FOUND, Path(self.results, "again"), None, workers=1, first=61)
+        run_one.assert_not_called()
+        self.assertEqual(screen.getvalue().count("batch stopped before its end: disk full"), 1)
+
     def test_a_scenarios_run_is_recorded_in_its_batch_as_it_ends(self):
         with mock.patch.object(attended_suite, "run_espressif", return_value=(1, Path("r"))), \
                 mock.patch.object(attended_suite, "judged", return_value=["FAIL-RESULT: exit 1"]), \
