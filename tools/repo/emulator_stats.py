@@ -297,6 +297,10 @@ def _keep(folder: Path, name: str, row: dict[str, Any]) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     with _kept, open(folder / name, "a", encoding="utf-8") as kept:
         kept.write(json.dumps(row) + "\n")
+    # Waiting from now, not from when the thread first runs: one kept before
+    # it does would otherwise be sent with this, or a look at what is still
+    # to send find nothing.
+    _waiting.add(folder)
     threading.Thread(target=_in_background, args=(folder,), daemon=True).start()
 
 
@@ -349,7 +353,6 @@ def began(folder: Path, *, family: str, suite: str, device: str, total: int, pla
 def _in_background(folder: Path) -> None:
     """`folder`'s runs sent, unless a send is under way: that one sends them
     as it ends. Nothing is said: what is left is said as the batch ends."""
-    _waiting.add(folder)
     while folder in _waiting:
         if not _sending.acquire(blocking=False):
             return

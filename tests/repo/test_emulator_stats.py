@@ -167,6 +167,13 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertIn("tasmota", emulator_stats.firmware("sonoff-s60"))
         self.assertIn("openbeken", emulator_stats.firmware("sonoff-s61"))
 
+    def test_a_run_is_waiting_to_be_sent_as_soon_as_it_is_kept(self):
+        with mock.patch.object(emulator_stats.threading, "Thread") as thread:
+            emulator_stats.record(self.folder, **run_args(verdict="PASS"))
+        thread.return_value.start.assert_called_once()
+        self.assertIn(self.folder, emulator_stats._waiting)
+        emulator_stats._waiting.discard(self.folder)
+
     def test_each_run_is_sent_as_it_is_kept_with_the_token(self):
         for verdict in ("PASS", "FAIL"):
             emulator_stats.record(self.folder, **run_args(verdict=verdict))
