@@ -151,6 +151,16 @@ eWeLink accounts and devices' identities.
   ([more](docs/testing.md#attended-runs)). So is a fault the fault suites
   try, or `tools/repo/fault_coverage.py` lists the cell as not yet tried
   ([more](docs/testing.md#the-fault-suites)).
+- What is the same for both families, or for a conversion and a readout, is
+  written once and shared, so the two cannot drift apart: one helper that
+  both call, not one each (`esphome_safe_mode` in `routes/source.py`, the
+  wait for ESPHome's safe mode on either family; `fault_verdicts.keep_dhcp_log`
+  for both fault suites; `unattended_run.screen_problems`, the one judge of a
+  screen). The same goes for text: a question, a hint or a message the tool
+  shows is named once and used wherever it is needed, and a test or a suite
+  checks it through that name rather than a copy of its words (the attended
+  scenarios' common answers are `SHARED_ANSWERS`). Keep two only where they
+  truly differ, and say why beside them.
 - Docs, comments and commit messages match the existing ones: plain,
   compact sentences saying what something does and why.
 
