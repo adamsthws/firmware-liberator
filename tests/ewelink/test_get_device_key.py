@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import hmac
 import json
@@ -19,7 +20,56 @@ from tools.ewelink.get_device_key import (
 )
 
 
+@contextlib.contextmanager
+def taking_turns():
+    """Turns taken, as in the fault suite on the real cloud, each given at
+    once: yields the reasons asked, as each is given."""
+    with tempfile.TemporaryDirectory() as tmp:
+        turn = Path(tmp) / "cloud-turn"
+        asked = []
+
+        def sleep(_seconds):   # the suite giving the turn
+            if turn.exists():
+                asked.append(turn.read_text(encoding="utf-8"))
+                turn.unlink()
+        with mock.patch.object(get_device_key, "_TURN_FILE", str(turn)), \
+                mock.patch.object(get_device_key, "_queued", 0.0), \
+                mock.patch.object(get_device_key.time, "sleep", sleep):
+            yield asked
+
+
+@contextlib.contextmanager
+def queued_turns(queued):
+    """Turns taken on a clock of the test's own: each given once the run has
+    waited `queued` seconds for it, as behind other runs' turns in the fault
+    suite. Every sleep moves the clock on; yields the clock, a list holding the
+    time now."""
+    with tempfile.TemporaryDirectory() as tmp:
+        turn = Path(tmp) / "cloud-turn"
+        now = [1000.0]
+        asked_at = []
+
+        def sleep(seconds):
+            now[0] += seconds
+            if turn.exists():
+                asked_at[:] = asked_at or [now[0] - seconds]
+                if now[0] - asked_at[0] >= queued:
+                    turn.unlink()
+                    asked_at.clear()
+        with mock.patch.object(get_device_key, "_TURN_FILE", str(turn)), \
+                mock.patch.object(get_device_key, "_queued", 0.0), \
+                mock.patch.object(get_device_key.time, "sleep", sleep), \
+                mock.patch.object(get_device_key.time, "monotonic", lambda: now[0]):
+            yield now
+
+
 class TurnTests(unittest.TestCase):
+    def setUp(self):
+        # What a test waits for turns is not left for the next (own_time).
+        patcher = mock.patch.object(get_device_key, "_queued", 0.0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_sign_in_waits_for_the_suite_to_give_the_turn(self):
         with tempfile.TemporaryDirectory() as tmp:
             turn = Path(tmp) / "captures" / "cloud-turn"
@@ -39,6 +89,82 @@ class TurnTests(unittest.TestCase):
                     mock.patch.object(get_device_key, "api_json", api_json):
                 get_device_key.login_session("owner@example.test", "pw", "+44", "eu")
             self.assertEqual(sleeps, [True, True, True])
+
+    def test_a_run_says_what_it_wants_the_turn_for(self):
+        # The suite gives a send a whole turn, its device back on eWeLink first.
+        with tempfile.TemporaryDirectory() as tmp:
+            turn = Path(tmp) / "captures" / "cloud-turn"
+            asked = []
+
+            def sleep(_seconds):
+                asked.append(turn.read_text(encoding="utf-8"))
+                turn.unlink()
+            with mock.patch.object(get_device_key, "_TURN_FILE", str(turn)), \
+                    mock.patch.object(get_device_key.time, "sleep", sleep):
+                self.assertTrue(get_device_key.wait_for_turn("send"))
+            self.assertEqual(asked, ["send"])
+            self.assertEqual(list(turn.parent.iterdir()), [])
+        with mock.patch.object(get_device_key, "_TURN_FILE", ""):
+            self.assertFalse(get_device_key.wait_for_turn("send"))
+
+    def test_commands_take_one_turn_then_say_it_is_done(self):
+        # A relay check sent outside its run's turn would switch another run's
+        # device, every emulated device being the same eWeLink device.
+        with tempfile.TemporaryDirectory() as tmp:
+            turn = Path(tmp) / "captures" / "cloud-turn"
+            done = turn.with_name("cloud-turn.done")
+            asked = []
+
+            def sleep(_seconds):
+                asked.append(turn.read_text(encoding="utf-8"))
+                turn.unlink()
+            with mock.patch.object(get_device_key, "_TURN_FILE", str(turn)), \
+                    mock.patch.object(get_device_key.time, "sleep", sleep):
+                self.assertFalse(get_device_key.in_turn())
+                with get_device_key.cloud_turn():
+                    self.assertTrue(get_device_key.in_turn())
+                    with get_device_key.cloud_turn():   # part of the one turn
+                        self.assertTrue(get_device_key.wait_for_turn())   # a sign-in within it too
+                    self.assertFalse(done.exists())
+                self.assertFalse(get_device_key.in_turn())
+            self.assertEqual(asked, ["command"])
+            self.assertEqual(done.read_text(encoding="utf-8"), "done")
+
+    def test_nothing_is_sent_while_the_suite_says_the_device_is_away(self):
+        # eWeLink answered as though from a device that never came back, down
+        # the session of the device whose turn was before.
+        with taking_turns():
+            away = get_device_key.turn_file(".absent")
+            away.write_text("absent", encoding="utf-8")
+            with get_device_key.cloud_turn():
+                self.assertFalse(get_device_key.in_turn())
+                away.unlink()   # the device back
+                self.assertTrue(get_device_key.in_turn())
+
+    def test_commands_in_a_normal_run_take_no_turn(self):
+        with mock.patch.object(get_device_key, "_TURN_FILE", ""), \
+                mock.patch.object(get_device_key.time, "sleep", side_effect=AssertionError):
+            self.assertTrue(get_device_key.in_turn())
+            with get_device_key.cloud_turn():
+                self.assertTrue(get_device_key.in_turn())
+
+    def test_time_waiting_for_a_turn_is_not_the_run_s_own(self):
+        # Seen against the real cloud: runs back on Sonoff's firmware queued up
+        # to 280 s for turns, all of it out of their wait for the device.
+        with queued_turns(100.0) as now:
+            started = get_device_key.own_time()
+            with get_device_key.cloud_turn():
+                pass
+            now[0] += 7.0
+            self.assertGreaterEqual(now[0] - 1000.0, 107.0)
+            self.assertEqual(get_device_key.own_time() - started, 7.0)
+
+    def test_a_normal_run_s_own_time_is_the_clock(self):
+        with mock.patch.object(get_device_key, "_TURN_FILE", ""), \
+                mock.patch.object(get_device_key.time, "monotonic", return_value=123.0):
+            with get_device_key.cloud_turn():
+                pass
+            self.assertEqual(get_device_key.own_time(), 123.0)
 
     def test_a_normal_run_does_not_wait(self):
         with mock.patch.object(get_device_key, "_TURN_FILE", ""), \

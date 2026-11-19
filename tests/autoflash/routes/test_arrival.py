@@ -9,6 +9,8 @@ from unittest import mock
 from tests.autoflash.routes.beken.test_beken import a_context
 from tools.autoflash import detect, errors, kinds, records
 from tools.autoflash.routes import arrival
+from tools.ewelink import get_device_key
+from tests.ewelink.test_get_device_key import queued_turns, taking_turns
 
 MAC = "12:34:56:ab:cd:ef"
 
@@ -94,6 +96,25 @@ class OnlineInEwelinkTests(unittest.TestCase):
             self.assertFalse(arrival.online_in_ewelink(SimpleNamespace(account_devices=lambda: None), "1001234abc"))
 
 
+class AnsweringTests(unittest.TestCase):
+    def test_ewelinks_word_and_the_devices_answer_come_in_one_turn_in_the_fault_suite(self):
+        # The device reaches eWeLink there only in its run's turn: listed online
+        # outside it, it is another run's device, which is what would answer.
+        within = []
+
+        def devices():
+            within.append(get_device_key.in_turn())
+            return [{"deviceid": "1001234abc", "online": True}]
+
+        def answers(**_kwargs):
+            within.append(get_device_key.in_turn())
+            return True
+        ctx = SimpleNamespace(account_devices=devices, ewelink=mock.sentinel.account)
+        with taking_turns() as asked, mock.patch.object(arrival.ewelink_relay, "answers", side_effect=answers):
+            self.assertEqual(arrival.answering(ctx, "1001234abc")[1:], (True, True))
+        self.assertEqual((asked, within), (["command"], [True, True]))
+
+
 class BackOnSonoffTests(unittest.TestCase):
     """R2 and K3 alike: on the Wi-Fi, and in eWeLink."""
 
@@ -139,6 +160,21 @@ class BackOnSonoffTests(unittest.TestCase):
             result = self.back(ctx, tmp, running="sonoff", devices=[{"deviceid": "1001234abc", "online": True}])
             self.assertEqual(result["confirmed_by"], "eWeLink")
             self.assertIn("on_wifi_after", result)
+
+    def test_time_queued_for_turns_is_not_taken_from_the_wait(self):
+        # Seen against the real cloud: R2 runs queued 50-280 s for turns,
+        # behind other runs', all of it out of SONOFF_WAIT.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.espressif(tmp)
+            ctx.account_devices = lambda: [{"deviceid": "1001234abc", "online": True}]
+            ctx.ewelink = mock.sentinel.account
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                    mock.patch.object(detect, "identify", return_value="sonoff"), \
+                    mock.patch.object(arrival.ewelink_relay, "answers", side_effect=[False, False, False, True]), \
+                    mock.patch.object(arrival.prompts, "UNATTENDED", True), queued_turns(100.0):
+                records.remember_device(MAC, ewelink_id="1001234abc")
+                result = arrival.back_on_sonoff(ctx, wait=60)
+            self.assertEqual((result["confirmed_by"], result["seconds"]), ("eWeLink", 30.0))
 
     def test_with_ewelink_out_of_reach_the_wifi_says(self):
         with tempfile.TemporaryDirectory() as tmp:

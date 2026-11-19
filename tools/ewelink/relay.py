@@ -4,7 +4,9 @@ switches it to the other state and back, each confirmed by the device's
 answer to it, reading its meter after each as the app does, so a run back
 to Sonoff's firmware ends with the relay proved as a run to another
 firmware does (autoflash's report).  answers() asks the device for nothing it
-changes, to know it is there.
+changes, to know it is there.  Each sends in a turn of the run's own in the
+fault suite (get_device_key.cloud_turn), and an update sent outside one is
+refused there (send_update).
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import time
 from typing import Any, Callable, NamedTuple
 
 from tools.ewelink.get_device_key import (APP_ID, TOKEN_REFUSED, Account, EwelinkError, SessionEnded, api_json,
-                                          get_devices, select_device)
+                                          cloud_turn, get_devices, in_turn, select_device)
 from tools.ewelink.probe_ota_command import WS_DISPATCH, nonce
 from tools.ewelink.websocket_minimal import WebSocket, WebSocketError
 
@@ -92,14 +94,25 @@ def switch_params(params: dict[str, Any], on: bool) -> dict[str, Any]:
     return {"switch": word}
 
 
+def send_update(ws: WebSocket, device: dict[str, Any], params: dict[str, Any]) -> str:
+    """Send the device an update, as the app does; its sequence, which the
+    answer to it carries. In the fault suite only within a turn of the run's
+    own with its device on eWeLink (cloud_turn): every emulated device is the
+    same eWeLink device, and one sent outside it reaches another run's."""
+    if not in_turn():
+        raise EwelinkError("not sent: no turn of the run's own with its device on eWeLink (cloud_turn)")
+    seq = str(int(time.time() * 1000))
+    ws.send_json({"action": "update", "deviceid": device["deviceid"], "apikey": device["apikey"],
+                  "userAgent": "app", "sequence": seq, "params": params})
+    return seq
+
+
 def command(ws: WebSocket, device: dict[str, Any], params: dict[str, Any], *, wait: float = SWITCH_WAIT,
             taken: Callable[[dict[str, Any]], bool] = lambda msg: False,
             answers: tuple[int, ...] = (0,)) -> bool:
     """Send the device an update, as the app does; True once it has answered
     it with an error in `answers` (0, it took it), or sent what `taken` accepts."""
-    seq = str(int(time.time() * 1000))
-    ws.send_json({"action": "update", "deviceid": device["deviceid"], "apikey": device["apikey"],
-                  "userAgent": "app", "sequence": seq, "params": params})
+    seq = send_update(ws, device, params)
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         try:
@@ -134,9 +147,7 @@ def read_meter(ws: WebSocket, device: dict[str, Any], *, wait: float = READING_W
     """The device's readings, asked for as the app asks as its page opens
     (uiActive), which the device answers by sending them.  None when it sends
     none in `wait`: a device with no meter, or one refusing it (the DualR3)."""
-    seq = str(int(time.time() * 1000))
-    ws.send_json({"action": "update", "deviceid": device["deviceid"], "apikey": device["apikey"],
-                  "userAgent": "app", "sequence": seq, "params": {"uiActive": 60}})
+    seq = send_update(ws, device, {"uiActive": 60})
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         try:
@@ -174,7 +185,8 @@ def answers(*, account: Account, device_id: str) -> bool | None:
             ws.close()
 
     try:
-        return account.use(ask)
+        with cloud_turn():
+            return account.use(ask)
     except (EwelinkError, WebSocketError, OSError, KeyError, ValueError):
         return None
 
@@ -184,29 +196,31 @@ def check_relay(*, account: Account, device_id: str,
     """Switch the device's relay to the other state and back, reading its meter
     after each confirmed switch: whether each switch was confirmed, and the
     readings, or None when it could not be tried (eWeLink not reached, the
-    device offline, or no relay state in its record)."""
+    device offline, or no relay state in its record). One turn for all of it
+    (cloud_turn)."""
     try:
-        device = account.use(lambda region, session: select_device(get_devices(region, session["at"]), device_id))
-        region, session = account.session()
-        was_on = relay_state(device.get("params") or {})
-        if was_on is None or not device.get("online"):
-            say(f"    The device's relay cannot be switched through eWeLink "
-                f"({'it is offline' if was_on is not None else 'its record gives no relay state'}).")
-            return None
-        ws = app_socket(region, session)
+        with cloud_turn():
+            device = account.use(lambda region, session: select_device(get_devices(region, session["at"]), device_id))
+            region, session = account.session()
+            was_on = relay_state(device.get("params") or {})
+            if was_on is None or not device.get("online"):
+                say(f"    The device's relay cannot be switched through eWeLink "
+                    f"({'it is offline' if was_on is not None else 'its record gives no relay state'}).")
+                return None
+            ws = app_socket(region, session)
 
-        def switched_and_read(on: bool) -> tuple[bool, dict[str, float] | None]:
-            if not switch(ws, device, on):
-                return False, None
-            time.sleep(READING_SETTLE)
-            return True, read_meter(ws, device)
-        try:
-            switched, first = switched_and_read(not was_on)
-            restored, second = switched_and_read(was_on)
-        finally:
-            ws.close()
-        if not restored:
-            restored = switch_back(region, session, device, was_on, say)
+            def switched_and_read(on: bool) -> tuple[bool, dict[str, float] | None]:
+                if not switch(ws, device, on):
+                    return False, None
+                time.sleep(READING_SETTLE)
+                return True, read_meter(ws, device)
+            try:
+                switched, first = switched_and_read(not was_on)
+                restored, second = switched_and_read(was_on)
+            finally:
+                ws.close()
+            if not restored:
+                restored = switch_back(region, session, device, was_on, say)
     except (EwelinkError, WebSocketError, OSError, KeyError, ValueError) as exc:
         say(f"    The relay could not be switched through eWeLink: {exc}")
         return None

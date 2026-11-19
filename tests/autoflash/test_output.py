@@ -14,6 +14,8 @@ from unittest import mock
 
 from tools.autoflash import context, hostsys, join, output, phases, records, prompts, report, routes
 from tools.autoflash.state import RunState
+from tools.ewelink import get_device_key
+from tests.ewelink.test_get_device_key import taking_turns
 
 
 ANSI_RE = output.ANSI_RE
@@ -1458,6 +1460,27 @@ class ReportTests(OutputTestCase):
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=report.ewelink_relay.RelayCheck(True, False)):
             self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "did not switch")
+
+    def test_a_run_back_to_sonoff_waits_and_checks_in_one_turn_in_the_fault_suite(self):
+        # Every emulated device is the same eWeLink device: a check sent outside
+        # the run's own turn would switch another run's device.
+        ctx = self.ewelink_ctx([True])
+        within = []
+
+        def answers(**_kwargs):
+            within.append(get_device_key.in_turn())
+            return True
+
+        def check_relay(**_kwargs):
+            within.append(get_device_key.in_turn())
+            return report.ewelink_relay.RelayCheck(True, True)
+        with taking_turns() as asked, \
+                mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", side_effect=answers), \
+                mock.patch.object(report.ewelink_relay, "check_relay", side_effect=check_relay), \
+                mock.patch.object(output, "say"):
+            self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "switches (through eWeLink)")
+        self.assertEqual((asked, within), (["command"], [True, True]))
 
     def test_a_run_back_to_sonoff_reads_the_meter_through_ewelink(self):
         # Sonoff's S60 firmware in the emulator, a 100 W load on 230 V.

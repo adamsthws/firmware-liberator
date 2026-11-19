@@ -16,6 +16,7 @@ from typing import Any, Callable, TYPE_CHECKING, TypeVar
 from tools.autoflash import account, detect, hostsys, output, prompts, records
 from tools.autoflash.errors import Abort, GoBack
 from tools.ewelink import relay as ewelink_relay
+from tools.ewelink.get_device_key import cloud_turn, own_time
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -165,17 +166,18 @@ BUSY = ("the device turned the firmware down, busy with an update cut off part w
 def online_in_ewelink(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> bool:
     """Whether eWeLink shows the device online within `wait`, as it does a
     minute or so after it is switched back on: a send through eWeLink reaches
-    it only then.  False at once where eWeLink cannot be reached."""
-    started = time.monotonic()
+    it only then.  False at once where eWeLink cannot be reached.  Time spent
+    waiting for a turn in the fault suite is not counted (own_time)."""
+    started = own_time()
     while True:
         devices = ctx.account_devices()
         if any(found.get("deviceid") == device_id and found.get("online") for found in devices or []):
             output.progress_clear()
             return True
-        if devices is None or time.monotonic() - started >= wait:
+        if devices is None or own_time() - started >= wait:
             output.progress_clear()
             return False
-        output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
+        output.progress(f"waiting for eWeLink to show the device online... {own_time() - started:.0f}s")
         time.sleep(SONOFF_LOOK_EVERY)
 
 
@@ -185,6 +187,17 @@ def on_wifi(ctx: Context, running: str | None) -> bool:
     (LAN Control off in the app), else by its hardware address answering, as
     nothing else it ran."""
     return running == "sonoff" or (running is None and ctx.finder.poll() is not None)
+
+
+def answering(ctx: Context, device_id: str) -> tuple[list[dict[str, Any]] | None, bool, bool]:
+    """The account's devices (None: eWeLink not reached), whether eWeLink shows
+    the device online, and whether it answers there (relay.answers) - in one
+    turn of the run's own in the fault suite (cloud_turn), where the device
+    reaches eWeLink only in its turn."""
+    with cloud_turn():
+        devices = ctx.account_devices()
+        online = any(found.get("deviceid") == device_id and found.get("online") for found in devices or [])
+        return devices, online, online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id) is True
 
 
 def sonoff_answers(ctx: Context, host: str) -> bool:
@@ -201,9 +214,7 @@ def sonoff_answers(ctx: Context, host: str) -> bool:
     if not seen or (wanted and hostsys.normalise_mac(seen) != wanted):
         return False
     device_id = account.device_id(ctx, hostsys.normalise_mac(seen))
-    online = any(found.get("deviceid") == device_id and found.get("online")
-                 for found in (ctx.account_devices() if device_id else None) or [])
-    return online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id) is True
+    return bool(device_id) and answering(ctx, device_id)[2]
 
 
 def back_on_sonoff(ctx: Context, leaving: tuple[str, ...] = (), wait: float = SONOFF_WAIT) -> dict[str, Any]:
@@ -212,38 +223,39 @@ def back_on_sonoff(ctx: Context, leaving: tuple[str, ...] = (), wait: float = SO
     before it left.  Where its eWeLink id is not known here, the Wi-Fi alone
     says.  Seen on the Wi-Fi but never in eWeLink, the person is told its
     network may keep it from the internet.  Still answering as one of
-    `leaving`, the firmware it was to leave, Sonoff's was not installed."""
+    `leaving`, the firmware it was to leave, Sonoff's was not installed.
+    Time spent waiting for a turn in the fault suite is not counted
+    (own_time)."""
     device_id = str(records.read_device(ctx.state.input("device_mac") or "").get("ewelink_id") or "")
 
     def look(_restarted: bool) -> dict[str, Any]:
-        started = time.monotonic()
+        started = own_time()
         seen: float | None = None   # when it first answered on the Wi-Fi
         reached = False   # eWeLink answered this computer at all
-        while time.monotonic() - started < wait:
+        while own_time() - started < wait:
             ctx.finder.poll()   # where it is now, if it moved
             host = ctx.state.input("device_ip")
             running = detect.identify(host, timeout=3.0) if host else None
             if running in leaving:
                 output.progress(f"the device still runs the firmware it is leaving... "
-                                f"{time.monotonic() - started:.0f}s")
+                                f"{own_time() - started:.0f}s")
             else:
                 if seen is None and on_wifi(ctx, running):
-                    seen = time.monotonic()
+                    seen = own_time()
                     output.progress_clear()
                     output.say(f"    Sonoff's firmware answered on your Wi-Fi after {seen - started:.0f}s.")
                     if not device_id:
                         return {"seconds": round(seen - started, 1), "confirmed_by": "your Wi-Fi"}
-                devices = ctx.account_devices() if device_id else None
+                devices, online, answered = answering(ctx, device_id) if device_id else (None, False, False)
                 reached = reached or devices is not None
-                online = any(found.get("deviceid") == device_id and found.get("online") for found in devices or [])
-                if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
+                if answered:
                     output.progress_clear()
-                    seconds = round(time.monotonic() - started, 1)
+                    seconds = round(own_time() - started, 1)
                     output.say(f"    eWeLink shows the device online again, and it answers, after {seconds}s.")
                     return {"seconds": seconds, "confirmed_by": "eWeLink",
                             **({"on_wifi_after": round(seen - started, 1)} if seen is not None else {})}
                 output.progress(f"waiting for {'eWeLink to show the device online' if seen else 'the device'}"
-                                f"{', and for it to answer' if online else ''}... {time.monotonic() - started:.0f}s")
+                                f"{', and for it to answer' if online else ''}... {own_time() - started:.0f}s")
             time.sleep(SONOFF_LOOK_EVERY)
         output.progress_clear()
         host = ctx.state.input("device_ip")
@@ -258,7 +270,7 @@ def back_on_sonoff(ctx: Context, leaving: tuple[str, ...] = (), wait: float = SO
         if not device_id:
             # Its eWeLink device id is not known here, to look for it there.
             output.tell("    It has left its old firmware; check the eWeLink app shows it.")
-            return {"seconds": round(time.monotonic() - started, 1), "confirmed_by": "nothing answering"}
+            return {"seconds": round(own_time() - started, 1), "confirmed_by": "nothing answering"}
         raise NotBack
 
     return until_back(ctx, look, "Sonoff's firmware", NOT_BACK)

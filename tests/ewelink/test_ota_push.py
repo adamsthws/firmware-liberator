@@ -121,15 +121,16 @@ class FakeCloud:
 
 
 class SendingAgainTests(unittest.TestCase):
-    def send(self, script, firmware=b"x" * 64, abandoned=lambda: False, **limits):
-        cloud = FakeCloud(script)
+    def send(self, script, firmware=b"x" * 64, abandoned=lambda: False, turn=lambda _why: False, **limits):
+        cloud = self.cloud = FakeCloud(script)
         said, self.events = [], []
         device = {"deviceid": "1000000000", "apikey": "a", "online": True, "params": {"fwVersion": "1.2.0"},
                   "extra": {"model": "M"}}
         settings = {"RESEND_SETTLE": 0.0, "RESEND_QUIET": 3600.0, "RESEND_WAIT": 0.3} | limits
         with mock.patch.object(ota_push, "get_devices", return_value=[device]), \
                 mock.patch.object(ota_push, "select_device", return_value=device), \
-                mock.patch.object(ota_push, "app_socket", return_value=cloud), \
+                mock.patch.object(ota_push, "app_socket", return_value=cloud) as self.app_socket, \
+                mock.patch.object(ota_push, "wait_for_turn", side_effect=turn), \
                 mock.patch.multiple(ota_push, **settings):
             delivered = ota_push.deliver(
                 account=ota_push.Account(lambda: ("eu", {"at": "t"})), device_id="1000000000",
@@ -146,6 +147,39 @@ class SendingAgainTests(unittest.TestCase):
         # As the fault suites follow it (autoflash output.EVENTS).
         self.assertEqual(self.events, [("phase", {"phase": "serving"}), ("resent", {"attempt": 2}),
                                        ("resent", {"attempt": 3})])
+
+    def test_in_the_fault_suite_every_command_waits_for_the_runs_own_turn(self):
+        # Seen on the real cloud: a run whose turn had ended sent its command
+        # again once "the device" was back on eWeLink - the next turn's device,
+        # every emulated device being the same eWeLink device - which left
+        # eWeLink for five minutes to fetch an installer no one served it.
+        turns = []
+
+        def turn(why):
+            turns.append((why, len(self.cloud.sent)))
+            return True
+        _, cloud, _ = self.send([AWAY, BACK, None, AWAY, BACK, None, AWAY, BACK], turn=turn)
+        self.assertEqual(turns, [("send", 0), ("send", 1), ("send", 2)])
+        self.assertEqual(len(cloud.sent), ota_push.COMMAND_SENDS)
+        # A socket opened afresh after each wait, which may have been long.
+        self.assertEqual(self.app_socket.call_count, ota_push.COMMAND_SENDS)
+
+    def test_a_device_that_asked_while_its_run_waited_for_a_turn_is_not_sent_it_again(self):
+        servers = []
+        real = ota_push.FirmwareServer
+
+        def server(*args, **kwargs):
+            servers.append(real(*args, **kwargs))
+            return servers[-1]
+
+        def turn(_why):
+            if servers:
+                servers[0].last_asked = time.monotonic()   # it fetched meanwhile
+            return True
+        with mock.patch.object(ota_push, "FirmwareServer", side_effect=server):
+            _, cloud, said = self.send([AWAY, BACK, None, AWAY, BACK], turn=turn)
+        self.assertEqual(len(cloud.sent), 1)
+        self.assertNotIn("sent again", " ".join(said))
 
     def test_serving_stops_once_the_tool_that_started_it_has_gone(self):
         # Seen in the fault suite: the tool killed as it started its server, the

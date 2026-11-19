@@ -36,7 +36,7 @@ from tools.autoflash.routes.beken import images, onward
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts, rbl, scrub
 from tools.ewelink import ota_push
-from tools.ewelink.get_device_key import CALLS
+from tools.ewelink.get_device_key import CALLS, own_time
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -213,23 +213,21 @@ def revert_to_sonoff(ctx: Context, host: str, found: Stock) -> None:
 
 def wait_for_sonoff(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> bool:
     """Wait for Sonoff's firmware to start and show online in eWeLink again.
-    Whether it did; the readout is kept and sent either way."""
-    from tools.ewelink import relay as ewelink_relay
-    started = time.monotonic()
+    Whether it did; the readout is kept and sent either way. Time spent
+    waiting for a turn in the fault suite is not counted (own_time)."""
+    started = own_time()
+    answered = False
     with output.working("Waiting for Sonoff's firmware to start and rejoin eWeLink..."):
-        while time.monotonic() - started < wait:
-            devices = ctx.account_devices() if device_id else None
-            online = any(found.get("deviceid") == device_id and found.get("online") for found in devices or [])
-            if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
+        while own_time() - started < wait:
+            answered = bool(device_id) and arrival.answering(ctx, device_id)[2]
+            if answered:
                 break
-            output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
+            output.progress(f"waiting for eWeLink to show the device online... {own_time() - started:.0f}s")
             time.sleep(10)
-        else:
-            online = False
-    if online:
+    if answered:
         output.progress_clear()
         output.event("phase", phase="back-done")
-        output.say(f"    eWeLink shows the device online again after {round(time.monotonic() - started)}s.")
+        output.say(f"    eWeLink shows the device online again after {round(own_time() - started)}s.")
         return True
     output.progress_clear()
     output.tell(f"    {readout.NOT_ONLINE_YET}")

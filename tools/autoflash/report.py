@@ -18,7 +18,7 @@ from tools.autoflash import __version__, esphome, hostsys, join, kinds, output, 
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
-from tools.ewelink.get_device_key import CALLS
+from tools.ewelink.get_device_key import CALLS, cloud_turn, own_time
 from tools.autoflash.routes import update
 
 if TYPE_CHECKING:
@@ -623,17 +623,18 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     if not device_id:
         return for_device({"Relay": RELAY_NOT_CHECKED, "Power meter": "not checked"}, metered)
     output.say("Checking the relay through eWeLink...")
-    record = wait_until_online(ctx, device_id)
-    if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
-        return said({"Relay": MOTOR_MODE, "Power meter": "not checked"}, metered)
-    if record is not None:
-        with CALLS.run():   # its socket to eWeLink too, not only Account.use's calls
-            checked = ewelink_relay.check_relay(
-                account=ctx.ewelink, device_id=device_id, say=output.say)
-    else:
-        output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
-                   "could not be switched there. Check the eWeLink app.")
-        checked = None
+    with cloud_turn():   # the wait for the device and the check, in one turn of the fault suite's
+        record = wait_until_online(ctx, device_id)
+        if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
+            return said({"Relay": MOTOR_MODE, "Power meter": "not checked"}, metered)
+        if record is not None:
+            with CALLS.run():   # its socket to eWeLink too, not only Account.use's calls
+                checked = ewelink_relay.check_relay(
+                    account=ctx.ewelink, device_id=device_id, say=output.say)
+        else:
+            output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
+                       "could not be switched there. Check the eWeLink app.")
+            checked = None
     if checked is None:
         return said({"Relay": UNCHECKED_LINE, "Power meter": "not checked"}, metered)
     if checked.on is None and checked.off is None:
@@ -755,8 +756,9 @@ def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
     only. The state comes with the device's first reports, a second or two
     after it answers (seen in the emulator, where its record starts empty),
     and switching needs it. None by then, and at once when eWeLink cannot be
-    reached."""
-    started = time.monotonic()
+    reached. Time spent waiting for a turn in the fault suite is not counted
+    (own_time)."""
+    started = own_time()
     while True:
         devices = ctx.account_devices()
         record = next((found for found in devices or [] if found.get("deviceid") == device_id and found.get("online")
@@ -764,14 +766,14 @@ def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
                             or ewelink_relay.motor_mode(found.get("params") or {}))), None)
         if record and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
             output.progress_clear()
-            waited = time.monotonic() - started
+            waited = own_time() - started
             if waited >= 1:
                 output.say(f"    eWeLink shows the device online after {waited:.0f}s.")
             return record
-        if devices is None or time.monotonic() - started >= ONLINE_WAIT:
+        if devices is None or own_time() - started >= ONLINE_WAIT:
             output.progress_clear()
             return None
-        output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
+        output.progress(f"waiting for eWeLink to show the device online... {own_time() - started:.0f}s")
         time.sleep(10)
 
 

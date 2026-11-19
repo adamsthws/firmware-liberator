@@ -1,7 +1,8 @@
 import unittest
 from unittest import mock
 
-from tools.ewelink import relay
+from tests.ewelink.test_get_device_key import taking_turns
+from tools.ewelink import get_device_key, relay
 
 
 class Device:
@@ -51,18 +52,22 @@ RECORD = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up",
           "params": {"switches": [{"outlet": 0, "switch": "off"}]}}
 
 
+def asked_of(device, record=RECORD, ask=relay.check_relay, sockets=None, **more):
+    """`ask` asked of `device`, or of `sockets` one connection at a time."""
+    if ask is relay.check_relay:
+        more.setdefault("say", lambda *a: None)
+    connect = {"side_effect": sockets} if sockets else {"return_value": device}
+    account = relay.Account(lambda: ("eu", {"at": "t", "user": {"apikey": "a"}}))
+    with mock.patch.object(relay, "get_devices", return_value=[record]), \
+            mock.patch.object(relay, "READING_SETTLE", 0), \
+            mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
+            mock.patch.object(relay.WebSocket, "connect", **connect):
+        return ask(account=account, device_id="1000abcdef", **more)
+
+
 class RelayTests(unittest.TestCase):
-    def check(self, device, record=RECORD, ask=relay.check_relay, sockets=None, **more):
-        """Asked of `device`, or of `sockets` one connection at a time."""
-        if ask is relay.check_relay:
-            more.setdefault("say", lambda *a: None)
-        connect = {"side_effect": sockets} if sockets else {"return_value": device}
-        account = relay.Account(lambda: ("eu", {"at": "t", "user": {"apikey": "a"}}))
-        with mock.patch.object(relay, "get_devices", return_value=[record]), \
-                mock.patch.object(relay, "READING_SETTLE", 0), \
-                mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
-                mock.patch.object(relay.WebSocket, "connect", **connect):
-            return ask(account=account, device_id="1000abcdef", **more)
+    def check(self, *args, **more):
+        return asked_of(*args, **more)
 
     def test_a_device_that_answers_is_there_and_nothing_on_it_changes(self):
         device = Device()
@@ -230,6 +235,57 @@ class RelayTests(unittest.TestCase):
         self.assertIs(relay.relay_state({"switch": "on"}), True)
         self.assertEqual(relay.switch_params({"switch": "on"}, False), {"switch": "off"})
         self.assertIsNone(relay.relay_state({"fwVersion": "1.3.0"}))
+
+
+
+class TurnTests(unittest.TestCase):
+    """In the fault suite on the real cloud every emulated device is the same
+    eWeLink device: what is sent outside a run's own turn reaches another
+    run's device (get_device_key.cloud_turn)."""
+
+    def in_the_suite(self, ask, device, sockets=None):
+        """`ask` of `device` with turns taken: what it returned, the turns asked
+        for, and whether every update went within one."""
+        outside = []
+
+        class Watched(type(device)):
+            def send_json(self, value):
+                if value.get("action") == "update" and not get_device_key.in_turn():
+                    outside.append(value)
+                super().send_json(value)
+        device.__class__ = Watched
+        with taking_turns() as asked, \
+                mock.patch.object(relay, "SWITCH_WAIT", 0.2), mock.patch.object(relay, "RESTORE_WAIT", 0.5):
+            got = asked_of(device, ask=ask, sockets=sockets)
+        return got, asked, not outside
+
+    def test_whether_the_device_answers_is_asked_in_a_turn(self):
+        got, asked, within = self.in_the_suite(relay.answers, Device())
+        self.assertEqual((got, asked, within), (True, ["command"], True))
+
+    def test_a_relay_check_is_one_turn_switching_back_included(self):
+        class Dropping(Device):
+            def receive_json(self, timeout=None):
+                if self.sent[-1].get("action") == "update" and len(self.sent) > 4:
+                    raise relay.socket.timeout   # the switch back, sent as it went
+                return super().receive_json(timeout)
+        first, again = Dropping(meter=True), Device()
+        got, asked, within = self.in_the_suite(relay.check_relay, first, sockets=[first, again])
+        self.assertEqual((got[:2], asked, within), ((True, True), ["command"], True))
+
+    def test_a_device_the_suite_says_is_away_is_sent_nothing(self):
+        device = Device()
+        with taking_turns():
+            get_device_key.turn_file(".absent").write_text("absent", encoding="utf-8")
+            self.assertIsNone(asked_of(device, ask=relay.answers))
+        self.assertEqual([m for m in device.sent if m.get("action") == "update"], [])
+
+    def test_an_update_outside_a_turn_is_refused(self):
+        device = Device()
+        with mock.patch.object(get_device_key, "_TURN_FILE", "/nonexistent/cloud-turn"), \
+                self.assertRaises(relay.EwelinkError):
+            relay.command(device, RECORD, {"switch": "on"})
+        self.assertEqual(device.sent, [])
 
 
 if __name__ == "__main__":

@@ -156,6 +156,25 @@ class CloudTurnTests(unittest.TestCase):
         sc.ex.assert_not_called()
         self.assertEqual(sum("connections cannot be read" in line for line in said), 1)
 
+    def test_a_run_asking_to_send_gets_a_whole_turn_with_its_device_back(self):
+        for asked, expected in (("send", [mock.call("a send", run="run")]),
+                                ("command", [mock.call("a command", run="run", until_done=True, limit=fs.COMMAND_TURN_AT_MOST)]),
+                                ("sign-in", [mock.call("a sign-in", limit=fs.SIGN_IN_TURN)]),
+                                ("", [mock.call("a sign-in", limit=fs.SIGN_IN_TURN)])):  # a release saying nothing
+            with self.subTest(asked=asked), tempfile.TemporaryDirectory() as state:
+                (Path(state) / "work/captures").mkdir(parents=True)
+                monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path(state), sc={"step": "C3"}, say=lambda _: None))
+                monitor.turn_file().write_text(asked, encoding="utf-8")
+                with mock.patch.object(monitor, "live_run", return_value=("run", "=== run started\n")), \
+                        mock.patch.object(monitor, "hold", return_value=0) as hold, \
+                        mock.patch.object(fs, "device_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
+                        mock.patch.object(fs.CLOUD, "acquire", return_value=True) as acquire, \
+                        mock.patch.object(monitor.stop, "wait", side_effect=lambda _: monitor.stop.set()):
+                    monitor.watching()
+                self.assertEqual(hold.call_args_list, expected)
+                self.assertEqual(acquire.call_args.args[1],
+                                 fs.CLOUD.FALLEN if asked in ("send", "command") else fs.CLOUD.FINDING)
+
     def test_the_turn_from_the_start_may_switch_its_device(self):
         monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C2", "fault": "crash"},
                                            say=lambda _: None))
@@ -1312,6 +1331,68 @@ class ScenarioTests(unittest.TestCase):
                 monitor.intents = mock.Mock(return_value=None)
                 self.holding(monitor)
                 self.assertEqual(monitor.stop.wait.called, not ends)  # held on, waiting a moment
+
+    def command_turn(self, done_at=None, asked_again_at=None, text="[12:00:00] C2  Stock\n", back_at=0, absent=None):
+        """A command's turn (TURNS_FOR), its device connected from `back_at` s
+        into it: how long it lasted, whether a run's turn file was there at its
+        end, and what it said. The run says it is done at `done_at`, and asks
+        again at `asked_again_at`. `absent`: given, a list the seconds into the
+        turn the suite said the device was away (TURN_ABSENT_FILE) go into."""
+        session = ("192.0.2.81", "2", "443")
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(tmp, text=text)
+            monitor.turn_done_file().write_text("done", encoding="utf-8")   # an earlier turn's
+            monitor.turn_file().write_text("command", encoding="utf-8")
+            said = []
+            monitor.sc.say = said.append
+            clock = [1000.0]
+
+            def wait(_):
+                clock[0] += 0.5
+                if absent is not None and (Path(tmp) / "work" / fs.TURN_ABSENT_FILE).exists():
+                    absent.append(clock[0] - 1000)
+                if clock[0] - 1000 == done_at:
+                    monitor.turn_done_file().write_text("done", encoding="utf-8")
+                if clock[0] - 1000 == asked_again_at:
+                    monitor.turn_file().write_text("command", encoding="utf-8")
+            monitor.stop = mock.Mock(is_set=mock.Mock(return_value=False), wait=mock.Mock(side_effect=wait))
+            first = iter([set()])
+            with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "device_fetching", return_value=False), \
+                    mock.patch.object(fs, "cloud_connections",
+                                      side_effect=lambda _n: next(first, {session} if clock[0] - 1000 >= back_at
+                                                                  else set())):
+                monitor.hold("a command", **fs.TURNS_FOR["command"][2])
+            return clock[0] - 1000, monitor.turn_file().exists(), said
+
+    def test_a_commands_turn_ends_once_the_run_is_done_with_it(self):
+        # Not at a done the turn before left, nor a minute after a command an
+        # earlier step sent (TURN_IDLE): the run's switches and readings take longer.
+        length, _, said = self.command_turn(done_at=100)
+        self.assertEqual(length, 100 + fs.COMMAND_AGAIN)
+        self.assertIn("CLOUD: the run is done with its turn", said)
+        length, _, said = self.command_turn()
+        self.assertEqual(length, fs.COMMAND_TURN_AT_MOST)
+        self.assertFalse([line for line in said if "nothing fetched" in line])
+
+    def test_a_run_sends_no_command_while_its_device_is_not_back(self):
+        # Seen against the real cloud: a device not back, its run let go on, and
+        # eWeLink answering as though from it, down the last turn's session.
+        absent = []
+        self.command_turn(done_at=300, back_at=100, absent=absent)
+        self.assertAlmostEqual(absent[0], fs.DEVICE_BACK_AT_MOST, delta=1)
+        self.assertAlmostEqual(absent[-1], 100 + fs.SIGNED_ON_AFTER, delta=1)
+        absent = []
+        self.command_turn(done_at=100, absent=absent)
+        self.assertEqual(absent, [])
+
+    def test_a_commands_turn_goes_on_for_a_run_asking_again_at_once(self):
+        # Seen against the real cloud: a run's look as its device came back
+        # found it not yet online, and each look after waited a minute in a
+        # turn of its own for the device to be back again.
+        length, waiting, _ = self.command_turn(done_at=100, asked_again_at=110)
+        self.assertEqual((length, waiting), (fs.COMMAND_TURN_AT_MOST, False))
 
     def test_a_sign_in_with_no_step_asking_gets_a_short_turn(self):
         with tempfile.TemporaryDirectory() as tmp:

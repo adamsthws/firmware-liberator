@@ -1048,10 +1048,47 @@ DEVICE_BACK_AT_MOST = 60.0
 # A run's command that this long has not brought its device to fetch anything has
 # been lost, and eWeLink does not pass one on again: the turn is of no more use
 # (seen: 3 minutes of one, with the device back on eWeLink after a power cut).
+# Its sender sends the command again in a turn it asks for ("send"), never in the
+# next run's: every emulated device is the same eWeLink device, and seen, a
+# command sent then had the next turn's device leave eWeLink for five minutes.
 TURN_IDLE = 60.0
 SENT = re.compile(rf"\] C2  |(?i:{re.escape(SAID['installer_again'])})|upgrade command sent again")
-# Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
+# Where a run asks for a turn before it signs in or sends the device anything,
+# saying which (get_device_key.wait_for_turn), and says it is done with one
+# (TURN_DONE_FILE, get_device_key.cloud_turn).
 TURN_FILE = "captures/cloud-turn"
+TURN_DONE_FILE = TURN_FILE + ".done"
+# There while a command's turn has its device not back on eWeLink: its run
+# sends nothing meanwhile (get_device_key.in_turn). Seen
+# against the real cloud: a device not back (its Sonoff firmware restarting
+# over and over), the run let go on, and eWeLink answering the run's asking
+# and its first switch as though from it - down the session of the device
+# whose turn was before, shut but not yet let go of by eWeLink - so the run
+# took a device that never came back for one answering.
+TURN_ABSENT_FILE = TURN_FILE + ".absent"
+# A command's turn goes on for a run that asks again this soon after it said it
+# was done (seconds): a run waiting for its device back on eWeLink looks every
+# 10 s (arrival.SONOFF_LOOK_EVERY), each look a turn, and seen against the real
+# cloud the first, as the device came back, found it not yet online; each turn
+# after waited a minute for the device to be back again.
+COMMAND_AGAIN = 20.0
+# A command's turn, so asked again, lasts this long at most (seconds): longer
+# than a run holds one - the wait for its device back on Sonoff's firmware
+# (arrival.SONOFF_WAIT), then the report's wait for it online and its relay
+# check (report.ONLINE_WAIT, relay.check_relay), about nine minutes - as a turn
+# ended under a run still sending would let it send to the next turn's device.
+COMMAND_TURN_AT_MOST = 900.0
+# What a run asks a turn for, and how it is given: its place in the queue,
+# whether it waits for the run's device (and answers the run's steps asking
+# meanwhile), and the turn (DeviceMonitor.hold). A sign-in needs no device: a
+# short turn. An upgrade command ("send") and any other ("command": the relay
+# switched, the device's readings asked, whether it answers) go once the run's
+# own device is back on eWeLink, as anything sent reaches whichever device is
+# on it; a send's turn lasts through the download, a command's until the run
+# says it is done (get_device_key.cloud_turn).
+TURNS_FOR = {"sign-in": (CloudQueue.FINDING, False, {"limit": SIGN_IN_TURN}),
+             "send": (CloudQueue.FALLEN, True, {}),
+             "command": (CloudQueue.FALLEN, True, {"until_done": True, "limit": COMMAND_TURN_AT_MOST})}
 
 
 def device_busy(state, since):
@@ -1137,8 +1174,22 @@ class DeviceMonitor:
     def turn_file(self):
         return self.state / "work" / TURN_FILE
 
+    def turn_done_file(self):
+        return self.state / "work" / TURN_DONE_FILE
+
+    def device_absent(self, absent):
+        """Say whether the device is away from eWeLink in a command's turn
+        (TURN_ABSENT_FILE)."""
+        marker = self.state / "work" / TURN_ABSENT_FILE
+        if absent:
+            marker.write_text("absent", encoding="utf-8")
+        else:
+            marker.unlink(missing_ok=True)
+
     def watch(self):
         self.turn_file().unlink(missing_ok=True)  # the last scenario's run, killed while it waited
+        self.turn_done_file().unlink(missing_ok=True)
+        (self.state / "work" / TURN_ABSENT_FILE).unlink(missing_ok=True)
         # Shut first, and kept shut whatever goes wrong below.
         device_internet(self.n, False)
         while not self.stop.is_set():
@@ -1185,10 +1236,27 @@ class DeviceMonitor:
                         seen = self.hold("finding" if finding else "fallen back" if again else "fresh", run=run)
                         if seen is not None:
                             handled[run] = seen
-                if self.turn_file().exists() and not NO_CLOUD and wait_for_turn(self.sc, CLOUD.FINDING, self.stop.is_set):
-                    self.hold("a sign-in", limit=SIGN_IN_TURN)
+            asked = self.turn_asked()
+            if asked and not NO_CLOUD:
+                # A reason this suite does not know, from a newer tool: a command's turn.
+                priority, device, how = TURNS_FOR.get(asked, TURNS_FOR["command"])
+                if wait_for_turn(self.sc, priority, self.stop.is_set):
+                    if not device:
+                        self.hold(f"a {asked}", **how)
+                    else:
+                        seen = self.hold(f"a {asked}", run=live[0] if live else None, **how)
+                        if live and seen is not None:
+                            handled[live[0]] = seen
             self.stop.wait(1.0)
 
+    def turn_asked(self):
+        """What a run waiting for a turn wants it for (get_device_key.wait_for_turn,
+        TURNS_FOR): "sign-in" (also a release that said nothing), "send",
+        "command", or None."""
+        try:
+            return self.turn_file().read_text(encoding="utf-8").strip() or "sign-in"
+        except FileNotFoundError:
+            return None
 
     def intents(self, run):
         live = self.live_run()
@@ -1208,13 +1276,17 @@ class DeviceMonitor:
             self.sc.say(f"CLOUD: device's connection to {connection[0]} closed")
         return {connection: seen.get(connection, now) for connection in live}
 
-    def hold(self, why, limit=HOLD_AT_MOST, run=None, restart_once=False):
+    def hold(self, why, limit=HOLD_AT_MOST, run=None, restart_once=False, until_done=False):
         """Gives the device its way out until the run ends, the device leaves
         Sonoff's firmware or `limit` runs out; returns how many times `run`
         had asked by then, all of them answered by this turn. `restart_once`:
         a device not back at eWeLink in DEVICE_BACK_AT_MOST is switched off and on
         once, as a person would, and waited for again (a fresh device's, with
-        nothing yet sent to it)."""
+        nothing yet sent to it). `until_done`: a command's turn (TURNS_FOR),
+        ending too once the run says it is done with it and has not asked
+        again within COMMAND_AGAIN; one it asks for after is the next. Its
+        run sends nothing while its device is not back on eWeLink
+        (device_absent), looked for on until it is."""
         uart = self.state / "logs/uart.log"
         pos = uart.stat().st_size if uart.exists() else 0
         ended = self.run_text().count("=== run ended ===")
@@ -1233,6 +1305,10 @@ class DeviceMonitor:
         back_at = None
         sent_seen = 0
         idle_from = since
+        given = False
+        done_at = None
+        device_back = False
+        self.turn_done_file().unlink(missing_ok=True)   # one an earlier turn outlasted
         try:
             while not self.stop.is_set() and time.time() - since < limit:
                 now = time.time()
@@ -1248,8 +1324,10 @@ class DeviceMonitor:
                                     "nor conntrack over netlink): while so, not switched off and on, nor its "
                                     "turn freed for fetching nothing")
                     first_seen = first_seen if seen is None else seen
-                    if device_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
-                        device_first, back_at = False, now
+                    if (device_first or until_done and not device_back) and \
+                            any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
+                        device_first, device_back, back_at = False, True, back_at or now
+                        self.device_absent(False)
                         self.sc.say(f"CLOUD: device back after {now - opened_at:.0f}s")
                     elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST and restart_once and not blind:
                         # Seen against the real cloud: a fresh device's every TLS
@@ -1265,7 +1343,7 @@ class DeviceMonitor:
                     elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST:
                         device_first, back_at = False, now
                         self.sc.say(f"CLOUD: device not back after {now - opened_at:.0f}s; the run goes on")
-                    if back_at is not None:
+                    if back_at is not None and not until_done:
                         # This run's sends: one before it, cancelled say, is not this turn's to wait on.
                         text = self.run_text()
                         sent = len(SENT.findall(text, max(text.rfind("=== run started"), 0)))
@@ -1274,8 +1352,22 @@ class DeviceMonitor:
                         if sent and now - max(idle_from, back_at) >= TURN_IDLE and not blind:
                             self.sc.say(f"CLOUD: nothing fetched for {TURN_IDLE:.0f}s; the turn is free")
                             break
-                if not device_first:
+                if until_done and given:
+                    if self.turn_done_file().exists():
+                        self.turn_done_file().unlink()
+                        done_at = time.time()
+                    if done_at is not None and self.turn_file().exists():
+                        # Asked again at once: this turn goes on.
+                        self.turn_file().unlink()
+                        done_at = None
+                    elif done_at is not None and time.time() - done_at >= COMMAND_AGAIN:
+                        self.sc.say("CLOUD: the run is done with its turn")
+                        break
+                elif not device_first:
+                    # Unread connections are no word that the device is not back.
+                    self.device_absent(until_done and not (device_back or blind))
                     self.turn_file().unlink(missing_ok=True)
+                    given = True
                 if time.time() - opened > 2:
                     # Again now and then: a device's emulator started in the
                     # turn (a fresh one) starts with its way shut.
@@ -1308,6 +1400,7 @@ class DeviceMonitor:
                 self.stop.wait(0.5)
         finally:
             device_internet(self.n, False)
+            self.device_absent(False)
             CLOUD.release(self.n)
             self.sc.say(f"CLOUD: turn given up after {time.time() - since:.0f}s")
         return asked

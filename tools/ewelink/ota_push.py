@@ -30,7 +30,7 @@ from typing import Any, Callable
 if __package__ in (None, ""):  # run as a script: the repository root, for `tools.`
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.ewelink.get_device_key import Account, EwelinkError, get_devices, select_device  # noqa: E402
+from tools.ewelink.get_device_key import Account, EwelinkError, get_devices, select_device, wait_for_turn  # noqa: E402
 from tools.ewelink.relay import app_socket  # noqa: E402
 from tools.ewelink.websocket_minimal import WebSocket, WebSocketError  # noqa: E402
 
@@ -326,6 +326,9 @@ def deliver(*, account: Account, device_id: str,
     thread: threading.Thread | None = None
     ws: WebSocket | None = None
     try:
+        # In the fault suite, every command in a turn of the run's own: one sent
+        # outside it reaches another run's device (wait_for_turn).
+        wait_for_turn("send")
         device = account.use(lambda region, session: select_device(get_devices(region, session["at"]), device_id))
         region, session = account.session()
         model = ((device.get("extra") or {}).get("model") or device.get("model") or device.get("productModel") or "")
@@ -419,6 +422,19 @@ def deliver(*, account: Account, device_id: str,
             now = time.monotonic()
             if (ws is not None and sends < COMMAND_SENDS and complete_at is None
                     and resending.lost(server.last_asked, now)):
+                # In the fault suite the turn may have ended, "the device" back
+                # on eWeLink being the next turn's: sent again only in a turn
+                # of its own, on a socket opened afresh after the wait, and not
+                # at all if the device asked for the file meanwhile.
+                if wait_for_turn("send"):
+                    ws.close()
+                    ws = account.use(app_socket)
+                    asked_meanwhile = server.last_asked >= now
+                    now = time.monotonic()
+                    deadline = max(deadline, now + RESEND_WAIT)
+                    if asked_meanwhile:
+                        resending = Resending(now)
+                        continue
                 sends += 1
                 server.end_progress()
                 say(f"  The device has not asked for the file: upgrade command sent again "

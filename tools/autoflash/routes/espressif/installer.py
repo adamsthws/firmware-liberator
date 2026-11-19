@@ -41,7 +41,7 @@ from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
 from tools.autoflash.routes import arrival
 from tools.autoflash.routes.espressif import images
 from tools.ewelink import ota_push
-from tools.ewelink.get_device_key import CALLS
+from tools.ewelink.get_device_key import CALLS, own_time
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -284,13 +284,14 @@ def restart_bridge(host: str) -> bool:
 def restart_into_sonoff(ctx: Context, host: str, wait: float = 120.0) -> bool:
     """The bridge at `host` restarted into Sonoff's firmware, waited for: whether
     Sonoff's firmware answered there in `wait` seconds. False at once where the
-    bridge would not restart."""
+    bridge would not restart. Time spent waiting for a turn in the fault
+    suite is not counted (own_time)."""
     if not restart_bridge(host):
         return False
     output.event("phase", phase="back")
     output.say("    Restarting it into its Sonoff firmware...")
-    started = time.monotonic()
-    while time.monotonic() - started < wait:
+    started = own_time()
+    while own_time() - started < wait:
         time.sleep(3.0)
         if arrival.sonoff_answers(ctx, host):
             return True

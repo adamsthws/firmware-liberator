@@ -742,20 +742,70 @@ wrong.
 - A device's way to the internet is shut, its connections reset at both ends
   so eWeLink lets go at once, and opened only for its turn.
 - A turn starts when the run is about to need the cloud (the eWeLink steps,
-  or the installer sent again), and the run waits for it before logging in
-  (`AUTOFLASH_EMULATOR_CLOUD_TURN`, set by the suite); without that wait, a
-  run took the device whose turn it was for its own and sent it the
-  installer.
-- The turn lasts until the device has downloaded the installer and started
-  it, typically 30-60 s, as Sonoff's firmware gives up a download when it
-  loses eWeLink part way. It also ends with the run, or once the device has
-  fetched nothing for a minute since its command went out, as eWeLink does
-  not pass a lost command on again; a later run asks again.
+  or the installer sent again). The run waits for a turn of its own before
+  it signs in, and before it sends the device anything through eWeLink,
+  saying which (`AUTOFLASH_EMULATOR_CLOUD_TURN`, set by the suite;
+  `get_device_key.wait_for_turn`, and the suite's `TURNS_FOR`): "sign-in";
+  "send", every upgrade command, the first and each sent again; and
+  "command", every other - the relay switched and the meter read at the end
+  of a run back on Sonoff's firmware, whether the device answers as a run
+  waits for it back (`relay.answers`). Anything sent goes once the run's own
+  device is back on eWeLink. Without that wait, a run took the device whose
+  turn it was for its own and sent it the installer; and a run whose turn had
+  ended sent its command again a few seconds after "the device" came back on
+  eWeLink - the next turn's device, which closed its session to fetch an
+  installer no one served it, and then stayed off eWeLink for about five
+  minutes until Sonoff's firmware restarted itself (the turn NOT-FIRED, or
+  failing).
+- A group of commands takes one turn (`get_device_key.cloud_turn`): a run
+  back on Sonoff's firmware waits for eWeLink to show its device online and
+  switches its relay over and back, reading the meter after each, in one, and
+  a look at whether the device is back on eWeLink and answers is one turn
+  for the list and the asking alike, as the device is online there only in
+  its turn. The turn ends once the run says it is done with it (a
+  `cloud-turn.done` file beside the turn file) and has not asked again within
+  `COMMAND_AGAIN`, with the run, or after `COMMAND_TURN_AT_MOST`, longer than
+  a run holds one: a run waiting for its device back looks every 10 s, and
+  the look as its device came back found it not yet online, each look after
+  waiting a minute in a turn of its own for the device to be back again.
+  While a command's device is not back, its run sends nothing
+  (`TURN_ABSENT_FILE`): let go on, a run whose device never came back (its
+  Sonoff firmware restarting over and over) had eWeLink answer its asking,
+  and its first switch, as though from it - down the session of the device
+  whose turn was before, shut but not yet let go of by eWeLink.
+  An update sent outside a turn in the suite is refused
+  (`relay.send_update`), so a new sender that misses the turn fails there,
+  never reaching another run's device. Reading the account's device list
+  alone, or asking eWeLink what it offers (`query_ota`), reaches no device and
+  takes no turn.
+- A send's turn lasts until the device has downloaded the installer and
+  started it, typically 30-60 s, as Sonoff's firmware gives up a download when
+  it loses eWeLink part way. It also ends with the run, or once the device has
+  fetched nothing for a minute since its command went out (`TURN_IDLE`), as
+  eWeLink does not pass a lost command on again; the run's sender, still
+  waiting, asks for another turn to send it again, and a later run asks
+  again too.
+- Time a run spends waiting for a turn is not taken from its waits for the
+  device (`get_device_key.own_time`): Sonoff's firmware back
+  (`arrival.SONOFF_WAIT`), eWeLink showing it online, the readout's wait for
+  it, the report's before the relay check. Seen before: runs back on Sonoff's
+  firmware queued 50-280 s behind other runs' turns, all of it out of their
+  wait, so a reversion could fail from queuing alone. A normal run takes no
+  turns, and its waits are as they were.
 - Turns go by how long the run can wait: finding the device in eWeLink,
-  then a device back on Sonoff's firmware part way, then the rest, and last a
-  C2 scenario's device, whose turn starts before its run. Runs of an old
-  release (`legacy`) know no such wait, and hold a turn from the start of
-  their first run.
+  then a device back on Sonoff's firmware part way (and a send or a command),
+  then the rest, and last a C2 scenario's device, whose turn starts before
+  its run.
+- Runs of an old release (`legacy`) cannot be changed, and ask for no turn:
+  what they send goes whenever they send it. They hold a turn from the start
+  of their first run, and the real-cloud ones are killed within C2, so the
+  one command they send falls within it. The other `legacy` scenarios, run
+  on through C2 by the old release, could send the installer again outside a
+  turn after a fallback (the suite answers its "sent again" with a turn, but
+  only once said); they are stub-only, and holding the cloud for a whole old
+  run would keep every other run waiting for minutes.
+- The Beken fault suite and the attended suite run every emulator on a stub
+  of its own, never the real cloud: they take no turns.
 - Between two devices' turns there is a 5 s pause
   (`AUTOFLASH_EMU_CLOUD_COOL_DOWN`) while eWeLink lets go of the last one.
 - A run signs in only once its device has held a connection to the internet
@@ -763,8 +813,9 @@ wrong.
   turn's connection as the device and pass a command down it to no one.
 - A fresh device not back within that minute, with nothing yet sent to it, is
   switched off and on once, as a person would, and waited for again
-  (`fresh_device_restarted`): such devices had every dial to eWeLink time
-  out, and their runs stopped at A1 to ask before the fault came.
+  (`fresh_device_restarted`): such devices stayed off eWeLink, and their
+  runs stopped at A1 to ask before the fault came (mostly another run's
+  command, before every command waited for its run's turn).
 - The suite sees a device's connections through its emulator's firewall:
   `/proc/net/nf_conntrack`, or on a kernel built without it (Ubuntu's) the
   same table read over netlink (`tools/espressif/emulator/conntrack.py`, run
@@ -778,14 +829,15 @@ scenarios pass (`AUTOFLASH_EMU_CLOUD_MOST`) or one fewer at each trouble
 (`AUTOFLASH_EMU_CLOUD_BACK_OFF`), and lengthen the pause when eWeLink is the
 trouble (`AUTOFLASH_EMU_CLOUD_PAUSE_UP`).
 
-*One real-cloud run a day.* To eWeLink, a real-cloud batch is one device
-reconnecting every minute or two for hours. One run of the 75 is fine, but
-after several hundred real-cloud scenarios in a day eWeLink drops the
-device's sessions seconds after they open, more and more often, and the
-device stays away about five minutes: runs find it offline and stop at
-"Discovering the device" (NOT-FIRED), and `connections.log` shows sessions
-closing within 15 s with nothing sent. Stop the batch for an hour; run again,
-it carries on with what has not passed.
+*Sessions that close within seconds.* `connections.log` showing a device's
+session to eWeLink closing about 10 s after it opens, and the device then
+away about five minutes, was taken for eWeLink limiting a device that
+reconnects every minute or two for hours. Looked into, it was another
+emulator's run sending its update command again into the turn, which every
+command now waits for its own turn to stop (`errno 119` in its serial log
+is only the start of every connection, kept or not); no limit of eWeLink's
+has been seen.
+A batch run again carries on with what has not passed.
 
 **How many at once.** At most one emulator per core
 ([why](emulator.md#several-at-once)). A batch started with
@@ -972,10 +1024,13 @@ moment as Tasmota names its own.
 The current code passes the whole suite: all 1,520 scenarios on the stub,
 each that did not pass at first passing when run again, and 72 of the 73 cloud
 ones against the real eWeLink. Every cloud scenario that failed or was
-NOT-FIRED on the way had the device stay off eWeLink for its whole turn
-([below](#still-open-espressif)); each passed on a later try, an hour or more
-apart ([one real-cloud run a day](#running-it-espressif)), but one, whose
-device was never online in its turn in four tries over five hours. Run across
+NOT-FIRED on the way had the device stay off eWeLink for its whole turn,
+another run's command having reached it; each passed on a later try but one,
+whose device was never online in its turn in four tries over five hours.
+Once every command waited for its run's own turn, the 13 cloud scenarios
+that had failed or been NOT-FIRED that way, run again three at once on a
+kernel without `/proc/net/nf_conntrack`, all passed at the first try; nine
+times a run waited for a turn of its own to send its command. Run across
 several computers, with the Beken suite and the attended runs beside it, that
 took about twelve hours.
 
@@ -1010,13 +1065,6 @@ scenario's longest.
   computer slept for ten minutes at K1, the interim Tasmota answered nothing
   once its plan check had passed, through all four runs, still on the
   device's address; that too passed when run again.
-- **A device that stays off eWeLink.** On the real eWeLink, the stock device
-  sometimes cannot get back online for a whole turn, switched off and on or
-  not: its connections to eWeLink time out as they are set up (`errno 119` in
-  its serial log), most often after a send cut short at C2 or C3fb. Its runs
-  stop at "Discovering the device" (NOT-FIRED), or, where its fault had come,
-  say the installer was not delivered (FAIL). In a run of the 73 cloud
-  scenarios, twelve met it; all but one passed on a later try.
 
 #### What it has found (Espressif)
 

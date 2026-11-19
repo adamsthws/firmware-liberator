@@ -64,6 +64,10 @@ def dispatch_server(region: str) -> tuple[str, int]:
 
 # Set by the fault suite on the real cloud (wait_for_turn). Unset in a normal run.
 _TURN_FILE = os.environ.get("AUTOFLASH_EMULATOR_CLOUD_TURN", "")
+# Whether this run is within a turn of its own now (cloud_turn).
+_turn_held = False
+# How long this run has waited for turns, in seconds (wait_for_turn, own_time).
+_queued = 0.0
 
 
 # A certificate this computer does not trust, from a site that has a good one -
@@ -186,16 +190,76 @@ def api_json(url: str, *, body: bytes | None = None, headers: dict[str, str] | N
         raise EwelinkError("eWeLink returned a non-JSON response") from None
 
 
-def wait_for_turn() -> None:
+def wait_for_turn(why: str = "sign-in") -> bool:
     """In the fault suite, whose emulated devices are all one eWeLink device, a
-    sign-in ends another run's and can reach another's device: so a run leaves
-    this file and signs in once the suite has removed it, giving it the turn."""
-    if _TURN_FILE:
-        turn = Path(_TURN_FILE)
-        turn.parent.mkdir(parents=True, exist_ok=True)
-        turn.touch()
-        while turn.exists():
-            time.sleep(0.5)
+    sign-in ends another run's, and whatever is sent to the device reaches
+    whichever device is on eWeLink: so a run leaves this file, saying `why`
+    ("sign-in", "send" for an upgrade command, "command" for any other
+    (cloud_turn)), and goes on once the suite has removed it, giving it the
+    turn - for a send or a command, with its own device back on eWeLink. At
+    once within a turn the run holds already. Whether turns are taken: False
+    in a normal run, which never waits."""
+    global _queued
+    if not _TURN_FILE:
+        return False
+    if _turn_held:
+        return True
+    turn = Path(_TURN_FILE)
+    turn.parent.mkdir(parents=True, exist_ok=True)
+    asking = turn.with_name(turn.name + ".asking")
+    asking.write_text(why, encoding="utf-8")
+    os.replace(asking, turn)  # whole: never read half written
+    asked = time.monotonic()
+    while turn.exists():
+        time.sleep(0.5)
+    _queued += time.monotonic() - asked
+    return True
+
+
+def own_time() -> float:
+    """time.monotonic(), less every second this run has waited for a turn
+    (wait_for_turn): the clock a wait for the device runs on, so that time
+    queued behind other runs' turns in the fault suite is not taken from it.
+    Seen against the real cloud: runs back on Sonoff's firmware waiting up to
+    280 s for turns, all of it out of arrival.SONOFF_WAIT. The same as
+    time.monotonic() in a normal run, which takes no turns."""
+    return time.monotonic() - _queued
+
+
+def turn_file(suffix: str) -> Path:
+    """A file beside the turn file: ".done", where a run says it is done with
+    its turn, for the suite to give the cloud to the next; ".absent", there
+    while the suite sees the run's device not back on eWeLink in its turn
+    (in_turn)."""
+    turn = Path(_TURN_FILE)
+    return turn.with_name(turn.name + suffix)
+
+
+@contextlib.contextmanager
+def cloud_turn() -> Iterator[None]:
+    """Everything sent to the device through eWeLink within, and what eWeLink
+    says of it there (online or not), in one turn of the run's own in the fault
+    suite (wait_for_turn, "command"), held until the block ends: a group of
+    commands, such as a relay check's switches and readings, takes one turn,
+    not one each. Within another, part of it. Nothing in a normal run."""
+    global _turn_held
+    if _turn_held or not wait_for_turn("command"):
+        yield
+        return
+    _turn_held = True
+    try:
+        yield
+    finally:
+        _turn_held = False
+        turn_file(".done").write_text("done", encoding="utf-8")
+
+
+def in_turn() -> bool:
+    """Whether a command may go to the device now: in a normal run, which takes
+    no turns, or within a turn of the run's own (cloud_turn) while the suite
+    does not say its device is away from eWeLink - what eWeLink answers then
+    comes down another device's session."""
+    return not _TURN_FILE or (_turn_held and not turn_file(".absent").exists())
 
 
 def login_session(account: str, password: str, country_code: str, region: str) -> tuple[str, dict[str, Any]]:
