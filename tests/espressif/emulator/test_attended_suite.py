@@ -500,27 +500,42 @@ class InstanceTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_a_run_uses_one_instance_per_worker_never_two_scenarios_at_once(self):
-        found = {f"s60-{i}": ("espressif", {}) for i in range(7)} | {f"s61-{i}": ("beken", {}) for i in range(3)}
-        busy, used, lock = set(), [], threading.Lock()
+    def run_all(self, found, workers):
+        """The instances each family's scenarios ran on, and the most run at
+        once, of each family and in all."""
+        busy, used, most, lock = set(), [], {"espressif": 0, "beken": 0, "all": 0}, threading.Lock()
 
-        def run_one(n, name, family, scenario, results, mac, workers, rerun):
+        def run_one(n, name, family, scenario, results, mac, at_once, rerun):
             with lock:
-                self.assertNotIn(n, busy, f"{name} on {n}, which another scenario is using")
-                busy.add(n)
+                self.assertNotIn((family, n), busy, f"{name} on {n}, which another scenario is using")
+                busy.add((family, n))
                 used.append((family, n))
-            time.sleep(0.02)
+                most[family] = max(most[family], sum(1 for each, _ in busy if each == family))
+                most["all"] = max(most["all"], len(busy))
+            time.sleep(0.05)
             with lock:
-                busy.discard(n)
+                busy.discard((family, n))
             return f"PASS {name}"
 
         with mock.patch.object(attended_suite, "run_one", run_one), redirect_stdout(io.StringIO()), \
                 mock.patch.object(attended_suite.emulator_instances, "running", return_value=set()):
-            lines = attended_suite.run_all(list(found), found, Path("no-results"), None, workers=3, first=81)
-        self.assertEqual(len(lines), 10)
-        self.assertEqual({n for family, n in used if family == "espressif"}, {81, 82, 83})
-        self.assertEqual({n for family, n in used if family == "beken"}, {81})
+            lines = attended_suite.run_all(list(found), found, Path("no-results"), None, workers=workers, first=81)
+        self.assertEqual(len(lines), len(found))
+        return ({family: {n for each, n in used if each == family} for family in ("espressif", "beken")}, most)
 
+    def test_a_run_uses_one_instance_per_worker_never_two_scenarios_at_once(self):
+        found = {f"s60-{i}": ("espressif", {}) for i in range(7)} | {f"s61-{i}": ("beken", {}) for i in range(3)}
+        used, most = self.run_all(found, 3)
+        self.assertEqual(used, {"espressif": {81, 82, 83}, "beken": {81, 82, 83}})
+        self.assertLessEqual(most["all"], 3)
+
+    def test_the_s61s_run_side_by_side_as_the_s60s_do(self):
+        found = {f"s61-{i}": ("beken", {}) for i in range(4)}
+        used, most = self.run_all(found, 2)
+        self.assertEqual((used["beken"], most["beken"]), ({81, 82}, 2))
+        # One of each family's numbers is taken only as one of its scenarios runs.
+        self.assertEqual(self.run_all({"s60-a": ("espressif", {}), "s61-a": ("beken", {})}, 4)[0],
+                         {"espressif": {81}, "beken": {81}})
 
     def test_a_run_refuses_instances_another_run_has_before_any_starts(self):
         found = {"s60-a": ("espressif", {}), "s61-a": ("beken", {})}
@@ -574,7 +589,9 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(self.run_all(), [])
 
     def test_a_batch_starts_the_longest_first(self):
-        self.assertEqual([name for name, _ in self.run_all({"a": 60, "b": 600, "d": 300})], ["b", "d", "a", "c"])
+        # An S61's (c) among the S60's, by its time alone.
+        self.assertEqual([name for name, _ in self.run_all({"a": 60, "b": 600, "c": 400, "d": 300})],
+                         ["b", "c", "d", "a"])
 
     def test_a_scenario_its_skip_file_names_is_left_out_as_the_batch_runs(self):
         (self.results / "skip.txt").write_text("b\nc\n", encoding="utf-8")

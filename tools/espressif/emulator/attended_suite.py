@@ -114,9 +114,9 @@ emulators each, by how long each took last, as the fault suites' share does:
 FILE.1, FILE.2, ..., one per machine to `run --file`.
 
 Run on a computer with the emulators (docs/emulator.md); each scenario runs
-on an emulator of its own, --workers at once - the S61's after, one at a
-time - the longest first, numbered from --first-instance (61) to one per
-worker, each started afresh: a run uses no more instance numbers than
+on an emulator of its own, --workers at once, the longest first, an S61's
+beside an S60's, numbered from --first-instance (61) to one per worker in
+each family, each started afresh: a run uses no more instance numbers than
 it has workers, and refuses to start on one already running
 (tools/repo/emulator_instances.py).
 """
@@ -943,48 +943,46 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
     """Each chosen scenario not yet passed in `results` (a batch run again
     there carries on), `workers` at once, the longest first
     (scenario_times), each on an emulator of its family numbered from
-    `first` that no scenario under way is using (an S61's one at a time,
-    after the S60's); one its skip file names
+    `first` that no scenario under way is using; one its skip file names
     (scenario_times.SKIP) as it is about to start is left out. A result line
     for each run, printed as it comes."""
     earlier = fault_verdicts.latest(results / ROWS)
     done = passed(results)
     todo = [sc["id"] for sc in scenario_times.longest_first([{"id": name} for name in chosen if name not in done],
                                                             scenario_times.times(*suite_roots()))]
-    # The S61's on their own, after the S60's: its emulator is slow, and run
-    # beside three S60s a readout's device was not found in time.
-    ways = {"espressif": max(1, workers), "beken": 1}
-    planned = {family: [name for name in todo if found[name][0] == family] for family in ways}
-    for family, names in planned.items():
-        if names:
-            emulator_instances.refuse_taken(family, range(first, first + ways[family]))
+    # Both families side by side, an S61's as an S60's: each emulator waits for
+    # room as it starts (docs/emulator.md), and the readout once missed with an
+    # S61 beside three S60s now looks for its device again (readout.LOOK_FOR).
+    planned = {family: sum(1 for name in todo if found[name][0] == family) for family in SCENARIOS}
+    at_once = {family: min(max(1, workers), count) for family, count in planned.items() if count}
+    for family, count in at_once.items():
+        emulator_instances.refuse_taken(family, range(first, first + count))
+    free: dict[str, queue.SimpleQueue[int]] = {}
+    for family, count in at_once.items():
+        emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,
+                             total=sum(1 for each, _ in found.values() if each == family),
+                             planned=planned[family], cloud="stub", workers=count)
+        free[family] = queue.SimpleQueue()
+        for n in range(first, first + count):
+            free[family].put(n)
 
-    def one(name: str, free: queue.SimpleQueue[int], at_once: int) -> str | None:
+    def one(name: str) -> str | None:
         if scenario_times.skipped(results, name):
             return None
-        n = free.get()
+        family = found[name][0]
+        n = free[family].get()
         try:
-            return run_one(n, name, *found[name], results, mac, at_once, rerun=name in earlier)
+            return run_one(n, name, *found[name], results, mac, at_once[family], rerun=name in earlier)
         finally:
-            free.put(n)
+            free[family].put(n)
 
     lines = []
-    for family, names in planned.items():
-        if not names:
-            continue
-        emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,
-                             total=sum(1 for each, _ in found.values() if each == family), planned=len(names),
-                             cloud="stub", workers=ways[family])
-        free: queue.SimpleQueue[int] = queue.SimpleQueue()
-        for n in range(first, first + ways[family]):
-            free.put(n)
-        with concurrent.futures.ThreadPoolExecutor(ways[family]) as pool:
-            for job in concurrent.futures.as_completed([pool.submit(one, name, free, ways[family])
-                                                        for name in names]):
-                line = job.result()
-                if line is not None:
-                    lines.append(line)
-                    print(line, flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max(1, workers)) as pool:
+        for job in concurrent.futures.as_completed([pool.submit(one, name) for name in todo]):
+            line = job.result()
+            if line is not None:
+                lines.append(line)
+                print(line, flush=True)
     return lines
 
 
