@@ -765,7 +765,9 @@ its relay switching, not to a meter seeing it.
 - **No Bluetooth.** The BLE controller's registers are modelled, but there is no
   radio: nothing is sent, and no phone can pair with the device over BLE.
 - **Slow.** The real firmware runs far slower than on a chip, hence the web
-  page's proxy.
+  page's proxy. Its time is the wall's, as the Espressif emulator's is, so
+  what the firmware times - ESPHome's safe mode, a retry - lasts as long as on
+  a device ([how](../tools/beken/emulator/README.md#how-it-fits-together)).
 - **A power meter, but no button.** The S61's BL0937 measures a 100 W load on
   230 V while the relay pin is driven high and none while it is low, so the
   end-of-run check can say the meter confirms the switch

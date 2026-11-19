@@ -238,7 +238,10 @@ cached memory region accessed".
 
 Worth trying in the same rebuild, but not needed: `-icount shift=3,sleep=off`
 for the classic ESP32 alone, which runs the firmware's clock by the
-instructions it runs rather than by the wall's. A starved emulator now makes a
+instructions it runs rather than by the wall's. Without it the device's time
+is the wall's, QEMU's clock being the host's (Tasmota's uptime on an emulated S60 went up 60 s
+a minute, idle, for five minutes; the Beken emulator's is held to it as
+well). A starved emulator now makes a
 device's clock jump ahead and its timeouts fire on the jump: Tasmota's web
 server once dropped an upload after 5 s with no data (the tool now restarts the
 device and sends it again). Under `-icount` the 2,000-read Berry command no

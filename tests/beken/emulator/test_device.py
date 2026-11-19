@@ -11,8 +11,9 @@ from unittest import mock
 class DeviceTests(unittest.TestCase):
     """The emulated device's own decisions (tools/beken/emulator/device.py)."""
 
-    def device(self, tmp):
+    def module(self):
         fakes = {"cloud_online": SimpleNamespace(SSID=b"net", PW=b"password"), "src": SimpleNamespace(),
+                 "src.emulator": SimpleNamespace(SLOW_TICK_INSNS=10000, SLOW_TICK_MS=2),
                  "src.main": SimpleNamespace(build_emulator=None), "unicorn": SimpleNamespace(UC_HOOK_CODE=4),
                  "unicorn.arm_const": SimpleNamespace(UC_ARM_REG_LR=14, UC_ARM_REG_R0=0, UC_ARM_REG_R1=1,
                                                       UC_ARM_REG_R2=2, UC_ARM_REG_R3=3)}
@@ -20,6 +21,10 @@ class DeviceTests(unittest.TestCase):
             sys.modules.pop("device", None)
             import device
         self.addCleanup(sys.modules.pop, "device", None)
+        return device
+
+    def device(self, tmp):
+        device = self.module()
         self.stock_points = device.stock_points
         return device.Device(Path(tmp), "tap0")
 
@@ -105,6 +110,53 @@ class DeviceTests(unittest.TestCase):
             self.assertFalse(device.powered())
             (Path(tmp) / "power").write_text("on\n", encoding="utf-8")
             self.assertTrue(device.powered())
+
+
+class WallClockTests(unittest.TestCase):
+    """The device's time held to the wall's (device.hold_to_wall)."""
+
+    def held(self, hold=True):
+        """A run of chunks whose device time and wall time the test sets."""
+        device = DeviceTests.module(self)
+        self.wall, self.slept, self.lines = 100.0, [], []
+        emu = SimpleNamespace(_pacing=lambda state: None)
+
+        def sleep(seconds):
+            self.slept.append(round(seconds, 3))
+            self.wall += seconds
+        device.hold_to_wall(emu, 0.001, self.lines.append, hold, clock=lambda: self.wall, sleep=sleep)
+
+        def chunk(device_seconds, wall_seconds):
+            self.wall += wall_seconds
+            emu._pacing(SimpleNamespace(insn_count=round(device_seconds * 1000)))
+        return device, chunk
+
+    def test_a_device_ahead_of_the_wall_waits_for_it(self):
+        _, chunk = self.held()
+        chunk(0, 0)
+        chunk(0.5, 0.1)     # idle: half a second of the device's in a tenth of the wall's
+        self.assertEqual(self.slept, [0.4])
+        chunk(0.505, 0.001)   # under HOLD_AT_LEAST ahead: not worth a sleep
+        self.assertEqual(self.slept, [0.4])
+
+    def test_free_it_runs_ahead(self):
+        _, chunk = self.held(hold=False)
+        chunk(0, 0)
+        chunk(0.5, 0.1)
+        self.assertEqual(self.slept, [])
+
+    def test_behind_it_catches_up_no_more_than_catch_up(self):
+        device, chunk = self.held()
+        chunk(0, 0)
+        chunk(1, 10)        # busy: a second of the device's in ten of the wall's
+        chunk(1 + device.CATCH_UP + 3, 0)   # idle again: it may run CATCH_UP ahead of where it fell to
+        self.assertEqual(self.slept, [3.0])
+
+    def test_both_times_are_logged_now_and_then(self):
+        device, chunk = self.held(hold=False)
+        chunk(0, 0)
+        chunk(30, device.CLOCK_LOG_EVERY)
+        self.assertEqual(self.lines, ["[clock] the device's time 30.0 s, the wall's %.1f s" % device.CLOCK_LOG_EVERY])
 
 
 if __name__ == "__main__":

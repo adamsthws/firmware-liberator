@@ -20,6 +20,8 @@ Its board (board.py) gives it a power meter, which measures a load while
 the relay is on.
 
 DEVICE_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
+DEVICE_WALL_CLOCK=0 lets the device's time run ahead of the wall's
+(hold_to_wall).
 
 The power switch is DIR/power: "off" stops the device and keeps its flash,
 "on" starts it again (beken-emu.sh power). The home Wi-Fi's access point is
@@ -59,6 +61,7 @@ import board  # noqa: E402
 import cloud_online  # noqa: E402  (needs the emulator image)
 import stage_apply  # noqa: E402
 import stock_points  # noqa: E402
+from src.emulator import SLOW_TICK_INSNS, SLOW_TICK_MS  # noqa: E402  (the device's clock)
 from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
 from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3  # noqa: E402
@@ -70,6 +73,21 @@ PEER_MAC = b"\x02\x00\x00\x00\x00\x01"
 # The computer's Wi-Fi on the device's own network: the station's MAC, which the
 # computer's end of that network takes (DIR/air/station).
 STATION_MAC = b"\x02\x00\x00\x00\x00\x02"
+
+# The device's time is the emulator's count of instructions, not the wall's.
+# Busy, the emulated CPU runs slower than the chip; idle, the emulator skips
+# the firmware's idle loop, and its time ran up to five times the wall's while
+# the firmware waited: ESPHome's five minutes of safe mode were over in one.
+# So it is held to the wall's (DEVICE_WALL_CLOCK=0 lets it run free, to compare):
+# never ahead of it, and once behind, after a busy stretch, catching up no more
+# than CATCH_UP seconds, as a chip's would not have fallen behind at all.
+WALL_CLOCK = os.environ.get("DEVICE_WALL_CLOCK", "") != "0"
+CATCH_UP = 1.0
+# The least the device's time is held back by at once, in seconds: a sleep
+# for each 0.2 ms chunk would cost more than the chunk.
+HOLD_AT_LEAST = 0.01
+# How often net.log has the device's time beside the wall's, in wall seconds.
+CLOCK_LOG_EVERY = 60.0
 
 
 def trace(mu, address: int) -> None:
@@ -86,6 +104,36 @@ def trace(mu, address: int) -> None:
         args = [text(uc.reg_read(r)) for r in (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3)]
         print("[trace] %#x(%s) from %#x" % (at, ", ".join(args), uc.reg_read(UC_ARM_REG_LR)), flush=True)
     mu.hook_add(UC_HOOK_CODE, called, None, address, address)
+
+
+def hold_to_wall(emu, seconds_per_insn: float, log, hold: bool = True, clock=time.monotonic,
+                 sleep=time.sleep) -> None:
+    """Wire the wall's time into `emu`'s pacing, between each chunk of
+    instructions (as board.attach does): the device's time held to it while
+    `hold` (WALL_CLOCK), and both logged every CLOCK_LOG_EVERY seconds, from
+    the boot on."""
+    pacing = emu._pacing
+    started = None      # (the device's time, the wall's) at the first chunk
+    held = None         # the same, moved on as the device falls behind for good
+    logged = 0.0
+
+    def paced(state):
+        nonlocal started, held, logged
+        pacing(state)
+        device, wall = state.insn_count * seconds_per_insn, clock()
+        if started is None:
+            started = held = (device, wall)
+            logged = wall
+        ahead = (device - held[0]) - (wall - held[1])
+        if hold and ahead >= HOLD_AT_LEAST:
+            sleep(ahead)
+        elif ahead < -CATCH_UP:
+            held = (held[0], held[1] - ahead - CATCH_UP)
+        if wall - logged >= CLOCK_LOG_EVERY:
+            logged = wall
+            log("[clock] the device's time %.1f s, the wall's %.1f s" % (device - started[0], wall - started[1]))
+
+    emu._pacing = paced
 
 
 class NetLog:
@@ -210,6 +258,7 @@ class Device:
         emu.flash_writethrough = True
         emu.setup()
         board.attach(emu, KIND)
+        hold_to_wall(emu, SLOW_TICK_MS / 1000 / SLOW_TICK_INSNS, self.netlog.append, WALL_CLOCK)
         emu.net_sink = self.netlog.append
         self.home = emu.attach_wifi_peer(role="ap", ssid=SSID.decode(), passphrase=PASSWORD.decode(), channel=1,
                                          peer_mac=PEER_MAC, tap=self.tap)

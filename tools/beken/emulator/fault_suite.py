@@ -1247,8 +1247,9 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
     would run it, until the device is converted. That must have known it for
     ESPHome in safe mode and waited it out (routes/source.esphome_safe_mode),
     never taken it for a device on Sonoff's firmware (FAIL-TAKEN-FOR-SONOFF).
-    Safe mode ends about a minute on in the emulator, its clock ahead of the
-    wall's: a run that found ESPHome itself again came too late (MISTIMED)."""
+    Safe mode lasts five minutes, the device's time held to the wall's
+    (device.hold_to_wall): a run that found ESPHome itself again came too late
+    (MISTIMED)."""
     service = esphome_ota.LIBRETINY_PORT
     for cuts in range(1, SAFE_MODE_CUTS + 1):
         instance.power("cycle")
@@ -1261,7 +1262,6 @@ def safe_mode_scenario(instance: Instance, sc: dict, target: str, log: Path, not
         time.sleep(3)   # a normal start has its page up by now (seen: 3 s after)
         if 80 in ports_open(instance.lease(), 80):
             continue
-        # Soon: the emulator's safe mode lasts about a minute, not five.
         time.sleep(5)
         if 80 not in ports_open(instance.lease(), 80):
             break

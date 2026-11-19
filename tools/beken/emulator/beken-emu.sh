@@ -304,7 +304,7 @@ case "${1:-}" in
             -v "$ROOT:/work:ro" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" -v "$DEVICE_STATE:/state" \
             -e AUTOFLASH_BEKEN_EMU_DUMP="$starts_from" \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e DEVICE_TRACE="${DEVICE_TRACE:-}" \
-            --entrypoint bash "$IMAGE" /work/tools/beken/emulator/device-net.sh >/dev/null
+            -e DEVICE_WALL_CLOCK="${DEVICE_WALL_CLOCK:-}" --entrypoint bash "$IMAGE" /work/tools/beken/emulator/device-net.sh >/dev/null
         echo "The device is starting as $DEVICE on $NETWORK, its router at $(subnet).1; its serial output is in" >&2
         echo "${DEVICE_STATE#"$ROOT"/}/serial.log; docker stop $DEVICE ends it." >&2
         # A run needs the device in its account, which the stub only has once

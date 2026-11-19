@@ -998,13 +998,12 @@ update service answered after each start:
   (`routes/source.esphome_safe_mode`), as it finds an S60's on 3232.
 - **When its time is up it restarts as itself** (`Timeout, restarting`), its
   count cleared, and its page is back.
-- **In the emulator that time passes about five times faster than on the
-  wall:** the 300 s ended 62 s after safe mode began, while a start, busy, keeps
-  near the wall's time (no start cut at 25 s reached its 60 s). The firmware's
-  clock runs ahead while it idles, as it does waiting for ESPHome's own network
-  ([the emulator's README](../tools/beken/emulator/README.md)). A real S61 is in
-  safe mode for the full five minutes; the fault suite's `safemode-ten` starts
-  the tool as soon as it sees safe mode, to find it there.
+- **In the emulator it lasts five minutes too**, the device's time held to the
+  wall's ([the emulator's README](../tools/beken/emulator/README.md#how-it-fits-together)).
+  Left free, the emulator's time ran about five times the wall's while the
+  firmware idled: the 300 s ended 62 s after safe mode began. The fault
+  suite's `safemode-ten` starts the tool as soon as it sees safe mode, to find
+  it there.
 
 ## What a backup logs
 

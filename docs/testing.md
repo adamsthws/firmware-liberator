@@ -974,8 +974,7 @@ soon as its update service answers after each start, until it starts in safe
 mode, that service alone on LibreTiny's port 8892 and no page. The tool, run
 then, must know it for ESPHome in safe mode and wait for it to start as
 itself, never take it for a device on Sonoff's firmware
-(FAIL-TAKEN-FOR-SONOFF). Safe mode ends about a minute on in the emulator,
-whose clock runs ahead while the firmware idles, against five minutes on a
+(FAIL-TAKEN-FOR-SONOFF). Safe mode lasts five minutes, in the emulator as on a
 device ([docs/beken-research.md](beken-research.md#esphome-in-safe-mode)): a run
 that found ESPHome started as itself again came too late (MISTIMED).
 
@@ -1113,12 +1112,12 @@ about the firmware and the emulator:
   uptime.** Restarted by the stock bootloader refusing ESPHome, it has been up
   for less than it takes to start again, so the tool also takes it going
   quiet once asked, then answering, as a restart
-  (`sonoff>esphome:J2:badimage-restart`). In the emulator, uptime cannot be
-  set against the time since the device was asked either: the emulated
-  device's time runs faster than the wall's, so its uptime outgrows the time
-  the tool counts, which a real device's does not (`step_esphome_check` in
-  `tools/autoflash/routes/beken/arrived.py`). This is apart from the
-  firmware's own clock falling slightly behind the emulated device's time
+  (`sonoff>esphome:J2:badimage-restart`). Its uptime is also set against
+  the time since the device was asked (`step_esphome_check` in
+  `tools/autoflash/routes/beken/arrived.py`), which held only once the
+  emulated device's time was held to the wall's: running free, it outgrew the
+  time the tool counts. This is apart from the firmware's own clock falling
+  slightly behind the emulated device's time
   ([the emulator's README](../tools/beken/emulator/README.md)).
 
 ### Attended runs

@@ -229,13 +229,14 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
     it: one answering that has started since - its uptime below what it was
     before the fetch, or than the time since - its bootloader did not take
     the image, and the run goes back to send it again (until_back), no
-    restart to ask for.  Both, as the emulated device's clock runs fast: there
-    its uptime outgrows the time since, but not on a real device.  And its
-    uptime falling below the highest seen here, as the device that had just
-    fetched it restarts: an image sent again soon after the last was refused
-    goes from a device only just up, so its uptime before is small, and the
-    emulated device's soon outgrows that too (seen in the fault suite: the
-    second refusal in a row waited out, and a switch off and on asked for)."""
+    restart to ask for.  Both, as an emulated device's clock left to run free
+    (DEVICE_WALL_CLOCK=0) outgrows the time since, which a real device's does
+    not.  And its uptime falling below the highest seen here, as the device
+    that had just fetched it restarts: an image sent again soon after the last
+    was refused goes from a device only just up, so its uptime before is
+    small, and the restarted device's soon outgrows that too (seen in the
+    fault suite: the second refusal in a row waited out, and a switch off and
+    on asked for)."""
     started = time.monotonic()
     captures = ctx.state.data.get("captures", {})
     sent_by = next((step for step in ("J2", "O1")

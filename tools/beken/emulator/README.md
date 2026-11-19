@@ -28,6 +28,21 @@ for working on it. How to use it is in
   restart the firmware asks for being a boot from the bootloader, as on a real
   device. Sonoff's firmware is helped online (`cloud_online.StockHooks`) only
   while it is the one that starts.
+- **Its time is the wall's** (`device.hold_to_wall`). BekenEmulator's clock
+  is its count of instructions: busy, the emulated CPU runs slower than the
+  chip, and idle it skips the firmware's idle loop, so its time ran ahead of
+  the wall's - 2.3 times on Sonoff's firmware online (1,087 s in 480 s), and
+  about five times while ESPHome waited in safe mode. Timeouts the firmware
+  keeps, safe mode's five minutes, a lease or a retry, then ended early. So
+  `device.py` holds it there: never ahead of the wall, and after a busy
+  stretch, behind, it catches up a second at most (`CATCH_UP`), the rest lost
+  as a chip would never have lost it. Held, it was 59.2 s in 60 and 419.3 s
+  in 420. Fault scenarios took as long as they did free, within a few
+  percent, but where the firmware waits: a readout of Sonoff's firmware (720
+  s, against 603) and the safe-mode scenarios, which now wait out the full
+  five minutes (786 and 861 s). The computer's CPU is free while it waits. `net.log` has
+  both times each minute (`[clock]`); `DEVICE_WALL_CLOCK=0 beken-emu.sh device`
+  lets it run free, to compare.
 
 ## The image
 
@@ -130,9 +145,10 @@ a real network, the firmware's half and the tool's:
 
 The attended scenario `s61-to-esphome-own-network` runs the whole step: the
 password changed as ESPHome starts, the details it has refused, its own
-network joined and the new ones sent there. ESPHome raised its network about
-40 seconds after it started: two minutes on its own clock, which runs ahead
-of the wall's in the emulator while the firmware waits.
+network joined and the new ones sent there. ESPHome raises its network once
+it has failed to join the home one for as long as a device's would: its
+time is the wall's ([above](#how-it-fits-together)). Left to run free, it
+raised it 40 seconds after it started, two minutes on its own clock.
 
 ## What is changed, and why
 
