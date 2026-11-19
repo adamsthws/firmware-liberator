@@ -348,7 +348,7 @@ Both suites run a batch the same way:
 
 ### The Espressif fault suite
 
-`tools/espressif/emulator/fault_suite.py` has 1,559 scenarios on an S60.
+`tools/espressif/emulator/fault_suite.py` has 1,593 scenarios on an S60.
 
 #### What it covers (Espressif)
 
@@ -829,12 +829,15 @@ moment as Tasmota names its own.
 
 #### What whole runs have shown (Espressif)
 
-The current code passes the whole suite, as it was before its 60 s outages went: the 1,541 scenarios on the stub, and
-the 75 cloud ones against the real eWeLink, where two NOT-FIRED, eWeLink
-having dropped the device's sessions, passed when run again after an hour's
-pause ([one real-cloud run a day](#running-it-espressif)). Run across several
-computers, with the Beken suite and the attended runs beside it, that took
-about ten hours.
+The current code passes the whole suite: all 1,520 scenarios on the stub,
+each that did not pass at first passing when run again, and 72 of the 73 cloud
+ones against the real eWeLink. Every cloud scenario that failed or was
+NOT-FIRED on the way had the device stay off eWeLink for its whole turn
+([below](#still-open-espressif)); each passed on a later try, an hour or more
+apart ([one real-cloud run a day](#running-it-espressif)), but one, whose
+device was never online in its turn in four tries over five hours. Run across
+several computers, with the Beken suite and the attended runs beside it, that
+took about twelve hours.
 
 How long a phase keeps the device busy is measured in sample runs, not in a
 whole run. In runs of the drop, packet-loss and weak-signal scenarios, made
@@ -863,7 +866,17 @@ scenario's longest.
   details sent on its setup network, said "Connect failed with AP timeout"
   with the router on, then printed and answered nothing for a quarter of an
   hour, not even restarting when its setup network's three minutes were up.
-  It passed when run again, and is unexplained.
+  It passed when run again, and is unexplained. Once more, after this
+  computer slept for ten minutes at K1, the interim Tasmota answered nothing
+  once its plan check had passed, through all four runs, still on the
+  device's address; that too passed when run again.
+- **A device that stays off eWeLink.** On the real eWeLink, the stock device
+  sometimes cannot get back online for a whole turn, switched off and on or
+  not: its connections to eWeLink time out as they are set up (`errno 119` in
+  its serial log), most often after a send cut short at C2 or C3fb. Its runs
+  stop at "Discovering the device" (NOT-FIRED), or, where its fault had come,
+  say the installer was not delivered (FAIL). In a run of the 73 cloud
+  scenarios, twelve met it; all but one passed on a later try.
 
 #### What it has found (Espressif)
 
@@ -914,7 +927,7 @@ emulated ones started from the public S61s dump
 (`beken-emu.sh --instance N device`,
 [its README](../tools/beken/emulator/README.md)), each on a home Wi-Fi of its
 own with the local eWeLink stub, so nothing reaches the internet and every
-scenario can run side by side. It has 579 scenarios.
+scenario can run side by side. It has 582 scenarios.
 
 #### What it covers (Beken)
 
@@ -1090,7 +1103,7 @@ for the interim firmware, above) and none of these applies:
 
 The current code passes every scenario, every direction end to end in the
 emulator, faults and all, from the public dump of a real S61: a whole run of
-the 291 it had, and the longer outages and K2's fallback added since.
+all 582, each that did not pass at first passing when run again.
 
 #### Still open (Beken)
 
