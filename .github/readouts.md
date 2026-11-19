@@ -159,9 +159,10 @@ let past, and only a readout that adds something is kept:
 - Anyone may ask to be emailed as more devices are supported: the tool asks
   as it exits, and the website's sign-up page (`/notify`) asks too, its
   script sending the address to the same `/v1/notify` with the same work.
-  The tool's sign-up names the owner's devices and the readouts they sent. The address is kept only once its owner confirms it
-  from an email, in the API's database, once an address, and until they
-  remove it with the link every such email carries.
+  The tool's sign-up names the owner's devices and the readouts they sent.
+  The address is kept only once its owner confirms it from an email, in the
+  API's database, once an address, and until they remove it with the link
+  every such email carries.
 - Nothing of a sender is stored but the contact they chose to give. Senders
   are counted under a keyed hash, never by address.
 
@@ -178,8 +179,13 @@ link and SHA-256, as eWeLink gives them. Which one is your setting:
 tool sends it again later. A tool told nothing, as every
 one released before it, sends files, so the file path always stays.
 
-- **A first stage's links go to `/v1/offers`**, every device's in an account
-  in one request, sent unasked as reports are. Each offer is held as a first
+- **A first stage's links go to `/v1/offers`**, every device's in an
+  account, in as few requests as `OFFERS_PER_REQUEST` allows. The tool sends
+  them unasked, as reports are, from a thread beside the run
+  ([offers.py](../tools/autoflash/offers.py)): on the run's own eWeLink
+  sign-in, the run's calls first, each device again only
+  `OFFER_RESEND_DAYS` after that computer last sent it, and dropped
+  wherever it is as the run ends. Each offer is held as a first
   stage of its device is, under the same key (`index.js` `keyOf`; a cloud
   other than eWeLink would add its own part), so links, first stages with
   files and whole readouts agree on an offer together, each sender once. Its
@@ -209,8 +215,9 @@ one released before it, sends files, so the file path always stays.
   refused on them.
 - **Agreement still says whose offer it is.** Once an offer is taken as
   right, each of its files still not held is tried by the links given for
-  it, `OFFER_FETCH_PATHS` at most, those from the most networks first. A link that gave another file is
-  never tried again for it; one that gave nothing is, once a day.
+    it, `OFFER_FETCH_PATHS` at most, those from the most networks first. A
+  link that gave another file is never tried again for it; one that gave
+  nothing is tried again at night, as below.
 - **Two budgets a day.** First sight and peeks, whose links nobody has
   agreed on, take `FIRST_SIGHT_DAILY` fetches a day across everyone; offers
   taken as right, each night's retries and your approvals take
@@ -243,7 +250,8 @@ one released before it, sends files, so the file path always stays.
   one sender (by /24, as first sight counts it) adds
   `PENDING_LINKS_PER_SENDER` a day. A link to review past either is not
   kept and not peeked at; its offer or readout is taken as ever, and the
-  admin view counts those not kept over the last week. A link one more
+  admin view counts those not kept over the last `COUNTER_DAYS`
+  (`nightly.js`). A link one more
   network sends that is waiting already is always kept.
 - **A peek at it, once.** When a link to review is first taken, its first
   `PEEK_BYTES` are asked for once (a Range, no redirect followed,
@@ -287,9 +295,17 @@ one released before it, sends files, so the file path always stays.
   `FIRST_SIGHT_DAILY`. Its Every link lists each
   file's link, as the API fetches it (a link to review not approved, as
   sent), each with a copy button.
+- **The admin view's Offers sent beside runs** counts, day by day from runs'
+  reports (`report_offers`), the runs that asked eWeLink for offers, the
+  offers they sent and the API took, and how many saw eWeLink end the
+  sign-in: whether offers come in from people's runs, and whether asking
+  for them loads eWeLink. Like every offer figure, it is on the admin view
+  alone, never the public stats page.
 
 Set `OFFERED_SEND` to `"links"` once a released tool reads `send`, and watch
-the first files arrive and offers agree. Set it back to `"files"` when
+the first files arrive and offers agree. The deploy's own check
+(`api_health.py live`) fails unless the API answers with the setting
+`wrangler.jsonc` holds. Set it back to `"files"` when
 the nightly email says files are not being fetched and eWeLink is the cause:
 its file server checking the device's id, say, or links no longer lasting.
 Every tool in the field sends files again from its next run, with no
@@ -368,7 +384,9 @@ with that readout's object.
 - **Making room**, should the store fill (the nightly alert and the usage
   check warn long before): delete readouts no longer needed, each with its
   row in the `readouts` table, its offered files' `readouts/firmware/...`
-  marks and its `offer_links` rows; the nightly job then deletes the peeks
+  marks and its `offer_links` rows, but keep a file fetched by its link
+  that a readout you keep links too, as the nightly deletions do
+  (`pending.js`); the nightly job then deletes the peeks
   and failures of links no readout gives any more. Keep `rejected_links`,
   so a rejected link stays rejected. Then take their bytes off the store's
   count (and those of readouts waiting for review off `readouts:pending`

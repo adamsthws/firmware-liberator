@@ -8,8 +8,8 @@ listed the account's devices, asks eWeLink for each device's latest offer,
 QUERY_MOST devices a query with PAUSE between, on the run's own sign-in - never one of its own,
 which would end the run's - and stops if eWeLink ends it. Its calls take
 turns with the run's (get_device_key.CALLS), the run's first; an offer the run
-asked for already is not asked again (account.ASKED_OFFERS). Then one request
-to /offers (readout.send_offers), and only where the website asks for links
+asked for already is not asked again (account.ASKED_OFFERS). Then as few requests
+to /offers as it takes (readout.send_offers), and only where the website asks for links
 (its `send`, asked first with none: readout.website_sends), each with its
 light work made in a process of its own at the lowest priority (Sender.prove),
 so the screen never stutters for it. Nothing on the screen, one line in the
