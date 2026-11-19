@@ -212,10 +212,46 @@ one released before it, sends files, so the file path always stays.
   count holds.
 - **A file not given** is tried again each night. One still missing
   `OFFER_FETCH_ALERT_DAYS` after its offer agreed is in the nightly email.
+- **A link of a shape not seen before** is sent whole as `url`, in a
+  `/v1/offers` file in place of `path`, or in a whole readout's `offered`
+  entry beside its file, which the readout still carries. Its rules are
+  `linkParts` in [offered.js](../website/api/offered.js): http or https, a
+  host that is a name of eWeLink's own (`CLOUDS` `hosts`) or a public IPv4
+  address, a port of `URL_PORTS` or none, a path of letters, digits and
+  `. _ - /` alone, no query or fragment. One that breaks a rule turns the
+  request's offer, or the readout, away. It is kept in `offer_links` as its
+  parts, `review` `pending`, and never fetched, on first sight or at night,
+  until you approve it.
+- **A peek at it, once.** When a link to review is first taken, its first
+  `PEEK_BYTES` are asked for once (a Range, no redirect followed,
+  `PEEK_TIMEOUT_MS` a server), from where approving it would fetch it, each
+  request counted as a fetch, the sender's too. What came back is kept in
+  `link_peeks`: the status, the file's size if `Content-Range` gave it, the
+  server that answered, what the bytes start like (`PEEK_KINDS`: Beken's
+  FOTA container, Sonoff's wrapper with its firmware names, an ESP8266
+  image, a zip, or unknown) and the bytes as hex. A redirect is recorded,
+  with where it pointed, and not followed.
+- **Approving or rejecting it** is the admin view's Links to review. Each
+  link pending is there once, however many sent it, with its device, its
+  SHA-256, how many networks sent it, when it was first seen, its peek, and
+  the link as sent with a copy button. Look at the link and its first
+  bytes; approve it if it is eWeLink's file server giving a firmware file.
+  Approving fetches the file at once, within `OFFER_FETCHES_DAILY`, with
+  `CLOUDS`' `query` added, as eWeLink's servers answer a request without
+  one with an empty 400: from a host that is eWeLink's name, by the link as
+  sent; from an address, never that address, but its path from each of
+  eWeLink's servers by name (`CLOUDS` `servers`). The page shows what
+  approving would ask for as "Approving tries". It is kept only
+  if it is the SHA-256 given. Approved and not yet held, it stays listed,
+  saying whether a server was tried and gave nothing, with Try again; once
+  approved, it is also tried as an agreed offer's links are. Rejecting it
+  means it is never fetched.
 - **The admin view's Offers sent as links** counts the readouts that sent
   links, by key beside each key's offers agreed, the files fetched from
   links and their bytes, the files still missing for an agreed offer, and
-  the day's fetches against `OFFER_FETCHES_DAILY`.
+  the day's fetches against `OFFER_FETCHES_DAILY`. Its Every link lists each
+  file's link, as the API fetches it (a link to review not approved, as
+  sent), each with a copy button.
 
 Set `OFFERED_SEND` to `"links"` once a released tool reads `send`, and watch
 the first files arrive and offers agree. Set it back to `"files"` when

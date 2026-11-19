@@ -21,6 +21,12 @@ export function bytes(value) {
   return `${size.toFixed(unit && size < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
+// A link, or any text to copy out: shown in a read-only field, escaped, with
+// a button that copies it (COPY_SCRIPT in index.js). `id` is the page's own,
+// never made from the text.
+export const copyField = (id, value) => `<span class="copy"><input id="${esc(id)}" type="text" readonly `
+  + `value="${esc(value)}" aria-label="Link"><button type="button" data-copy="${esc(id)}">Copy</button></span>`;
+
 export const tile = (label, value, note = "") =>
   `<div class="tile"><div class="tile-label">${esc(label)}</div><div class="tile-value">${esc(value)}</div>`
   + (note ? `<div class="tile-note">${esc(note)}</div>` : "") + "</div>";
@@ -243,5 +249,8 @@ export const STYLE = `
 .admin select { font: inherit; font-size: 12px; background: var(--plane); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; }
 .admin form.inline { display: inline; }
 .admin button { font-size: 12px; padding: 3px 10px; } .admin button.danger { color: var(--critical); }
+.admin .copy { display: flex; gap: 6px; margin: 2px 0; } .admin .copy input { flex: 1; min-width: 220px; font: 12px ui-monospace, monospace;
+  background: var(--plane); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; padding: 2px 6px; }
+.admin code.peek { overflow-wrap: anywhere; font-size: 11px; }
 .admin .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--ring); color: var(--ink-2); }
 `;

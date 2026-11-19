@@ -1,16 +1,19 @@
 // /v1/offers (api/index.js offers) and api/offered.js: first stages sent as
 // links, and whole readouts' links, are held and agreed as first stages are,
 // and the API fetches their files itself, on first sight and once an offer is
-// taken as right, keeping each only if it is the file its SHA-256 names. No
-// test reaches eWeLink: every fetch is given one made here.
+// taken as right, keeping each only if it is the file its SHA-256 names; a
+// link of a shape not seen before is kept for review, peeked at once and
+// fetched only once approved. No test reaches eWeLink: every fetch is given
+// one made here.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { read } from "../api/counters.js";
 import worker, * as api from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
-import { CLOUDS, OFFER_FETCH_MAX_BYTES, OFFER_FETCH_PATHS, OFFER_FETCHES_DAILY, OFFER_FIRST_SIGHT_PER_SENDER, fetchOffer,
-  firmwareNames, retryOffers } from "../api/offered.js";
+import { CLOUDS, OFFER_FETCH_MAX_BYTES, OFFER_FETCH_PATHS, OFFER_FETCHES_DAILY, OFFER_FIRST_SIGHT_PER_SENDER, PEEK_BYTES,
+  URL_MOST, URL_PATH_MOST, approveLink, fetchOffer, firmwareNames, isPublicAddress, kindOf, linkParts, rejectLink,
+  retryOffers } from "../api/offered.js";
 import { PENDING, READOUTS_EVER } from "../api/pending.js";
 import { work } from "../api/proof-of-work.js";
 
@@ -741,4 +744,295 @@ test("one sender's first-sight fetches are OFFER_FIRST_SIGHT_PER_SENDER a day; a
     assert.equal(rows(bindings, "SELECT * FROM agreed_offers").length, 1);
     assert.deepEqual(agreeing.asked, [URL_OF(pathOf(5))], "once, by agreement");
     assert.ok(bindings.READOUTS.objects.has(`readouts/firmware/${sha(fileOf(5))}`));
+  });
+
+// Links of a shape not seen before (`url`): kept for review, peeked at once,
+// never fetched until approved. A public address that is made up for the
+// tests; a request never reaches it.
+const ADDRESS = "1.2.3.4";
+const URL_PATH = "/ota/s61/bk7238/user_ota.rbl";
+const BY_ADDRESS = `http://${ADDRESS}:8088${URL_PATH}`;
+const BY_NAME = `https://global-otadl2bsy.coolkit.cc${URL_PATH}`;
+// A link by eWeLink's name as it is asked for: as sent, with the query its servers want.
+const BY_NAME_ASKED = `${BY_NAME}?deviceid=0&ts=1&sign=0`;
+const URL_FILE = { name: "user_ota.rbl", version: "1.2.0", sha256: sha(APP), url: BY_ADDRESS };
+const URL_OFFER = { ...OFFER, files: [URL_FILE] };
+const SERVER_URL = (server, path = URL_PATH) => `http://${server}:8088${path}?deviceid=0&ts=1&sign=0`;
+
+// A server a test makes: `answer(url, init)` gives each response, every
+// request kept with what it asked.
+function server(answer = () => new Response("not found", { status: 404 })) {
+  const asked = [];
+  const fetcher = async (url, init = {}) => {
+    asked.push({ url: String(url), range: new Headers(init.headers).get("Range"), redirect: init.redirect ?? null });
+    return answer(String(url), init);
+  };
+  return Object.assign(fetcher, { asked });
+}
+const linkRows = (bindings) => rows(bindings, "SELECT sha, path, scheme, host, port, review FROM offer_links ORDER BY readout");
+const peeks = (bindings) => rows(bindings, "SELECT * FROM link_peeks ORDER BY link");
+
+test("a link to review keeps every rule, or is refused", () => {
+  assert.deepEqual(linkParts(BY_ADDRESS), { scheme: "http", host: ADDRESS, port: 8088, path: URL_PATH });
+  assert.deepEqual(linkParts("HTTPS://EU-OTADL.coolkit.CC/a_b-c.d/e"),
+    null, "the scheme in lower case, as the tool sends it");
+  assert.deepEqual(linkParts("https://EU-OTADL.coolkit.CC/a_b-c.d/e"),
+    { scheme: "https", host: "eu-otadl.coolkit.cc", port: null, path: "/a_b-c.d/e" });
+  for (const good of ["http://cn-otadl.coolkit.cn/x", "http://a.b.coolkit.cc:80/x", "https://1.2.3.4:443/",
+    `http://x.coolkit.cc/${"a".repeat(URL_PATH_MOST - 1)}`]) {
+    assert.notEqual(linkParts(good), null, good);
+  }
+  const refused = [
+    // scheme
+    "ftp://x.coolkit.cc/a", "file:///etc/passwd", "javascript:alert(1)", "//x.coolkit.cc/a", "x.coolkit.cc/a",
+    // host: not eWeLink's name, nor a public IPv4 address
+    "http://coolkit.cc/a", "http://evil.com/a", "http://x.coolkit.cc.evil.com/a", "http://xcoolkit.cc/a",
+    "http://x.coolkit.cc./a", "http://-x.coolkit.cc/a", "http://x..coolkit.cc/a", "http://localhost/a",
+    "http://user@x.coolkit.cc/a", "http://user:pw@1.2.3.4/a", "http://[::1]/a", "http://[2001:db8::1]:8088/a",
+    "http://01.2.3.4/a", "http://1.2.3/a", "http://1.2.3.4.5/a", "http://256.2.3.4/a", "http://0x01020304/a",
+    "http://16909060/a",
+    // ports
+    "http://x.coolkit.cc:8080/a", "http://x.coolkit.cc:088/a", "http://x.coolkit.cc:/a", "http://x.coolkit.cc:99999/a",
+    // path
+    "http://x.coolkit.cc", "http://x.coolkit.cc/a/../b", "http://x.coolkit.cc/..", "http://x.coolkit.cc//a",
+    "http://x.coolkit.cc/a//b", "http://x.coolkit.cc/a%2e%2e/b", "http://x.coolkit.cc/%2F", "http://x.coolkit.cc/a b",
+    `http://x.coolkit.cc/${"a".repeat(URL_PATH_MOST)}`, `http://x.coolkit.cc/${"a".repeat(URL_MOST)}`,
+    // query, fragment
+    "http://x.coolkit.cc/a?deviceid=1", "http://x.coolkit.cc/a#b", "http://x.coolkit.cc/a?",
+    // what an injection would look like
+    "http://x.coolkit.cc/a'b", 'http://x.coolkit.cc/a"b', "http://x.coolkit.cc/<script>", "http://x.coolkit.cc/a>b",
+    "http://x.coolkit.cc/a\nb", "http://x.coolkit.cc/a\r\nSet-Cookie:x", "http://x.coolkit.cc/a\tb",
+    "http://x.coolkit.cc/a`id`", "http://x.coolkit.cc/$(id)", "http://x.coolkit.cc/a;rm", "http://x.coolkit.cc/a|b",
+    "http://x.coolkit.cc/a&b", "http://x.coolkit.cc/a\\b", "http://x.coolkit.cc/a\u0000b", "http://x.coolkit.cc/é",
+    "http://x.coolkit.cc/a'); DROP TABLE offer_links;--", "http://x.coolkit.cc/a b",
+    " http://x.coolkit.cc/a", "http://x.coolkit.cc/a ", "http://x.coolkit.cc/a\n",
+    // not text
+    "", null, 5, ["http://x.coolkit.cc/a"], { url: "http://x.coolkit.cc/a" },
+  ];
+  for (const bad of refused) {
+    assert.equal(linkParts(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("an address is public only outside every range no public server is in", () => {
+  for (const address of ["1.2.3.4", "8.8.8.8", "100.63.255.255", "100.128.0.0", "172.15.255.255", "172.32.0.0",
+    "192.0.1.255", "192.0.3.0", "198.17.255.255", "198.20.0.0", "223.255.255.255", "11.0.0.0"]) {
+    assert.equal(isPublicAddress(address), true, address);
+  }
+  for (const address of ["0.0.0.0", "0.255.255.255", "10.0.0.1", "10.255.255.255", "100.64.0.0", "100.127.255.255",
+    "127.0.0.1", "169.254.1.1", "172.16.0.1", "172.31.255.255", "192.0.0.8", "192.0.2.50", "192.88.99.1",
+    "192.168.99.50", "198.18.0.1", "198.19.255.255", "198.51.100.7", "203.0.113.9", "224.0.0.1", "239.255.255.255",
+    "240.0.0.1", "255.255.255.255", "x.coolkit.cc", "1.2.3.04"]) {
+    assert.equal(isPublicAddress(address), false, address);
+  }
+});
+
+test("an offer's url is kept as its parts, pending, peeked at once and never fetched unapproved", async () => {
+  const bindings = env();
+  const fetcher = server();
+  assert.deepEqual(await results(bindings, [URL_OFFER], { fetcher }), ["taken"]);
+  assert.deepEqual(linkRows(bindings),
+    [{ sha: sha(APP), path: URL_PATH, scheme: "http", host: ADDRESS, port: 8088, review: "pending" }]);
+  const [{ object }] = rows(bindings, "SELECT object FROM readouts");
+  assert.deepEqual(JSON.parse(bindings.READOUTS.objects.get(object).body).offered,
+    [{ name: URL_FILE.name, version: "1.2.0", sha256: sha(APP), url: BY_ADDRESS }], "its manifest names the url");
+  // Only the peek, a Range at each of eWeLink's servers by name: the address never.
+  assert.deepEqual(fetcher.asked.map((each) => [each.url, each.range, each.redirect]),
+    CLOUDS.ewelink.servers.map((base) => [`${base}${URL_PATH}?deviceid=0&ts=1&sign=0`, `bytes=0-${PEEK_BYTES - 1}`,
+      "manual"]));
+  assert.ok(fetcher.asked.every((each) => !each.url.includes(ADDRESS)));
+  assert.deepEqual(rows(bindings, "SELECT outcome, status, server FROM link_peeks"),
+    [{ outcome: "answered", status: 404, server: "cn-otadl.coolkit.cn:8088" }], "the last server's answer kept");
+  // Sent again by others, and agreed: no second peek, and nothing fetched, first sight or nightly.
+  await agree(bindings, URL_OFFER, fetcher, SENDERS.slice(1));
+  await retryOffers(bindings, TOMORROW, { totalBytes: api.TOTAL_BYTES, fetcher });
+  assert.equal(rows(bindings, "SELECT * FROM agreed_offers").length, 1);
+  assert.equal(fetcher.asked.length, CLOUDS.ewelink.servers.length, "the one peek alone");
+  assert.equal(peeks(bindings).length, 1);
+  assert.ok(!bindings.READOUTS.objects.has(`readouts/firmware/${sha(APP)}`));
+});
+
+test("an offer whose url breaks a rule, or names a path as well, is refused, the rest taken", async () => {
+  const bad = ["http://192.168.99.50:8088/a", "http://x.coolkit.cc/a?b=1", "http://x.coolkit.cc/a'b",
+    "http://x.coolkit.cc/a b", "http://x.coolkit.cc/a\nb", "http://x.coolkit.cc/$(id)", "http://x.coolkit.cc/a;b",
+    "http://x.coolkit.cc/a|b", "http://x.coolkit.cc/`id`", "http://x.coolkit.cc/<a>", "http://x.coolkit.cc/%3Cx%3E",
+    "http://evil.example/a", 7, null];
+  const offers = [...bad.map((url, at) => ({ ...OFFER, stock_version: `1.0.${at}`, files: [{ ...URL_FILE, url }] })),
+    { ...OFFER, stock_version: "2.0.0", files: [{ ...URL_FILE, path: PATH }] }, URL_OFFER];
+  const bindings = env();
+  const fetcher = server();
+  const answered = (await send(bindings, offers, { fetcher })).offers;
+  assert.deepEqual(answered.map((each) => each.result), [...Array(bad.length + 1).fill("refused"), "taken"]);
+  assert.match(answered[0].why, /url/);
+  assert.equal(linkRows(bindings).length, 1);
+});
+
+test("a whole readout's url beside its file is kept pending, the file held; one that breaks a rule turns it away",
+  async () => {
+    const bindings = env();
+    const fetcher = server();
+    assert.equal(await readout(bindings, "192.0.2.1", 64501,
+      { read: true, linked: { entry: { link: undefined, url: BY_NAME } } }, fetcher), 201);
+    assert.deepEqual(linkRows(bindings),
+      [{ sha: sha(APP), path: URL_PATH, scheme: "https", host: "global-otadl2bsy.coolkit.cc", port: null,
+        review: "pending" }]);
+    assert.equal(rows(bindings, "SELECT * FROM readout_firmware").length, 1, "its file held, as carried");
+    assert.deepEqual(fetcher.asked.map((each) => [each.url, each.range]), [[BY_NAME_ASKED, `bytes=0-${PEEK_BYTES - 1}`]],
+      "a name of eWeLink's peeked at as sent, with the query");
+    for (const entry of [{ link: undefined, url: "http://10.0.0.1/a" }, { link: undefined, url: `${BY_NAME}?x=1` },
+      { url: BY_NAME }, { link: undefined, url: "http://x.coolkit.cc/a'||'b" }]) {
+      const other = env();
+      const none = server();
+      assert.equal(await readout(other, "192.0.2.1", 64501, { read: true, linked: { entry } }, none), 400,
+        JSON.stringify(entry));
+      assert.deepEqual(traces(other), NOTHING);
+      assert.deepEqual(none.asked, []);
+    }
+  });
+
+// A link pending review of `url` for APP, by a first stage from one sender: its readout.
+async function pending(bindings, url = BY_ADDRESS) {
+  await results(bindings, [{ ...OFFER, files: [{ ...URL_FILE, url }] }], { fetcher: server() });
+  return rows(bindings, "SELECT readout FROM offer_links")[0].readout;
+}
+
+test("approving a link by address fetches its path from eWeLink's servers by name, never the address", async () => {
+  const bindings = env();
+  const id = await pending(bindings);
+  const other = Buffer.from("not the file");
+  // The US server gives another file, Asia's the file.
+  const fetcher = server((url) => (url === SERVER_URL("us-otadl.coolkit.cc") ? new Response(other)
+    : url === SERVER_URL("as-otadl.coolkit.cc") ? new Response(APP) : new Response("", { status: 404 })));
+  assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher }), "kept");
+  assert.deepEqual(fetcher.asked.map((each) => each.url),
+    ["eu-otadl.coolkit.cc", "us-otadl.coolkit.cc", "as-otadl.coolkit.cc"].map((name) => SERVER_URL(name)));
+  assert.ok(fetcher.asked.every((each) => each.redirect === "manual" && each.range === null));
+  assert.equal(linkRows(bindings)[0].review, "approved");
+  assert.equal(rows(bindings, "SELECT readout, sha FROM readout_firmware")[0].readout, id);
+  assert.equal(Buffer.from(bindings.READOUTS.objects.get(`readouts/firmware/${sha(APP)}`).body).toString(), APP.toString());
+  assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher }), "held");
+  assert.equal(fetcher.asked.length, 3, "held: not fetched again");
+});
+
+test("approving a link by eWeLink's name fetches it as given, with the query; one giving no file is kept approved, said so",
+  async () => {
+    const bindings = env();
+    const id = await pending(bindings, BY_NAME);
+    const fetcher = server((url) => (url === BY_NAME_ASKED ? new Response("another file") : new Response("", { status: 404 })));
+    assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher }), "failed");
+    assert.deepEqual(fetcher.asked.map((each) => each.url), [BY_NAME_ASKED]);
+    assert.equal(linkRows(bindings)[0].review, "approved");
+    assert.deepEqual(rows(bindings, "SELECT path, why FROM offer_fetch_failures"), [{ path: BY_NAME, why: "other" }]);
+    assert.equal(rows(bindings, "SELECT * FROM readout_firmware").length, 0, "nothing kept");
+    // Tried again, it gives the file.
+    const now = server((url) => (url === BY_NAME_ASKED ? new Response(APP) : new Response("", { status: 404 })));
+    assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher: now }), "kept");
+  });
+
+test("approving is within OFFER_FETCHES_DAILY; a link rejected is never fetched, nor approved after", async () => {
+  const bindings = env();
+  const id = await pending(bindings);
+  bindings.DB.db.prepare("UPDATE counters SET count = ? WHERE name = ?").run(OFFER_FETCHES_DAILY, `offer-fetches:${DAY}`);
+  const fetcher = server(() => new Response(APP));
+  assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher }), "capped");
+  assert.deepEqual(fetcher.asked, []);
+  const other = env();
+  const theirs = await pending(other);
+  assert.equal(await rejectLink(other.DB, theirs, sha(APP)), true);
+  assert.equal(linkRows(other)[0].review, "rejected");
+  assert.equal(await approveLink(other, theirs, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher }), "none");
+  await agree(other, URL_OFFER, fetcher, SENDERS.slice(1));
+  await retryOffers(other, TOMORROW, { totalBytes: api.TOTAL_BYTES, fetcher });
+  assert.deepEqual(fetcher.asked.filter((each) => each.range === null), [], "only peeks, never a fetch");
+  assert.deepEqual(linkRows(other).map((row) => row.review), ["rejected", "rejected", "rejected"],
+    "sent again, it is taken as rejected");
+  assert.equal(await rejectLink(other.DB, theirs, sha(APP)), false, "rejected once");
+});
+
+test("one approval approves the link wherever it was sent, and another link of the file stays pending", async () => {
+  const bindings = env();
+  await agree(bindings, URL_OFFER, server(), SENDERS);
+  await results(bindings, [{ ...OFFER, stock_version: "9.0.0", files: [{ ...URL_FILE, url: BY_NAME }] }],
+    { fetcher: server() });
+  const [{ readout: id }] = rows(bindings, "SELECT readout FROM offer_links WHERE host = ?", ADDRESS);
+  assert.equal(await approveLink(bindings, id, sha(APP), NOW, { totalBytes: api.TOTAL_BYTES, fetcher: server() }),
+    "failed");
+  assert.deepEqual(rows(bindings, "SELECT host, review, count(*) AS n FROM offer_links GROUP BY host, review ORDER BY host"),
+    [{ host: ADDRESS, review: "approved", n: 3 }, { host: "global-otadl2bsy.coolkit.cc", review: "pending", n: 1 }]);
+});
+
+test("a peek reads PEEK_BYTES at most, the Range ignored, and says what the bytes start like", async () => {
+  assert.equal(PEEK_BYTES, 100);
+  const long = Buffer.concat([wrapped(["FWSW-BK-S61-BK7238"]), Buffer.alloc(OFFER_FETCH_MAX_BYTES, 7)]);
+  let pulled = 0;
+  const body = () => new ReadableStream({
+    pull(controller) {
+      const part = long.subarray(pulled, pulled + 64);
+      pulled += part.length;
+      if (part.length) controller.enqueue(new Uint8Array(part)); else controller.close();
+    },
+  });
+  const bindings = env();
+  await pending(bindings, BY_NAME);
+  assert.equal(peeks(bindings)[0].status, 404);
+  const fresh = env();
+  const fetcher = server(() => new Response(body(), { status: 200 }));
+  await results(fresh, [{ ...URL_OFFER, files: [{ ...URL_FILE, url: BY_NAME }] }], { fetcher });
+  const [peek] = peeks(fresh);
+  assert.equal(peek.hex, long.subarray(0, PEEK_BYTES).toString("hex"));
+  assert.ok(pulled < 4096, "the rest never read");
+  assert.deepEqual([peek.outcome, peek.status, peek.size, peek.server, peek.kind, peek.names],
+    ["answered", 200, null, "global-otadl2bsy.coolkit.cc", "sonoff-wrapper", "FWSW-BK-S61-BK7238"]);
+  // Each kind; the size from Content-Range.
+  const ranged = env();
+  await results(ranged, [{ ...URL_OFFER, files: [{ ...URL_FILE, url: BY_NAME }] }], { fetcher: server(() =>
+    new Response(Buffer.from([0x1e, 0xf1, 0xee, 0x1b, 1, 2]), { status: 206,
+      headers: { "Content-Range": "bytes 0-99/123456" } })) });
+  assert.deepEqual(rows(ranged, "SELECT status, size, kind, hex FROM link_peeks"),
+    [{ status: 206, size: 123456, kind: "beken-fota", hex: "1ef1ee1b0102" }]);
+  for (const [start, kind] of [[[0x03, 0x01], "sonoff-wrapper"], [[0xea, 0x04], "esp8266"], [[0x50, 0x4b], "zip"],
+    [[0x1e, 0xf1, 0xee, 0x1b], "beken-fota"], [[0x1e, 0xf1], "unknown"], [[0x3c, 0x68], "unknown"], [[], "unknown"]]) {
+    assert.equal(kindOf(Uint8Array.from(start)), kind, kind);
+  }
+});
+
+test("a peek never follows a redirect, and a timeout or no answer is kept as such", async () => {
+  for (const [answer, seen] of [
+    [() => new Response(null, { status: 302, headers: { Location: "http://10.0.0.1/x<y>" } }),
+      { outcome: "redirect", status: 302, location: "http://10.0.0.1/x<y>", hex: null }],
+    [() => { throw new DOMException("too slow", "TimeoutError"); }, { outcome: "timeout", status: null, location: null, hex: null }],
+    [() => { throw new TypeError("connection refused"); }, { outcome: "failed", status: null, location: null, hex: null }],
+    [() => new Response("", { status: 404 }), { outcome: "answered", status: 404, location: null, hex: "" }],
+  ]) {
+    const bindings = env();
+    const fetcher = server(answer);
+    await results(bindings, [{ ...URL_OFFER, files: [{ ...URL_FILE, url: BY_NAME }] }], { fetcher });
+    assert.deepEqual(rows(bindings, "SELECT outcome, status, location, hex FROM link_peeks"), [seen], seen.outcome);
+    assert.deepEqual(fetcher.asked.map((each) => [each.url, each.redirect]), [[BY_NAME_ASKED, "manual"]], "once, not followed");
+  }
+});
+
+test("peeks count against the day's fetches and the sender's first sights; one with no room is made when next sent",
+  async () => {
+    const bindings = env();
+    const fetcher = server();
+    // Five other offers' links use the sender's first sights.
+    const five = [0, 1, 2, 3, 4].map((n) => ({ ...OFFER, stock_version: `5.0.${n}`,
+      files: [{ ...FILE, sha256: sha(`f${n}`), path: `/ota/rom/${TOKEN}/f${n}.bin` }] }));
+    await results(bindings, [...five, { ...URL_OFFER, files: [{ ...URL_FILE, url: BY_NAME }] }],
+      { address: "192.0.2.1", asn: 64501, fetcher });
+    assert.equal(fetcher.asked.length, OFFER_FIRST_SIGHT_PER_SENDER);
+    assert.deepEqual(peeks(bindings), [], "no room: not peeked, nor marked as peeked");
+    await results(bindings, [{ ...URL_OFFER, files: [{ ...URL_FILE, url: BY_NAME }] }],
+      { address: "192.0.2.2", asn: 64502, fetcher });
+    assert.equal(peeks(bindings).length, 1);
+    assert.equal((await read(bindings.DB, `offer-fetches:${DAY}`)).count, OFFER_FIRST_SIGHT_PER_SENDER + 1);
+    // With the day's fetches used, none.
+    const full = env();
+    await results(full, [], {});
+    full.DB.db.prepare("INSERT INTO counters (name, day, count) VALUES (?, ?, ?)").run(`offer-fetches:${DAY}`, DAY,
+      OFFER_FETCHES_DAILY);
+    const none = server();
+    await results(full, [URL_OFFER], { fetcher: none });
+    assert.deepEqual([none.asked, peeks(full)], [[], []]);
   });

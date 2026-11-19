@@ -191,7 +191,7 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { SITE, page as shellPage } from "../src/shell.mjs";
 import { nightly } from "./nightly.js";
-import { CLOUDS, fetchNamed, fetchOffer, firstSightOf } from "./offered.js";
+import { CLOUDS, fetchNamed, fetchOffer, firstSightOf, linkParts, peekNamed } from "./offered.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
 export { work };
@@ -325,22 +325,46 @@ async function offeredIn(files, manifest) {
 // are too, and its manifest says "cloud": "ewelink" or nothing.
 const LINKED_CLOUD = "ewelink";
 
-// The links a readout gives in place of offered files (.github/readouts.md):
-// manifest.offered's entries {"file": null, "version", "sha256", "link"},
-// each {sha256, path} as offer_links keeps them, checked as an offer's file
-// is (offerProblem): null if one is not, or names another cloud.
+// The links a readout gives (.github/readouts.md): manifest.offered's entries
+// {"file": null, "version", "sha256", "link"}, in place of a file, and those
+// that give a link of a shape not seen before, `url`, with the file or in
+// place of it; each as offer_links keeps it (linkRow), checked as an offer's
+// file is (linkProblem): null if one is not, or names another cloud.
 function linksIn(manifest) {
   const linked = (Array.isArray(manifest.offered) ? manifest.offered : [])
-    .filter((item) => (item?.file === null || item?.file === undefined) && item?.link !== undefined)
+    .filter((item) => item?.url !== undefined
+      || ((item?.file === null || item?.file === undefined) && item?.link !== undefined))
     .slice(0, MAX_FIRMWARE);
   if (!linked.length) {
     return [];
   }
+  const cloud = CLOUDS[LINKED_CLOUD];
   if ((manifest.cloud ?? LINKED_CLOUD) !== LINKED_CLOUD
-      || !linked.every((item) => fits(item.link, CLOUDS[LINKED_CLOUD].link) && fits(item.sha256, /^[0-9a-f]{64}$/))) {
+      || !linked.every((item) => fits(item.sha256, /^[0-9a-f]{64}$/)
+        && !linkProblem({ path: item.link, url: item.url }, cloud))) {
     return null;
   }
-  return linked.map((item) => ({ sha256: item.sha256, path: item.link }));
+  return linked.map((item) => linkRow({ sha256: item.sha256, path: item.link, url: item.url }, cloud));
+}
+
+// Why a file's link is not taken, or null: a `path` of its cloud's shape,
+// or a `url` that keeps every rule (offered.js linkParts), one and not both.
+function linkProblem(file, cloud) {
+  if (file.url !== undefined) {
+    return file.path === undefined && linkParts(file.url, cloud) ? null
+      : "a file's url is not a link the API takes for review";
+  }
+  return fits(file.path, cloud.link) ? null : "a file's link is not of its cloud's shape";
+}
+
+// A file's link as offer_links keeps it (LINKS): a path of its cloud's
+// shape fetched unasked, or a url's parts, pending review.
+function linkRow(file, cloud) {
+  if (file.url === undefined) {
+    return { sha256: file.sha256, path: file.path, review: "auto" };
+  }
+  const { scheme, host, port, path } = linkParts(file.url, cloud);
+  return { sha256: file.sha256, path, scheme, host, port, review: "pending" };
 }
 
 // The bytes an xz file unpacks to, read from its index without unpacking it:
@@ -928,7 +952,8 @@ async function unkeep(env, id, object) {
 }
 
 // The files fetched that links were sent for (offered.js): first those of
-// each readout just kept (`named`, their ids) not held, on first sight, then
+// each readout just kept (`named`, their ids) not held, on first sight, and
+// a peek at each of its links to review (peekNamed), then
 // those of each offer newly taken as right (`agreed`, each [key, offer]) still
 // not held, first sight's held to the sender's day (OFFER_FIRST_SIGHT_PER_SENDER).
 // After the answer, where the Worker gives a `context` to wait on, else before it.
@@ -937,7 +962,8 @@ async function fetchFiles(env, request, named, agreed, now, context, fetcher) {
   const sender = named.length ? firstSightOf(await keyedHash(env, `first-sight|${addressOf(request)}`), day) : null;
   const fetching = (async () => {
     for (const id of named) {
-      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sender, fetcher })).capped) {
+      if ((await fetchNamed(env, id, now, { totalBytes: TOTAL_BYTES, sender, fetcher })).capped
+          || (await peekNamed(env, id, now, { sender, fetcher })).capped) {
         break;
       }
     }
@@ -975,7 +1001,7 @@ async function keep(env, key, body, manifest, id, offered) {
 
 // Why one offer sent to /v1/offers is refused, or null: its device named as
 // /v1/wanted takes it, and each file by a name, the version offered, its
-// SHA-256 and a link of its cloud's shape, each file once.
+// SHA-256 and a link (linkProblem), each file once.
 function offerProblem(offer, cloud) {
   if (!productOf(offer?.model) || !fits(offer.stock_model, STOCK_MODEL) || !fits(offer.stock_version, STOCK_VERSION)) {
     return "its device is not named as the tool names one";
@@ -991,8 +1017,9 @@ function offerProblem(offer, cloud) {
     if (!text(file?.name) || !fits(file.version, STOCK_VERSION) || !fits(file.sha256, /^[0-9a-f]{64}$/)) {
       return "a file is not named, with its version and SHA-256, as the tool names one";
     }
-    if (!fits(file.path, cloud.link)) {
-      return "a file's link is not of its cloud's shape";
+    const why = linkProblem(file, cloud);
+    if (why) {
+      return why;
     }
   }
   if (new Set(files.map((file) => file.sha256)).size !== files.length) {
@@ -1002,9 +1029,17 @@ function offerProblem(offer, cloud) {
 }
 
 // The links of an offer's files, as offer_links keeps them: ?1 the readout,
-// ?2 the cloud, ?3 its files as JSON, each {sha256, path}.
-const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud)
-  SELECT ?1, json_extract(value, '$.sha256'), json_extract(value, '$.path'), ?2 FROM json_each(?3)`;
+// ?2 the cloud, ?3 its files as JSON, each as linkRow gives it - bound, and
+// read out of the JSON by the database, never written into the SQL. A link
+// to review already approved or rejected, sent again, is taken as decided.
+const LINKS = `INSERT OR IGNORE INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
+  SELECT ?1, sha, path, ?2, scheme, host, port, coalesce((SELECT decided.review FROM offer_links AS decided
+      WHERE decided.sha = given.sha AND decided.cloud = ?2 AND decided.path = given.path
+        AND decided.scheme = given.scheme AND decided.host = given.host AND decided.port IS given.port
+        AND decided.review IN ('approved', 'rejected') LIMIT 1), review)
+  FROM (SELECT json_extract(value, '$.sha256') AS sha, json_extract(value, '$.path') AS path,
+    json_extract(value, '$.scheme') AS scheme, json_extract(value, '$.host') AS host,
+    json_extract(value, '$.port') AS port, json_extract(value, '$.review') AS review FROM json_each(?3)) AS given`;
 
 // The day's count of offers kept (counters.js).
 const offersOn = (day) => `offers:${day}`;
@@ -1013,7 +1048,9 @@ const rentedOffersOn = (day) => `rented-offers:${day}`;
 // First stages sent as links, in place of their files (.github/readouts.md):
 // {"format": 1, "tool_version", "cloud": one of CLOUDS, "offers": [{"model",
 // "stock_model", "stock_version", "device", "files": [{"name", "version",
-// "sha256", "path"}]}]}, every device's in an account, sent unasked. Each offer
+// "sha256", "path" or "url"}]}]}, every device's in an account, sent unasked: a
+// `url`, a link of a shape not seen before, is kept for review and fetched
+// only once the admin view approves it (offered.js approveLink). Each offer
 // is held as a first stage is (hold), its row's object a manifest alone,
 // under the key a first stage of that device has, so it agrees with first
 // stages and whole readouts naming the same files, each sender once. Its
@@ -1082,7 +1119,7 @@ export async function offers(request, env, now = new Date(), context = null, fet
     const manifest = { format: FORMAT, cloud: asked.cloud, tool: asked.tool_version ?? "-", model: offer.model,
       stock_model: offer.stock_model, stock_version: offer.stock_version, read: false,
       offered: offer.files.map((file) => ({ name: file.name, version: file.version, sha256: file.sha256,
-        link: file.path })) };
+        ...(file.url === undefined ? { link: file.path } : { url: file.url }) })) };
     fresh.push({ index, offer, key, sender, network, offerHash, manifest, body: JSON.stringify(manifest) });
   }
   // The sender's day first, then everyone's, then - from a network that
@@ -1145,7 +1182,8 @@ export async function offers(request, env, now = new Date(), context = null, fet
       continue;
     }
     try {
-      await env.DB.prepare(LINKS).bind(id, asked.cloud, JSON.stringify(each.offer.files)).run();
+      await env.DB.prepare(LINKS).bind(id, asked.cloud, JSON.stringify(each.offer.files.map((file) => linkRow(file, cloud))))
+        .run();
       await env.READOUTS.put(object, each.body, { httpMetadata: { contentType: "application/json" },
         customMetadata: { tool: each.manifest.tool.slice(0, 16), model: each.offer.model, read: "false" } });
     } catch (error) {
@@ -1170,7 +1208,7 @@ const isAddress = (email) => text(email, 254) && EMAIL.test(email);
 const WHO = /^[0-9a-f]{64}$/;
 const TOKEN = /^[0-9a-f]{32}$/;
 // A readout's reference, as readout() makes it.
-const READOUT_ID = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{12}$/;
+export const READOUT_ID = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{12}$/;
 export const FORGET_URL = "https://api.firmwareliberator.com/forget";
 // The website, whose sign-up page (/notify) posts to /v1/notify from the
 // browser: the one origin let read its answers (CORS).

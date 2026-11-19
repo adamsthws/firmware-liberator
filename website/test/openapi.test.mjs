@@ -168,6 +168,9 @@ test("the limits and names the description gives are the Worker's own", () => {
   assert.deepEqual(schema("Offers").properties.cloud.enum, Object.keys(offered.CLOUDS));
   assert.equal(schema("Offer").properties.files.maxItems, api.MAX_FIRMWARE);
   assert.equal(schema("OfferedLink").properties.path.pattern, offered.CLOUDS.ewelink.link.source.replaceAll("\\/", "/"));
+  assert.equal(schema("OfferedLink").properties.url.maxLength, offered.URL_MOST);
+  assert.deepEqual(/\(:\(([0-9|]+)\)\)/.exec(schema("OfferedLink").properties.url.pattern)[1].split("|").map(Number),
+    offered.URL_PORTS);
   assert.deepEqual(schema("Wanted").properties.send.enum, api.SENDS);
   assert.equal(schema("Question").properties.firmware.maxItems, api.MAX_FIRMWARE);
   assert.deepEqual(schema("Question").properties.stage.enum, api.STAGES);

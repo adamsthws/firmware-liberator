@@ -20,7 +20,10 @@
 //   firmware names its wrapper gives (firmwareNames, as `names`, joined by
 //   "+"), for review: a readout deleted takes it with it. Its bytes count
 //   towards the store's limit (TOTAL_BYTES) and its readout's.
-// - OFFER_FETCHES_DAILY fetches a day at most, of either kind. A file still
+// - A link of a shape not seen before (`url`, linkParts) is kept for review
+//   and never fetched until the admin view approves it (approveLink), only
+//   peeked at once when first taken (peekNamed); rejected, never.
+// - OFFER_FETCHES_DAILY fetches a day at most, of every kind. A file still
 //   missing OFFER_FETCH_ALERT_DAYS after its offer was taken as right is told
 //   to the maintainer (alerts.js): the sign to set OFFERED_SEND back to
 //   "files" (wrangler.jsonc, .github/readouts.md).
@@ -28,10 +31,20 @@ import { release, reserve } from "./counters.js";
 import { READOUTS_EVER } from "./pending.js";
 import { hex, sha256 } from "./proof-of-work.js";
 
+// eWeLink's file servers, one a region, by name (docs/espressif-research.md,
+// "Learning the firmware name"): the first is where a link of its shape is
+// fetched from; each is tried for a link to review that names its server by
+// address.
+const EWELINK_SERVERS = ["eu-otadl.coolkit.cc", "us-otadl.coolkit.cc", "as-otadl.coolkit.cc", "cn-otadl.coolkit.cn"]
+  .map((name) => `http://${name}:8088`);
+
 // Each cloud an offer may come from: the shape its links take, the part its
 // readouts' key adds (index.js keyOf; none for eWeLink, so every key held
-// from before, all eWeLink devices', stays as it is), and where a link's path
-// is fetched from: `base`, the path, then `query`.
+// from before, all eWeLink devices', stays as it is), where a link's path
+// is fetched from: `base`, the path, then `query`; the servers a path is
+// tried on for a link to review that names its server by address
+// (`servers`); and the names of its own servers (`hosts`), the only ones a
+// link to review may name.
 // - eWeLink: a link names its server by address, which a Worker cannot fetch
 //   (Cloudflare's error 1003), but every region's server gives every link's
 //   path by name; the device's id, time and signature are asked for and not
@@ -40,10 +53,94 @@ export const CLOUDS = {
   ewelink: {
     link: /^\/ota\/rom\/[A-Za-z0-9]{32,64}\/[A-Za-z0-9._-]{1,64}$/,
     key: "",
-    base: "http://eu-otadl.coolkit.cc:8088",
+    base: EWELINK_SERVERS[0],
+    servers: EWELINK_SERVERS,
     query: "deviceid=0&ts=1&sign=0",
+    hosts: /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+coolkit\.c[cn]$/,
   },
 };
+
+// A link of a shape not seen before (`url` in /v1/offers' files and a
+// readout's offered entries, .github/readouts.md), kept for review: the
+// whole link, scheme://host[:port]/path, as the tool checks it too
+// (tools/ewelink/offered_firmware.py). At most URL_MOST characters, its path
+// URL_PATH_MOST; a port of URL_PORTS or none.
+export const URL_MOST = 300;
+export const URL_PATH_MOST = 200;
+export const URL_PORTS = [80, 443, 8088];
+// Letters, digits and ". _ - /" in the path; no user@, no [IPv6], no %, no
+// query or fragment, since none of their characters is taken.
+const URL_SHAPE = /^(https?):\/\/([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?(\/[A-Za-z0-9._\/-]*)$/;
+const OCTET = /^(?:0|[1-9][0-9]{0,2})$/;
+// IPv4 ranges that are no public server's (RFC 6890's special-purpose
+// registry), each [its leading octets, prefix length]: this network, private,
+// CGNAT, loopback, link-local, IETF protocol assignments, the documentation
+// ranges, the old 6to4 relay, benchmarking, multicast, and reserved with
+// broadcast. Written as octets, not dotted, as none is an address.
+const NOT_PUBLIC = [[[0], 8], [[10], 8], [[100, 64], 10], [[127], 8], [[169, 254], 16],
+  [[172, 16], 12], [[192, 0, 0], 24], [[192, 0, 2], 24], [[192, 88, 99], 24], [[192, 168], 16],
+  [[198, 18], 15], [[198, 51, 100], 24], [[203, 0, 113], 24], [[224], 4], [[240], 4]];
+
+// An IPv4 address in dotted decimal as a number, or null: four parts, each
+// 0 to 255 with no leading zero (which some read as octal).
+function ipv4(host) {
+  const parts = host.split(".");
+  if (parts.length !== 4 || !parts.every((part) => OCTET.test(part) && Number(part) <= 255)) {
+    return null;
+  }
+  return parts.reduce((value, part) => value * 256 + Number(part), 0);
+}
+const RANGES = NOT_PUBLIC.map(([octets, bits]) => [[0, 1, 2, 3].reduce((value, at) => value * 256 + (octets[at] ?? 0), 0),
+  2 ** (32 - bits)]);
+export const isPublicAddress = (host) => {
+  const value = ipv4(host);
+  return value !== null && !RANGES.some(([first, size]) => value >= first && value < first + size);
+};
+
+// A link to review taken apart: {scheme, host, port, path}, its host in
+// lower case and `port` null for none; or null where it breaks a rule.
+export function linkParts(url, cloud = CLOUDS.ewelink) {
+  if (typeof url !== "string" || url.length > URL_MOST) {
+    return null;
+  }
+  const match = URL_SHAPE.exec(url);
+  if (!match) {
+    return null;
+  }
+  const [, scheme, given, portText, path] = match;
+  const host = given.toLowerCase();
+  const port = portText === undefined ? null : Number(portText);
+  if ((port !== null && (!URL_PORTS.includes(port) || String(port) !== portText))
+      || !(cloud.hosts.test(host) || isPublicAddress(host))
+      || path.length > URL_PATH_MOST || path.includes("..") || path.includes("//")) {
+    return null;
+  }
+  return { scheme, host, port, path };
+}
+
+// A link as it was sent: a link to review whole, one of its cloud's shape
+// its path alone. What it is known by in offer_fetch_failures and link_peeks.
+export const sentAs = (link) => (link.host == null ? link.path
+  : `${link.scheme}://${link.host}${link.port == null ? "" : `:${link.port}`}${link.path}`);
+// The same, in SQL, of table `t`'s row.
+const SENT_AS = (t) => `CASE WHEN ${t}.host IS NULL THEN ${t}.path ELSE ${t}.scheme || '://' || ${t}.host
+  || coalesce(':' || ${t}.port, '') || ${t}.path END`;
+
+// Where a link is fetched from, each tried in turn, `query` added to each
+// (eWeLink's servers answer a request without it an empty 400): a link of
+// its cloud's shape from `base`; a link to review that names one of its
+// cloud's servers as it was sent; one that names its server by address never
+// from it, but its path from each of `servers`, as eWeLink's give every
+// link's path.
+export function fetchedFrom(link, cloud = CLOUDS[link.cloud] ?? CLOUDS.ewelink) {
+  if (link.host == null) {
+    return [`${cloud.base}${link.path}?${cloud.query}`];
+  }
+  if (isPublicAddress(link.host)) {
+    return cloud.servers.map((server) => `${server}${link.path}?${cloud.query}`);
+  }
+  return [`${sentAs(link)}?${cloud.query}`];
+}
 
 // Fetches a day at most, across everyone, first sight's and agreement's:
 // each file is fetched once, and each link that fails is not tried again on
@@ -115,10 +212,10 @@ const firmwareKey = (sha) => `readouts/firmware/${sha}`;
 
 // What `url` gave: {bytes}, or {why}: "none", nothing given, or "other",
 // more than OFFER_FETCH_MAX_BYTES, which no file of the cloud's is.
-async function download(fetcher, url) {
+async function download(fetcher, url, init) {
   let response;
   try {
-    response = await fetcher(url);
+    response = await (init ? fetcher(url, init) : fetcher(url));
   } catch {
     return { why: "none" };
   }
@@ -162,27 +259,60 @@ async function download(fetcher, url) {
 const FAILED = `INSERT INTO offer_fetch_failures (sha, cloud, path, why, day) VALUES (?1, ?2, ?3, ?4, ?5)
   ON CONFLICT DO UPDATE SET why = excluded.why, day = excluded.day`;
 
-// One link of a file tried: {sha, cloud, path, readout}, the readout it is
-// kept under if it gives the file. "kept"; "held", kept meanwhile by another;
-// "failed"; or "capped", where the day's fetches, the sender's (`sender`, a
-// counter's name, on first sight), or the store ran out.
-async function tryLink(env, link, day, { totalBytes, fetcher, sender = null }) {
-  const cloud = Object.hasOwn(CLOUDS, link.cloud) ? CLOUDS[link.cloud] : null;
-  if (!cloud || !cloud.link.test(link.path)) {
-    return "failed";
+// Whether a link may be fetched: one of its cloud's shape, or one to review
+// approved that still keeps every rule (linkParts). A link pending or
+// rejected never is.
+function fetchable(link, cloud) {
+  if (link.host == null) {
+    return (link.review ?? "auto") === "auto" && cloud.link.test(link.path);
   }
+  return link.review === "approved" && linkParts(sentAs(link), cloud) !== null;
+}
+
+// One fetch counted against the day's (and on first sight the sender's,
+// `sender`): whether there was room.
+async function counted(env, day, sender) {
   if (sender && !(await reserve(env.DB, sender, day, { most: OFFER_FIRST_SIGHT_PER_SENDER }))) {
-    return "capped";
+    return false;
   }
   if (!(await reserve(env.DB, fetchesOn(day), day, { most: OFFER_FETCHES_DAILY }))) {
     if (sender) {
       await release(env.DB, sender);
     }
-    return "capped";
+    return false;
   }
-  const { bytes, why } = await download(fetcher, `${cloud.base}${link.path}?${cloud.query}`);
-  if (!bytes || hex(await sha256(bytes)) !== link.sha) {
-    await env.DB.prepare(FAILED).bind(link.sha, link.cloud, link.path, why ?? "other", day).run();
+  return true;
+}
+
+// One link of a file tried: {sha, cloud, path, readout, and for a link to
+// review scheme, host, port, review}, the readout it is kept under if it
+// gives the file; from each place it is fetched from (fetchedFrom) in turn,
+// each fetch counted. "kept"; "held", kept meanwhile by another; "failed";
+// or "capped", where the day's fetches, the sender's (`sender`, a counter's
+// name, on first sight), or the store ran out. A link to review is fetched
+// with no redirect followed: only the server approved answers.
+async function tryLink(env, link, day, { totalBytes, fetcher, sender = null }) {
+  const cloud = Object.hasOwn(CLOUDS, link.cloud) ? CLOUDS[link.cloud] : null;
+  if (!cloud || !fetchable(link, cloud)) {
+    return "failed";
+  }
+  let bytes = null;
+  let failed = "none";
+  for (const url of fetchedFrom(link, cloud)) {
+    if (!(await counted(env, day, sender))) {
+      return "capped";
+    }
+    const got = await download(fetcher, url, link.host == null ? undefined : { redirect: "manual" });
+    if (got.bytes && hex(await sha256(got.bytes)) === link.sha) {
+      bytes = got.bytes;
+      break;
+    }
+    if (got.bytes || got.why === "other") {
+      failed = "other";
+    }
+  }
+  if (!bytes) {
+    await env.DB.prepare(FAILED).bind(link.sha, link.cloud, sentAs(link), failed, day).run();
     return "failed";
   }
   if (!(await reserve(env.DB, READOUTS_EVER, null, { by: 0, bytes: bytes.byteLength, mostBytes: totalBytes }))) {
@@ -190,6 +320,9 @@ async function tryLink(env, link, day, { totalBytes, fetcher, sender = null }) {
   }
   return (await keepFile(env, link, bytes)) ? "kept" : "held";
 }
+
+// The reviews a link may be fetched with: of its cloud's shape, or approved.
+const FETCHABLE = "('auto', 'approved')";
 
 // Whether each outcome tryLink gives ends the trying of a file's links.
 const FOUND = new Set(["kept", "held"]);
@@ -202,8 +335,8 @@ const FOUND = new Set(["kept", "held"]);
 export async function fetchNamed(env, readout, now, { totalBytes, sender, fetcher = fetch }) {
   const day = now.toISOString().slice(0, 10);
   const done = { fetched: [], missing: [], capped: false };
-  const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, readout FROM offer_links
-    WHERE readout = ?1 AND NOT EXISTS (SELECT 1 FROM offer_fetch_failures AS failed
+  const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, readout, review FROM offer_links
+    WHERE readout = ?1 AND review = 'auto' AND NOT EXISTS (SELECT 1 FROM offer_fetch_failures AS failed
       WHERE failed.sha = offer_links.sha AND failed.cloud = offer_links.cloud AND failed.path = offer_links.path)
     ORDER BY sha`).bind(readout).all();
   for (const link of links) {
@@ -228,25 +361,29 @@ export async function fetchNamed(env, readout, now, { totalBytes, sender, fetche
 export async function fetchOffer(env, key, offer, now, { totalBytes, fetcher = fetch }) {
   const day = now.toISOString().slice(0, 10);
   const done = { fetched: [], missing: [], capped: false };
-  // The files links were given for, by readouts of it not rejected.
+  // The files links that may be fetched were given for, by readouts of it
+  // not rejected.
   const { results: files } = await env.DB.prepare(`SELECT DISTINCT offer_links.sha FROM offer_links
     JOIN readouts ON readouts.id = offer_links.readout
-    WHERE readouts.key = ?1 AND readouts.offer = ?2 AND readouts.review != 'rejected'`).bind(key, offer).all();
+    WHERE readouts.key = ?1 AND readouts.offer = ?2 AND readouts.review != 'rejected'
+      AND offer_links.review IN ${FETCHABLE}`).bind(key, offer).all();
   for (const { sha } of files) {
     if (done.capped || (await env.READOUTS.head(firmwareKey(sha))) !== null) {
       continue;
     }
     // The link most networks gave first: a file's link is the same for every
     // device, so made-up ones from one network come after the owners'. None
-    // that gave another file, or gave nothing today.
+    // that gave another file, or gave nothing today; none pending or rejected.
     const { results: links } = await env.DB.prepare(`SELECT offer_links.sha, offer_links.cloud, offer_links.path,
+      offer_links.scheme, offer_links.host, offer_links.port, offer_links.review,
       min(offer_links.readout) AS readout FROM offer_links JOIN readouts ON readouts.id = offer_links.readout
       LEFT JOIN readout_networks ON readout_networks.id = readouts.id
       WHERE readouts.key = ?1 AND readouts.offer = ?2 AND readouts.review != 'rejected' AND offer_links.sha = ?3
+        AND offer_links.review IN ${FETCHABLE}
         AND NOT EXISTS (SELECT 1 FROM offer_fetch_failures AS failed WHERE failed.sha = offer_links.sha
-          AND failed.cloud = offer_links.cloud AND failed.path = offer_links.path
+          AND failed.cloud = offer_links.cloud AND failed.path = ${SENT_AS("offer_links")}
           AND (failed.why = 'other' OR failed.day = ?5))
-      GROUP BY offer_links.cloud, offer_links.path
+      GROUP BY offer_links.cloud, ${SENT_AS("offer_links")}
       ORDER BY count(DISTINCT readout_networks.network) DESC, min(readouts.received) LIMIT ?4`)
       .bind(key, offer, sha, OFFER_FETCH_PATHS, day).all();
     let outcome = "failed";
@@ -306,7 +443,8 @@ async function keepFile(env, { readout, sha }, bytes) {
 // and whole readouts taken as right, agreed (quorum) or approved.
 const UNFETCHED = `SELECT DISTINCT readouts.key, readouts.offer FROM offer_links
   JOIN readouts ON readouts.id = offer_links.readout
-  WHERE readouts.review IN ('quorum', 'approved') AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)`;
+  WHERE readouts.review IN ('quorum', 'approved') AND offer_links.review IN ${FETCHABLE}
+    AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)`;
 
 // The nightly job's part (nightly.js): each offer taken as right whose files
 // are not all held, tried again within the day's fetches, OFFER_RETRY_EACH_NIGHT
@@ -333,7 +471,8 @@ export async function unfetched(db) {
       count(DISTINCT offer_links.sha) AS files
     FROM agreed_offers JOIN readouts ON readouts.key = agreed_offers.key AND readouts.offer = agreed_offers.offer
     JOIN offer_links ON offer_links.readout = readouts.id
-    WHERE readouts.review IN ('quorum', 'approved') AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)
+    WHERE readouts.review IN ('quorum', 'approved') AND offer_links.review IN ${FETCHABLE}
+      AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)
     GROUP BY agreed_offers.key, agreed_offers.offer
     ORDER BY agreed_offers.day, agreed_offers.key`).all();
   return results;
@@ -354,4 +493,188 @@ export async function linkFigures(db) {
     FROM readouts JOIN offer_links ON offer_links.readout = readouts.id
     GROUP BY readouts.key ORDER BY sent DESC, readouts.key LIMIT ?`).bind(LINK_KEYS_SHOWN).all();
   return { ...totals, keys };
+}
+
+// A link to review is peeked at once, when first taken (peekNamed), so the
+// maintainer sees what it gives before approving it: its first PEEK_BYTES
+// asked for with a Range, and no more read whatever the server sends; no
+// redirect followed; PEEK_TIMEOUT_MS at most for each server tried.
+export const PEEK_BYTES = 100;
+export const PEEK_TIMEOUT_MS = 5000;
+// What a file's first bytes start like, each kind's first bytes, in the
+// order tried: Beken's FOTA container (FOTA_MAGIC, little-endian), Sonoff's
+// wrapper (record format 3, then its record count, firmwareNames), an
+// ESP8266 image's header, a zip. "unknown" for anything else.
+export const PEEK_KINDS = [["beken-fota", [0x1e, 0xf1, 0xee, 0x1b]], ["sonoff-wrapper", [0x03, 0x01]],
+  ["esp8266", [0xea, 0x04]], ["zip", [0x50, 0x4b]]];
+export const kindOf = (bytes) => PEEK_KINDS.find(([, start]) => start.every((byte, at) => bytes[at] === byte))?.[0]
+  ?? "unknown";
+// The most of a redirect's Location kept: printable characters alone.
+const LOCATION_MOST = 200;
+const CONTENT_RANGE = /^bytes \d+-\d+\/(\d+)$/;
+
+// The first PEEK_BYTES of `url`, or fewer: {outcome, status, size, location,
+// bytes}, outcome "answered", "redirect", "timeout" or "failed".
+async function peekAt(fetcher, url) {
+  let response;
+  try {
+    response = await fetcher(url, { headers: { Range: `bytes=0-${PEEK_BYTES - 1}` }, redirect: "manual",
+      signal: AbortSignal.timeout(PEEK_TIMEOUT_MS) });
+  } catch (error) {
+    return { outcome: error?.name === "TimeoutError" || error?.name === "AbortError" ? "timeout" : "failed" };
+  }
+  const status = response.status;
+  if (status >= 300 && status < 400) {
+    await response.body?.cancel();
+    const location = (response.headers.get("Location") ?? "").replace(/[^\x20-\x7e]/g, "").slice(0, LOCATION_MOST);
+    return { outcome: "redirect", status, location };
+  }
+  const size = CONTENT_RANGE.exec(response.headers.get("Content-Range") ?? "")?.[1];
+  const bytes = new Uint8Array(PEEK_BYTES);
+  let got = 0;
+  try {
+    const reader = response.body?.getReader();
+    while (reader && got < PEEK_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      const part = value.subarray(0, PEEK_BYTES - got);
+      bytes.set(part, got);
+      got += part.byteLength;
+    }
+    await reader?.cancel();
+  } catch (error) {
+    if (!got) {
+      return { outcome: error?.name === "TimeoutError" ? "timeout" : "failed", status };
+    }
+  }
+  return { outcome: "answered", status, size: size === undefined ? null : Number(size), bytes: bytes.subarray(0, got) };
+}
+
+// A link claimed for its one peek, before it is made: whether this call
+// claimed it, so two sent at once peek once.
+const PEEK_CLAIMED = `INSERT INTO link_peeks (cloud, link, day) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING
+  RETURNING link`;
+const PEEK_KEPT = `UPDATE link_peeks SET outcome = ?3, status = ?4, size = ?5, server = ?6, location = ?7, kind = ?8,
+  names = ?9, hex = ?10 WHERE cloud = ?1 AND link = ?2`;
+
+// Each link to review readout `readout` gave, never peeked at, peeked at
+// once: from where approving it would fetch it (fetchedFrom), so a server
+// named by address is never connected to, the first of them that answers
+// 2xx kept, or the last's answer. Each request counted as a fetch, against
+// the day's and the sender's (`sender`, as fetchNamed takes it); a link the
+// day has no room for is peeked at when next sent. What it did: {peeked, capped}.
+export async function peekNamed(env, readout, now, { sender, fetcher = fetch }) {
+  const day = now.toISOString().slice(0, 10);
+  const done = { peeked: 0, capped: false };
+  const { results: links } = await env.DB.prepare(`SELECT sha, cloud, path, scheme, host, port FROM offer_links
+    WHERE readout = ?1 AND review = 'pending' AND NOT EXISTS (SELECT 1 FROM link_peeks
+      WHERE link_peeks.cloud = offer_links.cloud AND link_peeks.link = ${SENT_AS("offer_links")})
+    ORDER BY sha`).bind(readout).all();
+  for (const link of links) {
+    const cloud = Object.hasOwn(CLOUDS, link.cloud) ? CLOUDS[link.cloud] : null;
+    if (!cloud || !linkParts(sentAs(link), cloud)) {
+      continue;
+    }
+    if (!(await env.DB.prepare(PEEK_CLAIMED).bind(link.cloud, sentAs(link), day).first())) {
+      continue;   // peeked at meanwhile by another sent at once
+    }
+    let seen = null;
+    for (const url of fetchedFrom(link, cloud)) {
+      if (!(await counted(env, day, sender))) {
+        done.capped = true;
+        break;
+      }
+      seen = { ...(await peekAt(fetcher, url)), server: new URL(url).host };
+      if (seen.outcome === "answered" && seen.status >= 200 && seen.status < 300) {
+        break;
+      }
+    }
+    if (!seen) {
+      await env.DB.prepare("DELETE FROM link_peeks WHERE cloud = ?1 AND link = ?2").bind(link.cloud, sentAs(link)).run();
+      break;
+    }
+    const bytes = seen.bytes ?? null;
+    const names = bytes ? firmwareNames(bytes) : [];
+    await env.DB.prepare(PEEK_KEPT).bind(link.cloud, sentAs(link), seen.outcome, seen.status ?? null, seen.size ?? null,
+      seen.server, seen.location ?? null, bytes ? kindOf(bytes) : null, names.length ? names.join("+") : null,
+      bytes ? hex(bytes) : null).run();
+    done.peeked += 1;
+    if (done.capped) {
+      break;
+    }
+  }
+  return done;
+}
+
+// The rows of one link to review, wherever it was sent: those of the same
+// file, cloud and parts as readout ?1's link of file ?2.
+const SAME_LINK = `sha = ?2 AND (cloud, path, scheme, host, port IS NULL, coalesce(port, 0)) = (SELECT cloud, path,
+  scheme, host, port IS NULL, coalesce(port, 0) FROM offer_links WHERE readout = ?1 AND sha = ?2 AND host IS NOT NULL)`;
+
+// A link to review rejected, wherever it was sent: never fetched. Whether one was.
+export async function rejectLink(db, readout, sha) {
+  const { results } = await db.prepare(`UPDATE offer_links SET review = 'rejected'
+    WHERE review = 'pending' AND ${SAME_LINK} RETURNING readout`).bind(readout, sha).all();
+  return results.length > 0;
+}
+
+// A link to review approved, wherever it was sent (or one approved tried
+// again), and its file fetched by it if not held, as tryLink fetches one,
+// within the day's fetches: "kept", "held", "failed", "capped", or "none",
+// no such link pending or approved.
+export async function approveLink(env, readout, sha, now, { totalBytes, fetcher = fetch }) {
+  const { results } = await env.DB.prepare(`UPDATE offer_links SET review = 'approved'
+    WHERE review IN ('pending', 'approved') AND ${SAME_LINK}
+    RETURNING readout, sha, cloud, path, scheme, host, port, review`).bind(readout, sha).all();
+  if (!results.length) {
+    return "none";
+  }
+  if ((await env.READOUTS.head(firmwareKey(sha))) !== null) {
+    return "held";
+  }
+  const link = results.find((row) => row.readout === readout) ?? results[0];
+  return tryLink(env, link, now.toISOString().slice(0, 10), { totalBytes, fetcher });
+}
+
+// Links to review the admin view lists at most, newest first.
+const REVIEW_SHOWN = 100;
+
+// The links to review the admin view lists: each pending one, or approved
+// and its file not held, once however many sent it, with what its readouts
+// say of the device (`key`), how many networks sent it, when it was first
+// seen, its peek (link_peeks) and whether a fetch of it failed.
+export async function linksToReview(db) {
+  const { results } = await db.prepare(`SELECT offer_links.sha, offer_links.cloud, offer_links.path,
+      offer_links.scheme, offer_links.host, offer_links.port, offer_links.review, min(offer_links.readout) AS readout,
+      min(readouts.key) AS key, count(DISTINCT readout_networks.network) AS networks,
+      min(readouts.received) AS first, link_peeks.outcome, link_peeks.status, link_peeks.size, link_peeks.server,
+      link_peeks.location, link_peeks.kind, link_peeks.names, link_peeks.hex,
+      EXISTS (SELECT 1 FROM offer_fetch_failures AS failed WHERE failed.sha = offer_links.sha
+        AND failed.cloud = offer_links.cloud AND failed.path = ${SENT_AS("offer_links")}) AS failed
+    FROM offer_links JOIN readouts ON readouts.id = offer_links.readout
+    LEFT JOIN readout_networks ON readout_networks.id = readouts.id
+    LEFT JOIN link_peeks ON link_peeks.cloud = offer_links.cloud AND link_peeks.link = ${SENT_AS("offer_links")}
+    WHERE offer_links.host IS NOT NULL AND (offer_links.review = 'pending'
+      OR (offer_links.review = 'approved' AND offer_links.sha NOT IN (SELECT sha FROM readout_firmware)))
+    GROUP BY offer_links.sha, offer_links.cloud, ${SENT_AS("offer_links")}
+    ORDER BY offer_links.review DESC, first DESC LIMIT ?`).bind(REVIEW_SHOWN).all();
+  return results;
+}
+
+// Links the admin view lists at most, newest first.
+const LINKS_SHOWN = 200;
+
+// Every link the API was given, once each, for the admin view to copy out:
+// its file, its device's key, its review, whether its file is held, and how
+// many readouts gave it.
+export async function everyLink(db) {
+  const { results } = await db.prepare(`SELECT offer_links.sha, offer_links.cloud, offer_links.path,
+      offer_links.scheme, offer_links.host, offer_links.port, offer_links.review, min(readouts.key) AS key,
+      count(*) AS sent, offer_links.sha IN (SELECT sha FROM readout_firmware) AS held, max(readouts.received) AS last
+    FROM offer_links JOIN readouts ON readouts.id = offer_links.readout
+    GROUP BY offer_links.sha, offer_links.cloud, ${SENT_AS("offer_links")}, offer_links.review
+    ORDER BY last DESC LIMIT ?`).bind(LINKS_SHOWN).all();
+  return results;
 }

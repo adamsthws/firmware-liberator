@@ -18,11 +18,17 @@
   // Workers Logs and traces, as the API's (../api/wrangler.jsonc), so a
   // failure of the view can be looked into.
   "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "enabled": true, "invocation_logs": true }, "traces": { "enabled": true, "head_sampling_rate": 1 } },
-  // The API's database (../api/database.js), read live, and changed only by a
-  // held report released or deleted. The same id as ../api/wrangler.jsonc's.
+  // The API's database (../api/database.js), read live, and changed only by
+  // the view's own actions (index.js). The same id as ../api/wrangler.jsonc's.
   "d1_databases": [
     { "binding": "DB", "database_name": "firmware-liberator-api",
       "database_id": "8a286f99-a420-4a72-a2b6-97c623aac2ec" }
+  ],
+  // The API's readouts (../api/wrangler.jsonc), written only when a link to
+  // review is approved and the file it gives is kept (../api/offered.js
+  // approveLink).
+  "r2_buckets": [
+    { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" }
   ],
   "vars": {
     // Access's team (its <team>.cloudflareaccess.com) and this application's

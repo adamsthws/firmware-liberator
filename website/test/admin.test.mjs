@@ -1,7 +1,7 @@
 // admin/: the maintainer's view - only through Access, changing nothing but
-// a held report, and nothing a report says read as markup.
+// by its own forms, and nothing a report or a link says read as markup.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { verified } from "../admin/access.js";
@@ -367,7 +367,7 @@ test("what the plan includes is api_health.py's, and the view binds the API's da
   assert.equal(id("../admin/wrangler.jsonc"), id("../api/wrangler.jsonc"));
 });
 
-test("every answer is uncached, unframed, unindexed and runs no script but the theme's, its own", async () => {
+test("every answer is uncached, unframed, unindexed and runs no script but its own, the theme's and the copy button's", async () => {
   const response = await worker.fetch(asked(null), env());
   const csp = response.headers.get("Content-Security-Policy");
   assert.match(csp, /default-src 'none'/);
@@ -449,4 +449,117 @@ test("the fortnight's reports by how each run ended, every run result counted on
   for (const said of ["2026-11-09: 2 converted", "2026-11-09: 2 failed", "2026-11-09: 1 cancelled", "2026-11-08: 1 crashed"]) {
     assert.match(html, new RegExp(`<title>${said}</title>`));
   }
+});
+
+// Links to review (api/offered.js): listed with what was seen of them, every
+// part escaped, each link in a copy field alone, approved or rejected only
+// from the view itself.
+const SHA = "a".repeat(64);
+const READOUT = "2026-11-09-0123456789ab";
+function linked(bindings, { host = "1.2.3.4", review = "pending", key = "NEWTHING|SN-NEW-01|1.0.0" } = {}) {
+  const db = bindings.DB.db;
+  db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, offer)
+    VALUES (?, ?, 'first', 's1', 'o', 10, 'readouts/x.json', '2026-11-09T10:00:00Z', 'o')`).run(READOUT, key);
+  db.prepare("INSERT INTO readout_networks (id, network) VALUES (?, 'n1')").run(READOUT);
+  db.prepare(`INSERT INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
+    VALUES (?, ?, '/ota/s61/user_ota.rbl', 'ewelink', 'http', ?, 8088, ?)`).run(READOUT, SHA, host, review);
+}
+const sectionOf = (html, id) => html.split(`id="${id}">`)[1].split("</section>")[0];
+const copyValues = (html) => [...html.matchAll(/<input id="(copy-\d+)" type="text" readonly value="([^"]*)"/g)]
+  .map((match) => match[2]);
+
+test("links to review are listed with their device, networks, first bytes and a copy field each", async () => {
+  const bindings = env();
+  linked(bindings, { key: 'NEW<b>|SN"01|1.0' });
+  bindings.DB.db.prepare(`INSERT INTO link_peeks (cloud, link, day, outcome, status, size, server, location, kind, names, hex)
+    VALUES ('ewelink', 'http://1.2.3.4:8088/ota/s61/user_ota.rbl', '2026-11-09', 'answered', 206, 2048,
+      'eu-otadl.coolkit.cc:8088', NULL, 'sonoff-wrapper', 'FWSW-<i>', '0301<script>')`).run();
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  const review = sectionOf(html, "review");
+  assert.match(review, /NEW&lt;b&gt; · SN&quot;01 · 1\.0/);
+  assert.ok(!review.includes("<b>") && !review.includes("<i>") && !review.includes("<script>"));
+  assert.match(review, /answered · 206 · from eu-otadl\.coolkit\.cc:8088 · 2\.0 KB in all · sonoff-wrapper · FWSW-&lt;i&gt;/);
+  assert.match(review, /<code class="peek">0301&lt;script&gt;<\/code>/);
+  assert.deepEqual(copyValues(review), ["http://1.2.3.4:8088/ota/s61/user_ota.rbl",
+    ...["eu-otadl.coolkit.cc", "us-otadl.coolkit.cc", "as-otadl.coolkit.cc", "cn-otadl.coolkit.cn"]
+      .map((name) => `http://${name}:8088/ota/s61/user_ota.rbl?deviceid=0&amp;ts=1&amp;sign=0`)]);
+  assert.match(review, /<button type="button" data-copy="copy-1">Copy<\/button>/);
+  assert.match(review, /name="action" value="approve"><button>Approve<\/button>/);
+  assert.match(review, /name="action" value="reject"><button class="danger">Reject<\/button>/);
+  // Nothing of a link in an href, a src or a script: only in fields' values.
+  assert.ok(![...html.matchAll(/(?:href|src|action)="([^"]*)"/g)].some((match) => /coolkit|1\.2\.3\.4|ota\//.test(match[1])));
+  assert.match(html, /<script src="\/assets\/copy\.js" defer><\/script>/);
+  assert.ok(!admin.COPY_SCRIPT.includes("innerHTML") && !admin.COPY_SCRIPT.includes("href"));
+  // Every link, copyable as the API fetches it.
+  assert.deepEqual(copyValues(sectionOf(html, "links")), ["http://1.2.3.4:8088/ota/s61/user_ota.rbl"],
+    "pending: as sent");
+});
+
+test("a link a test makes from markup-looking parts is escaped wherever it is shown", async () => {
+  const bindings = env();
+  linked(bindings, { host: '"><script>x</script>', review: "approved" });
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.ok(!html.includes("<script>x"));
+  assert.match(sectionOf(html, "review"), /Approved, not fetched yet\./);
+  assert.match(sectionOf(html, "review"), /value="approve"><button>Try again<\/button>/);
+  assert.ok(sectionOf(html, "links").includes('value="http://&quot;&gt;&lt;script&gt;x&lt;/script&gt;:8088/ota/s61/user_ota.rbl?deviceid=0&amp;ts=1&amp;sign=0"'));
+});
+
+test("every link the API took is listed with its fetched form to copy", async () => {
+  const bindings = env();
+  linked(bindings);
+  bindings.DB.db.prepare(`INSERT INTO offer_links (readout, sha, path, cloud) VALUES (?, ?, ?, 'ewelink')`)
+    .run(READOUT, "b".repeat(64), `/ota/rom/${"0".repeat(32)}/user1.bin`);
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.ok(copyValues(sectionOf(html, "links"))
+    .includes(`http://eu-otadl.coolkit.cc:8088/ota/rom/${"0".repeat(32)}/user1.bin?deviceid=0&amp;ts=1&amp;sign=0`));
+});
+
+test("a link is approved, its file fetched, or rejected only from the view, by the signed-in", async () => {
+  const objects = new Map();
+  const bucket = { head: async (key) => (objects.has(key) ? {} : null), put: async (key, body) => objects.set(key, body),
+    delete: async (key) => objects.delete(key) };
+  const file = Buffer.from("the file");
+  const bindings = env({ READOUTS: bucket });
+  bindings.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, offer)
+    VALUES (?, 'K', 'first', 's1', 'o', 10, 'readouts/x.json', '2026-11-09T10:00:00Z', 'o')`).run(READOUT);
+  const sha = createHash("sha256").update(file).digest("hex");
+  bindings.DB.db.prepare(`INSERT INTO offer_links (readout, sha, path, cloud, scheme, host, port, review)
+    VALUES (?, ?, '/x.bin', 'ewelink', 'https', 'a.coolkit.cc', NULL, 'pending')`).run(READOUT, sha);
+  const asked = [];
+  const files = async (url) => {
+    asked.push(String(url));
+    return new Response(file);
+  };
+  const post = async (fields, headers = { Origin: admin.ORIGIN, "Sec-Fetch-Site": "same-origin" }, jwt = true) =>
+    admin.handle(new Request("https://admin.firmwareliberator.com/links", { method: "POST",
+      body: new URLSearchParams(fields), headers: { ...(jwt ? { "Cf-Access-Jwt-Assertion": await token() } : {}),
+        ...headers } }), bindings, NOW, keys, files);
+  const review = () => rows(bindings.DB, "SELECT review FROM offer_links")[0].review;
+  const fields = { readout: READOUT, sha, action: "approve" };
+  assert.equal((await post(fields, undefined, false)).status, 403, "not signed in");
+  assert.equal((await post(fields, { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await post(fields, { Origin: admin.ORIGIN, "Sec-Fetch-Site": "cross-site" })).status, 403);
+  for (const bad of [{ ...fields, action: "fetch" }, { ...fields, sha: "x" }, { ...fields, readout: "r1'--" }]) {
+    assert.equal((await post(bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.deepEqual([review(), asked], ["pending", []], "nothing approved, nothing fetched");
+  const done = await post(fields);
+  assert.deepEqual([done.status, done.headers.get("Location")], [303, "/#review"]);
+  assert.deepEqual([review(), asked], ["approved", ["https://a.coolkit.cc/x.bin?deviceid=0&ts=1&sign=0"]]);
+  assert.ok(objects.has(`readouts/firmware/${sha}`));
+  bindings.DB.db.prepare("UPDATE offer_links SET review = 'pending'").run();
+  await post({ ...fields, action: "reject" });
+  assert.equal(review(), "rejected");
+  assert.equal(asked.length, 1, "rejecting fetches nothing");
+});
+
+test("the copy button's script is served from the view, to the signed-in alone", async () => {
+  const script = async (jwt) => admin.handle(new Request("https://admin.firmwareliberator.com/assets/copy.js",
+    { headers: jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {} }), env(), NOW, keys);
+  const served = await script(await token());
+  assert.equal(served.headers.get("Content-Type"), "text/javascript; charset=utf-8");
+  assert.equal(await served.text(), admin.COPY_SCRIPT);
+  assert.match(admin.COPY_SCRIPT, /navigator\.clipboard\.writeText\(field\.value\)/);
+  assert.equal((await script(null)).status, 403);
 });

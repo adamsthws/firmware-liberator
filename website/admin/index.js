@@ -2,16 +2,19 @@
 // live from its database on each load - unlike /stats, which is the public
 // figures, a day old. Behind Cloudflare Access (access.js checks its token on
 // every request); the only changes it makes are a held report released or
-// deleted, readouts nearly agreeing approved, and the maintainer's switches
-// set, each a POST from this view itself; and the suites' emulator runs, taken
+// deleted, readouts nearly agreeing approved, a link to review approved (its
+// file then fetched) or rejected, and the maintainer's switches set, each a
+// POST from this view itself; and the suites' emulator runs, taken
 // under SCOPE with Access's service token alone (emulator.js). Nothing in it
-// is cached, framed, indexed or scripted.
+// is cached, framed or indexed, and it runs no script but its own two: the
+// theme's and the copy button's.
 import { release as giveBack } from "../api/counters.js";
 import { downloadDays, DOWNLOADS } from "../api/downloads.js";
-import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
-  from "../api/index.js";
+import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, READOUT_ID, STAGES,
+  TOTAL_BYTES } from "../api/index.js";
 import { CLOUD_ASNS } from "../api/networks.js";
-import { fetchesOn, linkFigures, OFFER_FETCHES_DAILY, unfetched } from "../api/offered.js";
+import { approveLink, everyLink, fetchedFrom, fetchesOn, linkFigures, linksToReview, OFFER_FETCHES_DAILY, PEEK_BYTES,
+  rejectLink, sentAs, unfetched } from "../api/offered.js";
 import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
@@ -19,7 +22,7 @@ import schema from "../api/report-schema.json" with { type: "json" };
 import { SITE, THEME_SCRIPT, page as shellPage } from "../src/shell.mjs";
 import { verified } from "./access.js";
 import { emulatorSections, gatherEmulator, KINDS, SCOPE, setCause, upload } from "./emulator.js";
-import { bytes, columns, esc, FULL, lineChart, lines, meter, number, STYLE, table, tile, trends } from "./render.js";
+import { bytes, columns, copyField, esc, FULL, lineChart, lines, meter, number, STYLE, table, tile, trends } from "./render.js";
 
 export const ORIGIN = "https://admin.firmwareliberator.com";
 // What Workers Paid includes a month, and R2 free (tools/repo/api_health.py's
@@ -37,7 +40,8 @@ const HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   "Cache-Control": "no-store",
   // The site's stylesheets and icons (src/shell.mjs), but no script but the
-  // theme's, served here: a change to the site can't run code in this view.
+  // theme's and the copy button's, served here: a change to the site can't
+  // run code in this view.
   "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline' ${SITE}; script-src 'self'; `
     + `img-src data: ${SITE}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
   "X-Robots-Tag": "noindex, nofollow",
@@ -46,13 +50,26 @@ const HEADERS = {
 };
 const reply = (status, body, headers = {}) => new Response(body, { status, headers: { ...HEADERS, ...headers } });
 
+// The copy buttons' script (render.js copyField), served from here as
+// /assets/copy.js: it copies the field a button names, by the page's own id,
+// and reads nothing else of the page.
+export const COPY_SCRIPT = `document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-copy]");
+  const field = button && document.getElementById(button.dataset.copy);
+  if (!field) return;
+  field.select();
+  navigator.clipboard.writeText(field.value).then(() => { button.textContent = "Copied"; }, () => {});
+});
+`;
+
 export default {
   fetch: (request, env) => handle(request, env),
 };
 
-// A request, its Access token checked first: `now` and `fetcher` as the
-// Worker has them, but in the tests.
-export async function handle(request, env, now = Date.now(), fetcher = fetch) {
+// A request, its Access token checked first: `now` and `fetcher` (Access's
+// keys) as the Worker has them, but in the tests, and `files` the fetch an
+// approved link's file is fetched with.
+export async function handle(request, env, now = Date.now(), fetcher = fetch, files = fetch) {
   const url = new URL(request.url);
   if (url.pathname === SCOPE || url.pathname.startsWith(`${SCOPE}/`)) {
     return suites(request, url, env, now, fetcher);
@@ -63,6 +80,9 @@ export async function handle(request, env, now = Date.now(), fetcher = fetch) {
   }
   if (url.pathname === "/assets/theme.js" && request.method === "GET") {
     return new Response(THEME_SCRIPT, { headers: { ...HEADERS, "Content-Type": "text/javascript; charset=utf-8" } });
+  }
+  if (url.pathname === "/assets/copy.js" && request.method === "GET") {
+    return new Response(COPY_SCRIPT, { headers: { ...HEADERS, "Content-Type": "text/javascript; charset=utf-8" } });
   }
   if (url.pathname === "/" && request.method === "GET") {
     return reply(200, await page(env, who, new Date(now), fetcher, url.searchParams.get("live") === "1"));
@@ -75,6 +95,9 @@ export async function handle(request, env, now = Date.now(), fetcher = fetch) {
   }
   if (url.pathname === "/approve" && request.method === "POST") {
     return approve(request, env);
+  }
+  if (url.pathname === "/links" && request.method === "POST") {
+    return review(request, env, new Date(now), files);
   }
   if (url.pathname === "/emulator-cause" && request.method === "POST") {
     return cause(request, env);
@@ -168,6 +191,26 @@ async function approve(request, env) {
     await giveBack(env.DB, PENDING, results.reduce((total, row) => total + row.bytes, 0), results.length);
   }
   return new Response(null, { status: 303, headers: { Location: "/#nearly", "Cache-Control": "no-store" } });
+}
+
+// A link to review approved, its file then fetched by it (api/offered.js
+// approveLink), or rejected, never to be fetched: wherever it was sent, by
+// one readout's link of the file. Only from a form on this view.
+async function review(request, env, now, files) {
+  if (!ownForm(request)) {
+    return notOwn();
+  }
+  const form = await request.formData();
+  const [readout, sha, action] = ["readout", "sha", "action"].map((name) => String(form.get(name) ?? ""));
+  if (!READOUT_ID.test(readout) || !/^[0-9a-f]{64}$/.test(sha) || !["approve", "reject"].includes(action)) {
+    return reply(400, "Not a readout's link of a file, and approve or reject.", { "Content-Type": "text/plain" });
+  }
+  if (action === "approve") {
+    await approveLink(env, readout, sha, now, { totalBytes: TOTAL_BYTES, fetcher: files });
+  } else {
+    await rejectLink(env.DB, readout, sha);
+  }
+  return new Response(null, { status: 303, headers: { Location: "/#review", "Cache-Control": "no-store" } });
 }
 
 // A held report released or deleted: only from a form on this view.
@@ -304,6 +347,8 @@ export async function gather(env, now) {
     // Offers sent as links, and the files the API fetched from them (api/offered.js).
     links: await linkFigures(env.DB),
     unfetched: await unfetched(env.DB),
+    review: await linksToReview(env.DB),
+    every: await everyLink(env.DB),
     networks: await all(`SELECT name, json_array_length(asns) AS asns, previous, taken, problem FROM network_lists
       ORDER BY name`),
     popularity: await modelTrends(all, now),
@@ -368,6 +413,18 @@ export function pace(store, now) {
   return { perDay, full };
 }
 
+// A link to review's first bytes (api/offered.js peekNamed), as text: how
+// the server answered, then what they start like and as hex.
+function peekShown(row) {
+  if (!row.outcome) {
+    return esc("Not asked yet.");
+  }
+  const said = [row.outcome, row.status, row.server && `from ${row.server}`, row.size != null && `${bytes(row.size)} in all`,
+    row.location && `to ${row.location}`, row.kind, row.names].filter((part) => part !== null && part !== undefined
+    && part !== false && part !== "");
+  return esc(said.join(" · ")) + (row.hex ? `<br><code class="peek">${esc(row.hex)}</code>` : "");
+}
+
 // How often the view loads itself again when it is asked to keep up (?live=1),
 // in seconds: emulator runs come in as they end.
 export const LIVE_SECONDS = 60;
@@ -389,6 +446,12 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
   const action = (id, name, label, danger = false) => `<form class="inline" method="post" action="/held">`
     + `<input type="hidden" name="id" value="${esc(id)}"><input type="hidden" name="action" value="${name}">`
     + `<button${danger ? ' class="danger"' : ""}>${label}</button></form>`;
+  // Each copy field's id, the page's own.
+  let copies = 0;
+  const copy = (value) => copyField(`copy-${(copies += 1)}`, value);
+  const linkForm = (row, action, label, danger = false) => `<form class="inline" method="post" action="/links">`
+    + `<input type="hidden" name="readout" value="${esc(row.readout)}"><input type="hidden" name="sha" value="${esc(row.sha)}">`
+    + `<input type="hidden" name="action" value="${action}"><button${danger ? ' class="danger"' : ""}>${label}</button></form>`;
   const switches = Object.entries(SWITCHES).map(([name, label]) => {
     const on = data.settings[name] !== "off";
     return `<form class="inline" method="post" action="/settings"><input type="hidden" name="name" value="${esc(name)}">`
@@ -467,6 +530,23 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       first.</p>`
       + table([["Key", "key"], ["Offered", "offered"], ["Since", "day"]], data.offers, "None yet.")
       + `</section>`,
+    `<section class="card" id="review"><h2>Links to review</h2><p class="sub">Links of a shape not seen before, as
+      sent, never fetched until you approve one; approving fetches its file by it (a server named by address never:
+      its path from each of eWeLink's servers by name), kept only if it is the SHA-256 given. Its first ${PEEK_BYTES}
+      bytes were asked for once, when first sent. Approved ones whose file is not held are listed until it is.</p>`
+      + table([["Device", (row) => String(row.key ?? "").split("|").slice(0, 3).join(" · ")],
+        ["SHA-256", "sha", "text"], ["Networks", "networks", "number"],
+        ["First seen", (row) => String(row.first ?? "").slice(0, 10)],
+        ["Link", (row) => copy(sentAs(row))
+          + (row.review === "pending" && fetchedFrom(row)[0] !== sentAs(row)
+            ? `<br>Approving tries:${fetchedFrom(row).map(copy).join("")}` : ""), "html"],
+        ["First bytes", peekShown, "html"],
+        ["", (row) => (row.review === "pending"
+          ? `${linkForm(row, "approve", "Approve")} ${linkForm(row, "reject", "Reject", true)}`
+          : `${esc(row.failed ? "Approved: no server gave the file." : "Approved, not fetched yet.")} `
+            + linkForm(row, "approve", "Try again")), "html"]],
+      data.review, "None.")
+      + `</section>`,
     `<section class="card" id="links"><h2>Offers sent as links</h2><p class="sub">First stages, and whole readouts,
       that sent the files eWeLink offers their device as links, and the files the API fetched from those links: each
       on first sight, and again once its offer is agreed. A file missing for an agreed offer is tried again each
@@ -483,6 +563,12 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + `<h3>Files missing for an agreed offer</h3>`
       + table([["Key", "key"], ["Offered", "offered"], ["Agreed", "day"], ["Files missing", "files", "number"]],
         data.unfetched, "None.")
+      + `<h3>Every link</h3><p class="sub">Each file's link, as the API fetches it; a link to review not approved,
+      as sent.</p>`
+      + table([["Device", "key"], ["SHA-256", "sha", "text"], ["Review", "review"],
+        ["File", (row) => (row.held ? "held" : "not held")], ["Sent", "sent", "number"],
+        ["Link", (row) => (["auto", "approved"].includes(row.review) ? fetchedFrom(row) : [sentAs(row)]).map(copy)
+          .join(""), "html"]], data.every, "None yet.")
       + `</section>`,
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,
@@ -522,6 +608,6 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
     + `${esc(who.email ?? "")} · ${esc(data.today)} · <a href="${SITE}/stats">public figures</a> · `
     + (live ? `<a href="/">stop updating</a>` : `<a href="/?live=1">update every ${LIVE_SECONDS} s</a>`)
     + `</span></div>${sections.join("")}</div>`,
-  { heading: false, script: "", more: `<style>${STYLE}</style>`
+  { heading: false, script: "", more: `<style>${STYLE}</style><script src="/assets/copy.js" defer></script>`
     + (live ? `<meta http-equiv="refresh" content="${LIVE_SECONDS}">` : "") });
 }

@@ -219,7 +219,7 @@
       "post": {
         "operationId": "readout",
         "summary": "A readout of a device, made with its owner's consent",
-        "description": "A tar, uncompressed, its first file manifest.json; then each file eWeLink offers the device, as served, at the place the manifest's `offered` gives it, which the API checks against the SHA-256 given; then the device's memory, each .bin xz-compressed. When /v1/wanted answers \"send\": \"links\", an `offered` entry may give the file's link in place of the file ({\"file\": null, \"version\", \"sha256\", \"link\"}, a path of /v1/offers' shape, the manifest's `cloud` \"ewelink\"), which the API fetches itself as it does an offer's. .github/readouts.md has the format.",
+        "description": "A tar, uncompressed, its first file manifest.json; then each file eWeLink offers the device, as served, at the place the manifest's `offered` gives it, which the API checks against the SHA-256 given; then the device's memory, each .bin xz-compressed. When /v1/wanted answers \"send\": \"links\", an `offered` entry may give the file's link in place of the file ({\"file\": null, \"version\", \"sha256\", \"link\"}, a path of /v1/offers' shape, the manifest's `cloud` \"ewelink\"), which the API fetches itself as it does an offer's. An entry may give a link of a shape not seen before, `url`, as /v1/offers takes one, beside its file or in place of it: kept for review, never fetched until approved. .github/readouts.md has the format.",
         "parameters": [
           {
             "$ref": "#/components/parameters/Proof"
@@ -1151,8 +1151,7 @@
         "required": [
           "name",
           "version",
-          "sha256",
-          "path"
+          "sha256"
         ],
         "properties": {
           "name": {
@@ -1172,8 +1171,27 @@
             "type": "string",
             "pattern": "^/ota/rom/[A-Za-z0-9]{32,64}/[A-Za-z0-9._-]{1,64}$",
             "description": "The path of the link eWeLink gives the file, its server and query left out: of this shape for the cloud \"ewelink\""
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^https?://[A-Za-z0-9.-]{1,253}(:(80|443|8088))?/[A-Za-z0-9._/-]*$",
+            "description": "In place of path, a link of a shape not seen before, whole and without its query or fragment: scheme http or https, a host that is a name of the cloud's own (for \"ewelink\", ending .coolkit.cc or .coolkit.cn) or a public IPv4 address, a port of 80, 443, 8088 or none, a path of at most 200 characters with no \"..\" or \"//\". Kept for the maintainer to review and fetched only once approved; one that breaks a rule is refused"
           }
-        }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "path"
+            ]
+          },
+          {
+            "required": [
+              "url"
+            ]
+          }
+        ],
+        "description": "One file, named by path (fetched unasked) or by url (kept for review), not both"
       },
       "Offer": {
         "type": "object",
