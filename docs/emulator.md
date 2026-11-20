@@ -430,6 +430,27 @@ passes it on, and in a run you start with `emu.sh` you set it in the conversion
 window (`AUTOFLASH_NOT_READY_YET=1 run`). Where each such device stops is in
 [devices/](../devices/README.md).
 
+#### A motor
+
+A Dual R3 in motor mode can be given a motor on its two outputs: write its
+travel time, end to end, in seconds, to the instance's `motor` file, and
+switch the device off and on so the board reads it again,
+
+```sh
+docker exec autoflash-emu-N sh -c 'echo 8 > /run/autoflash-emu/motor'
+docker exec -u ubuntu autoflash-emu-N device restart
+```
+
+Output 1 (GPIO27) runs it towards one end and output 2 (GPIO14) towards the
+other; it starts halfway, and at an end the output that ran it there draws
+nothing, as a real motor's limit switch cuts it. That is what Sonoff's
+firmware calibrates its travel time by (`calibration` 1 through the stub's
+`/v2/device/thing/status`,
+[what it keeps](espressif-research.md#the-dual-r3s-work-mode)). Without the
+file each output draws the plain load while it is on. The motor is the
+board's ([board.py](../tools/espressif/emulator/board.py)'s `Motor`), so it
+needs no new image.
+
 ### On Windows
 
 To test the tool's Windows code paths (`arp -a`, `netsh` firewall rules behind

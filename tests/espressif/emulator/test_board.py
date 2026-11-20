@@ -97,6 +97,59 @@ class Cse7766Tests(unittest.TestCase):
         self.assertAlmostEqual(wh, 100 * 10 / 3600, delta=0.002)
 
 
+class MotorTests(unittest.TestCase):
+    """A motor on the Dual R3's relays (GPIO27, GPIO14), each end 8 s from the
+    other: what Sonoff's firmware calibrates its travel by."""
+
+    RELAYS = (27, 14)
+    FIRST, SECOND = 1 << 27, 1 << 14
+
+    def test_it_draws_while_it_moves_and_nothing_at_its_end(self):
+        motor = board.Motor(8.0)
+        motor.moved(self.FIRST, self.RELAYS, 0.0)
+        motor.moved(self.FIRST, self.RELAYS, 3.0)
+        self.assertEqual(motor.drawing(self.FIRST, self.RELAYS), self.FIRST)
+        motor.moved(self.FIRST, self.RELAYS, 4.5)   # halfway is 4 s from the end
+        self.assertEqual(motor.position, 0.0)
+        self.assertEqual(motor.drawing(self.FIRST | 1 << 25, self.RELAYS), 1 << 25)
+        # The other way, it draws again, for the whole travel.
+        motor.moved(self.SECOND, self.RELAYS, 4.5)
+        motor.moved(self.SECOND, self.RELAYS, 12.4)
+        self.assertEqual(motor.drawing(self.SECOND, self.RELAYS), self.SECOND)
+        motor.moved(self.SECOND, self.RELAYS, 12.6)
+        self.assertEqual(motor.drawing(self.SECOND, self.RELAYS), 0)
+
+    def test_both_or_neither_on_it_stays(self):
+        motor = board.Motor(8.0)
+        for outputs in (0, self.FIRST | self.SECOND):
+            motor.moved(outputs, self.RELAYS, 0.0)
+            motor.moved(outputs, self.RELAYS, 5.0)
+            self.assertEqual(motor.position, 0.5)
+
+    def test_only_while_the_run_names_its_travel(self):
+        with tempfile.TemporaryDirectory() as run:
+            run = Path(run)
+            self.assertIsNone(board.Motor.of(run, None))
+            (run / "motor").write_text("8\n", encoding="utf-8")
+            motor = board.Motor.of(run, None)
+            self.assertEqual(motor.travel, 8.0)
+            self.assertIs(board.Motor.of(run, motor), motor)
+            (run / "motor").write_text("13", encoding="utf-8")
+            self.assertEqual(board.Motor.of(run, motor).travel, 13.0)
+            (run / "motor").write_text("none", encoding="utf-8")
+            self.assertIsNone(board.Motor.of(run, motor))
+
+    def test_the_meter_of_a_board_with_one_sees_its_end(self):
+        with tempfile.TemporaryDirectory() as run:
+            with_motor = board.Board("esp32", DUALR3, Path(run), io.BytesIO())
+            self.assertEqual(with_motor.motor_relays(), self.RELAYS)
+            with_motor.outputs = self.FIRST
+            self.assertEqual(with_motor.metered(), self.FIRST)
+            with_motor.motor = board.Motor(8.0, position=0.0)
+            self.assertEqual(with_motor.metered(), 0)
+            self.assertIsNone(board.Board("esp32c3", S60, Path(run), io.BytesIO()).motor_relays())
+
+
 class Cse7761Tests(unittest.TestCase):
     """The exchange Tasmota's xnrg_19_cse7761.ino and ESPHome's cse7761 have with the chip."""
 
@@ -149,6 +202,11 @@ class Cse7761Tests(unittest.TestCase):
         self.outputs = 1 << 14
         self.assertEqual(self.read(0x2C, 4), 0)
         self.assertGreater(self.read(0x2D, 4), 0)
+
+    def test_it_answers_its_chip_id(self):
+        # Sonoff's firmware asks 0x7F until it is the datasheet's ID, and
+        # reads nothing else of the chip until then.
+        self.assertEqual(self.read(0x7F, 3), 0x776110)
 
     def test_a_frame_with_a_wrong_checksum_is_ignored(self):
         self.start(0xFF04)

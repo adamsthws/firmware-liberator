@@ -107,6 +107,54 @@ class Channel:
         return LOAD if on else Load(LOAD.volts, 0.0, LOAD.hertz)
 
 
+@dataclass
+class Motor:
+    """A motor on a device's first two relays, as a Dual R3 in motor mode
+    drives one: the first relay runs it towards one end, the second towards
+    the other, each end `travel` seconds from the other. It starts halfway.
+    At an end its limit switch opens, so the relay that runs it there then
+    draws nothing, as on a real motor: what Sonoff's firmware times its
+    travel by. Present only while the run's `motor` file names a travel
+    time (device-supervisor's $RUN), so a device in relay mode is metered
+    as before."""
+    travel: float
+    position: float = 0.5   # 0 the first relay's end, 1 the second's
+    last: float | None = None
+
+    FILE = "motor"
+
+    @classmethod
+    def of(cls, run: Path, present: Motor | None) -> Motor | None:
+        """The motor `run` names now: `present` kept while its travel is the same."""
+        try:
+            travel = float((run / cls.FILE).read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return None
+        if travel <= 0:
+            return None
+        return present if present is not None and present.travel == travel else cls(travel)
+
+    def moved(self, outputs: int, relays: tuple[int, int], now: float) -> None:
+        """The motor run until `now` as `outputs` drove it since last looked:
+        one relay on alone moves it; both or neither, it stays."""
+        if self.last is not None:
+            first, second = (bool(outputs >> pin & 1) for pin in relays)
+            step = (now - self.last) / self.travel
+            if first and not second:
+                self.position = max(0.0, self.position - step)
+            elif second and not first:
+                self.position = min(1.0, self.position + step)
+        self.last = now
+
+    def drawing(self, outputs: int, relays: tuple[int, int]) -> int:
+        """`outputs` as the meter sees them: a relay whose end the motor has
+        reached draws nothing."""
+        for pin, end in zip(relays, (0.0, 1.0)):
+            if self.position == end:
+                outputs &= ~(1 << pin)
+        return outputs
+
+
 @dataclass(frozen=True)
 class Wiring:
     """The meter as the device's template wires it."""
@@ -219,7 +267,11 @@ class Cse7761:
     RMSIAC, RMSIBC, RMSUC, POWERPAC, POWERPBC, POWERSC, ENERGYAC, ENERGYBC = range(0x70, 0x78)
     WIDTHS = {RMSIA: 3, RMSIB: 3, RMSU: 3, POWERFACTOR: 3, ENERGY_PA: 3, ENERGY_PB: 3, 0x2F: 3,
               POWERPA: 4, POWERPB: 4, 0x44: 4, SYSSTATUS: 1, 0x7F: 3}
-    DEFAULTS = {SYSCON: 0x0A04, 0x01: 0x0000, HFCONST: 0x1000, 0x13: 0x0001, 0x1D: 0x3210, 0x6E: 0xFFFF}
+    # The datasheet's chip ID, at 0x7F: Sonoff's firmware asks it until it is
+    # this, and reads nothing else of the chip before.
+    CHIP_ID = 0x776110
+    DEFAULTS = {SYSCON: 0x0A04, 0x01: 0x0000, HFCONST: 0x1000, 0x13: 0x0001, 0x1D: 0x3210, 0x6E: 0xFFFF,
+                0x7F: CHIP_ID}
     # The chip's factory calibration: Tasmota's and ESPHome's reference values,
     # which take a chip's own when its checksum is right.
     COEFFICIENTS = {RMSIAC: 52241, RMSIBC: 52241, RMSUC: 42563, POWERPAC: 44513, POWERPBC: 44513,
@@ -440,6 +492,7 @@ class Board:
         self.run = run
         self.console = console
         self.outputs = 0
+        self.motor: Motor | None = None
         self.route = Routing()
         self.qmp: Qmp | None = None
         self.lock = threading.Lock()   # one QMP call at a time
@@ -475,8 +528,11 @@ class Board:
                 try:
                     with self.lock:
                         self.outputs = relay_outputs(self.soc, self.qmp.read)
+                    if self.motor is not None:
+                        self.motor.moved(self.outputs, self.motor_relays(), time.monotonic())
                     if time.monotonic() - routed >= self.ROUTING_POLL:
                         self.reroute()
+                        self.motor = Motor.of(self.run, self.motor) if self.motor_relays() else None
                         routed = time.monotonic()
                 except (ValueError, RuntimeError, IndexError) as exc:
                     if repr(exc) not in said:   # once each, not every 100 ms
@@ -486,6 +542,16 @@ class Board:
         except OSError:
             self.qmp = None
             return   # QEMU has gone, and its monitor with it
+
+    def motor_relays(self) -> tuple[int, int] | None:
+        """The two relay pins a motor would be on: none for a board without two."""
+        pins = tuple(channel.relay for channel in self.wiring.channels) if self.wiring else ()
+        return pins if len(pins) == 2 and None not in pins else None   # type: ignore[return-value]
+
+    def metered(self) -> int:
+        """The outputs as the meter sees them: a motor's at its end draws nothing."""
+        relays = self.motor_relays()
+        return self.motor.drawing(self.outputs, relays) if self.motor is not None and relays else self.outputs
 
     def reroute(self) -> None:
         """The meter's routing read again now."""
@@ -531,7 +597,7 @@ class Board:
             except (OSError, ValueError, RuntimeError, IndexError):
                 pass
         if n in self.route.hears:
-            self.send(self.route.tells, self.meter.feed(data, self.outputs, time.monotonic()))
+            self.send(self.route.tells, self.meter.feed(data, self.metered(), time.monotonic()))
 
     def serve(self, qemu: subprocess.Popen) -> int:
         """Until QEMU exits: its UARTs' bytes where they are wired."""
@@ -559,7 +625,7 @@ class Board:
                     continue
                 self.heard(n, data)
             if isinstance(self.meter, Cse7766) and time.monotonic() >= next_frame:
-                self.send(self.route.tells, self.meter.frame(self.outputs, time.monotonic()))
+                self.send(self.route.tells, self.meter.frame(self.metered(), time.monotonic()))
                 next_frame += Cse7766.PERIOD
                 if next_frame < time.monotonic():
                     next_frame = time.monotonic() + Cse7766.PERIOD

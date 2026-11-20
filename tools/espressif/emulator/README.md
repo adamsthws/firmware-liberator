@@ -385,6 +385,14 @@ every second.
   ESPHome sets a shunt's gain, 16, on its clamp's input and reads it at a
   shunt's scale, 3.2 times too much, which its config's division by pi nearly
   undoes: it reads 101.9 W of the 100.
+  It answers its chip ID (`0x776110`, register `0x7F`), which Sonoff's Dual R3
+  firmware asks until it is right before reading anything else; Tasmota and
+  ESPHome do not ask it.
+- **A motor** on the Dual R3's outputs, while the run's `motor` file names its
+  travel ([docs/emulator.md](../../../docs/emulator.md#a-motor)): its position
+  moves while one output is on alone, polled with the outputs every 0.1 s, and
+  the meter sees an output at its end as off. Read every second from the file,
+  so it can be set before a power cycle.
 - **Not modelled:** a UART's baud rate and frame format (a firmware reading
   the meter at the wrong speed would still get its frames), and a chip's
   timing: the board answers within about 0.1 ms, and QEMU takes the answer
