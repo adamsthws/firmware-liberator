@@ -94,10 +94,13 @@ jobs:
         with:
           name: site
           path: website/dist
+      # Every deploy here passes --x-provision=false: wrangler would otherwise
+      # look up each newly bound bucket or database, to make it if missing,
+      # which the deploy token may not read. cloudflare_settings.py makes them.
       - name: Deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
-        run: npx wrangler deploy
+        run: npx wrangler deploy --x-provision=false
 
   deploy-api:
     needs: build
@@ -130,7 +133,7 @@ jobs:
             *) echo "ingest is on or off, not $INGEST"; exit 1 ;;
           esac
           # Named by its code, for the release workflow (tools/repo/api_health.py deployed).
-          npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST" \
+          npx wrangler deploy --config api/wrangler.jsonc --x-provision=false --var "INGEST:$INGEST" \
             --var "API_TREE:$(git rev-parse HEAD:website/api)"
       # That it answers as deployed: migrated, with its database, through the
       # firewall (tools/repo/api_health.py live).
@@ -162,7 +165,7 @@ jobs:
       - name: Deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
-        run: npx wrangler deploy --config admin/wrangler.jsonc
+        run: npx wrangler deploy --config admin/wrangler.jsonc --x-provision=false
       # That it lets no one in unsigned: Access sends a visitor to sign in,
       # and the Worker refuses one Access has not passed.
       - name: The admin view is closed

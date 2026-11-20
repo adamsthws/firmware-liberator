@@ -1284,6 +1284,15 @@ class AdminAccessTests(unittest.TestCase):
         self.assertIn("needs: [deploy, deploy-api, deploy-admin]", workflow)
         self.assertIn(cs.ADMIN_WORKER, cs.DEPLOY_WORKERS)
 
+    def test_no_deploy_asks_for_more_than_the_deploy_token_may(self):
+        # wrangler looks up a bucket or database newly bound, to make it,
+        # which the deploy token may not read: 3.1.0's first push failed so.
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        deploys = [line for line in workflow.splitlines() if "wrangler deploy" in line and "#" not in line]
+        self.assertEqual(len(deploys), 3, deploys)
+        for line in deploys:
+            self.assertIn("--x-provision=false", line)
+
     def admin_check(self, resolves_after, answer="302"):
         """The admin view's check as the website workflow runs it, with a
         hostname that resolves once `resolves_after` waits have passed, and
@@ -1728,7 +1737,7 @@ class StoppingTheApiTests(unittest.TestCase):
         self.assertIn('default: "on"', trigger)
         job = workflow[workflow.index("\n  deploy-api:"):workflow.index("\n  deploy-token:")]
         self.assertIn("INGEST: ${{ inputs.ingest || 'on' }}", job, "a push deploys it on")
-        self.assertIn('npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST"', job)
+        self.assertIn('npx wrangler deploy --config api/wrangler.jsonc --x-provision=false --var "INGEST:$INGEST"', job)
         self.assertNotIn("${{ inputs.ingest }}", job.split("run: |", 1)[1], "never pasted into the script")
 
     def test_the_daily_build_follows_the_nightly_job_and_never_redeploys_the_api(self):
