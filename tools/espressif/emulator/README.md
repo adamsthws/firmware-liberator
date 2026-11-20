@@ -253,12 +253,30 @@ fire sooner instead. Ship it only if, on the classic ESP32:
 2. repeats of the TH Elite's upload at D4 all go in at once, none cut off or
    held back for minutes (one took 376 s on 8 November 2026);
 3. `emulator_check` passes all four routes for the POW Elite and the TH Elite;
-4. a conversion is no more than about a fifth slower.
+4. a conversion is no more than about a fifth slower;
+5. the bridge's first start passes without its task watchdog.
 
-Tried and dropped for the classic ESP32: QEMU's multi-threaded mode (MTTCG),
-which was slower; stretching the firmware's watchdogs, which only hid real
-hangs longer; and the two cores taking turns every millisecond instead of
-every 100, which made no difference once flash operations were quick.
+It would also end the CSE7761 reads Tasmota misses
+([the board's CSE7761](#the-devices-board-boardpy)): tried on 20 November 2026
+with `-icount shift=3,sleep=on` added to QEMU's command line, a Dual R3's
+Tasmota route passed 11 times in 11 and Tasmota asked again for 6 of 11,524
+reads rather than one in five. It took 483 to 524 s with six emulators on
+eight cores, within the 411 to 633 it took without, but 434 to 447 s with two
+on four, against 342 to 368. And the bridge tripped its task watchdog on its
+first start in every run (`main` on CPU 0 and `ipc1` on CPU 1, after
+`power-cycle fallback selected`, a step it otherwise finishes in 0.7 s), from
+which the tool recovered; with `shift=auto` the upload of Tasmota never came
+back (3 runs of 3).
+
+QEMU runs a classic ESP32's two cores on a thread each (MTTCG, its default for
+Xtensa: the monitor's `info cpus` names two threads), so one emulator can keep
+two of the computer's cores busy. Tried and dropped for the classic ESP32:
+stretching the firmware's watchdogs, which only hid real hangs longer; the
+two cores taking turns every millisecond instead of every 100, which applies
+only to QEMU's single-threaded mode, not used; and running the cores' threads
+at a lower priority than QEMU's main loop (niceness 10), which left Tasmota
+asking again for about one CSE7761 read in seven, the main loop having taken
+the answer in time already.
 
 What else the emulator needed from the fork is
 [upstream now](../../../docs/upstream-contributions.md#the-emulators-wi-fi):
@@ -369,15 +387,25 @@ every second.
   undoes: it reads 101.9 W of the 100.
 - **Not modelled:** a UART's baud rate and frame format (a firmware reading
   the meter at the wrong speed would still get its frames), and a chip's
-  timing: the board answers within about 0.1 ms, inside the 6 ms Tasmota gives
-  a CSE7761, which a classic ESP32 meets with `patches/0006`. Tasmota looks
-  for the chip once, about three seconds after it starts, and a start the
-  emulator runs slowly can still miss it, as one did on a Dual R3 on
-  20 November 2026: the boot after a panic took 9 s to reach the Wi-Fi rather
-  than 2.7, logged `NRG: Init driver 19` but no `C61: CSE7761 found`, and read
-  0 V, 0 W until it restarted. The end-of-run check then fails, as it should:
-  that firmware read nothing. One such boot in about a dozen was seen; run the
-  check again before suspecting the meter.
+  timing: the board answers within about 0.1 ms, and QEMU takes the answer
+  from it within 0.2 ms half the time, over 5 ms about once in a hundred,
+  inside the 6 ms Tasmota gives a CSE7761, which a classic ESP32 meets with
+  `patches/0006`. What still misses is the firmware's own side, timed by a
+  clock that is the wall's ([`-icount`, under the fork](#the-fork-patchespatch)):
+  Tasmota asks from its energy ticker, in the `esp_timer` task on CPU 0, while
+  UART2's interrupt, which moves the answer into the buffer the ticker reads,
+  is on CPU 1, and the emulator can run that path slower than 6 ms of the
+  wall. On 20 November 2026 Tasmota asked again for one read in twenty with
+  nothing else running and one in five with four to six emulators on eight
+  cores, most while the tool's Berry commands read the flash or the firmware
+  started slowly. It looks for the chip once, about three seconds after it
+  starts, and gives up on it when all three tries of its first read miss, as
+  on a Dual R3 that day: the boot after a panic took 9 s
+  to reach the Wi-Fi rather than 2.7, logged `NRG: Init driver 19` but no
+  `C61: CSE7761 found`, and read 0 V, 0 W until it restarted. The end-of-run
+  check then fails, as it should: that firmware read nothing. Two Tasmota
+  routes in 36 did so with six emulators on eight cores, none in 30 with one
+  for every two cores; run the check again before suspecting the meter.
 
 ### The browser forward (`container/bin/browser-forward`)
 
