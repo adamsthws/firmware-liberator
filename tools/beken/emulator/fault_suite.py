@@ -1955,14 +1955,14 @@ def check(instances: tuple[int, ...] = (1, 2)) -> int:
 
 
 def keep_for_saving(folder: str, names: list[str]) -> list[str]:
-    """What a saved device leaves out: its logs and power switch, its stub's
+    """What a saved device leaves out: its logs, power switch and buttons, its stub's
     certificates (for its own network's router: each instance makes its own),
     the backup B4 made (so a route that takes B4 has it to do), and of its
     computer's copy of the checkout all but the captures its runs left."""
     if Path(folder).name == "work":
         return [name for name in names if name != "captures"]
     return [name for name in names if name.endswith(".log")
-            or name in ("power", "certs.part", "certs-for", "ca.crt", "leaf.crt", "leaf.key", "sonoff-backup")]
+            or name in ("power", "buttons", "certs.part", "certs-for", "ca.crt", "leaf.crt", "leaf.key", "sonoff-backup")]
 
 
 def suite_roots() -> list[Path]:

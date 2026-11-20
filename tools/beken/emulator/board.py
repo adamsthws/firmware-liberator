@@ -26,11 +26,21 @@ the device's time, and the board sets the pins between chunks, so a pulse
 lands up to a chunk late, while the count over any longer time is right. The
 idle loop is not skipped past a pulse (the emulator may skip ten chunks at a
 time), which would lose it.
+
+Its button is pressed while the firmware runs through the state folder's
+buttons file (tools/repo/emulator_buttons.py), the board giving the emulator
+the pin's level (set_gpio_input), which raises the pin's interrupt as a real
+pin's change would.
 """
 
 from __future__ import annotations
 
+import os
+import time
 from dataclasses import dataclass
+from pathlib import Path
+
+from tools.repo import emulator_buttons
 
 
 @dataclass(frozen=True)
@@ -52,6 +62,7 @@ class Wiring:
     """Which of the chip's GPIOs the relay and the meter are on (Pn = n), and
     what one hertz of each meter output measures."""
     relay: int
+    buttons: tuple[int, ...]
     cf: int
     cf1: int
     sel: int
@@ -65,11 +76,19 @@ class Wiring:
 # reference, a 1 mOhm shunt and a 2040:1 divider) times the dump's factory
 # trim, b = 930747 / 879893 / 954547 for power, voltage and current.
 WIRING = {
-    "sonoff-s61": Wiring(relay=26, cf=8, cf1=6, sel=24,
+    "sonoff-s61": Wiring(relay=26, buttons=(9,), cf=8, cf1=6, sel=24,
                          watts_per_hz=1.21 * 2040 * 1000 / 1721506 * 0.930747,
                          volts_per_hz=1.1 * 2040 / 15397 * 0.879893,
                          amps_per_hz=1.1 * 1000 / 94638 * 0.954547),
 }
+
+
+def inputs(kind: str) -> dict[str, tuple[int, ...]]:
+    """The GPIOs of the device `kind`'s buttons and of its wall switches, as
+    the Espressif board.py's inputs() gives them; none for a kind with no
+    board here."""
+    wiring = WIRING.get(kind)
+    return {"buttons": wiring.buttons if wiring else (), "switches": ()}
 
 
 def driven_high(config: int) -> bool:
@@ -151,8 +170,10 @@ class Board:
     a second is right; at most BACKLOG's worth is owed, as a firmware that
     never takes them would otherwise read a burst later."""
 
-    def __init__(self, emu, wiring: Wiring, load: Load = LOAD, seconds_per_insn: float = 0.0):
+    def __init__(self, emu, wiring: Wiring, load: Load = LOAD, seconds_per_insn: float = 0.0,
+                 state: Path | None = None):
         self.emu, self.wiring = emu, wiring
+        self.buttons = emulator_buttons.Follower(state / emulator_buttons.FILE) if state else None
         self.meter = Bl0937(wiring, load)
         self.seconds_per_insn = seconds_per_insn
         self.owed = {"cf": 0.0, "cf1": 0.0}
@@ -161,12 +182,27 @@ class Board:
     def output(self, pin: int) -> bool:
         return driven_high(self.emu._gpio_config_word(pin))
 
+    def hold(self, pin: int) -> None:
+        """A button on `pin` pressed: the pin driven low."""
+        self.emu.set_gpio_input(pin, 0)
+
+    def release(self, pin: int) -> None:
+        """Let go: nothing drives the pin, which its pull-up takes back high."""
+        self.emu.set_gpio_input(pin, None)
+
+    def follow_buttons(self) -> None:
+        """The pins the buttons file holds now, pressed and let go as it changed."""
+        if self.buttons is not None:
+            self.buttons.follow(time.monotonic(), self.hold, self.release)
+
     def pins(self) -> dict[str, int]:
         return {"cf": self.wiring.cf, "cf1": self.wiring.cf1}
 
     def tick(self, state) -> None:
         """Pulse each output the firmware is ready for and owed a cycle, at
-        the device's time now, as the relay and SEL are."""
+        the device's time now, as the relay and SEL are; and the buttons
+        as the file holds them."""
+        self.follow_buttons()
         relay_on, sel_high = self.output(self.wiring.relay), self.output(self.wiring.sel)
         if sel_high != self.sel_high:
             # CF1 measures the other quantity now: what it owed of the last is not given.
@@ -215,18 +251,21 @@ class Board:
         return any(rates[name] > 0 or self.owed[name] >= 1 for name in self.pins())
 
 
-def attach(emu, kind: str, load: Load = LOAD, seconds_per_insn: float | None = None) -> Board | None:
+def attach(emu, kind: str, load: Load = LOAD, seconds_per_insn: float | None = None,
+           state: Path | None = None) -> Board | None:
     """Wire the board of the device `kind` to `emu` before it runs: its meter
+    and its buttons (the buttons file in `state`, the device's state folder)
     set between each chunk of instructions (the emulator's _pacing, whose
-    GPIO interrupt sync then follows), and the idle loop skipped only while
-    neither output is due to change. None for a kind with no board here."""
+    GPIO events and interrupt sync then follow), and the idle loop skipped
+    only while neither output is due to change. None for a kind with no board
+    here."""
     wiring = WIRING.get(kind)
     if wiring is None:
         return None
     if seconds_per_insn is None:
         from src.emulator import SLOW_TICK_INSNS, SLOW_TICK_MS   # the device clock (needs the emulator image)
         seconds_per_insn = SLOW_TICK_MS / 1000 / SLOW_TICK_INSNS
-    board = Board(emu, wiring, load, seconds_per_insn)
+    board = Board(emu, wiring, load, seconds_per_insn, state)
     pacing, fast_tick_idle = emu._pacing, emu._fast_tick_idle
 
     def paced(state):
@@ -238,3 +277,21 @@ def attach(emu, kind: str, load: Load = LOAD, seconds_per_insn: float | None = N
 
     emu._pacing, emu._fast_tick_idle = paced, idle
     return board
+
+
+def buttons(state: Path) -> emulator_buttons.Buttons:
+    """The buttons of the device whose state folder is `state` (folders.state),
+    to press from this computer: its buttons file."""
+    path = state / emulator_buttons.FILE
+
+    def read() -> str:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    def write(text: str) -> None:
+        part = path.with_name(path.name + ".part")
+        part.write_text(text, encoding="utf-8")
+        os.replace(part, path)
+    return emulator_buttons.Buttons(read, write)

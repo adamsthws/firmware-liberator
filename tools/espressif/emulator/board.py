@@ -32,7 +32,10 @@ The baud rate and frame format a UART is set to are not checked: a firmware
 reading the meter at the wrong speed would still get its frames.
 
 Every input pin idles high (device-supervisor), but those a kind's board holds
-low (HELD_LOW): a pin the firmware reads to know which board it is on.
+low (HELD_LOW): a pin the firmware reads to know which board it is on. Its
+buttons and wall switches are pressed while the firmware runs through the run
+folder's buttons file (tools/repo/emulator_buttons.py), each pin set through
+the monitor (patches/0007), its interrupt raised as a real pin's would be.
 """
 
 from __future__ import annotations
@@ -62,6 +65,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(_kept if (_kept / "tools/__init__.py").is_file() else Path(__file__).resolve().parents[3]))
 
 from tools.autoflash import kinds  # noqa: E402
+from tools.repo import emulator_buttons  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,8 @@ LOAD = Load()
 
 # Tasmota's GPIO codes (AGPIO(GPIO_x) = x * 32 + index), as the kinds' templates
 # give each pin's use.
+BUTTON1 = 32                        # Button1 .. Button8: 32 .. 39
+SWITCH1 = 160                       # Switch1 .. Switch8: 160 .. 167
 RELAY1 = 224                        # Relay1 .. Relay8: 224 .. 231
 CSE7766_RX = 3104                   # the chip's TX, a UART RX of the SoC
 CSE7761_TX, CSE7761_RX = 7296, 7328  # CSE7761_RX + 1 is the POWCT's
@@ -184,6 +190,16 @@ class Wiring:
                 channels = tuple(Channel(relay, relay is not None) for relay in relays[:2])
             return cls("cse7761", rx, pins[CSE7761_TX], channels, current_transformer=clamp)
         return None
+
+
+def inputs(kind: kinds.Kind) -> dict[str, tuple[int, ...]]:
+    """The GPIOs of `kind`'s buttons and of its wall switches, in their
+    template's order (Button1 first), from its Tasmota template."""
+    pins: dict[int, int] = {}
+    for gpio, code in zip(TEMPLATE_GPIOS.get(kind.chip, ()), kind.tasmota_gpio):
+        pins.setdefault(code, gpio)
+    return {name: tuple(pins[first + n] for n in range(8) if first + n in pins)
+            for name, first in (("buttons", BUTTON1), ("switches", SWITCH1))}
 
 
 # --- the meter chips ----------------------------------------------------------
@@ -383,20 +399,22 @@ class Soc:
     uart_signals: tuple[int, ...]           # UnRXD_IN_IDX, which is UnTXD_OUT_IDX too
     iomux_rx: tuple[int | None, ...]        # each UART's RX pin through the IOMUX
     gpio_device: str                        # QEMU's GPIO device, whose properties set the input pins
+    gpio_path: str                          # and where it is in QEMU's object tree, to set them as it runs
     inputs: tuple[int, ...]                 # its gpio_in, gpio_in1 ...: 32 pins each, all high as device-supervisor sets them
 
 
 SOCS = {
     "esp32c3": Soc(2, 0x60004004, 0x60004020, 0x60004154, 0x1F, 0x40, 0x60004554, 0xFF, (6, 9), (20, None),
-                   "esp32c3.gpio", (0x3FFFFF,)),
+                   "esp32c3.gpio", "/machine/gpio", (0x3FFFFF,)),
     "esp32": Soc(3, 0x3FF44004, 0x3FF44020, 0x3FF44130, 0x3F, 0x80, 0x3FF44530, 0x1FF, (14, 17, 198), (3, 9, 16),
-                 "esp32.gpio", (0xFFFFFFFF, 0xFF)),
+                 "esp32.gpio", "/machine/soc/gpio", (0xFFFFFFFF, 0xFF)),
 }
 
 
 def input_levels(soc: Soc, held_low: tuple[int, ...]) -> list[str]:
-    """QEMU's arguments setting the input pins as the board holds them: high but
-    for `held_low`. After device-supervisor's, which they take the place of."""
+    """QEMU's arguments setting the input pins as the board holds them at the
+    start: high but for `held_low`. After device-supervisor's, which they take
+    the place of."""
     args = []
     for n, high in enumerate(soc.inputs):
         level = high & ~sum(1 << (pin - 32 * n) for pin in held_low if pin // 32 == n)
@@ -465,6 +483,11 @@ class Qmp:
         text = self.call({"execute": "human-monitor-command", "arguments": {"command-line": f"xp /1xw {address:#x}"}})
         return int(str(text).rsplit(":", 1)[1].split()[0], 16)
 
+    def set_pin(self, soc: Soc, pin: int, level: bool) -> None:
+        """An input pin's level, set as the firmware runs (patches/0007)."""
+        self.call({"execute": "qom-set", "arguments": {"path": soc.gpio_path, "property": f"gpio{pin}",
+                                                         "value": level}})
+
 
 # --- the board -----------------------------------------------------------------
 
@@ -490,6 +513,7 @@ class Board:
         if self.wiring is not None:
             self.meter = (Cse7766 if self.wiring.chip == "cse7766" else Cse7761)(self.wiring)
         self.run = run
+        self.buttons = emulator_buttons.Follower(run / emulator_buttons.FILE)
         self.console = console
         self.outputs = 0
         self.motor: Motor | None = None
@@ -512,8 +536,11 @@ class Board:
         args = []
         for n in range(self.soc.uarts):
             args += ["-chardev", f"socket,id=uart{n},path={self.run / f'uart{n}.sock'}", "-serial", f"chardev:uart{n}"]
-        if self.held_low:
-            args += input_levels(self.soc, self.held_low)
+        # A button held as the device starts is held from its start.
+        self.buttons.held = self.buttons.read()
+        low = tuple(sorted({*self.held_low, *self.buttons.held}))
+        if low:
+            args += input_levels(self.soc, low)
         return args + ["-chardev", f"socket,id=board-qmp,path={self.run / 'board-qmp.sock'}",
                        "-mon", "chardev=board-qmp,mode=control"]
 
@@ -528,6 +555,7 @@ class Board:
                 try:
                     with self.lock:
                         self.outputs = relay_outputs(self.soc, self.qmp.read)
+                    self.follow_buttons()
                     if self.motor is not None:
                         self.motor.moved(self.outputs, self.motor_relays(), time.monotonic())
                     if time.monotonic() - routed >= self.ROUTING_POLL:
@@ -542,6 +570,20 @@ class Board:
         except OSError:
             self.qmp = None
             return   # QEMU has gone, and its monitor with it
+
+    def hold(self, pin: int) -> None:
+        """A button or wall switch on `pin` pressed: the pin driven low."""
+        with self.lock:
+            self.qmp.set_pin(self.soc, pin, False)
+
+    def release(self, pin: int) -> None:
+        """Let go: the pin back to its idle level, high but where the board holds it low."""
+        with self.lock:
+            self.qmp.set_pin(self.soc, pin, pin not in self.held_low)
+
+    def follow_buttons(self) -> None:
+        """The pins the buttons file holds now, pressed and let go as it changed."""
+        self.buttons.follow(time.monotonic(), self.hold, self.release)
 
     def motor_relays(self) -> tuple[int, int] | None:
         """The two relay pins a motor would be on: none for a board without two."""
@@ -632,6 +674,24 @@ class Board:
         return qemu.wait()
 
 
+RUN = Path("/run/autoflash-emu")
+
+
+def buttons(container: str) -> emulator_buttons.Buttons:
+    """The buttons of the device in the emulator's `container`, to press from
+    this computer: its run folder's buttons file, through docker exec."""
+    path = str(RUN / emulator_buttons.FILE)
+
+    def read() -> str:
+        return subprocess.run(["docker", "exec", container, "cat", path], capture_output=True, text=True,
+                              check=False).stdout
+
+    def write(text: str) -> None:
+        subprocess.run(["docker", "exec", "-i", container, "sh", "-c", 'cat > "$1.part" && mv "$1.part" "$1"',
+                        "sh", path], input=text, capture_output=True, text=True, check=True)
+    return emulator_buttons.Buttons(read, write)
+
+
 def find_kind(key: str) -> kinds.Kind | None:
     return next((kind for kind in kinds.EVERY if kind.key == key), None) if key else None
 
@@ -640,7 +700,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--chip", choices=sorted(SOCS), required=True)
     parser.add_argument("--kind", default="", help="the device's kind (kinds.py), whose template wires its meter")
-    parser.add_argument("--run", type=Path, default=Path("/run/autoflash-emu"))
+    parser.add_argument("--run", type=Path, default=RUN)
     parser.add_argument("qemu", nargs=argparse.REMAINDER, help="-- and QEMU's command line")
     args = parser.parse_args(argv)
     command = args.qemu[1:] if args.qemu[:1] == ["--"] else args.qemu

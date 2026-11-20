@@ -1,9 +1,11 @@
 """board.py, the emulated Beken device's board and its BL0937 meter."""
 
 import re
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tools.beken.emulator import board
 
@@ -59,6 +61,10 @@ class Emulator:
         self.paced, self.masked, self.change = 0, masked, change
         self.mu = Memory()
         self.taken = {S61.cf: 0, S61.cf1: 0}
+        self.inputs = []   # each level set_gpio_input was given, and its pin
+
+    def set_gpio_input(self, pin, level):
+        self.inputs.append((pin, level))
 
     def _gpio_config_word(self, pin):
         return self.config.get(pin, 0)
@@ -99,11 +105,14 @@ class WiringTests(unittest.TestCase):
     def test_the_s61s_pins_are_its_openbeken_tables(self):
         table = (ROOT / "devices/sonoff-s61/drv_autoflash_sonoff_s61.c").read_text(encoding="utf-8")
         pins = {role: int(pin) for pin, role in re.findall(r"\{(\d+), IOR_(\w+), \d+\}", table)}
+        self.assertEqual(pins["Button_ToggleAll"], S61.buttons[0])
         self.assertEqual((pins["Relay"], pins["BL0937_CF"], pins["BL0937_CF1"], pins["BL0937_SEL"]),
                          (S61.relay, S61.cf, S61.cf1, S61.sel))
 
     def test_and_its_esphome_configs(self):
         config = (ROOT / "devices/sonoff-s61/esphome.yaml").read_text(encoding="utf-8")
+        self.assertEqual(board.inputs("sonoff-s61"), {"buttons": (9,), "switches": ()})
+        self.assertIsNotNone(re.search(rf"id: button_1\n(?:.*\n){{0,3}}\s+number: P{S61.buttons[0]}\n", config), "button")
         self.assertIn(f"cf_pin: P{S61.cf}\n", config)
         self.assertIn(f"cf1_pin: P{S61.cf1}\n", config)
         self.assertIsNotNone(re.search(rf"sel_pin:\s+number: P{S61.sel}\n", config), "SEL")
@@ -250,6 +259,28 @@ class StockTests(unittest.TestCase):
         emu.run(0.01)
         count = emu.mu.words[board.PWMN_BASE + 0x28]
         self.assertAlmostEqual(count, board.PWM_CLOCK / 2 / 2 / (230 / S61.volts_per_hz), delta=1)
+
+
+class ButtonTests(unittest.TestCase):
+    """Its button pressed while the firmware runs (emulator_buttons)."""
+
+    def test_each_change_given_to_the_emulator_between_its_chunks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            emu = Emulator()
+            board.attach(emu, "sonoff-s61", seconds_per_insn=SECONDS_PER_INSN, state=Path(folder))
+            buttons = board.buttons(Path(folder))
+            for now, step in ((1.0, lambda: buttons.hold(9)), (1.05, lambda: None), (2.0, lambda: buttons.release(9))):
+                step()
+                with mock.patch.object(board.time, "monotonic", return_value=now):
+                    emu._pacing(emu.state)
+            self.assertEqual(emu.inputs, [(9, 0), (9, None)], "pressed low, then let go to its pull-up")
+            self.assertEqual(sorted(path.name for path in Path(folder).iterdir()), ["buttons"])
+            self.assertEqual(emu.paced, 3)
+
+    def test_without_a_state_folder_nothing_is_pressed(self):
+        emu = attached()
+        emu._pacing(emu.state)
+        self.assertEqual(emu.inputs, [])
 
 
 class EsphomeTests(unittest.TestCase):

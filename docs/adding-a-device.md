@@ -26,9 +26,12 @@ for you, what a run tells you, and what to do when it does not boot.
   official file, once that file is pinned ([its steps](#the-steps-beken)). One with
   nothing to run from is named in that file's `NOTHING_TO_RUN`, or a test
   fails.
-- **Be plain about what was tested.** The emulator has no relays, buttons, LEDs
-  or screens, and of meters only the ones it emulates. A conversion passing
-  there says the firmware installs and starts, not that the pins are right.
+- **Be plain about what was tested.** The emulator has no relays, LEDs or
+  screens, and of meters only the ones it emulates; its buttons and wall
+  switches are pressed on the pins the board is given
+  ([docs/emulator.md](emulator.md#buttons-and-wall-switches)). A conversion
+  passing there says the firmware installs and starts, and follows those
+  pins, not that the pins are right.
 - **Run no more emulators at once than the computer has cores**: more gives
   false failures.
 - **If it will not convert yet**, keep the work: its folder stays in

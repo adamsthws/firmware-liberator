@@ -8,6 +8,7 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.espressif.emulator.test_redact import after_an_earlier_release, under_an_earlier_release
 from tools.autoflash import calibration, kinds
@@ -391,6 +392,57 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board.input_levels(board.SOCS["esp32"], (33,)),
                          ["-global", "driver=esp32.gpio,property=gpio_in,value=0xffffffff",
                           "-global", "driver=esp32.gpio,property=gpio_in1,value=0xfd"])
+
+
+class ButtonTests(unittest.TestCase):
+    """Buttons and wall switches pressed while the firmware runs (emulator_buttons)."""
+
+    def test_each_kinds_inputs_from_its_template(self):
+        self.assertEqual(board.inputs(S60), {"buttons": (9,), "switches": ()})
+        self.assertEqual(board.inputs(DUALR3), {"buttons": (0,), "switches": (32, 33)})
+
+    def board(self, chip, kind, held=""):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        run = Path(folder.name)
+        (run / "buttons").write_text(held, encoding="utf-8")
+        the_board = board.Board(chip, kind, run, None)
+        for server in (*the_board.listeners, the_board.monitor):
+            self.addCleanup(server.close)
+        return the_board
+
+    def test_one_held_as_the_device_starts_is_held_from_its_start(self):
+        args = self.board("esp32c3", S60, "9\n").qemu_args()
+        self.assertIn("driver=esp32c3.gpio,property=gpio_in,value=0x3ffdff", args)
+        args = self.board("esp32", POW_ELITE, "32\n").qemu_args()
+        self.assertIn("driver=esp32.gpio,property=gpio_in,value=0xff7fffff", args)
+        self.assertIn("driver=esp32.gpio,property=gpio_in1,value=0xfe", args)
+
+    def test_each_change_sets_the_pin_through_the_monitor_as_it_runs(self):
+        the_board = self.board("esp32", POW_ELITE)
+        sent = []
+        the_board.qmp = mock.Mock(call=sent.append)
+        the_board.qmp.set_pin = lambda soc, pin, level: board.Qmp.set_pin(the_board.qmp, soc, pin, level)
+        the_board.qemu_args()
+        for now, held in ((1.0, "32\n23\n"), (2.0, "")):
+            the_board.run.joinpath("buttons").write_text(held, encoding="utf-8")
+            with mock.patch.object(board.time, "monotonic", return_value=now):
+                the_board.follow_buttons()
+        self.assertEqual([(command["arguments"]["property"], command["arguments"]["value"]) for command in sent],
+                         [("gpio23", False), ("gpio32", False), ("gpio23", False), ("gpio32", True)],
+                         "let go, the pin the board holds low stays low")
+        self.assertEqual({command["execute"] for command in sent}, {"qom-set"})
+        self.assertEqual({command["arguments"]["path"] for command in sent}, {"/machine/soc/gpio"})
+
+    def test_a_check_presses_them_through_the_containers_run_folder(self):
+        with mock.patch.object(board.subprocess, "run") as ran:
+            ran.return_value.stdout = "32\n"
+            board.buttons("autoflash-emu-81").hold(9)
+        read, write = ran.call_args_list
+        self.assertEqual(read.args[0], ["docker", "exec", "autoflash-emu-81", "cat", "/run/autoflash-emu/buttons"])
+        self.assertEqual(write.args[0][:3], ["docker", "exec", "-i"])
+        self.assertEqual(write.args[0][-1], "/run/autoflash-emu/buttons")
+        self.assertEqual(write.kwargs["input"], "9\n32\n")
 
 
 class EarlierReleaseTests(unittest.TestCase):

@@ -1233,8 +1233,8 @@ class SavingTests(unittest.TestCase):
         self.assertEqual(fault_suite.keep_for_saving("/x/work", ["captures", "tools", "README.md"]),
                          ["tools", "README.md"])
         self.assertEqual(fault_suite.keep_for_saving("/x/state-1",
-                                                     ["flash.bin", "serial.log", "power", "ca.crt"]),
-                         ["serial.log", "power", "ca.crt"])
+                                                     ["flash.bin", "serial.log", "power", "buttons", "ca.crt"]),
+                         ["serial.log", "power", "buttons", "ca.crt"])
         self.assertEqual(fault_suite.keep_for_saving("/x/devices/12-34-56-ab-cd-ef", ["device.json", "sonoff-backup"]),
                          ["sonoff-backup"])
 

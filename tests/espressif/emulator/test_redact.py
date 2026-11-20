@@ -41,7 +41,7 @@ def after_an_earlier_release(script: str, temp: str) -> Path:
     removed the kept copy's files, but not its folders."""
     folder = emulator_folder(script, temp)
     work = Path(temp, "work")
-    for linked in ("tools/autoflash", "tools/espressif/flashmap.py", "tools/espressif/inspect_stock_nvs.py",
+    for linked in ("tools/autoflash", "tools/repo", "tools/espressif/flashmap.py", "tools/espressif/inspect_stock_nvs.py",
                    "tools/espressif/__init__.py", "tools/__init__.py", "devices"):
         (work / linked).parent.mkdir(parents=True, exist_ok=True)
         (work / linked).symlink_to(ROOT / linked)

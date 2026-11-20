@@ -479,6 +479,34 @@ read "asked to close, output 1 is off and output 2 off". That was 1 check in
 computer. Nothing was wrong on the device: a real Tasmota stops the close at
 its travel time in the same way.
 
+#### Buttons and wall switches
+
+A device's button and wall switches can be pressed while its firmware runs,
+in either emulator: the instance's `buttons` file names the GPIOs held down,
+one a line, and the board drives each low, as a button closed to ground does,
+within 0.1 s of the file changing, raising the pin's interrupt as a real
+pin's change would. Take a pin out of the file to let it go. To press an
+S60's button (GPIO9), or close a Dual R3's wall switch S1 (GPIO32):
+
+```sh
+docker exec autoflash-emu-N sh -c 'echo 9 > /run/autoflash-emu/buttons; sleep 0.4; : > /run/autoflash-emu/buttons'
+docker exec autoflash-emu-N sh -c 'echo 32 > /run/autoflash-emu/buttons'
+```
+
+In the Beken emulator the file is in the device's state folder,
+`captures/emulation/beken/state/buttons` (`state-N` for `--instance N`); the
+S61's button is P9:
+
+```sh
+echo 9 > captures/emulation/beken/state/buttons
+```
+
+A pin still named when the device starts again is held from its start, as a
+button held while the device is plugged in. Which pins a device's buttons and
+switches are is its board's `inputs()`
+([Espressif](../tools/espressif/emulator/board.py), from its Tasmota template;
+[Beken](../tools/beken/emulator/board.py)).
+
 ### On Windows
 
 To test the tool's Windows code paths (`arp -a`, `netsh` firewall rules behind

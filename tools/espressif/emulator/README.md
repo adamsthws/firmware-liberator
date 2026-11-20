@@ -237,6 +237,7 @@ fork's source, make the change, and regenerate them.
   `GPIO_STATUS_REG`, which that handler does not read). The device is `/machine/gpio` on an
   ESP32-C3 and `/machine/soc/gpio` on a classic ESP32:
   `qom-set /machine/gpio gpio9 false` presses an S60's button.
+  [The board](#the-devices-board-boardpy) sets them.
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 after the
 pinned commit, on 7 November 2026 (`2d075b740`), so `0001`-`0003` drop out on a
@@ -322,7 +323,9 @@ its own with its own MAC (02:53:36:30:00:02).
   `strap_mode` is `0x12`, the strapping pins' value for booting from flash. A
   pin a board holds low is in `board.py`'s `HELD_LOW`, which sets `gpio_in`
   again after these: the POW Elite's GPIO23, by which Sonoff's firmware tells
-  a POWR316D from a POWR320D.
+  a POWR316D from a POWR320D. These set the levels a device starts with;
+  [the board](#the-devices-board-boardpy) presses its buttons while it runs
+  (`patches/0007`).
 - **`-no-reboot`.** The fork keeps its peripherals running across a software
   reset, so firmware restarting into a different image (stock into the bridge,
   the bridge into Tasmota) crashed at start-up on what the previous one left
@@ -405,6 +408,16 @@ every second.
   moves while one output is on alone, polled with the outputs every 0.1 s, and
   the meter sees an output at its end as off. Read every second from the file,
   so it can be set before a power cycle.
+- **The buttons and wall switches**, while the run's `buttons` file names
+  them ([docs/emulator.md](../../../docs/emulator.md#buttons-and-wall-switches)):
+  read with the outputs every 0.1 s (`tools/repo/emulator_buttons.py`, which
+  the Beken board follows the same way), each pin named set low through the
+  monitor's `qom-set` (`patches/0007`), and one no longer named set back to
+  its idle level, high but where `HELD_LOW` holds it low. A pin named as QEMU
+  starts is in the `gpio_in` it starts with. Which pins a kind's buttons and
+  switches are, Button1 and Switch1 onwards, is its Tasmota template's
+  (`inputs()`): the S60's button GPIO9, the Dual R3's GPIO0 and its wall
+  switches S1 and S2 GPIO32 and GPIO33.
 - **Not modelled:** a UART's baud rate and frame format (a firmware reading
   the meter at the wrong speed would still get its frames), and a chip's
   timing: the board answers within about 0.1 ms, and QEMU takes the answer

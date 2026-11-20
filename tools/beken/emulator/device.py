@@ -17,7 +17,8 @@ Sonoff's firmware needs the emulator's help to come online
 is left alone.
 
 Its board (board.py) gives it a power meter, which measures a load while
-the relay is on.
+the relay is on, and its button, held down while DIR/buttons names its pin
+(tools/repo/emulator_buttons.py).
 
 DEVICE_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 DEVICE_WALL_CLOCK=0 lets the device's time run ahead of the wall's
@@ -56,7 +57,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE), str(HERE.parent)]   # the emulator's modules, and the Beken tools
+sys.path[:0] = [str(HERE), str(HERE.parent), str(HERE.parents[2])]   # the emulator's modules, the Beken tools, the checkout
 import board  # noqa: E402
 import cloud_online  # noqa: E402  (needs the emulator image)
 import stage_apply  # noqa: E402
@@ -257,7 +258,7 @@ class Device:
                              save_decrypted=False, wifi=True, log=self.netlog.append)
         emu.flash_writethrough = True
         emu.setup()
-        board.attach(emu, KIND)
+        board.attach(emu, KIND, state=self.state)
         hold_to_wall(emu, SLOW_TICK_MS / 1000 / SLOW_TICK_INSNS, self.netlog.append, WALL_CLOCK)
         emu.net_sink = self.netlog.append
         self.home = emu.attach_wifi_peer(role="ap", ssid=SSID.decode(), passphrase=PASSWORD.decode(), channel=1,

@@ -89,9 +89,9 @@ named for the upstream project, as the
   unlike the ESP32-C3's BASICR4 (`adc_readings` in `kinds.py`), neither Beken
   firmware acts on a reading
   ([Beken research](../../../docs/beken-research.md#the-factory-record-at-0x3e0000-mac-and-radio-calibration)).
-- **The power meter**, a BL0937, is on the board, outside the emulator: [`board.py`](#the-devices-board-boardpy). Nothing else on the board
-  is modelled: no button, and the relay and LEDs are only pins the firmware
-  drives.
+- **The power meter**, a BL0937, and the button are on the board, outside the
+  emulator: [`board.py`](#the-devices-board-boardpy). Nothing else on the
+  board is modelled: the relay and LEDs are only pins the firmware drives.
 
 `beken-emu.sh run <S61 dump>.bin --wifi-peer auto` runs a dump on its own,
 which in the container is:
@@ -273,8 +273,8 @@ itself is run: changing it needs no new image.
 
 - **The wiring is the S61's** (`WIRING`, held by
   `tests/beken/emulator/test_board.py` to `devices/sonoff-s61/`'s
-  `drv_autoflash_sonoff_s61.c` and `esphome.yaml`): relay P26, BL0937 CF P8,
-  CF1 P6, SEL P24.
+  `drv_autoflash_sonoff_s61.c` and `esphome.yaml`): relay P26, button P9,
+  BL0937 CF P8, CF1 P6, SEL P24.
 - **The load.** 100 W, resistive, on 230 V mains, measured while the relay's
   GPIO is driven high (its output driver on, bit 3 of the config word clear,
   and bit 1 set), nothing while it is off. The voltage, measured on the supply
@@ -333,6 +333,20 @@ itself is run: changing it needs no new image.
   (`AutoflashImport: OpenBeken cal I=0.011095 V=0.128238 P=1.334562` in its
   serial log, and the tool reports `stock store` both ways), and one read
   differs from the next by up to 2% under it (found 20 November 2026).
+- **The button** (P9, `WIRING`'s `buttons`), while the state folder's
+  `buttons` file names it
+  ([docs/emulator.md](../../../docs/emulator.md#buttons-and-wall-switches)):
+  read at most every 0.1 s of the wall's time between chunks
+  (`tools/repo/emulator_buttons.py`, which the Espressif board follows the
+  same way). A pin named is driven low through upstream's own
+  `set_gpio_input(pin, 0)`, and one no longer named let go with
+  `set_gpio_input(pin, None)`, after which its pull-up reads it high.
+  Upstream's GPIO model (`src/gpio.py`) already takes a pin driven from
+  outside as a real pad's level, so an edge or a level latches the pin's
+  interrupt as the firmware set it (INTLV, INTEN); its queue is applied in
+  `_pacing`, between chunks. So the Beken emulator needed no patch for it,
+  where QEMU did. A rebuilt flash of another device runs on the S61's board
+  (`device.py`'s `KIND`), so only the S61's check presses its button.
 - **Not modelled:** the chip's pulse shape and width (only the rate counts),
   or a pulse's timing within a 0.2 ms chunk.
 
