@@ -483,7 +483,7 @@ def describe_hardware(switched: bool, restored: bool,
     def reading(values: dict[str, Any] | None) -> str:
         volts, watts = meter_number(values, "Voltage"), meter_number(values, "Power")
         if volts is None and watts is None:
-            return "no reading"
+            return NO_READING
         return ", ".join(part for part in (
             f"{volts:g} V" if volts is not None else "",
             f"{watts:g} W" if watts is not None else "") if part)

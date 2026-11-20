@@ -305,8 +305,9 @@ OUTCOMES = "outcomes.jsonl"
 def keep_outcome(ctx: Context, ending: str, hardware: dict[str, str] | None = None) -> None:
     """The run's outcome added to its folder's OUTCOMES: when, its result,
     where it stopped and with what class (the words stay in run.log), and,
-    for one that converted, its end-of-run checks: the report's answer, and
-    whether the meter confirmed the relay switched (None where it has none)."""
+    for one that converted, its end-of-run checks: the report's answer,
+    whether the meter confirmed the relay switched and what it read (each None
+    where it has no meter)."""
     state = getattr(ctx, "state", None)
     if state is None:
         return   # a run that never began one
@@ -318,7 +319,8 @@ def keep_outcome(ctx: Context, ending: str, hardware: dict[str, str] | None = No
             from tools.autoflash import report   # which sends through this module
             relay = hardware.get("Relay")
             line["checks"] = {"answer": report_data.checks_word(hardware), "relay": relay,
-                              "meter_confirms": relay == report.METER_CONFIRMS if "Power meter" in hardware else None}
+                              "meter_confirms": relay == report.METER_CONFIRMS if "Power meter" in hardware else None,
+                              "meter": hardware.get("Power meter")}
         with open(state.path.parent / OUTCOMES, "a", encoding="utf-8") as kept:
             kept.write(json.dumps(line) + "\n")
     except Exception as error:  # noqa: BLE001 - as the report, never worth spoiling a run's end for

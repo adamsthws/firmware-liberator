@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from tools.autoflash import readout, report, report_upload
+from tools.autoflash import kinds, readout, report, report_upload
 from tools.ewelink.offered_firmware import Offered
 from tools.repo import fault_verdicts
 
@@ -43,32 +43,69 @@ class EndChecksTests(unittest.TestCase):
                              "Checks passed: Not run; Relay: not said", firmware)
 
     def test_a_metered_device_needs_its_meter_to_confirm_the_switch(self):
-        """As the Beken suite asks: its emulated S61 measures a load while the
-        relay is on (tools/beken/emulator/board.py)."""
-        unchanged = run_log("    Relay: Switches (meter unchanged)", "    Checks passed: True")
-        for firmware in ("esphome", "openbeken"):
+        """Each family's emulated board measures a load while the relay is on
+        (tools/espressif/emulator/board.py, tools/beken/emulator/board.py)."""
+        unchanged = run_log("    Relay: Switches (meter unchanged)", "    Power meter: No readings",
+                            "    Checks passed: True")
+        for firmware in ("tasmota", "esphome", "openbeken"):
             self.assertIsNone(fault_verdicts.checks_problem(unchanged, firmware), firmware)
-            self.assertEqual(fault_verdicts.checks_problem(unchanged, firmware, metered=True),
-                             "the meter did not confirm the switch; Relay: Switches (meter unchanged)")
+            self.assertEqual(fault_verdicts.checks_problem(unchanged, firmware, fault_verdicts.CONFIRMS),
+                             "the meter did not confirm the switch; Relay: Switches (meter unchanged); "
+                             "Power meter: No readings")
         confirms = run_log("    Relay: Switches (meter confirms)", "    Checks passed: True")
-        self.assertIsNone(fault_verdicts.checks_problem(confirms, "openbeken", metered=True))
+        self.assertIsNone(fault_verdicts.checks_problem(confirms, "openbeken", fault_verdicts.CONFIRMS))
         # Back on Sonoff's firmware the relay is switched through eWeLink, and no meter is read.
         through = run_log("    Relay: Switches (through eWeLink)", "    Checks passed: True")
-        self.assertIsNone(fault_verdicts.checks_problem(through, "sonoff", metered=True))
+        self.assertIsNone(fault_verdicts.checks_problem(through, "sonoff", fault_verdicts.CONFIRMS))
+
+    def test_a_clamp_needs_readings_though_they_cannot_confirm_the_switch(self):
+        def log(meter):
+            return run_log("    Relay: Switches (meter unchanged)", f"    Power meter: {meter}", "    Checks passed: Pass")
+        read = log("On: 230 V, 100 W; off: 230 V, 100 W")
+        self.assertIsNone(fault_verdicts.checks_problem(read, "esphome", fault_verdicts.READS))
+        for unread in ("No readings", "On: no reading; off: 230 V, 100 W", "Could not be checked"):
+            self.assertEqual(fault_verdicts.checks_problem(log(unread), "tasmota", fault_verdicts.READS),
+                             f"the meter had no readings; Relay: Switches (meter unchanged); Power meter: {unread}")
+        self.assertEqual(fault_verdicts.checks_problem(run_log("    Relay: Switches", "    Checks passed: Pass"),
+                                                       "tasmota", fault_verdicts.READS),
+                         "the meter had no readings; Relay: Switches; Power meter: not said")
+
+    def test_each_kind_with_a_meter_is_held_to_it(self):
+        for kind in kinds.ALL:
+            demand = fault_verdicts.meter_demand(kind)
+            if not kind.has_meter:
+                self.assertIsNone(demand, kind.key)
+            elif kind is kinds.SONOFF_POWCT:   # its clamp is not behind its relay
+                self.assertEqual(demand, fault_verdicts.READS)
+            else:
+                self.assertEqual(demand, fault_verdicts.CONFIRMS, kind.key)
+        self.assertIsNone(fault_verdicts.meter_demand(None))
 
     def test_a_run_that_kept_its_checks_is_judged_by_them_not_its_words(self):
         reported = run_log("    Relay: Switches (meter confirms)", "    Checks passed: Pass",
                            "    Result: Converted")
-        def outcome(answer, relay="switches (meter confirms)", confirms=True):
-            return {"result": "converted", "checks": {"answer": answer, "relay": relay, "meter_confirms": confirms}}
+        def outcome(answer, relay="switches (meter confirms)", confirms=True, **more):
+            return {"result": "converted", "checks": {"answer": answer, "relay": relay, "meter_confirms": confirms,
+                                                      **more}}
         self.assertEqual(fault_verdicts.checks_problem(reported, "esphome", outcome=outcome("failed", "did not switch")),
                          "Checks passed: Fail; Relay: did not switch")
         self.assertIsNone(fault_verdicts.checks_problem(reported, "sonoff", outcome=outcome("not-run", None, None)),
                           "back on Sonoff's with no device id kept, as by the words")
-        self.assertEqual(fault_verdicts.checks_problem(reported, "openbeken", metered=True,
-                                                       outcome=outcome("passed", "switches (meter unchanged)", False)),
-                         "the meter did not confirm the switch; Relay: switches (meter unchanged)")
-        self.assertIsNone(fault_verdicts.checks_problem(reported, "openbeken", metered=True, outcome=outcome("passed")))
+        self.assertEqual(fault_verdicts.checks_problem(reported, "openbeken", fault_verdicts.CONFIRMS,
+                                                       outcome=outcome("passed", "switches (meter unchanged)", False,
+                                                                       meter="no readings")),
+                         "the meter did not confirm the switch; Relay: switches (meter unchanged); "
+                         "Power meter: no readings")
+        self.assertIsNone(fault_verdicts.checks_problem(reported, "openbeken", fault_verdicts.CONFIRMS,
+                                                        outcome=outcome("passed")))
+        # The meter's line from the outcome where the run kept one, from its words where it kept none.
+        unread = outcome("passed", "switches (meter unchanged)", False, meter="no readings")
+        self.assertEqual(fault_verdicts.checks_problem(reported, "esphome", fault_verdicts.READS, outcome=unread),
+                         "the meter had no readings; Relay: switches (meter unchanged); Power meter: no readings")
+        read = run_log("    Relay: Switches (meter unchanged)", "    Power meter: On: 230 V, 100 W; off: 230 V, 100 W",
+                       "    Checks passed: Pass", "    Result: Converted")
+        self.assertIsNone(fault_verdicts.checks_problem(read, "esphome", fault_verdicts.READS,
+                                                        outcome=outcome("passed", "switches (meter unchanged)", False)))
         # A run that made no report wrote no outcome of its own: an earlier one's is not it.
         self.assertIsNone(fault_verdicts.checks_problem(run_log("    Stage 9 - Checking ESPHome"), "esphome",
                                                         outcome=outcome("failed")))

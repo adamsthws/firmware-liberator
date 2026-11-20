@@ -354,7 +354,9 @@ account:
 python -I tools/espressif/emulator/public_devices.py test
 ```
 
-All four must convert. That is the S60's check; another device's is
+All four must convert and pass their end-of-run checks: the relay switches,
+and a meter reads the emulator's load as the fault suites require
+([FAIL-CHECKS](testing.md#the-fault-suites)). That is the S60's check; another device's is
 `python -I tools/repo/emulator_check.py DEVICE`. The `emulator-check` workflow
 runs the same for each device a change could affect, with the unit tests, on
 GitHub's own runners, from the published public devices and emulator image,

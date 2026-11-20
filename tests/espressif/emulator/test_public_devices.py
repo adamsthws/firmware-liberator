@@ -1,11 +1,15 @@
 """public_devices.py, the public devices each final firmware is tried on, and their runs."""
 
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from tools.espressif.emulator import public_devices
+from tools.autoflash import kinds
+from tools.espressif.emulator import fault_suite, public_devices
 
 
 class PublicDevicesTests(unittest.TestCase):
@@ -27,6 +31,39 @@ class PublicDevicesTests(unittest.TestCase):
             self.assertEqual(source, kept)   # from the device its own first run made
             self.assertNotEqual(second, first)
 
+    def converted(self, relay, meter, kind=kinds.SONOFF_S60):
+        """public_devices.run's answer for a run that converted the device,
+        its check saying `relay` and `meter`."""
+        with tempfile.TemporaryDirectory() as directory:
+            emu = Path(directory)
+            run_log = emu / "state-7/work/captures/devices/12-34-56-ab-cd-ef/runs/1/run.log"
+            run_log.parent.mkdir(parents=True)
+
+            def popen(args, stdout, stderr):
+                stdout.write("    Result:   Converted\n")   # the screen
+                run_log.write_text("[10:00:00] === run started, tool version 3.0.0 ===\n"
+                                   f"[10:00:01]     Relay: {relay}\n[10:00:01]     Power meter: {meter}\n"
+                                   "[10:00:02]     Checks passed: Pass\n[10:00:03] === run ended ===\n",
+                                   encoding="utf-8")
+                later = time.time() + 60   # past the run's start, as a file's coarser clock may not be
+                os.utime(run_log, (later, later))
+                return mock.Mock(wait=mock.Mock(return_value=0))
+            with mock.patch.object(fault_suite, "EMU", emu), mock.patch.object(public_devices.subprocess, "Popen", popen):
+                return public_devices.run(7, "public-pre-final-esphome", "esphome", None, emu / "tool.log", kind=kind)
+
+    def test_a_run_passes_once_its_end_of_run_checks_do(self):
+        self.assertEqual(self.converted("Switches (meter confirms)", "On: 230 V, 100 W; off: 0 V, 0 W"),
+                         (True, "Converted"))
+
+    def test_a_converted_device_whose_meter_read_nothing_has_failed(self):
+        """As the S60's public devices did, in every check, while the emulator
+        had not wired their meter."""
+        self.assertEqual(self.converted("Switches (meter unchanged)", "No readings"),
+                         (False, "Converted, but the meter did not confirm the switch; "
+                                 "Relay: Switches (meter unchanged); Power meter: No readings"))
+        # The TH Elite has no meter, so nothing to read.
+        self.assertTrue(self.converted("Switches", "not shown", kind=kinds.SONOFF_TH_ELITE)[0])
+
     def test_each_way_goes_on_without_waiting_for_the_other(self):
         import argparse
         import io
@@ -38,7 +75,7 @@ class PublicDevicesTests(unittest.TestCase):
         events, lock = [], threading.Lock()
         second_started = threading.Event()
 
-        def fake_run(instance, source, firmware, save, log):
+        def fake_run(instance, source, firmware, save, log, kind):
             with lock:
                 events.append(("start", source))
             if source == "public-on-esphome":

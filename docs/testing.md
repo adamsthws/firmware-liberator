@@ -979,6 +979,15 @@ run's own outcome, its line in the run folder's `outcomes.jsonl`, as the run
 judged its checks; from the report's words in its log only for a run that
 kept none there, an earlier release's.
 
+The emulated board draws a load through the relay, so on Tasmota and ESPHome
+the check of a device with a meter must also say the meter confirms the
+switch: `Power meter: No readings`, or readings that do not change, fail it,
+as they would have the S60's meter while the emulator left it unwired. The
+POWCT's clamp reads the load whatever its relay does, so it must only have
+readings. What each kind is held to is `fault_verdicts.meter_demand`, shared
+by every suite and the final-firmware check of both chip families. On a real
+device none of this is a failure: with nothing plugged in, a meter reads 0 W.
+
 **FAIL-SCREEN.** Each run is recorded on a terminal of its own, and the
 screen it ended on is read back. A stage that passed should leave one line,
 its outcome, with only what it kept under it; a stage that stopped should

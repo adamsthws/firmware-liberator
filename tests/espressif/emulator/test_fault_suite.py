@@ -1776,14 +1776,19 @@ class KeptLogsTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
-    def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff", route="esphome>sonoff",
-                result="Converted", runs="--- a run\n", fault="deviceoff", arg=1, step="R1", release=None):
+    def verdict(self, checks, relay=None, target="sonoff", route="esphome>sonoff",
+                result="Converted", runs="--- a run\n", fault="deviceoff", arg=1, step="R1", release=None,
+                meter="On: 230 V, 100 W; off: 0 V, 0 W"):
+        # Back on Sonoff's the relay is switched through eWeLink; on any other
+        # firmware the S60's emulated meter confirms it.
+        relay = relay or ("Switches (through eWeLink)" if target == "sonoff" else "Switches (meter confirms)")
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             run = tmp / "state/work/captures/devices" / records.folder_name(MAC) / "runs/1/run.log"
             run.parent.mkdir(parents=True)
             run.write_text("[10:00:00] === run started, tool version 2.3.0 ===\n"
-                           f"[10:00:01]     Relay: {relay}\n[10:00:02]     Checks passed: {checks}\n"
+                           f"[10:00:01]     Relay: {relay}\n[10:00:01]     Power meter: {meter}\n"
+                           f"[10:00:02]     Checks passed: {checks}\n"
                            "[10:00:03] === run ended ===\n", encoding="utf-8")
             log = tmp / "scenario.log"
             log.write_text(runs + "    Result:   Converted\n", encoding="utf-8")
@@ -1869,6 +1874,17 @@ class EndChecksTests(unittest.TestCase):
     def test_checks_the_emulator_cannot_run_are_no_failure(self):
         self.assertEqual(self.verdict("Not run", target="sonoff")["verdict"], "PASS")
         self.assertEqual(self.verdict("Not run", target="tasmota")["verdict"], "FAIL-CHECKS")
+
+    def test_a_meter_that_read_nothing_fails_on_the_device_with_one(self):
+        """As the S60's did in every suite while its emulated meter was unwired."""
+        unread = dict(target="esphome", route="sonoff>esphome", relay="Switches (meter unchanged)", meter="No readings")
+        row = self.verdict("Pass", **unread)
+        self.assertEqual((row["verdict"], row["notes"]["checks"]),
+                         ("FAIL-CHECKS", "the meter did not confirm the switch; Relay: Switches (meter unchanged); "
+                                         "Power meter: No readings"))
+        # A device with none has no meter to read: its relay switching passes.
+        with mock.patch.object(fs, "DEVICE", fs.kinds.SONOFF_TH_ELITE):
+            self.assertEqual(self.verdict("Pass", **dict(unread, relay="Switches"))["verdict"], "PASS")
 
 
 class BadImageTests(unittest.TestCase):

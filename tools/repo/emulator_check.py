@@ -107,7 +107,7 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
             log = folder / f"{instance}-{firmware}.log"
             began = time.time()
             converted, said = public_devices.run(instance, saved, firmware, keep, log,
-                                               extra=(*stub, *(() if saved else ("--fresh",))))
+                                               extra=(*stub, *(() if saved else ("--fresh",))), kind=kind)
             start = f"on {saved.rsplit('-', 1)[1]}" if saved else "from Sonoff's"
             print(f"{'PASS' if converted else 'FAIL'}  {kind.key} {start} to {firmware}: {said}", flush=True)
             emulator_stats.check_run(folder, family=kind.family, device=kind.key,

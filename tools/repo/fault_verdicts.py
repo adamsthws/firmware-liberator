@@ -20,7 +20,8 @@ import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from tools.autoflash import output, report_upload
+from tools.autoflash import kinds, output, report, report_upload
+from tools.espressif.emulator import board as espressif_board
 from tools.repo import unattended_run
 
 
@@ -45,10 +46,11 @@ def run_outcomes(captures: Path, since: float) -> list[dict]:
     return sorted(found, key=lambda said: said["at"])
 
 # As the run's log has them: the report's answer (tools/autoflash/report.py,
-# checks_passed), up to the gap after it, in either column; and the line its
-# check said of the relay.
+# checks_passed), up to the gap after it, in either column; and the lines its
+# check said of the relay and the meter.
 CHECKS_PASSED = re.compile(r"^\[[\d:]+\] .*?\b(?:Checks passed|Checks): +(\S.*?)(?: {2,}| *$)", re.M)
 RELAY = re.compile(r"^\[[\d:]+\] +Relay: +(.+?) *$", re.M)
+POWER_METER = re.compile(r"^\[[\d:]+\] +Power meter: +(.+?) *$", re.M)
 
 # The answers a run ending on each firmware may give in the emulator: "Pass",
 # or as a release before 3.0.0 said it, "True". On Tasmota, ESPHome and
@@ -62,6 +64,36 @@ RELAY = re.compile(r"^\[[\d:]+\] +Relay: +(.+?) *$", re.M)
 # device online yet.
 PASSED = {"Pass", "True"}
 PASSING = {"tasmota": PASSED, "esphome": PASSED, "openbeken": PASSED, "sonoff": {*PASSED, "Not run"}}
+
+# What the end-of-run check must find of an emulated device's meter, beyond
+# its relay switching (meter_demand). Each family's emulated board draws a
+# load through the relay while it is on (tools/espressif/emulator/board.py,
+# tools/beken/emulator/board.py), so a meter in the relay's line shows the
+# switch: CONFIRMS. A clamp reads the load whatever the relay does, so its
+# readings must be there but cannot show the switch: READS. Without this, a
+# meter that read nothing passed every suite: the S60's went unwired in the
+# Espressif emulator that way.
+CONFIRMS, READS = "confirms the switch", "has readings"
+
+
+def meter_demand(kind: kinds.Kind | None) -> str | None:
+    """What a run's check of a device of `kind` must find of its meter
+    (CONFIRMS or READS); None for a kind with no meter, or none known.
+
+    A Dual R3 with a BL0930 reads nothing on a real device, but the emulator
+    gives it the CSE7761 its template wires, so it is held to confirming the
+    switch as any other."""
+    if kind is None or not kind.has_meter:
+        return None
+    # The POWCT's clamp is on the cable it measures, not behind its relay.
+    return READS if kind.key in espressif_board.CLAMPS else CONFIRMS
+
+
+def has_readings(meter: str | None) -> bool:
+    """Whether a check's Power meter line (`meter`, as kept or as said) holds a
+    reading with the relay on and one with it off."""
+    said = (meter or "").lower()
+    return said.startswith("on: ") and report.NO_READING not in said
 
 
 def last_run(log: str) -> str:
@@ -111,37 +143,44 @@ def unexpected(logs: Iterable[str], outcomes: Iterable[dict]) -> bool:
 SAID = {"passed": "Pass", "failed": "Fail", "not-run": "Not run"}
 
 
-def checks_problem(log: str, firmware: str, metered: bool = False, outcome: dict | None = None) -> str | None:
+def checks_problem(log: str, firmware: str, meter: str | None = None, outcome: dict | None = None) -> str | None:
     """What the end-of-run checks of the last run in `log` said, when they did
     not pass for a device on `firmware`: "Checks passed: Fail; Relay: did not
     switch". None when they passed, or the run gave no report (a device already
-    on the firmware asked for has nothing to check). `metered`: the emulated
-    device's meter measures a load while its relay is on, so where the check
-    reads the meter (all but Sonoff's firmware) it must confirm the switch.
+    on the firmware asked for has nothing to check). `meter`: what the check
+    must also find of the emulated device's meter (meter_demand), where it
+    reads one - on every firmware but Sonoff's.
 
     Read from the run's own outcome (`outcome`, its last line of
     fault_verdicts.run_outcomes, which a run that reported wrote as it did),
     as the run judged its checks; from the report's words in the log only for
-    a run that kept no checks there - an earlier release's."""
+    a run that kept no checks there - an earlier release's - and for the
+    meter's line, where an earlier release kept none."""
     run = last_run(log)
     checks = (outcome or {}).get("checks")
+    lines = POWER_METER.findall(run)
     if isinstance(checks, dict) and unattended_run.LOGGED_RESULT.search(run):
         answer = SAID.get(checks.get("answer"), str(checks.get("answer")))
-        said = f"Relay: {checks.get('relay') or 'not said'}"
-        if answer not in PASSING.get(firmware, {*PASSED, "Not run"}):
-            return f"Checks passed: {answer}; {said}"
-        if metered and firmware != "sonoff" and not checks.get("meter_confirms"):
-            return f"the meter did not confirm the switch; {said}"
+        relay, confirms = checks.get("relay"), bool(checks.get("meter_confirms"))
+        read = checks["meter"] if "meter" in checks else lines[-1] if lines else None
+    else:
+        answers = CHECKS_PASSED.findall(run)
+        if not answers:
+            return None
+        relays = RELAY.findall(run)
+        answer, relay = answers[-1], relays[-1] if relays else None
+        confirms = bool(relay) and relay.lower() == report.METER_CONFIRMS
+        read = lines[-1] if lines else None
+    said = f"Relay: {relay or 'not said'}"
+    if answer not in PASSING.get(firmware, {*PASSED, "Not run"}):
+        return f"Checks passed: {answer}; {said}"
+    if meter is None or firmware == "sonoff":
         return None
-    answers = CHECKS_PASSED.findall(run)
-    relay = RELAY.findall(run)
-    said = f"Relay: {relay[-1] if relay else 'not said'}"
-    if not answers:
-        return None
-    if answers[-1] not in PASSING.get(firmware, {*PASSED, "Not run"}):
-        return f"Checks passed: {answers[-1]}; {said}"
-    if metered and firmware != "sonoff" and not (relay and relay[-1].endswith("(meter confirms)")):
+    said += f"; Power meter: {read or 'not said'}"
+    if meter == CONFIRMS and not confirms:
         return f"the meter did not confirm the switch; {said}"
+    if meter == READS and not has_readings(read):
+        return f"the meter had no readings; {said}"
     return None
 
 

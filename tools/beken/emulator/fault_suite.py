@@ -434,15 +434,14 @@ def route_after(route: str, switched: bool) -> str:
     return f"{target if source == 'outdated' else source}>{OTHER[target]}"
 
 
-def metered(state: dict) -> bool:
-    """Whether the end-of-run checks must have the meter confirm the relay
-    switched, by the kind a run's record (autoflash-state.json) says it
-    converted: one with a meter (kinds.Kind.has_meter, the S61) measures the
-    emulated load, one without (the Basic Gen5) has nothing to confirm it. A
-    run that stopped before it knew the kind is held to the meter: the dump's
-    device, the S61, has one."""
+def meter_demand(state: dict) -> str | None:
+    """What the end-of-run checks must find of the meter
+    (fault_verdicts.meter_demand), by the kind a run's record
+    (autoflash-state.json) says it converted: one with a meter (the S61) must
+    confirm the switch, one without (the Basic Gen5) has nothing to. A run that
+    stopped before it knew the kind is held to the dump's device, the S61."""
     kind = kinds.by_key((state.get("inputs") or {}).get("device_kind"))
-    return kind.has_meter if kind else True
+    return fault_verdicts.meter_demand(kind or kinds.SONOFF_S61)
 
 
 class Instance:
@@ -1171,7 +1170,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if problems:
             outcome = dict(outcome, verdict="FAIL")
             notes["interim"] = problems
-        checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()),
+        checks = fault_verdicts.checks_problem(instance.last_log(), target, meter_demand(instance.last_state()),
                                                instance.last_outcome(began))
         if checks and not problems:
             outcome = dict(outcome, verdict="FAIL-CHECKS")
@@ -1914,7 +1913,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                     instance.ready(target)
             problems = [] if converted(log) else ["not converted"]
             problems += interim_problems(route, instance.dhcp_names(), None)
-            checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()),
+            checks = fault_verdicts.checks_problem(instance.last_log(), target, meter_demand(instance.last_state()),
                                                    instance.last_outcome(started))
             if checks:
                 problems.append(checks)

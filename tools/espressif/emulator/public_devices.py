@@ -73,8 +73,12 @@ WAYS = [
 
 
 def run(instance: int, source: str | None, firmware: str, save: str | None, log: Path,
-        extra: tuple[str, ...] = (), stop_after: str | None = None) -> tuple[bool, str]:
-    """One run, from a saved device if `source` names one; converted, and its result line."""
+        extra: tuple[str, ...] = (), stop_after: str | None = None,
+        kind: kinds.Kind | None = None) -> tuple[bool, str]:
+    """One run, from a saved device if `source` names one: whether it
+    converted a device of `kind` and passed its end-of-run checks
+    (checks_problem), and its result line, with what the checks found
+    wrong."""
     args = [str(UNATTENDED), f"--instance={instance}", *([f"--from={source}"] if source else []), *extra,
             *([f"--save={save}"] if save else []), "--", "--firmware", firmware]
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +92,26 @@ def run(instance: int, source: str | None, firmware: str, save: str | None, log:
     result = re.findall(r"Result:\s+(\S.*?)(?:\s{2,}|$)", text, re.M)   # up to the gap before the next column
     if stop_after:
         return step_done(SAVED / save, stop_after), f"stopped after {stop_after}"
-    return code == 0 and bool(result) and result[-1].startswith("Converted"), (result[-1] if result else f"exit {code}")
+    said = result[-1] if result else f"exit {code}"
+    if not (code == 0 and result and said.startswith("Converted")):
+        return False, said
+    problem = checks_problem(instance, started, firmware, kind)
+    return problem is None, f"{said}, but {problem}" if problem else said
+
+
+def checks_problem(instance: int, since: float, firmware: str, kind: kinds.Kind | None) -> str | None:
+    """What the end-of-run checks of the run on emulator `instance` since
+    `since` found wrong, as the fault suites judge them
+    (fault_verdicts.checks_problem): the relay, and the meter `kind` has."""
+    from tools.espressif.emulator import fault_suite as fs
+    from tools.repo import fault_verdicts
+    state = fs.EMU / f"state-{instance}"
+    logs = [text for at, _, text in fs.run_logs(state) if at >= since]
+    outcomes = fault_verdicts.run_outcomes(state / "work/captures", since)
+    if not logs:
+        return "no run log"
+    return fault_verdicts.checks_problem(logs[-1], firmware, fault_verdicts.meter_demand(kind),
+                                         outcomes[-1] if outcomes else None)
 
 
 def step_done(saved: Path, step: str) -> bool:
@@ -183,7 +206,7 @@ def command_test(args: argparse.Namespace) -> int:
     def way(instance: int, runs: list) -> int:
         for n, (source, firmware, keep) in enumerate(runs):
             began = time.time()
-            ok, said = run(instance, source, firmware, keep, LOGS / f"test-{source}-to-{firmware}.log")
+            ok, said = run(instance, source, firmware, keep, LOGS / f"test-{source}-to-{firmware}.log", kind=device)
             # From part way to its final firmware, as the run from Sonoff's it stands for, or from that firmware.
             start = "sonoff" if source.startswith("public-pre-final") else source.rsplit("-", 1)[1]
             emulator_stats.check_run(LOGS, family=device.family, device=device.key, route=f"{start}>{firmware}",

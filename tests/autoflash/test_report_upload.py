@@ -247,8 +247,9 @@ class OutcomeTests(Case):
             upload.send(ctx, "converted", 300, False, {"Relay": report.RELAY_SWITCHES})
         lines = [json.loads(line) for line in (folder / upload.OUTCOMES).read_text(encoding="utf-8").splitlines()]
         self.assertEqual([line["checks"] for line in lines],
-                         [{"answer": "passed", "relay": report.METER_CONFIRMS, "meter_confirms": True},
-                          {"answer": "passed", "relay": report.RELAY_SWITCHES, "meter_confirms": None}],
+                         [{"answer": "passed", "relay": report.METER_CONFIRMS, "meter_confirms": True,
+                           "meter": "on: 230 V"},
+                          {"answer": "passed", "relay": report.RELAY_SWITCHES, "meter_confirms": None, "meter": None}],
                          "a device with no meter has nothing for it to confirm")
 
     def test_an_outcome_that_cannot_be_kept_never_spoils_the_runs_end(self):

@@ -370,7 +370,14 @@ every second.
 - **Not modelled:** a UART's baud rate and frame format (a firmware reading
   the meter at the wrong speed would still get its frames), and a chip's
   timing: the board answers within about 0.1 ms, inside the 6 ms Tasmota gives
-  a CSE7761, which a classic ESP32 meets with `patches/0006`.
+  a CSE7761, which a classic ESP32 meets with `patches/0006`. Tasmota looks
+  for the chip once, about three seconds after it starts, and a start the
+  emulator runs slowly can still miss it, as one did on a Dual R3 on
+  20 November 2026: the boot after a panic took 9 s to reach the Wi-Fi rather
+  than 2.7, logged `NRG: Init driver 19` but no `C61: CSE7761 found`, and read
+  0 V, 0 W until it restarted. The end-of-run check then fails, as it should:
+  that firmware read nothing. One such boot in about a dozen was seen; run the
+  check again before suspecting the meter.
 
 ### The browser forward (`container/bin/browser-forward`)
 

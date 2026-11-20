@@ -13,6 +13,7 @@ from unittest import mock
 
 from tools.autoflash import output
 from tools.beken.emulator import fault_suite
+from tools.repo import fault_verdicts
 
 
 def happened(*items):
@@ -229,7 +230,8 @@ class EndChecksTests(unittest.TestCase):
         outcome = self.result("True", relay="Switches (meter unchanged)")
         self.assertEqual(outcome["verdict"], "FAIL-CHECKS")
         self.assertEqual(outcome["notes"]["checks"],
-                         "the meter did not confirm the switch; Relay: Switches (meter unchanged)")
+                         "the meter did not confirm the switch; Relay: Switches (meter unchanged); "
+                         "Power meter: not said")
 
     def test_only_a_device_with_a_meter_needs_it_to_confirm_the_switch(self):
         """The Basic Gen5 has no meter: its check says the relay switched with
@@ -240,10 +242,13 @@ class EndChecksTests(unittest.TestCase):
 
     def test_the_meter_is_demanded_as_the_kind_run_says(self):
         for kind in fault_suite.kinds.ALL:
-            self.assertEqual(fault_suite.metered({"inputs": {"device_kind": kind.key}}), kind.has_meter, kind.key)
+            self.assertEqual(fault_suite.meter_demand({"inputs": {"device_kind": kind.key}}),
+                             fault_verdicts.meter_demand(kind), kind.key)
+        self.assertEqual(fault_suite.meter_demand({"inputs": {"device_kind": "sonoff-s61"}}), fault_verdicts.CONFIRMS)
+        self.assertIsNone(fault_suite.meter_demand({"inputs": {"device_kind": "sonoff-basic-1gs"}}))
         # A run that stopped before it knew the kind: held to the S61's meter.
-        self.assertTrue(fault_suite.metered({}))
-        self.assertTrue(fault_suite.metered({"inputs": {}}))
+        self.assertEqual(fault_suite.meter_demand({}), fault_verdicts.CONFIRMS)
+        self.assertEqual(fault_suite.meter_demand({"inputs": {}}), fault_verdicts.CONFIRMS)
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")
