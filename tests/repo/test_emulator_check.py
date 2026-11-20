@@ -196,6 +196,66 @@ class RebuiltFlashTests(unittest.TestCase):
             check.rebuilt_flash(kinds.find("sonoff-basic-1gs"))
 
 
+class MotorCheckTests(unittest.TestCase):
+    """--motor: the test copy that drives a motor, each firmware then shown to
+    drive it, its outputs never on together and off after a power cut."""
+
+    def test_only_a_device_with_a_motor_mode_has_one(self):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            check.main(["sonoff-s60", "--motor"])
+        with mock.patch.object(check, "missing_packages", return_value=None), \
+                mock.patch.object(check, "check_public_dump", return_value=0) as ran:
+            self.assertEqual(check.main(["sonoff-dualr3", "--motor"]), 0)
+        self.assertTrue(ran.call_args.args[2])
+
+    def device(self, firmware, answers):
+        device = check.MotorDevice("127.0.0.1:8081", firmware)
+        readings = iter(answers)
+        device.outputs = lambda: next(readings)
+        device.answers = lambda within=None: True
+        device.get = lambda path, post=False: '{"state": "OPEN"}'
+        settings = {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}
+        device.tasmota = lambda command: {command: settings[command]} if command in settings else {}
+        return device
+
+    def problem(self, firmware, answers):
+        with mock.patch.object(check.time, "sleep"):
+            return self.device(firmware, answers).problem(lambda: None)
+
+    def test_one_output_at_a_time_and_both_off_after_a_power_cut_passes(self):
+        self.assertIsNone(self.problem("tasmota", [(True, False), (False, True), (False, True), (False, False)]))
+        self.assertIsNone(self.problem("esphome", [(True, False), (False, True), (False, False)]))
+
+    def test_both_on_together_fails(self):
+        self.assertIn("asked to close", self.problem("esphome", [(True, False), (True, True)]))
+        self.assertIn("both outputs came on together",
+                      self.problem("tasmota", [(True, False), (False, True), (True, True)]))
+
+    def test_an_output_on_after_a_power_cut_fails(self):
+        self.assertIn("after a power cut",
+                      self.problem("tasmota", [(True, False), (False, True), (False, True), (True, False)]))
+
+    def test_a_tasmota_not_set_up_fails_before_anything_moves(self):
+        device = self.device("tasmota", [])
+        device.tasmota = lambda command: {"ShutterMode": 2} if command == "ShutterMode" else {command: None}
+        self.assertIn("not set up for its motor", device.problem(lambda: None))
+
+    def test_tasmota_is_read_by_its_relays_states_and_both_on_once_is_both_on(self):
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        states = iter([{"POWER1": "ON", "POWER2": "OFF"}, {"POWER1": "ON", "POWER2": "ON"}])
+        device.tasmota = lambda command: next(states, {"POWER1": "OFF", "POWER2": "ON"})
+        with mock.patch.object(check.time, "sleep"):
+            self.assertEqual(device.outputs(), (True, True))
+
+    def test_each_request_names_the_device_as_a_browser_does(self):
+        # Tasmota turns away /cm without it (seen through the emulator's browser port).
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        with mock.patch.object(check.urllib.request.OpenerDirector, "open", side_effect=OSError) as opened:
+            self.assertIsNone(device.get("/cm?cmnd=Power"))
+        self.assertEqual(opened.call_args.args[0].get_header("Referer"), "http://127.0.0.1:8081/")
+
+
+
 class SideBySideTests(unittest.TestCase):
     def test_a_job_that_raises_has_failed_and_says_why(self):
         import io

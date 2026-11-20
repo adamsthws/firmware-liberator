@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tools.autoflash import kinds
 from tools.espressif import ais_records, flashmap
 from tools.espressif.emulator import appimage, public_dump
 
@@ -175,6 +176,16 @@ class OwnSettings(unittest.TestCase):
         rows = donor_rows(dualr3)
         self.assertEqual(json.loads(rows["user_usual", "content"]).get("deviceMode"), 1)
         self.assertEqual(json.loads(rows["frame_params", "content"])["uiid"], 126)
+
+    def test_the_dualr3_has_a_second_copy_that_drives_a_motor(self):
+        # Sonoff's app's motor mode, beside the copy in relay mode, under a MAC of its own.
+        relays, motor = public_dump.recipe("sonoff-dualr3"), public_dump.recipe("sonoff-dualr3", motor=True)
+        self.assertEqual(json.loads(donor_rows(motor)["user_usual", "content"]).get("deviceMode"), 2)
+        self.assertNotEqual(motor.mac, relays.mac)
+        self.assertEqual((motor.file, motor.uiid), (relays.file, relays.uiid))
+        macs = [dump.mac for dump in (*public_dump.DUMPS.values(), *public_dump.UPDATES.values())]
+        self.assertNotIn(motor.mac, macs)
+        self.assertEqual(set(public_dump.MOTOR_COPIES), {kind.key for kind in kinds.EVERY if kind.motor_mode})
 
 
 

@@ -58,6 +58,16 @@ class EndChecksTests(unittest.TestCase):
         through = run_log("    Relay: Switches (through eWeLink)", "    Checks passed: True")
         self.assertIsNone(fault_verdicts.checks_problem(through, "sonoff", fault_verdicts.CONFIRMS))
 
+    def test_a_device_that_drives_a_motor_is_not_switched_so_its_meter_shows_no_switch(self):
+        # report.check_motor: over and back, the motor would run both ways.
+        motor = run_log("    Relay: Motor mode", "    Power meter: Not checked", "    Checks passed: True")
+        for firmware in ("tasmota", "esphome"):
+            self.assertIsNone(fault_verdicts.checks_problem(motor, firmware, fault_verdicts.CONFIRMS), firmware)
+        free = run_log("    Relay: Not set up for its motor", "    Power meter: Not checked",
+                       "    Checks passed: Fail")
+        self.assertEqual(fault_verdicts.checks_problem(free, "tasmota", fault_verdicts.CONFIRMS),
+                         "Checks passed: Fail; Relay: Not set up for its motor")
+
     def test_a_clamp_needs_readings_though_they_cannot_confirm_the_switch(self):
         def log(meter):
             return run_log("    Relay: Switches (meter unchanged)", f"    Power meter: {meter}", "    Checks passed: Pass")

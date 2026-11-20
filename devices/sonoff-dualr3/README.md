@@ -83,6 +83,16 @@ the wall switches, nor at a start.
 - **Back to Sonoff's firmware**: your backup puts the motor mode back with the
   rest of Sonoff's settings.
 
+In the emulator a test copy set up in motor mode (`deviceMode` 2) went from
+Sonoff's firmware to Tasmota and to ESPHome, and from each to the other
+(`emulator_check.py sonoff-dualr3 --motor`). On each firmware the outputs came
+on one at a time, each way - asked to close while opening, the first went off
+before the second came on - never both, even asked for both at once on
+Tasmota, and both were off after a power cut: on ESPHome as the emulated meter
+read each channel, on Tasmota as it said it drove its relays. The emulator has
+no motor, so how the travel times and the direction suit a real curtain is for
+its owner to set.
+
 ## Files
 
 - **Tasmota**: the official release, unchanged, given the template in

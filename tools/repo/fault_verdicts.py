@@ -174,7 +174,9 @@ def checks_problem(log: str, firmware: str, meter: str | None = None, outcome: d
     said = f"Relay: {relay or 'not said'}"
     if answer not in PASSING.get(firmware, {*PASSED, "Not run"}):
         return f"Checks passed: {answer}; {said}"
-    if meter is None or firmware == "sonoff":
+    # A device that drives a motor is not switched (report.check_motor), so
+    # its meter has no switch to show.
+    if meter is None or firmware == "sonoff" or (relay or "").lower() == report.MOTOR_MODE:
         return None
     said += f"; Power meter: {read or 'not said'}"
     if meter == CONFIRMS and not confirms:

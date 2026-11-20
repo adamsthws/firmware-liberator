@@ -110,7 +110,11 @@ The emulator's Dual R3 runs on the TH Elite's settings, which have no
 gives it `{"init":"true","deviceMode":1}` (the firmware adds its other
 defaults) and makes the test copy's account the stub's, keeping the mode.
 That a Dual R3 comes in relay mode is assumed: its factory's setting is not
-known.
+known. A second test copy is given `{"init":"true","deviceMode":2}`, a
+motor's (`public_dump.py --motor`); started on it, the firmware wrote the
+motor's own keys as `calibrate_time` 0, `motorCalibrate` false,
+`motorLocation` 0, `limitCurrent` 0 and both reverses false: an uncalibrated
+motor's, seen in the emulator.
 
 ### Leaving Tasmota on a TH-style layout
 

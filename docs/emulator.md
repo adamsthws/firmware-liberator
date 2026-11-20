@@ -660,7 +660,10 @@ keep one open with `emu.sh --detach`.
   ([how](../tools/espressif/emulator/README.md#the-devices-board-boardpy)).
   A conversion passing says the firmware installs and starts, and reads a
   meter wired as the kind's template says - not that the template is right for
-  the device.
+  the device. Under Tasmota the Dual R3's meter reads the load on both channels
+  while either relay is on (`Power` `[100,100]` with one relay on, seen with
+  Tasmota 16.0.0); ESPHome reads each channel apart. So the motor check
+  (`emulator_check.py sonoff-dualr3 --motor`) reads Tasmota's own relay states.
 - **One device, one region.** Another model or region needs a dump of its own.
   A test copy made from an update file runs on another device's flash, so it
   tests the firmware, not the device's own layout or factory data.

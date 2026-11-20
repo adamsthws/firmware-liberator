@@ -3,7 +3,11 @@
 device no one here owns.
 
     python tools/espressif/emulator/public_dump.py KIND
+    python tools/espressif/emulator/public_dump.py --motor KIND
     python tools/espressif/emulator/public_dump.py --remove KIND
+
+--motor makes, for a kind with a motor mode, a second test copy set up to
+drive a motor (MOTOR_COPIES), beside the first, under a MAC of its own.
 
 The dump is fetched from where it is published, checked against its hash and
 filed as a test copy's backup (copy_device.py), under a MAC made up for the kind:
@@ -18,6 +22,7 @@ that device, whatever it reaches.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import struct
@@ -145,6 +150,13 @@ UPDATES = {
                                     "sonoff-pow-elite", "ESP32D0-MSW-T5", 159 + gang)
        for gang in (1, 2, 3)},
 }
+
+
+# A test copy of each kind with a motor mode (kinds.Kind.motor_mode) set up for
+# a curtain motor as Sonoff's app sets it (deviceMode 2), beside the one in
+# relay mode: tools/repo/emulator_check.py --motor converts it.
+MOTOR_COPIES = {"sonoff-dualr3": dataclasses.replace(UPDATES["sonoff-dualr3"], number=11,
+                                                     settings='{"init":"true","deviceMode":2}')}
 
 
 def identities(frame: dict, dump: Dump) -> dict[bytes, bytes]:
@@ -334,10 +346,16 @@ def built(dump: "Dump | Update") -> tuple[bytes, bytes]:
     return flash, efuse
 
 
-def make(key: str) -> Path:
-    """The kind's test copy, made again where one made before differs from what
-    this makes now: an earlier recipe's, which its firmware may not start on."""
-    dump = DUMPS.get(key) or UPDATES[key]
+def recipe(key: str, motor: bool = False) -> "Dump | Update":
+    """What the kind's test copy is made from: with `motor`, its motor's (MOTOR_COPIES)."""
+    return MOTOR_COPIES[key] if motor else DUMPS.get(key) or UPDATES[key]
+
+
+def make(key: str, motor: bool = False) -> Path:
+    """The kind's test copy - with `motor`, the one that drives a motor - made
+    again where one made before differs from what this makes now: an earlier
+    recipe's, which its firmware may not start on."""
+    dump = recipe(key, motor)
     target = records.DEVICES / records.folder_name(dump.mac)
     flash, efuse = built(dump)
     backup = target / "sonoff-backup"
@@ -370,17 +388,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("kind", choices=sorted({*DUMPS, *UPDATES}))
     parser.add_argument("--remove", action="store_true", help="delete the test copy")
+    parser.add_argument("--motor", action="store_true", help="the copy that drives a motor (MOTOR_COPIES)")
     args = parser.parse_args(argv)
     try:
         records.take_over_earlier_names()
     except records.EarlierNames as error:
         sys.exit(str(error))
-    mac = (DUMPS.get(args.kind) or UPDATES[args.kind]).mac
+    if args.motor and args.kind not in MOTOR_COPIES:
+        parser.error(f"{args.kind} has no motor mode")
+    mac = recipe(args.kind, args.motor).mac
     if args.remove:
         copy_device.remove(mac)
         print(f"Removed the test copy of {args.kind}.")
         return 0
-    print(f"{make(args.kind)}: run it with tools/espressif/emulator/emu.sh --device {mac}")
+    print(f"{make(args.kind, args.motor)}: run it with tools/espressif/emulator/emu.sh --device {mac}")
     return 0
 
 
