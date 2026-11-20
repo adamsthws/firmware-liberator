@@ -264,12 +264,13 @@ class MotorCheckTests(unittest.TestCase):
         device.answers = lambda within=None: True
         device.get = lambda path, post=False: '{"state": "OPEN"}'
         device.setup = lambda: setup
+        device.set_travel = lambda reversed: None
         settings = {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}
         device.tasmota = lambda command: {command: settings[command]} if command in settings else {}
         return device
 
     def problem(self, firmware, answers, setup=check.motor_setup.DEFAULT, wanted=check.motor_setup.DEFAULT):
-        with mock.patch.object(check.time, "sleep"):
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
             return self.device(firmware, answers, setup).problem(lambda: None, wanted)
 
     def test_a_motor_set_to_other_than_what_was_carried_fails_before_anything_moves(self):
@@ -306,7 +307,54 @@ class MotorCheckTests(unittest.TestCase):
     def test_a_tasmota_not_set_up_fails_before_anything_moves(self):
         device = self.device("tasmota", [])
         device.tasmota = lambda command: {"ShutterMode": 2} if command == "ShutterMode" else {command: None}
-        self.assertIn("not set up for its motor", device.problem(lambda: None))
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertIn("not set up for its motor", device.problem(lambda: None))
+
+    def test_a_setting_tasmota_does_not_answer_for_at_once_is_asked_again(self):
+        # Seen just after a start: ShutterMode and PowerOnState unanswered for
+        # 10 s, once Interlock and ShutterRelay1 had answered - "not set up".
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        settings = {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}
+        unanswered = {"ShutterMode": 2, "PowerOnState": 2}
+
+        def answer(command):
+            if unanswered.get(command):
+                unanswered[command] -= 1
+                return {}
+            return {command: settings[command]}
+        device.tasmota = answer
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertEqual(device.settings(*settings), settings)
+
+    def test_a_setup_answered_a_setting_at_a_time_is_put_together(self):
+        # Seen under load: Tasmota answering one request in three for
+        # minutes, never all three settings in one round.
+        setup = check.motor_setup.Setup(8.0, 8.0, True)
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        rounds = iter([check.motor_setup.Setup(8.0, None, None), check.motor_setup.Setup(None, 8.0, None),
+                       check.motor_setup.Setup(None, None, True)])
+        device.setup = lambda: next(rounds, check.motor_setup.Setup())
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertEqual(device.until_set(setup), setup)
+
+    def test_travel_times_not_taken_at_once_are_set_again_until_seen(self):
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        sent, travel = [], check.motor_setup.Setup(float(check.TRAVEL_OPEN), float(check.TRAVEL_CLOSE), True)
+        device.tasmota = lambda command: sent.append(command) or {}
+        device.setup = lambda: travel if len(sent) > 1 else check.motor_setup.Setup(8.0, 8.0, True)
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertIsNone(device.set_travel(True))
+        self.assertEqual(len(sent), 2)
+        device.setup = lambda: check.motor_setup.Setup(8.0, 8.0, True)
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertIn("the motor is set to Setup(open=8.0", device.set_travel(True))
+
+    def test_a_setup_read_while_the_firmware_does_not_answer_is_read_again(self):
+        device = self.device("esphome", [(True, False), (False, True), (False, False)])
+        setups = iter([check.motor_setup.Setup(), check.motor_setup.DEFAULT])
+        device.setup = lambda: next(setups, check.motor_setup.DEFAULT)
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertIsNone(device.problem(lambda: None))
 
     def test_tasmota_is_read_by_its_relays_states_and_both_on_once_is_both_on(self):
         device = check.MotorDevice("127.0.0.1:8081", "tasmota")
@@ -346,6 +394,18 @@ class MotorCheckTests(unittest.TestCase):
         self.assertEqual(self.drive(shutter, "close"), (False, True))
         self.assertEqual(shutter.direction, 0, "closed before the last look")
 
+    def test_a_tasmota_that_does_not_answer_for_a_while_is_waited_for(self):
+        # Seen under load: Power1 ON taken, then Status 10 and Power0 each
+        # unanswered for 5 s - "the motor did not start to open".
+        shutter = FakeShutter()
+        shutter.silent_for = 12
+        self.assertEqual(self.drive(shutter, "open"), (True, False))
+
+    def test_a_tasmota_that_never_answers_again_fails_saying_so(self):
+        shutter = FakeShutter()
+        shutter.silent_for = 10 * check.BACK_WITHIN
+        self.assertEqual(self.drive(shutter, "open"), "the firmware stopped answering")
+
     def test_a_close_tasmota_never_starts_fails(self):
         shutter = FakeShutter(ignores_close=True)
         self.assertEqual(self.drive(shutter, "open"), (True, False))
@@ -382,6 +442,8 @@ class FakeShutter:
         self.now, self.position, self.direction, self.starts = 0.0, 0.0, 0, 0.0
         self.relays = [False, False]
         self.slow_after = None
+        # Seconds after a move it answers Status 10 and Power0 with nothing.
+        self.silent_for, self.silent_until = 0.0, 0.0
 
     def run(self, seconds):
         until = self.now + seconds
@@ -399,6 +461,9 @@ class FakeShutter:
         if slow:
             self.slow_after = None
         self.run(self.SLOW if slow else self.LOOK)
+        if text in ("Status 10", "Power0") and self.now < self.silent_until:
+            self.run(5.0)   # no answer, after urllib's wait
+            return {}
         if text.startswith("Backlog ShutterOpenDuration1"):
             opening, closing = re.findall(r"Duration1 (\d+)", text)
             self.travel = {1: float(opening), -1: float(closing)}
@@ -409,6 +474,7 @@ class FakeShutter:
             if way == -1 and self.ignores_close:
                 return {}
             self.direction, self.starts, self.relays = way, self.now + self.MOTOR_STOP, [way == 1, way == -1]
+            self.silent_until = self.now + self.silent_for
             return {text.split()[0].upper(): "ON"}
         if text == "Power0":
             return {"POWER1": "ON" if self.relays[0] else "OFF", "POWER2": "ON" if self.relays[1] else "OFF"}
@@ -460,3 +526,13 @@ class WorkflowTests(unittest.TestCase):
 
     def test_a_release_checks_every_device(self):
         self.assertIn("every_device", self.workflow)
+
+
+def ticking(step=1.0):
+    """A clock for time.monotonic that moves on `step` seconds each time it is read."""
+    now = [0.0]
+
+    def tick():
+        now[0] += step
+        return now[0]
+    return tick

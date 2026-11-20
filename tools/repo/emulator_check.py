@@ -173,6 +173,8 @@ BACK_WITHIN = 240.0
 # shutter first waits for it to stop (ShutterMotorStop, 0.5 s), as ESPHome's
 # interlock does (interlock_wait_time, 500 ms).
 STARTS_WITHIN = 10.0
+# What MotorDevice.moving says of a firmware that did not answer.
+UNANSWERED = "unanswered"
 # The travel times the check sets first (seconds), through each firmware's own
 # setting for them: closing twice opening's, so that the move back from where
 # the open left the motor outlasts every look at its outputs - closing from 10%
@@ -274,13 +276,26 @@ class MotorDevice:
             time.sleep(3)
         return False
 
-    def set_travel(self) -> None:
-        if self.firmware == "tasmota":
-            self.tasmota(f"Backlog ShutterOpenDuration1 {TRAVEL_OPEN}; ShutterCloseDuration1 {TRAVEL_CLOSE}")
-        else:
-            for name, seconds in (("Open duration", TRAVEL_OPEN), ("Close duration", TRAVEL_CLOSE)):
-                self.get(f"/number/{urllib.parse.quote(name)}/set?value={seconds}", post=True)
-        time.sleep(2)
+    def set_travel(self, reversed: bool | None) -> str | None:
+        """The travel times set to TRAVEL_OPEN and TRAVEL_CLOSE, and seen set,
+        asked again while they are not: what is wrong where they never are.
+        Taken as set unseen, an 8 s motor once opened fully before the first
+        look Tasmota answered, and was still."""
+        travel = motor_setup.Setup(float(TRAVEL_OPEN), float(TRAVEL_CLOSE), reversed)
+        started = time.monotonic()
+        while True:
+            if self.firmware == "tasmota":
+                self.tasmota(f"Backlog {motor_setup.TASMOTA_OPEN} {TRAVEL_OPEN}; "
+                             f"{motor_setup.TASMOTA_CLOSE} {TRAVEL_CLOSE}")
+            else:
+                for name, seconds in ((motor_setup.ESPHOME_OPEN, TRAVEL_OPEN),
+                                      (motor_setup.ESPHOME_CLOSE, TRAVEL_CLOSE)):
+                    self.get(f"/number/{urllib.parse.quote(name)}/set?value={seconds}", post=True)
+            found = self.until_set(travel, within=15.0)
+            if found == travel:
+                return None
+            if time.monotonic() - started > BACK_WITHIN:
+                return f"set to {travel}, the motor is set to {found}"
 
     def move(self, way: str) -> None:
         """"open" or "close": Tasmota's relays switched as a person would -
@@ -292,19 +307,23 @@ class MotorDevice:
 
     def moving(self) -> str | None:
         """Which way the firmware says the motor is moving, "open" or "close";
-        None while it says it is still, or says nothing: Tasmota's shutter by
-        its direction, ESPHome's cover by its current operation."""
+        None while it says it is still, UNANSWERED where it says nothing:
+        Tasmota's shutter by its direction, ESPHome's cover by its current
+        operation."""
         if self.firmware == "tasmota":
-            shutter = self.tasmota("Status 10").get("StatusSNS", {}).get("Shutter1", {})
+            shutter = self.tasmota("Status 10").get("StatusSNS", {}).get("Shutter1")
             self.note(f"Tasmota's shutter: {shutter}")
-            return {1: "open", -1: "close"}.get(shutter.get("Direction")) if isinstance(shutter, dict) else None
+            if not isinstance(shutter, dict) or "Direction" not in shutter:
+                return UNANSWERED
+            return {1: "open", -1: "close"}.get(shutter["Direction"])
         try:
             cover = json.loads(self.get("/cover/Motor") or "{}")
         except ValueError:
             cover = {}
         self.note(f"ESPHome's cover: {cover}")
-        return {"OPENING": "open", "CLOSING": "close"}.get(cover.get("current_operation")) \
-            if isinstance(cover, dict) else None
+        if not isinstance(cover, dict) or "current_operation" not in cover:
+            return UNANSWERED
+        return {"OPENING": "open", "CLOSING": "close"}.get(cover["current_operation"])
 
     def outputs(self) -> tuple[bool, bool] | None:
         """Whether each output is on: on ESPHome, whose relays are the cover's
@@ -349,27 +368,38 @@ class MotorDevice:
         of it: a look counted only if the firmware says it moves that way after
         it too (one after the motor stopped finds both off), every look the
         same, and both on at any one taken as both on; Tasmota looked at
-        TASMOTA_LOOKS times, a second apart, ESPHome's meter once. What is
-        wrong instead: it never moved that way, or the outputs cannot be read."""
-        started = time.monotonic()
-        while self.moving() != way:
+        TASMOTA_LOOKS times, a second apart, ESPHome's meter once. A look the
+        firmware does not answer is not counted, and STARTS_WITHIN counts from
+        its last answer: once it had answered, the emulated Tasmota was seen
+        answering almost nothing for minutes. What is wrong instead: it never
+        moved that way, or never answered within BACK_WITHIN."""
+        asked = started = time.monotonic()
+        while (now := self.moving()) != way:
+            if time.monotonic() - asked > BACK_WITHIN:
+                return f"the motor did not start to {way}" if now != UNANSWERED else "the firmware stopped answering"
+            if now == UNANSWERED:
+                started = time.monotonic()
+            elif time.monotonic() - started > STARTS_WITHIN:
+                return f"the motor did not start to {way}"
             # Both on before it starts counts too.
             if self.firmware == "tasmota" and self.outputs() == (True, True):
                 return True, True
-            if time.monotonic() - started > STARTS_WITHIN:
-                return f"the motor did not start to {way}"
             time.sleep(0.5)
         counted: set[tuple[bool, bool]] = set()
-        for _ in range(TASMOTA_LOOKS if self.firmware == "tasmota" else 1):
+        looks = 0
+        while looks < (TASMOTA_LOOKS if self.firmware == "tasmota" else 1) \
+                and time.monotonic() - asked < BACK_WITHIN:
             if self.firmware == "tasmota":
                 time.sleep(1)
             found = self.outputs()
-            if found is None:
-                return "the outputs could not be read"
-            if all(found):
+            if found is not None and all(found):
                 return found
-            if self.moving() != way:
+            now = self.moving()
+            if found is None or now == UNANSWERED:
+                continue
+            if now != way:
                 break
+            looks += 1
             counted.add(found)
         if len(counted) > 1:
             return f"the outputs changed while it moved: {sorted(counted)}"
@@ -408,29 +438,47 @@ class MotorDevice:
         self.note(f"after a power cut, set to {found}")
         return None if found == setup else f"set to {setup}, after a power cut the motor is set to {found}"
 
-    def until_set(self, setup: motor_setup.Setup) -> motor_setup.Setup:
+    def until_set(self, setup: motor_setup.Setup, within: float = BACK_WITHIN) -> motor_setup.Setup:
         """What the firmware says the motor is set to, asked until it says
-        `setup` or BACK_WITHIN has passed: through a restart it answers
-        nothing, then some settings before others."""
+        `setup` or `within` has passed, each setting as it last answered for
+        it: through a restart it answers nothing, then some settings before
+        others, and a slow one was seen answering one request in three for
+        minutes."""
         started = time.monotonic()
         found = self.setup()
-        while found != setup and time.monotonic() - started < BACK_WITHIN:
+        while found != setup and time.monotonic() - started < within:
             time.sleep(3)
-            found = self.setup()
+            found = self.setup().over(found)
         return found
+
+    def settings(self, *names: str) -> dict:
+        """Each of Tasmota's settings `names`, None for one it never gave:
+        one it did not answer for is asked again, until BACK_WITHIN has
+        passed - just after a start, seen not answering for 10 s once it had
+        answered others, which read as not set up."""
+        found: dict = dict.fromkeys(names)
+        started = time.monotonic()
+        while True:
+            for name in names:
+                if found[name] is None:
+                    found[name] = self.tasmota(name).get(name)
+            if None not in found.values() or time.monotonic() - started > BACK_WITHIN:
+                return found
+            time.sleep(3)
 
     def problem(self, power_cut, wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
         if self.firmware == "tasmota":
-            settings = {name: self.tasmota(name).get(name)
-                        for name in ("Interlock", "ShutterRelay1", "ShutterMode", "PowerOnState")}
+            settings = self.settings("Interlock", "ShutterRelay1", "ShutterMode", "PowerOnState")
             if settings != {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}:
                 return f"Tasmota is not set up for its motor: {settings}"
         elif not self.get("/cover/Motor"):
             return "ESPHome has no cover"
-        found = self.setup()
+        found = self.until_set(wanted)
         if found != wanted:
             return f"the motor is set to {found}, not {wanted}"
-        self.set_travel()
+        problem = self.set_travel(wanted.reversed)
+        if problem:
+            return problem
         # Tasmota's relays by their numbers, which its template swaps over a
         # reversed motor's outputs; ESPHome's outputs by their pins, as metered.
         swapped = bool(wanted.reversed) and self.firmware == "esphome"
