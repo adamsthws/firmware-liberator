@@ -313,7 +313,13 @@ fails while any of it is missing:
   OpenBeken and SDK commits in `NOTICES.md`;
 - `CHANGELOG.md`: a line for each firmware, with a link to its release notes,
   under the release to come - a new section, a minor version on, once the one
-  above has been released, with `tools/autoflash/__init__.py` raised to it.
+  above has been released.
+
+`--raise-version` also raises `tools/autoflash/__init__.py` to that release,
+as the weekly update does, so that merging it is the release. Without it the
+version is left as it is, and the list the command ends with says what raising
+it does: an update you make by hand while the release to come is still being
+worked on is not released by a push.
 
 Left to write by hand, as the command lists when it ends: everything for a
 device's first build, which has no passage to rewrite; the mover's or bootloader's own rows (`--mover`,
@@ -393,8 +399,9 @@ before the release: an emulator does not show real flash, radios or timings
 
 ### 6. Release
 
-The update raised the version in `tools/autoflash/__init__.py` to the
-changelog's; merging to `main` publishes the release
+The weekly update raised the version in `tools/autoflash/__init__.py` to the
+changelog's (`--raise-version`); for an update made by hand, raise it when the
+release is ready. Merging that to `main` publishes the release
 (`.github/workflows/release.yml`), with the firmware files attached, once the
 tests, lint and leak scan pass on `main` again.
 

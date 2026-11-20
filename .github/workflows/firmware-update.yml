@@ -179,14 +179,15 @@ jobs:
         run: |
           set -o pipefail
           : > update.txt
+          # --raise-version raises the tool's version too: merging the update is the release.
           if [ -n "$TASMOTA" ]; then
-              .venv/bin/python tools/repo/update_firmware.py tasmota "$TASMOTA" 2>&1 | tee -a update.txt
+              .venv/bin/python tools/repo/update_firmware.py tasmota "$TASMOTA" --raise-version 2>&1 | tee -a update.txt
           fi
           if [ -n "$ESPHOME" ]; then
-              .venv/bin/python tools/repo/update_firmware.py esphome "$ESPHOME" --every-device 2>&1 | tee -a update.txt
+              .venv/bin/python tools/repo/update_firmware.py esphome "$ESPHOME" --every-device --raise-version 2>&1 | tee -a update.txt
           fi
           if [ -n "$OPENBEKEN" ]; then
-              .venv/bin/python tools/repo/update_firmware.py openbeken "$OPENBEKEN" --every-device 2>&1 | tee -a update.txt
+              .venv/bin/python tools/repo/update_firmware.py openbeken "$OPENBEKEN" --every-device --raise-version 2>&1 | tee -a update.txt
           fi
           git add -A -- . ':!update.txt'
           # Asked by hand for what it installs already: nothing to make, test or open.

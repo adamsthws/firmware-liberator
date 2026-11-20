@@ -648,7 +648,7 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
                     for name in ("command_esphome", "command_esphome_beken", "command_esphome_kind")}
         with mock.patch.multiple(uf, **commands), \
                 mock.patch.object(uf, "stable_release", return_value={"tag_name": "2099.1.0"}), \
-                mock.patch.object(uf, "changelog_with", side_effect=lambda entry, texts: lines.append(entry) or "9.9.0"), \
+                mock.patch.object(uf, "changelog_with", side_effect=lambda entry, texts, raise_version: lines.append(entry) or "9.9.0"), \
                 mock.patch.object(uf, "built_versions", side_effect=[{"a": "2026.10.0-2"}, {"a": "2099.1.0-1"}]), \
                 mock.patch.object(uf, "write_texts"):
             self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device"]), 0)
@@ -937,7 +937,8 @@ class ChangelogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, self.write(tmp, "# Changelog\n\nRules.\n\n## 2.1.0\n\n- Old.\n", "2.1.0"), \
              mock.patch.object(uf, "released", return_value=True):
             texts = {}
-            self.assertEqual(uf.changelog_with("A converted device ends on Tasmota 16.1.0.", texts), "2.2.0")
+            self.assertEqual(uf.changelog_with("A converted device ends on Tasmota 16.1.0.", texts,
+                                               raise_version=True), "2.2.0")
             changelog, version = texts[uf.CHANGELOG], texts[uf.VERSION_FILE]
         self.assertIn("## 2.2.0\n\n- A converted device ends on Tasmota 16.1.0.\n\n## 2.1.0\n\n- Old.", changelog)
         self.assertIn('__version__ = "2.2.0"', version)

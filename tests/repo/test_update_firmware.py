@@ -232,6 +232,14 @@ class ESPHomeRebuildTests(unittest.TestCase):
                 self.run_main(*argv)
             self.assertFalse(written.call_args.kwargs["changelog"], key)
 
+    def test_the_version_is_raised_only_when_asked(self):
+        for key, argv, texts in (("sonoff-s60", [], "esphome_doc_texts"),
+                                 ("sonoff-s61", ["--device", "sonoff-s61"], "beken_esphome_doc_texts")):
+            for asked in ([], ["--raise-version"]):
+                with self.subTest(key, asked=asked), mock.patch.object(uf, texts, return_value=({}, None)) as written:
+                    self.run_main(*argv, *asked)
+                self.assertEqual(written.call_args.kwargs["raise_version"], bool(asked), key)
+
     def test_another_espressif_devices_row_and_notice_say_its_build(self):
         pin = self.esphome_pin(self.run_main("--device", "sonoff-pow-elite"), "sonoff-pow-elite")
         readme = (self.root / "artifacts" / "README.md").read_text(encoding="utf-8")
@@ -258,6 +266,92 @@ class ESPHomeRebuildTests(unittest.TestCase):
         for key in (*self.BUILDS, "sonoff-nspanel"):
             config = (self.root / "devices" / key / "esphome.yaml").read_text(encoding="utf-8")
             self.assertIn(f"devices/{key}/esphome.yaml@v3.0.0\n", config, key)
+
+
+class RaiseVersionTests(unittest.TestCase):
+    """The changelog's line goes under the release to come; the tool's version
+    is raised to it only with --raise-version, as the weekly update asks:
+    pushing main with a new version releases it, so an update made by hand
+    leaves it and says so."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        root = Path(folder.name)
+        self.changelog, self.version_file = root / "CHANGELOG.md", root / "__init__.py"
+        # 3.1.0 being worked on: its section written, the version not raised yet.
+        self.changelog.write_text("# Changelog\n\n## 3.1.0\n\n- First.\n\n## 3.0.0\n\n- Old.\n", encoding="utf-8")
+        self.version_file.write_text('"""The tool."""\n\n__version__ = "3.0.0"\n', encoding="utf-8")
+        for name, value in (("CHANGELOG", self.changelog), ("VERSION_FILE", self.version_file)):
+            mock.patch.object(uf, name, value).start()
+        mock.patch.object(uf, "released", return_value=False).start()
+        mock.patch.object(uf.shutil, "which", return_value="/usr/bin/docker").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def version(self):
+        return uf.VERSION.search(self.version_file.read_text(encoding="utf-8")).group(1)
+
+    def test_without_it_the_line_is_written_and_the_version_left(self):
+        texts = {}
+        self.assertEqual(uf.changelog_with("Second.", texts), "3.1.0")
+        self.assertIn("## 3.1.0\n\n- First.\n- Second.\n", texts[uf.CHANGELOG])
+        self.assertNotIn(uf.VERSION_FILE, texts)
+        self.assertEqual(uf.version_left(texts), ["tools/autoflash/__init__.py is still at 3.0.0: raising it to "
+                                                  "3.1.0 and pushing main releases 3.1.0"])
+
+    def test_with_it_the_version_is_raised_and_nothing_left(self):
+        texts = {}
+        uf.changelog_with("Second.", texts, raise_version=True)
+        self.assertIn('\n__version__ = "3.1.0"\n', texts[uf.VERSION_FILE])
+        self.assertEqual(uf.version_left(texts), [])
+
+    def test_nothing_is_left_once_the_version_names_the_release(self):
+        self.version_file.write_text('__version__ = "3.1.0"\n', encoding="utf-8")
+        texts = {}
+        uf.changelog_with("Second.", texts)
+        self.assertEqual(uf.version_left(texts), [])
+        self.assertEqual(uf.version_left({}), [])
+
+    def every_device(self, project, *argv):
+        """An every-device update, each device's own build stood in for: what
+        it printed."""
+        printed = []
+        builds = {name: mock.Mock(return_value=0) for name in
+                  ("command_esphome", "command_esphome_beken", "command_esphome_kind", "command_openbeken")}
+        with mock.patch.object(uf, "stable_release", return_value={"tag_name": "2099.1.0"}), \
+                mock.patch.object(uf, "built_versions", side_effect=[{"a": "1"}, {"a": "2"}]), \
+                mock.patch.multiple(uf, **builds), \
+                mock.patch("builtins.print", side_effect=lambda *a, **k: printed.append(" ".join(map(str, a)))):
+            self.assertEqual(uf.main([project, "2099.1.0", "--every-device", *argv]), 0)
+        return "\n".join(printed)
+
+    def test_every_devices_update_raises_the_version_only_when_asked(self):
+        for project, name in (("esphome", "ESPHome"), ("openbeken", "OpenBeken")):
+            with self.subTest(project):
+                self.version_file.write_text('__version__ = "3.0.0"\n', encoding="utf-8")
+                printed = self.every_device(project)
+                self.assertEqual(self.version(), "3.0.0")
+                self.assertIn("tools/autoflash/__init__.py is still at 3.0.0", printed)
+                self.assertIn(f"- {name} moved to", self.changelog.read_text(encoding="utf-8"))
+                printed = self.every_device(project, "--raise-version")
+                self.assertEqual(self.version(), "3.1.0")
+                self.assertNotIn("still at", printed)
+
+    def test_the_weekly_update_asks_for_it_on_each_update(self):
+        workflow = (ROOT / ".github/workflows/firmware-update.yml").read_text(encoding="utf-8")
+        calls = [line for line in workflow.splitlines()
+                 if any(f"update_firmware.py {project} " in line for project in ("tasmota", "esphome", "openbeken"))]
+        self.assertEqual(len(calls), 3, calls)
+        for call in calls:
+            self.assertIn(" --raise-version ", call)
+
+    def test_each_update_takes_it(self):
+        for project in ("tasmota", "esphome", "openbeken"):
+            seen = []
+            with mock.patch.object(uf, f"command_{project}", side_effect=lambda args: seen.append(args.raise_version) or 0):
+                uf.main([project, "--raise-version"])
+                uf.main([project])
+            self.assertEqual(seen, [True, False], project)
 
 
 class PublishableTests(unittest.TestCase):

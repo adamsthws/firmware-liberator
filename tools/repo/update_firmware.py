@@ -50,8 +50,10 @@
         pushes one
 
 Each of the others writes firmware.json, the published files and SHA256SUMS, and lists what
-is left to do by hand. Nothing is pushed or committed. docs/updating-firmware.md
-is the whole procedure, and what each check is for.
+is left to do by hand. --raise-version, as the weekly update runs them, also raises
+tools/autoflash/__init__.py to the release their CHANGELOG.md line goes under.
+Nothing is pushed or committed. docs/updating-firmware.md is the whole procedure,
+and what each check is for.
 """
 
 from __future__ import annotations
@@ -457,8 +459,8 @@ def command_tasmota(args: argparse.Namespace) -> int:
     earlier = [entry for entry in old.get("earlier", []) if entry["version"] != version]
     if previous != version:
         earlier.insert(0, {key: old[key] for key in ("version", "tag", "commit", "files")})
-    texts, release_version = tasmota_doc_texts(old["version"], version) if not args.no_docs and previous != version \
-        else ({}, None)
+    texts, release_version = tasmota_doc_texts(old["version"], version, args.raise_version) \
+        if not args.no_docs and previous != version else ({}, None)
     chip["tasmota"] = {
         "version": version,
         "tag": tag,
@@ -483,7 +485,7 @@ def command_tasmota(args: argparse.Namespace) -> int:
         left_to_do([f"CHANGELOG.md: the official Tasmota installed is {version}, with a link to its release notes"])
     elif release_version:
         print(f"CHANGELOG.md says so, under {release_version}.")
-    left_to_do(["README.md and docs/: any line naming the Tasmota release installed",
+    left_to_do([*version_left(texts), "README.md and docs/: any line naming the Tasmota release installed",
                 "python3 -m unittest discover -s tests",
                 "the emulator runs in docs/updating-firmware.md, then a real device"])
     return 0
@@ -782,7 +784,8 @@ def command_esphome(args: argparse.Namespace) -> int:
         old_image, {"file": ESPHOME_BUILDS["image"][1].format(version=version), "version": version,
                     "esphome": release, "esp_idf": described["esp_idf"], "sha256": sha256_bytes(app)},
         # One folded into its version says what changed in that version's own line.
-        changelog=not getattr(args, "every", False) and version != old_image["version"])
+        changelog=not getattr(args, "every", False) and version != old_image["version"],
+        raise_version=args.raise_version)
 
     for key, (version, app, _bootloader, described) in built.items():
         config_path = ROOT / ESPHOME_BUILDS[key][0]
@@ -816,6 +819,7 @@ def command_esphome(args: argparse.Namespace) -> int:
             by_hand.append("the mover's or bootloader's own rows and paragraphs, which only the image's are written for")
         if old_image["esphome"] == release:
             by_hand.append("what the change to the config does, in CHANGELOG.md and devices/sonoff-s60/esphome.md")
+        by_hand += version_left(texts)
     left_to_do(by_hand + ["python3 -m unittest discover -s tests (tests/repo/test_firmware_pins.py checks the docs)",
                           "the emulator runs in docs/updating-firmware.md, then a real device"])
     return 0
@@ -996,7 +1000,8 @@ def command_openbeken(args: argparse.Namespace) -> int:
     # Worked out before anything is written, so a passage not found changes nothing.
     # One folded into its version says what changed in that version's own line.
     texts = {} if args.no_docs or not current else openbeken_doc_texts(
-        args.device, current, record, changelog=not getattr(args, "every", False) and version != current["version"])
+        args.device, current, record, changelog=not getattr(args, "every", False) and version != current["version"],
+        raise_version=args.raise_version)
     publish(section, "openbeken", record["file"], image, {
         "version": version, "release": release, "app_commit": commit, "sdk_commit": sdk_commit,
         "sources": {path: sha256_bytes((ROOT / path).read_bytes()) for path in sources},
@@ -1008,6 +1013,7 @@ def command_openbeken(args: argparse.Namespace) -> int:
     left_to_do([*([] if texts else ["artifacts/README.md: the file's row (name, SHA-256)",
                                     "NOTICES.md: the file's name, the OpenBeken commit and the SDK's",
                                     "CHANGELOG.md: the device's OpenBeken is this version"]),
+                *version_left(texts),
                 "python3 tests/run.py (tests/repo/test_firmware_pins.py checks the docs)",
                 "the emulator: tools/beken/emulator/fault_suite.py prep, then the six scenarios "
                 "(docs/updating-firmware.md)"])
@@ -1028,14 +1034,16 @@ def command_openbeken_every(args: argparse.Namespace) -> int:
     # As for ESPHome, every build folded into its unreleased version adds no line.
     if not args.dry_run and not args.no_docs and built_versions(load_pins(), "openbeken") != versions:
         texts: dict[Path, str] = {}
-        version = changelog_with(moved("OpenBeken", release, before), texts)
+        version = changelog_with(moved("OpenBeken", release, before), texts, args.raise_version)
         write_texts(texts)
         print(f"CHANGELOG.md says so, under {version}.")
+        if left := version_left(texts):
+            left_to_do(left)
     return 0
 
 
-def openbeken_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
-                        changelog: bool = True) -> dict[Path, str]:
+def openbeken_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any], changelog: bool = True,
+                        raise_version: bool = False) -> dict[Path, str]:
     """artifacts/README.md's row and NOTICES.md for a Beken device's new OpenBeken
     image, and the changelog's line unless the caller writes one for every device."""
     readme = with_row(ARTIFACTS_README.read_text(encoding="utf-8"), old, new)
@@ -1050,7 +1058,7 @@ def openbeken_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
     if changelog:
         found = kinds.find(device)
         changelog_with(moved("OpenBeken", new["release"], openbeken_release_of(old),
-                             found.name if found else "readout build"), texts)
+                             found.name if found else "readout build"), texts, raise_version)
     return texts
 
 
@@ -1099,7 +1107,8 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     # Worked out before anything is written, so a passage not found changes nothing.
     # One folded into its version says what changed in that version's own line.
     texts = {} if args.no_docs or not current else beken_esphome_doc_texts(
-        args.device, current, new, changelog=not getattr(args, "every", False) and version != current["version"])[0]
+        args.device, current, new, changelog=not getattr(args, "every", False) and version != current["version"],
+        raise_version=args.raise_version)[0]
     (ROOT / config_path).write_text(as_built(config, version), encoding="utf-8")
     publish(section, "esphome", new["file"], image,
             {"config": config_path, "version": version, "esphome": release, "libretiny": libretiny,
@@ -1113,6 +1122,7 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
                                     "NOTICES.md: the file's name, the ESPHome release and LibreTiny version",
                                     f"devices/{args.device}/esphome.md: the ESPHome release that built the current image",
                                     "CHANGELOG.md: the device's ESPHome is this version"]),
+                *version_left(texts),
                 "python3 tests/run.py (tests/repo/test_firmware_pins.py checks the docs)",
                 "the emulator: tools/beken/emulator/fault_suite.py prep, then the scenarios it should pass"])
     return 0
@@ -1338,9 +1348,11 @@ def command_esphome_every(args: argparse.Namespace) -> int:
     if not args.dry_run and not args.no_docs and built_versions(load_pins(), "esphome") != versions:
         release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
         texts: dict[Path, str] = {}
-        version = changelog_with(moved("ESPHome", release, before), texts)
+        version = changelog_with(moved("ESPHome", release, before), texts, args.raise_version)
         write_texts(texts)
         print(f"CHANGELOG.md says so, under {version}.")
+        if left := version_left(texts):
+            left_to_do(left)
     return 0
 
 
@@ -1387,11 +1399,13 @@ def command_esphome_kind(args: argparse.Namespace) -> int:
 #
 # Each update writes what it changes into the docs the tests hold to it
 # (tests/repo/test_firmware_pins.py), and its line in CHANGELOG.md: under the
-# section not yet released, or a new one, a minor version on (raising
-# tools/autoflash/__init__.py), so that merging it is the release. --no-docs
-# leaves them for a person to write.
+# section not yet released, or a new one, a minor version on. --raise-version,
+# which the weekly update passes, raises tools/autoflash/__init__.py to that
+# release too, so that merging it is the release; by hand it is left alone, as
+# pushing a new version releases it. --no-docs leaves them for a person to write.
 CHANGELOG = ROOT / "CHANGELOG.md"
 VERSION_FILE = ROOT / "tools/autoflash/__init__.py"
+VERSION = re.compile(r'^__version__ = "([^"]+)"', re.MULTILINE)
 ARTIFACTS_README = ROOT / "artifacts/README.md"
 NOTICES = ROOT / "NOTICES.md"
 ESPHOME_README = ROOT / "devices/sonoff-s60/esphome.md"
@@ -1428,9 +1442,10 @@ def moved(firmware: str, new: str, old: str, device: str | None = None) -> str:
     return f"{name} moved to [{new}]({page.format(new)}), from [{old}]({page.format(old)})."
 
 
-def changelog_with(entry: str, texts: dict[Path, str]) -> str:
-    """CHANGELOG.md and tools/autoflash/__init__.py, in `texts`, with the entry
-    under the release to come; that release's version."""
+def changelog_with(entry: str, texts: dict[Path, str], raise_version: bool = False) -> str:
+    """CHANGELOG.md, in `texts`, with the entry under the release to come, and
+    with `raise_version` tools/autoflash/__init__.py raised to it; that
+    release's version."""
     text = texts.get(CHANGELOG) or CHANGELOG.read_text(encoding="utf-8")
     heading = re.search(r"^## (\d+\.\d+\.\d+)\n", text, re.MULTILINE)
     version = release_to_come(text)
@@ -1441,9 +1456,23 @@ def changelog_with(entry: str, texts: dict[Path, str]) -> str:
         end = heading.end() + following.start() if following else len(text)
         text = text[:heading.end()] + text[heading.end():end].rstrip("\n") + "\n" + bullet(entry) + "\n\n" + text[end:]
     texts[CHANGELOG] = text
-    texts[VERSION_FILE] = re.sub(r'^__version__ = "[^"]+"', f'__version__ = "{version}"',
-                                 VERSION_FILE.read_text(encoding="utf-8"), count=1, flags=re.MULTILINE)
+    if raise_version:
+        texts[VERSION_FILE] = VERSION.sub(f'__version__ = "{version}"', VERSION_FILE.read_text(encoding="utf-8"),
+                                          count=1)
     return version
+
+
+def version_left(texts: dict[Path, str]) -> list[str]:
+    """What is left to do when a CHANGELOG.md line went under a release that
+    tools/autoflash/__init__.py, not raised, does not name yet."""
+    if CHANGELOG not in texts or VERSION_FILE in texts:
+        return []
+    coming = re.search(r"^## (\d+\.\d+\.\d+)\n", texts[CHANGELOG], re.MULTILINE).group(1)
+    current = VERSION.search(VERSION_FILE.read_text(encoding="utf-8")).group(1)
+    if coming == current:
+        return []
+    return [f"tools/autoflash/__init__.py is still at {current}: raising it to {coming} and pushing main "
+            f"releases {coming}"]
 
 
 def write_texts(texts: dict[Path, str]) -> None:
@@ -1467,14 +1496,14 @@ def with_row(readme: str, old: dict[str, Any], new: dict[str, Any]) -> str:
                        f"{old_name}'s row in artifacts/README.md")
 
 
-def tasmota_doc_texts(old: str, new: str) -> tuple[dict[Path, str], str]:
+def tasmota_doc_texts(old: str, new: str, raise_version: bool = False) -> tuple[dict[Path, str], str]:
     texts: dict[Path, str] = {}
-    version = changelog_with(moved("Tasmota", new, old), texts)
+    version = changelog_with(moved("Tasmota", new, old), texts, raise_version)
     return texts, version
 
 
-def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
-                      changelog: bool = True) -> tuple[dict[Path, str], str | None]:
+def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any], changelog: bool = True,
+                      raise_version: bool = False) -> tuple[dict[Path, str], str | None]:
     """artifacts/README.md, NOTICES.md, devices/sonoff-s60/esphome.md and the
     changelog for a new image: the same config with a new ESPHome release, or,
     with the same release, a change to the config, which a person describes -
@@ -1496,12 +1525,12 @@ def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
                                         f"ESPHome {new['esphome']} built the current", "devices/sonoff-s60/esphome.md's release")
     if not changelog:
         return texts, None
-    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], "S60"), texts)
+    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], "S60"), texts, raise_version)
     return texts, version
 
 
-def beken_esphome_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
-                            changelog: bool = True) -> tuple[dict[Path, str], str | None]:
+def beken_esphome_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any], changelog: bool = True,
+                            raise_version: bool = False) -> tuple[dict[Path, str], str | None]:
     """artifacts/README.md, NOTICES.md, the device's esphome.md and the changelog
     for a Beken device's new ESPHome image."""
     readme = with_row(ARTIFACTS_README.read_text(encoding="utf-8"), old, new)
@@ -1533,7 +1562,8 @@ def beken_esphome_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any
                               f"update_firmware.py esphome {new['esphome']} --device", f"{page.name}'s command")
     if not changelog:
         return texts, None
-    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], kinds.find(device).name), texts)
+    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], kinds.find(device).name), texts,
+                             raise_version)
     return texts, version
 
 
@@ -1591,6 +1621,10 @@ def command_publishable(args: argparse.Namespace) -> int:
     return 0
 
 
+RAISE_VERSION_HELP = ("raise tools/autoflash/__init__.py to the release the CHANGELOG.md line goes under, as the "
+                      "weekly update does: pushing main then releases it")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1607,6 +1641,7 @@ def main(argv: list[str] | None = None) -> int:
     tasmota.add_argument("version", nargs="?", help="e.g. 16.0.0 (default: the latest)")
     tasmota.add_argument("--dry-run", action="store_true", help="check it, change nothing")
     tasmota.add_argument("--no-docs", action="store_true", help="leave CHANGELOG.md to be written by hand")
+    tasmota.add_argument("--raise-version", action="store_true", help=RAISE_VERSION_HELP)
     tasmota.set_defaults(run=command_tasmota)
     build_parser = commands.add_parser("esphome", help="build and publish ESPHome with a release")
     build_parser.add_argument("version", nargs="?", help="e.g. 2026.10.0 (default: the latest)")
@@ -1615,6 +1650,7 @@ def main(argv: list[str] | None = None) -> int:
                               help="publish this build's bootloader where it differs (see the docs first)")
     build_parser.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     build_parser.add_argument("--no-docs", action="store_true", help="leave the docs to be written by hand")
+    build_parser.add_argument("--raise-version", action="store_true", help=RAISE_VERSION_HELP)
     build_parser.add_argument("--device", choices=sorted(kind.key for kind in kinds.EVERY if kind is not kinds.SONOFF_S60),
                               help="another device's ESPHome instead of the S60's")
     build_parser.add_argument("--every-device", action="store_true",
@@ -1632,6 +1668,7 @@ def main(argv: list[str] | None = None) -> int:
     openbeken.add_argument("--device", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
     openbeken.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     openbeken.add_argument("--no-docs", action="store_true", help="leave the docs to be written by hand")
+    openbeken.add_argument("--raise-version", action="store_true", help=RAISE_VERSION_HELP)
     openbeken.add_argument("--every-device", action="store_true",
                            help="every Beken device's OpenBeken, on one release, as the weekly update builds them")
     openbeken.set_defaults(run=command_openbeken)
