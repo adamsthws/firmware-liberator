@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 18:00:00 +0000
+Subject: [PATCH] esp32 gpio: each input pin can be set while the firmware runs
+
+Run without PICSimLab, nothing drives the pins' inputs once QEMU is
+running: gpio_in and gpio_in1 set their levels only at the start, being
+static properties, and the named GPIO inputs (esp32_gpios_in) that
+PICSimLab drives have no monitor command. So a button or a wall switch on
+the board could not be pressed.
+
+The new properties gpio0 to gpio39, one bool each, read a pin's input
+level and set it through set_gpio, as PICSimLab sets a pin: the input
+register changes and the pin's interrupt is raised as its type, edge or
+level, says. Both chips' GPIO devices have them, the ESP32-C3's being
+the ESP32's:
+
+  qom-set /machine/gpio gpio9 false        (ESP32-C3)
+  qom-set /machine/soc/gpio gpio32 false   (ESP32)
+---
+ hw/gpio/esp32_gpio.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/hw/gpio/esp32_gpio.c b/hw/gpio/esp32_gpio.c
+--- a/hw/gpio/esp32_gpio.c
++++ b/hw/gpio/esp32_gpio.c
+@@ -12,6 +12,7 @@
+ #include "qemu/log.h"
+ #include "qemu/error-report.h"
+ #include "qapi/error.h"
++#include "qapi/visitor.h"
+ #include "ui/console.h"
+ #include "hw/hw.h"
+ #include "ui/input.h"
+@@ -135,6 +136,30 @@
+ }
+ 
+ 
++/* Each pin's input level as a property of its own, gpio0 to gpio39, which the
++ * monitor can set while the firmware runs, as a button or a switch on the
++ * board drives the pin: qom-set /machine/gpio gpio9 false. Set as PICSimLab
++ * sets a pin, so the pin's interrupt is raised as its type says. */
++static void esp32_gpio_get_pin(Object *obj, Visitor *v, const char *name,
++                               void *opaque, Error **errp)
++{
++    Esp32GpioState *s = ESP32_GPIO(obj);
++    int n = (intptr_t)opaque;
++    bool level = n < 32 ? (s->gpio_in >> n) & 1 : (s->gpio_in1 >> (n - 32)) & 1;
++
++    visit_type_bool(v, name, &level, errp);
++}
++
++static void esp32_gpio_set_pin(Object *obj, Visitor *v, const char *name,
++                               void *opaque, Error **errp)
++{
++    bool level;
++
++    if (visit_type_bool(v, name, &level, errp)) {
++        set_gpio(obj, (intptr_t)opaque, level);
++    }
++}
++
+ static void esp32_gpio_write(void *opaque, hwaddr addr, uint64_t value,
+                              unsigned int size) {
+     Esp32GpioState *s = ESP32_GPIO(opaque);
+@@ -285,6 +310,11 @@
+     qdev_init_gpio_in_named(DEVICE(s), set_gpio, ESP32_GPIOS_IN, 40);
+     s->gpio_in = 0x1;
+     s->gpio_in1 = 0x8;
++    for (intptr_t n = 0; n < 40; n++) {
++        g_autofree char *name = g_strdup_printf("gpio%d", (int)n);
++        object_property_add(obj, name, "bool", esp32_gpio_get_pin,
++                            esp32_gpio_set_pin, NULL, (void *)n);
++    }
+ }
+ 
+ static Property esp32_gpio_properties[] = {
+-- 
+2.43.0
+

@@ -225,6 +225,18 @@ fork's source, make the change, and regenerate them.
   behind a baud rate on REF_TICK taken from 40 MHz, 40 times too fast, as
   espressif/qemu#212
   ([upstream contributions](../../../docs/upstream-contributions.md#the-emulators-classic-esp32)).
+- **`0007-esp32-gpio-input-pins-set-while-running.patch` - a button can be
+  pressed.** The fork models a pin's input level and its interrupt, edge or
+  level as the firmware sets `GPIO_PINn_REG`, but only PICSimLab drives them,
+  through the GPIO device's named inputs, which no monitor command reaches; and
+  `gpio_in` and `gpio_in1`, being static properties, set the levels only at the
+  start. The patch gives the GPIO device a bool property for each pin, `gpio0`
+  to `gpio39`, which reads the pin's level and sets it as PICSimLab does: the
+  input register changes and the pin's interrupt is raised, read by ESP-IDF's
+  handler from `GPIO_PCPU_INT_REG` (a pin change does not set
+  `GPIO_STATUS_REG`, which that handler does not read). The device is `/machine/gpio` on an
+  ESP32-C3 and `/machine/soc/gpio` on a classic ESP32:
+  `qom-set /machine/gpio gpio9 false` presses an S60's button.
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 after the
 pinned commit, on 7 November 2026 (`2d075b740`), so `0001`-`0003` drop out on a
