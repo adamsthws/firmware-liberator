@@ -86,11 +86,16 @@ wall switches, nor at a start.
   setting, on. The interlock and both off at a start hold either way.
 - **From one of these firmware to the other**, the travel times and direction
   it is set to go with the device, as its mode does.
-- **Not carried across**: how Sonoff's firmware is set to treat the wall
-  switches in motor mode (`motorSwMode`, and its switch reversal,
-  `motorKeyReverse`); the converted firmware use them as
-  [ESPHome's build says](esphome.md#a-motor) or as Tasmota's shutter does. The
-  tool logs what your backup holds of these.
+- **Not carried across**: how Sonoff's firmware is set to read the wall
+  switches in motor mode (`motorSwMode`: push-buttons, the default; hold to
+  run; or one push-button on either input) and whether it swaps them
+  (`motorKeyReverse`), [as seen in the emulator](../../docs/espressif-research.md#the-dual-r3s-work-mode).
+  Both converted firmware take wall switch 1 closed as open and 2 as close,
+  and either opened again as stop ([ESPHome's build](esphome.md#a-motor);
+  Tasmota's switches toggling its shutter's relays), as Sonoff's hold to run
+  does. So a push-button that ran the motor to its end under Sonoff's default
+  runs it only while held, and a rocker switch starts it turned one way and
+  stops it turned back. The tool logs what your backup holds of these.
 - **The end-of-run check** does not switch the outputs, which would run the
   motor both ways; it checks the firmware is set up for the motor
   ([At the end](../../docs/what-happens.md#at-the-end)).

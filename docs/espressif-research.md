@@ -121,12 +121,28 @@ QEMU's monitor:
   with `motorCalibrate` true, and moves the motor by 10000/`calibrate_time`
   hundredths of a percent each millisecond (FreeRTOS ticks, 1 kHz, read in its
   calibration handler).
-- **`motorSwReverse`, kept as `motorKeyReverse`, changes how the wall switches
-  are read** in `motorSwMode` 2 and 3: its handler sets the flag the switch
-  handlers of those two modes take, read in the disassembly. What either mode
-  is, and what the flag does to a switch, could not be seen: the emulator
-  cannot switch an input pin once QEMU has started (`gpio_in` is fixed at
-  start), so neither is carried across.
+- **`motorSwMode` is how the wall switches are read, and `motorSwReverse`,
+  kept as `motorKeyReverse`, swaps them.** Seen in the emulator, closing and
+  opening S1 (GPIO32) and S2 (GPIO33) through
+  [the board's buttons file](emulator.md#buttons-and-wall-switches), the
+  motor uncalibrated, and reading the outputs; each mode set through
+  `motorSwMode` and taken at once:
+  - **2, push-buttons**, the firmware's own default for a motor (a test copy
+    started in motor mode reported `motorSwMode` 2, `motorSwReverse` 0): a
+    switch acts as it is let go, however long it was held. S1 opens, S2
+    closes, and either while the motor runs stops it, whichever way it runs.
+  - **3, hold to run**: the motor opens while S1 is closed and closes while
+    S2 is, and stops as it is let go, or while both are closed; let one of
+    the two go and the other runs it again.
+  - **1, one push-button** on either input: each press, acted on as it is let
+    go, goes open, stop, close, stop in turn, on from the way it last ran.
+  - **`motorSwReverse` 1** has S1 close and S2 open in modes 2 and 3, as its
+    handler's flag, read in the disassembly, suggested. In mode 1, where
+    either switch does the same, it changes nothing.
+
+  The button (GPIO0), pressed briefly, did nothing in motor mode. Neither
+  setting is carried across: the converted firmware treat a wall switch as
+  [the device's page says](../devices/sonoff-dualr3/README.md#a-motor).
 
 So the tool carries `calibrate_time` as both travel times, only with
 `motorCalibrate` true and the time in `TRAVEL_RANGE`, and `motorDriverReverse`
