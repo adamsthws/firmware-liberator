@@ -351,6 +351,13 @@ every second.
   takes them as the chip's own and the run's calibration (`calibration.py`) can
   be tested. With no load the frame says the power cycle is out of range
   (header `0xF2`), as the chip does.
+- **The S60's board factor differs by firmware.** Its firmware scales the
+  meter by 1.02 unless GPIO6, GPIO10 and GPIO19 all read high with pull-ups
+  (`calibration.py`). Every input idles high here, so ESPHome, which detaches
+  the USB pads first, reads them all high and takes 1.00; Tasmota, asked by
+  the tool with the USB pads attached, reads GPIO19 low and takes 1.02, so it
+  shows 235 V and 102 W of the 230 V, 100 W load. A real S60 on ESPHome has
+  been seen to take 1.02: the board does not hold the real board's pins.
 - **The CSE7761** (the Dual R3, the POWCT) answers at 38400 baud: reset, write
   enable and close, register reads and writes, each checked by its checksum,
   and its factory conversion coefficients with the checksum the firmware
