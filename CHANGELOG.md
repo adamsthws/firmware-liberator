@@ -51,6 +51,11 @@ check.
   the S60's always did, and the relay goes off five seconds later. A total that
   was counting at midnight with the device off starts the new day when the
   device is back; before, it carried on into it.
+- On ESPHome, every meter reports apparent power, reactive power and the power
+  factor, worked out each second as the S60's are, which Home Assistant leaves
+  off until you turn them on. New on the S61, the POW Elite, the POWCT (of its
+  clamp's circuit, as its power is) and both channels of the Dual R3
+  (`Apparent power 1`, `Power factor 2` ...).
 - What every device's ESPHome shares is in `devices/shared-esphome/`, included
   by each device's config rather than copied into it. A copy of a config you
   keep yourself needs that folder beside it

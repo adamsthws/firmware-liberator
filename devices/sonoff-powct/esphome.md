@@ -9,11 +9,15 @@ memory only.
 
 It switches the relay, from its button and over the network, and reports
 voltage, current and power, showing voltage and power on the display. Current
-and power are divided by π ([why](README.md#the-meters-clamp)). `Daily energy`,
-`Monthly energy`, `Yearly energy` and `Total energy`, counted from its power,
-are kept through restarts and updates; the first three start again each day,
-month and year. It has no overload switch-off: its clamp measures a circuit of
-its own, not the relay's load.
+and power are divided by π ([why](README.md#the-meters-clamp)). Apparent and
+reactive power and the power factor of the clamp's circuit are worked out as
+the S60's are ([how](../sonoff-s60/esphome.md#what-it-reports)), which Home
+Assistant leaves off until you turn them on; power, and so the power factor, is
+negative where the current flows the other way through the clamp. `Daily
+energy`, `Monthly energy`, `Yearly energy` and `Total energy`, counted from its
+power, are kept through restarts and updates; the first three start again each
+day, month and year. It has no overload switch-off: its clamp measures a circuit
+of its own, not the relay's load.
 
 The relay is off after a first start, and otherwise as it was before a power
 cut, unless you set its power-on state to `On` or `Off`. Its `Countdown`

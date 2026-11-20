@@ -1,6 +1,7 @@
 """Every device's ESPHome config and what they share (devices/shared-esphome/): each
 has the base, its family's Wi-Fi, each relay's settings, and each meter's
-totals and overload, and none keeps a copy of its own of any of them."""
+totals, overload and derived readings, and none keeps a copy of its own of any
+of them."""
 
 import re
 import unittest
@@ -15,6 +16,8 @@ ENERGY = re.compile(r'^  energy\w*: !include \{file: \.\./shared-esphome/energy-
                     r'vars: \{energy: (\w+), id_end: "(\w*)", name_end: "([^"]*)"\}\}$', re.M)
 OVERLOAD = re.compile(r'^  overload\w*: !include \{file: \.\./shared-esphome/overload\.yaml, vars: \{relay: (\w+), '
                       r'power: (\w+), id_end: "(\w*)", name_end: "([^"]*)", max: "(\d+)", default: "(\d+)"\}\}$', re.M)
+DERIVED = re.compile(r'^  derived\w*: !include \{file: \.\./shared-esphome/derived-power\.yaml, vars: \{voltage: (\w+), '
+                     r'current: (\w+), power: (\w+), id_end: "(\w*)", name_end: "([^"]*)"\}\}$', re.M)
 # A meter that does not measure its relay's own load, so has no overload.
 NO_OVERLOAD = {"sonoff-powct": "its clamp measures a circuit of its own"}
 # What a shared file holds, which no device's own config may hold again: the
@@ -28,6 +31,7 @@ SHARED_ONLY = {
     "relay.yaml": (r"power-on state", r"restore_mode: RESTORE_", r"name: \"?Countdown"),
     "energy-totals.yaml": (r'name: "(Daily|Monthly|Yearly|Total) energy', r"energy_\w+_wh\) \+="),
     "overload.yaml": (r'name: "Overload', r"overload_threshold"),
+    "derived-power.yaml": (r'name: "Apparent power', r'name: "(Reactive power|Power factor)', r"std::sqrt\(s \* s"),
 }
 
 
@@ -167,6 +171,62 @@ class MeterTests(unittest.TestCase):
                     self.assertRegex(config, rf"(?m)^\s+id: {power}$")
                     self.assertTrue(power.endswith(key))
                     self.assertLessEqual(int(default), int(most))
+
+    def test_every_meter_channel_has_its_derived_readings(self):
+        # Of every channel with energy totals, the POWCT's clamp too: its
+        # voltage, current and power are of the one circuit.
+        for device, config in self.meters().items():
+            derived = [(key, suffix) for *_, key, suffix in DERIVED.findall(config)]
+            with self.subTest(device=device):
+                self.assertEqual(derived, [(key, suffix) for _, key, suffix in ENERGY.findall(config)])
+                for voltage, current, power, key, _ in DERIVED.findall(config):
+                    for source in (voltage, current, power):
+                        self.assertRegex(config, rf"(?m)^\s+id: {source}$")
+                    self.assertTrue(current.endswith(key) and power.endswith(key))
+
+    def test_a_meter_averaged_on_timers_of_its_own_hands_each_reading_over(self):
+        # A CSE7766's voltage, current and power each average over a second
+        # from a moment of their own: worked out from the averages, a load
+        # changing within the second reads as reactive.
+        for device, config in self.meters().items():
+            if "platform: cse7766" in config:
+                with self.subTest(device=device):
+                    meter = re.search(r"(?ms)^  - platform: cse7766\n(.*?)(?=^  - |^\S|\Z)", config).group(1)
+                    for reading, hands in (("voltage", "id(derived_frame)[0] ="), ("power", "id(derived_frame)[1] ="),
+                                           ("current", "id(derived_reading).execute(")):
+                        part = re.search(rf"(?ms)^    {reading}:\n(.*?)(?=^    \w|\Z)", meter).group(1)
+                        self.assertIn(hands, part, reading)
+                        self.assertLess(part.index(hands), part.index("throttle_average"), reading)
+
+    def test_the_derived_readings_are_not_the_meters_own(self):
+        # A CSE7766's own come from its raw readings, and log each impossible
+        # one: many a second under a resistive load.
+        for device, config in self.meters().items():
+            with self.subTest(device=device):
+                self.assertNotRegex(config, r"(?m)^    (apparent_power|reactive_power|power_factor)\w*:")
+
+    def test_a_resistive_load_has_no_reactive_power_within_the_meters_accuracy(self):
+        # sqrt(S^2 - P^2) turns the meter's 1% between P and V*I on a heater
+        # into up to 15% of S: it read 0-148 var on a 1 kW radiator.
+        shared = (SHARED / "derived-power.yaml").read_text(encoding="utf-8")
+        self.assertIn("publish_state(s - a > 0.015f * s ? std::sqrt(s * s - a * a) : 0.0f);", shared)
+
+    def test_a_load_switching_gives_no_reactive_power(self):
+        # A 2 kW radiator's thermostat switching read up to 1782 var and a power
+        # factor of 0.66 for a second or three: the meter's power follows its
+        # current behind. Only a second like the last one gives them.
+        shared = (SHARED / "derived-power.yaml").read_text(encoding="utf-8")
+        derived = shared[shared.index("id(apparent_power${id_end}).publish_state(s);"):]
+        self.assertLess(derived.index("if (!steady) return;"), derived.index("id(reactive_power${id_end})"))
+        self.assertLess(derived.index("if (!steady) return;"), derived.index("id(power_factor${id_end})"))
+
+    def test_the_s60s_derived_readings_keep_their_names(self):
+        # Home Assistant keeps their history by name.
+        shared = (SHARED / "derived-power.yaml").read_text(encoding="utf-8")
+        for name in ("Apparent power", "Reactive power", "Power factor"):
+            self.assertIn(f'    name: "{name}${{name_end}}"\n', shared)
+        self.assertIn('vars: {voltage: voltage, current: current, power: power, id_end: "", name_end: ""}',
+                      configs()["sonoff-s60"])
 
     def test_a_total_is_added_to_by_each_rise_of_its_energy_and_starts_again_by_the_date(self):
         shared = (SHARED / "energy-totals.yaml").read_text(encoding="utf-8")

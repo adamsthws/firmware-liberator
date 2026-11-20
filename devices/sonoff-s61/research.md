@@ -69,7 +69,10 @@ Each firmware reads them back:
 | Sonoff's | 230.22 V, 0.43 A, 100.00 W | 230.22 V and nothing else |
 
 OpenBeken and ESPHome read a little high, from the firmware's clock in the
-emulator; Sonoff's firmware times each period by the chip's clock. Which way
+emulator; Sonoff's firmware times each period by the chip's clock. The voltage
+being further out than the power, ESPHome's voltage times current is 108-110 VA,
+6% over its power, so the resistive load reads 24-39 var and a power factor of
+0.94-0.98 there. Which way
 SEL selects was settled from three sources:
 OpenBeken's template (`SEL`, not `SEL_n`: voltage on high), Tasmota's BL0937
 driver (voltage on high unless the pin is `NRG_SEL_i`) and ESPHome's `hlw8012`

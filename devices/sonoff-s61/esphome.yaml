@@ -181,6 +181,7 @@ packages:
   relay: !include {file: ../shared-esphome/relay.yaml, vars: {relay: relay, name: "Relay", default: "true", countdown: "Countdown"}}
   energy: !include {file: ../shared-esphome/energy-totals.yaml, vars: {energy: energy, id_end: "", name_end: ""}}
   overload: !include {file: ../shared-esphome/overload.yaml, vars: {relay: relay, power: power, id_end: "", name_end: "", max: "4000", default: "3500"}}
+  derived: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current, power: power, id_end: "", name_end: ""}}
 
 switch:
   - id: relay
@@ -236,6 +237,7 @@ sensor:
     change_mode_every: 1
     current:
       name: "Current"
+      id: current
       filters:
         - lambda: |-
             const auto &c = id(calibration);
@@ -243,6 +245,7 @@ sensor:
             return c[0] * x * x / 1e7 + c[1] * x / 1e6 + c[2] / 1e6;
     voltage:
       name: "Voltage"
+      id: voltage
       filters:
         - lambda: |-
             const auto &c = id(calibration);

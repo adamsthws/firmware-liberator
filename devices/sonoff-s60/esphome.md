@@ -7,7 +7,8 @@ memory only.
 
 Home Assistant adopts a converted device from this config (`dashboard_import`).
 What every device has - Wi-Fi, the API, the relay's power-on state and
-countdown, the energy totals and overload - it includes from
+countdown, the energy totals, overload and the readings worked out from the
+meter's - it includes from
 [`devices/shared-esphome/`](../shared-esphome/README.md), which Home Assistant's
 builder fetches with it. It has no partition file: an app image does not hold
 the partition table, and the device keeps Sonoff's.
@@ -24,10 +25,11 @@ unless you change it) for five seconds, it switches the relay off, and the
 set.
 
 Apparent power, reactive power and the power factor are worked out each second
-from the same meter readings. Reactive power is 0 while power is within 1.5%
-of voltage times current, and it and the power factor change only in a second
-steady with the last, because a switching load's power follows its current a
-second or three behind.
+from the same meter readings, as on every device with a meter
+([`derived-power.yaml`](../shared-esphome/derived-power.yaml)). Reactive power
+is 0 while power is within 1.5% of voltage times current, and it and the power
+factor change only in a second steady with the last, because a switching load's
+power follows its current a second or three behind.
 
 Voltage, current and power are corrected as Sonoff's own firmware corrects
 them, and the diagnostic `Calibration` sensor says how:

@@ -65,6 +65,7 @@ packages:
   energy: !include {file: ../shared-esphome/energy-totals.yaml, vars: {energy: energy, id_end: "", name_end: ""}}
   # Its relay is rated 16 A: 3680 W at 230 V.
   overload: !include {file: ../shared-esphome/overload.yaml, vars: {relay: relay, power: power, id_end: "", name_end: "", max: "3680", default: "3680"}}
+  derived: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current, power: power, id_end: "", name_end: ""}}
 
 switch:
   - id: relay
@@ -135,16 +136,28 @@ sensor:
       name: "Current"
       id: current
       filters:
+        # Each reading handed to the derived readings, as it comes
+        # (devices/shared-esphome/derived-power.yaml): the meter gives current
+        # last, after the voltage and power below.
+        - lambda: |-
+            id(derived_reading).execute(x);
+            return x;
         - throttle_average: 1s
     voltage:
       name: "Voltage"
       id: voltage
       filters:
+        - lambda: |-
+            id(derived_frame)[0] = x;
+            return x;
         - throttle_average: 1s
     power:
       name: "Power"
       id: power
       filters:
+        - lambda: |-
+            id(derived_frame)[1] = x;
+            return x;
         - throttle_average: 1s
     energy:
       name: "Energy"

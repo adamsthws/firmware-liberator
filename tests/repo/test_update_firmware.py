@@ -25,7 +25,7 @@ class IncludedFilesTests(unittest.TestCase):
         self.assertIn("    - <nvs.h>\n", s60)
         self.assertEqual(uf.included(s60), ["../shared-esphome/base.yaml", "../shared-esphome/wifi-esp32.yaml",
                                             "../shared-esphome/relay.yaml", "../shared-esphome/energy-totals.yaml",
-                                            "../shared-esphome/overload.yaml"])
+                                            "../shared-esphome/overload.yaml", "../shared-esphome/derived-power.yaml"])
 
     def test_a_package_included_is_a_file_to_copy_once(self):
         config = ("packages:\n  a: !include {file: ../p.yaml, vars: {relay: relay}}\n"

@@ -69,6 +69,8 @@ packages:
   # Each channel's relay is rated 10 A, 2200 W; the two 15 A, 3300 W together.
   overload_1: !include {file: ../shared-esphome/overload.yaml, vars: {relay: relay, power: power_1, id_end: "_1", name_end: " 1", max: "2200", default: "2200"}}
   overload_2: !include {file: ../shared-esphome/overload.yaml, vars: {relay: relay_2, power: power_2, id_end: "_2", name_end: " 2", max: "2200", default: "2200"}}
+  derived_1: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current_1, power: power_1, id_end: "_1", name_end: " 1"}}
+  derived_2: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current_2, power: power_2, id_end: "_2", name_end: " 2"}}
 
 switch:
   - id: relay
@@ -122,10 +124,13 @@ sensor:
     update_interval: 5s
     voltage:
       name: "Voltage"
+      id: voltage
     current_1:
       name: "Current 1"
+      id: current_1
     current_2:
       name: "Current 2"
+      id: current_2
     active_power_1:
       name: "Power 1"
       id: power_1

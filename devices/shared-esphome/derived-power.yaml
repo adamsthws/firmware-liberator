@@ -1,0 +1,112 @@
+# One meter channel's apparent power, reactive power and power factor, worked
+# out each second from its voltage, current and power. A device's config
+# includes this once for each meter channel, naming it in vars:
+#
+#   voltage   its voltage sensor's id, in V
+#   current   its current sensor's id, in A
+#   power     its power sensor's id, in W
+#   id_end    what each id here ends with: "" for a device with one channel,
+#             else "_1", "_2"
+#   name_end  what each name ends with: "", else " 1", " 2"
+#
+# From the readings the device reports, calibrated where its meter is, not the
+# meter's own: a CSE7766 works those out from its raw readings, which a load
+# close to resistive takes past a power factor of 1, each then logged as
+# impossible, many times a second. Named as the S60's first builds named them,
+# so Home Assistant keeps their history; it leaves them off until they are
+# turned on.
+
+# Each of the meter's readings is handed over by a device that averages its
+# voltage, current and power each over a second, as a CSE7766's twenty a
+# second are: ESPHome starts each average's timer up to half a second from the
+# others, so the three averages are of different moments, and a load that
+# changes within the second would read as reactive. Handed over, each second's
+# are of the same readings. The device's voltage and power filters set
+# derived_frame, and its current's, given last, runs derived_reading with the
+# current. A meter that gives all three together and averages none (a
+# CSE7761's, a BL0937's) has its last readings taken instead.
+
+globals:
+  # The voltage and power of the reading being handed over.
+  - id: derived_frame${id_end}
+    type: std::array<float, 2>
+    initial_value: "{NAN, NAN}"
+  # The sums of power and of voltage times current over the readings handed
+  # over since the last second, and how many there were.
+  - id: derived_sums${id_end}
+    type: std::array<double, 3>
+    initial_value: "{0, 0, 0}"
+
+script:
+  - id: derived_reading${id_end}
+    parameters:
+      i: float
+    then:
+      - lambda: |-
+          const float v = id(derived_frame${id_end})[0], p = id(derived_frame${id_end})[1];
+          if (std::isnan(v) || std::isnan(i) || std::isnan(p)) return;
+          auto &m = id(derived_sums${id_end});
+          m[0] += p;
+          m[1] += std::max(0.0f, v * i);
+          m[2] += 1;
+
+sensor:
+  - platform: template
+    name: "Apparent power${name_end}"
+    id: apparent_power${id_end}
+    disabled_by_default: true
+    update_interval: never
+    unit_of_measurement: VA
+    accuracy_decimals: 1
+    device_class: apparent_power
+    state_class: measurement
+  - platform: template
+    name: "Reactive power${name_end}"
+    id: reactive_power${id_end}
+    disabled_by_default: true
+    update_interval: never
+    unit_of_measurement: var
+    accuracy_decimals: 1
+    device_class: reactive_power
+    state_class: measurement
+  - platform: template
+    name: "Power factor${name_end}"
+    id: power_factor${id_end}
+    disabled_by_default: true
+    update_interval: never
+    accuracy_decimals: 2
+    device_class: power_factor
+    state_class: measurement
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          float p, s;
+          auto &m = id(derived_sums${id_end});
+          if (m[2] > 0) {
+            p = m[0] / m[2];
+            s = m[1] / m[2];
+            m = {0, 0, 0};
+          } else {
+            const float v = id(${voltage}).state, i = id(${current}).state;
+            p = id(${power}).state;
+            if (std::isnan(v) || std::isnan(i) || std::isnan(p)) return;
+            s = std::max(0.0f, v * i);
+          }
+          id(apparent_power${id_end}).publish_state(s);
+          // As a load switches, the meter's power follows its current a second or
+          // three behind, either way: a second whose power or V*I is not within 5%
+          // (and 2 W) of the last one's is between loads, and keeps the last readings.
+          // A CSE7761's power is negative where the current flows the other way.
+          static float last_p = 0.0f, last_s = 0.0f;
+          const float a = std::fabs(p);
+          bool steady = std::fabs(a - last_p) <= 0.05f * std::max(a, last_p) + 2.0f &&
+                        std::fabs(s - last_s) <= 0.05f * std::max(s, last_s) + 2.0f;
+          last_p = a;
+          last_s = s;
+          if (!steady) return;
+          // On a resistive load the meter gets power within about 1% of V*I, which
+          // the root makes up to 15%: power within 1.5% is taken as no reactive power.
+          id(reactive_power${id_end}).publish_state(s - a > 0.015f * s ? std::sqrt(s * s - a * a) : 0.0f);
+          id(power_factor${id_end}).publish_state(s > 0.0f ? std::max(-1.0f, std::min(1.0f, p / s)) : a == 0.0f ? 1.0f : NAN);

@@ -13,7 +13,10 @@ Wi-Fi from the stock store at boot ([how it differs](#how-it-differs-from-the-s6
 The same entities, actions, calibration handling and energy totals as
 [the S60's](../sonoff-s60/esphome.md#what-it-reports), so the two devices look alike in
 Home Assistant. The `Calibration` sensor says `stock store`, `from backup` (given
-through `autoflash_calibration`, nine numbers) or `missing`.
+through `autoflash_calibration`, nine numbers) or `missing`. Apparent power,
+reactive power and the power factor are worked out each second from the last
+voltage, current and power; its meter gives voltage and current in turn, each
+every 4 s, so they follow a changed load a few seconds later than an S60's.
 
 ## Adopted into Home Assistant
 

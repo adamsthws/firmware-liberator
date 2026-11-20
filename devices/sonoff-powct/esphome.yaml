@@ -65,6 +65,9 @@ packages:
   relay: !include {file: ../shared-esphome/relay.yaml, vars: {relay: relay, name: "Relay", default: "false", countdown: "Countdown"}}
   # Its clamp measures a circuit of its own, not the relay's load: no overload.yaml.
   energy: !include {file: ../shared-esphome/energy-totals.yaml, vars: {energy: energy, id_end: "", name_end: ""}}
+  # Of the clamp's circuit, as its power is: the mains voltage it measures is
+  # that circuit's too.
+  derived: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current, power: power, id_end: "", name_end: ""}}
 
 switch:
   - id: relay
@@ -113,6 +116,7 @@ sensor:
     update_interval: 2s
     current_1:
       name: "Current"
+      id: current
       filters:
         # ESPHome's page for this device: the clamp reads pi times too much.
         - lambda: return x / M_PI;

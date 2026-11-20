@@ -277,7 +277,9 @@ itself is run: changing it needs no new image.
   falls behind the device's in the emulator: OpenBeken's uptime counted 67 s
   in 70 s of the device's time (seen by printing the device's time beside its
   log). The voltage being further out than the power is inferred to come from
-  its read windows losing more, each with 1.8 kHz of interrupts. Sonoff's
+  its read windows losing more, each with 1.8 kHz of interrupts. So ESPHome's
+  apparent power, voltage times current, is 108-110 VA, 6% over its power, and
+  the resistive load reads 24-39 var and a power factor of 0.94-0.98. Sonoff's
   firmware, timing the periods by the chip's clock, not its own, reports the
   load as it is to the stub: 230.22 V, 0.43 A and
   100.00 W with the relay on (switched through the stub's eWeLink, and asked
