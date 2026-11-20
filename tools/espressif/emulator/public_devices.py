@@ -82,7 +82,7 @@ def run(instance: int, source: str | None, firmware: str, save: str | None, log:
     args = [str(UNATTENDED), f"--instance={instance}", *([f"--from={source}"] if source else []), *extra,
             *([f"--save={save}"] if save else []), "--", "--firmware", firmware]
     log.parent.mkdir(parents=True, exist_ok=True)
-    started = time.time()
+    started, serial_from = time.time(), serial_size(instance)
     with open(log, "w", encoding="utf-8") as out:
         process = subprocess.Popen(args, stdout=out, stderr=subprocess.STDOUT)
         if stop_after:
@@ -95,14 +95,30 @@ def run(instance: int, source: str | None, firmware: str, save: str | None, log:
     said = result[-1] if result else f"exit {code}"
     if not (code == 0 and result and said.startswith("Converted")):
         return False, said
-    problem = checks_problem(instance, started, firmware, kind)
+    problem = checks_problem(instance, started, firmware, kind, serial_from)
     return problem is None, f"{said}, but {problem}" if problem else said
 
 
-def checks_problem(instance: int, since: float, firmware: str, kind: kinds.Kind | None) -> str | None:
+def serial_log(instance: int) -> Path:
+    """Emulator `instance`'s serial output, added to across its runs."""
+    from tools.espressif.emulator import fault_suite as fs
+    return fs.EMU / f"state-{instance}/logs/uart.log"
+
+
+def serial_size(instance: int) -> int:
+    try:
+        return serial_log(instance).stat().st_size
+    except OSError:
+        return 0
+
+
+def checks_problem(instance: int, since: float, firmware: str, kind: kinds.Kind | None,
+                   serial_from: int = 0) -> str | None:
     """What the end-of-run checks of the run on emulator `instance` since
     `since` found wrong, as the fault suites judge them
-    (fault_verdicts.checks_problem): the relay, and the meter `kind` has."""
+    (fault_verdicts.checks_problem): the relay, and the meter `kind` has,
+    with what the emulator is known to miss (fault_verdicts.known_miss) in its
+    serial output from `serial_from` (bytes) on."""
     from tools.espressif.emulator import fault_suite as fs
     from tools.repo import fault_verdicts
     state = fs.EMU / f"state-{instance}"
@@ -110,8 +126,15 @@ def checks_problem(instance: int, since: float, firmware: str, kind: kinds.Kind 
     outcomes = fault_verdicts.run_outcomes(state / "work/captures", since)
     if not logs:
         return "no run log"
+    try:
+        with open(serial_log(instance), "rb") as uart:
+            uart.seek(serial_from)
+            serial = uart.read().decode("utf-8", "replace")
+    except OSError:
+        serial = ""
     return fault_verdicts.checks_problem(logs[-1], firmware, fault_verdicts.meter_demand(kind),
-                                         outcomes[-1] if outcomes else None)
+                                         outcomes[-1] if outcomes else None,
+                                         fault_verdicts.known_miss(kind, firmware, serial))
 
 
 def step_done(saved: Path, step: str) -> bool:

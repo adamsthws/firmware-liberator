@@ -2905,16 +2905,19 @@ class Scenario:
             name = line.split()[-1]
             if ":" not in name and (not names or names[-1] != name):
                 names.append(name)
+        for network in re.findall(r"esp32_wifi: guest SoftAP (\S+) up", self.serial_text()):
+            if not networks or networks[-1] != network:
+                networks.append(network)
+        return names, networks
+
+    def serial_text(self):
+        """The device's serial output in this scenario; none where its log cannot be read."""
         try:
             with open(self.state / "logs/uart.log", "rb") as uart:
                 uart.seek(getattr(self, "uart_from", 0))
-                text = uart.read().decode("utf-8", "replace")
-            for network in re.findall(r"esp32_wifi: guest SoftAP (\S+) up", text):
-                if not networks or networks[-1] != network:
-                    networks.append(network)
+                return uart.read().decode("utf-8", "replace")
         except OSError:
-            pass
-        return names, networks
+            return ""
 
     def backup_whole(self):
         backups = list(fault_verdicts.records_under(self.state / "work").glob("*/sonoff-backup/flash.bin"))
@@ -2988,7 +2991,8 @@ class Scenario:
                     if "nothing to convert" not in results[-1][1] else None)
         outcomes = fault_verdicts.run_outcomes(self.state / "work/captures", self.started)
         checks = (fault_verdicts.checks_problem(logs[-1][2], target_final, fault_verdicts.meter_demand(DEVICE),
-                                                outcomes[-1] if outcomes else None)
+                                                outcomes[-1] if outcomes else None,
+                                                fault_verdicts.known_miss(DEVICE, target_final, self.serial_text()))
                   if converted and logs else None)
         if checks:
             self.notes["checks"] = checks

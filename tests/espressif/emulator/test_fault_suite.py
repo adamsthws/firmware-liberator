@@ -1778,7 +1778,7 @@ class EndChecksTests(unittest.TestCase):
 
     def verdict(self, checks, relay=None, target="sonoff", route="esphome>sonoff",
                 result="Converted", runs="--- a run\n", fault="deviceoff", arg=1, step="R1", release=None,
-                meter="On: 230 V, 100 W; off: 0 V, 0 W"):
+                meter="On: 230 V, 100 W; off: 0 V, 0 W", serial=""):
         # Back on Sonoff's the relay is switched through eWeLink; on any other
         # firmware the S60's emulated meter confirms it.
         relay = relay or ("Switches (through eWeLink)" if target == "sonoff" else "Switches (meter confirms)")
@@ -1790,6 +1790,8 @@ class EndChecksTests(unittest.TestCase):
                            f"[10:00:01]     Relay: {relay}\n[10:00:01]     Power meter: {meter}\n"
                            f"[10:00:02]     Checks passed: {checks}\n"
                            "[10:00:03] === run ended ===\n", encoding="utf-8")
+            (tmp / "state/logs").mkdir(parents=True)
+            (tmp / "state/logs/uart.log").write_text(serial, encoding="utf-8")
             log = tmp / "scenario.log"
             log.write_text(runs + "    Result:   Converted\n", encoding="utf-8")
             sc = fs.Scenario(24, {"id": f"{route}:{step}:{fault}-{arg}", "route": route, "step": step,
@@ -1885,6 +1887,17 @@ class EndChecksTests(unittest.TestCase):
         # A device with none has no meter to read: its relay switching passes.
         with mock.patch.object(fs, "DEVICE", fs.kinds.SONOFF_TH_ELITE):
             self.assertEqual(self.verdict("Pass", **dict(unread, relay="Switches"))["verdict"], "PASS")
+
+    def test_a_cse7761_tasmota_missed_is_named_as_the_emulator_miss_it_is(self):
+        unread = dict(target="tasmota", route="sonoff>tasmota", relay="Switches (meter unchanged)", meter="No readings")
+        failed = "the meter did not confirm the switch; Relay: Switches (meter unchanged); Power meter: No readings"
+        boot = "00:00:00.737 NRG: Init driver 19\n"
+        with mock.patch.object(fs, "DEVICE", fs.kinds.SONOFF_DUALR3):
+            row = self.verdict("Pass", serial=boot, **unread)
+            self.assertEqual((row["verdict"], row["notes"]["checks"]),
+                             ("FAIL-CHECKS", f"{failed}\n    {fs.fault_verdicts.CSE7761_MISSED}"))
+            found = self.verdict("Pass", serial=boot + "00:00:04.651 C61: CSE7761 found\n", **unread)
+            self.assertEqual((found["verdict"], found["notes"]["checks"]), ("FAIL-CHECKS", failed))
 
 
 class BadImageTests(unittest.TestCase):

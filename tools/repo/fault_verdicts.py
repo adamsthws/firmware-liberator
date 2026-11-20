@@ -89,6 +89,29 @@ def meter_demand(kind: kinds.Kind | None) -> str | None:
     return READS if kind.key in espressif_board.CLAMPS else CONFIRMS
 
 
+# A failure of the emulator's, not the firmware's: Tasmota looks for a CSE7761
+# once, about three seconds after it starts, with a timeout of the wall's
+# clock, and gives up on it until it next starts when an emulator under load
+# misses all three tries of that first read. Its serial log then has the
+# energy driver started (CSE7761_INIT) but no chip found after it, and the
+# meter reads nothing. Said beside the meter's failure, which stays one, to lead
+# back to the findings.
+CSE7761_INIT, CSE7761_FOUND = "NRG: Init driver 19", "C61: CSE7761 found"
+CSE7761_MISSED = ("known emulator miss: Tasmota's CSE7761 probe timed out under host load - "
+                  "tools/espressif/emulator/README.md#when-tasmota-misses-the-cse7761")
+
+
+def known_miss(kind: kinds.Kind | None, firmware: str, serial: str) -> str | None:
+    """The line to add to a meter's failure (checks_problem's `miss`) on a
+    device of `kind` on `firmware` whose serial output since its run began is
+    `serial`, where it is a miss the emulator is known for (CSE7761_MISSED);
+    None otherwise."""
+    wiring = espressif_board.Wiring.of(kind) if kind is not None else None
+    if firmware != "tasmota" or wiring is None or wiring.chip != "cse7761" or CSE7761_INIT not in serial:
+        return None
+    return CSE7761_MISSED if CSE7761_FOUND not in serial[serial.rfind(CSE7761_INIT):] else None
+
+
 def has_readings(meter: str | None) -> bool:
     """Whether a check's Power meter line (`meter`, as kept or as said) holds a
     reading with the relay on and one with it off."""
@@ -143,7 +166,8 @@ def unexpected(logs: Iterable[str], outcomes: Iterable[dict]) -> bool:
 SAID = {"passed": "Pass", "failed": "Fail", "not-run": "Not run"}
 
 
-def checks_problem(log: str, firmware: str, meter: str | None = None, outcome: dict | None = None) -> str | None:
+def checks_problem(log: str, firmware: str, meter: str | None = None, outcome: dict | None = None,
+                   miss: str | None = None) -> str | None:
     """What the end-of-run checks of the last run in `log` said, when they did
     not pass for a device on `firmware`: "Checks passed: Fail; Relay: did not
     switch". None when they passed, or the run gave no report (a device already
@@ -155,7 +179,8 @@ def checks_problem(log: str, firmware: str, meter: str | None = None, outcome: d
     fault_verdicts.run_outcomes, which a run that reported wrote as it did),
     as the run judged its checks; from the report's words in the log only for
     a run that kept no checks there - an earlier release's - and for the
-    meter's line, where an earlier release kept none."""
+    meter's line, where an earlier release kept none. `miss`: a line said
+    on a line of its own after the meter's failure alone (known_miss)."""
     run = last_run(log)
     checks = (outcome or {}).get("checks")
     lines = POWER_METER.findall(run)
@@ -178,7 +203,7 @@ def checks_problem(log: str, firmware: str, meter: str | None = None, outcome: d
     # its meter has no switch to show.
     if meter is None or firmware == "sonoff" or (relay or "").lower() == report.MOTOR_MODE:
         return None
-    said += f"; Power meter: {read or 'not said'}"
+    said += f"; Power meter: {read or 'not said'}" + (f"\n    {miss}" if miss else "")
     if meter == CONFIRMS and not confirms:
         return f"the meter did not confirm the switch; {said}"
     if meter == READS and not has_readings(read):

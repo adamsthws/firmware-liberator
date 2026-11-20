@@ -80,6 +80,34 @@ class EndChecksTests(unittest.TestCase):
                                                        "tasmota", fault_verdicts.READS),
                          "the meter had no readings; Relay: Switches; Power meter: not said")
 
+    def test_tasmota_missing_its_cse7761_is_named_as_the_emulator_miss_it_is(self):
+        """tools/espressif/emulator/README.md#when-tasmota-misses-the-cse7761"""
+        boot = "00:00:00.737 NRG: Init driver 19\n00:00:01.100 WIF: Connecting\n"
+        found = boot + "00:00:04.651 C61: CSE7761 found\n"
+        missed = fault_verdicts.CSE7761_MISSED
+        self.assertEqual(fault_verdicts.known_miss(kinds.SONOFF_DUALR3, "tasmota", boot), missed)
+        self.assertEqual(fault_verdicts.known_miss(kinds.SONOFF_POWCT, "tasmota", boot), missed)  # its own CSE7761
+        self.assertEqual(fault_verdicts.known_miss(kinds.SONOFF_DUALR3, "tasmota", found + boot), missed)  # last boot
+        self.assertIsNone(fault_verdicts.known_miss(kinds.SONOFF_DUALR3, "tasmota", found))
+        self.assertIsNone(fault_verdicts.known_miss(kinds.SONOFF_DUALR3, "tasmota", ""))
+        self.assertIsNone(fault_verdicts.known_miss(kinds.SONOFF_DUALR3, "esphome", boot))
+        self.assertIsNone(fault_verdicts.known_miss(kinds.SONOFF_S60, "tasmota", boot))  # a CSE7766
+        self.assertIsNone(fault_verdicts.known_miss(kinds.SONOFF_TH_ELITE, "tasmota", boot))  # no meter
+        self.assertIsNone(fault_verdicts.known_miss(kinds.SONOFF_S61, "tasmota", boot))  # a Beken
+        self.assertIsNone(fault_verdicts.known_miss(None, "tasmota", boot))
+
+        unchanged = run_log("    Relay: Switches (meter unchanged)", "    Power meter: No readings",
+                            "    Checks passed: Pass")
+        self.assertEqual(fault_verdicts.checks_problem(unchanged, "tasmota", fault_verdicts.CONFIRMS, miss=missed),
+                         "the meter did not confirm the switch; Relay: Switches (meter unchanged); "
+                         f"Power meter: No readings\n    {missed}")
+        # Said only beside the meter's failure: any other reads as it did.
+        confirms = run_log("    Relay: Switches (meter confirms)", "    Checks passed: Pass")
+        self.assertIsNone(fault_verdicts.checks_problem(confirms, "tasmota", fault_verdicts.CONFIRMS, miss=missed))
+        failed = run_log("    Relay: Did not switch", "    Checks passed: Fail")
+        self.assertEqual(fault_verdicts.checks_problem(failed, "tasmota", fault_verdicts.CONFIRMS, miss=missed),
+                         "Checks passed: Fail; Relay: Did not switch")
+
     def test_each_kind_with_a_meter_is_held_to_it(self):
         for kind in kinds.ALL:
             demand = fault_verdicts.meter_demand(kind)

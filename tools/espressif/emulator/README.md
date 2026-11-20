@@ -257,7 +257,7 @@ fire sooner instead. Ship it only if, on the classic ESP32:
 5. the bridge's first start passes without its task watchdog.
 
 It would also end the CSE7761 reads Tasmota misses
-([the board's CSE7761](#the-devices-board-boardpy)): tried on 20 November 2026
+([when Tasmota misses the CSE7761](#when-tasmota-misses-the-cse7761)): tried on 20 November 2026
 with `-icount shift=3,sleep=on` added to QEMU's command line, a Dual R3's
 Tasmota route passed 11 times in 11 and Tasmota asked again for 6 of 11,524
 reads rather than one in five. It took 483 to 524 s with six emulators on
@@ -390,22 +390,31 @@ every second.
   timing: the board answers within about 0.1 ms, and QEMU takes the answer
   from it within 0.2 ms half the time, over 5 ms about once in a hundred,
   inside the 6 ms Tasmota gives a CSE7761, which a classic ESP32 meets with
-  `patches/0006`. What still misses is the firmware's own side, timed by a
-  clock that is the wall's ([`-icount`, under the fork](#the-fork-patchespatch)):
-  Tasmota asks from its energy ticker, in the `esp_timer` task on CPU 0, while
-  UART2's interrupt, which moves the answer into the buffer the ticker reads,
-  is on CPU 1, and the emulator can run that path slower than 6 ms of the
-  wall. On 20 November 2026 Tasmota asked again for one read in twenty with
-  nothing else running and one in five with four to six emulators on eight
-  cores, most while the tool's Berry commands read the flash or the firmware
-  started slowly. It looks for the chip once, about three seconds after it
-  starts, and gives up on it when all three tries of its first read miss, as
-  on a Dual R3 that day: the boot after a panic took 9 s
-  to reach the Wi-Fi rather than 2.7, logged `NRG: Init driver 19` but no
-  `C61: CSE7761 found`, and read 0 V, 0 W until it restarted. The end-of-run
-  check then fails, as it should: that firmware read nothing. Two Tasmota
-  routes in 36 did so with six emulators on eight cores, none in 30 with one
-  for every two cores; run the check again before suspecting the meter.
+  `patches/0006`. What still misses is the firmware's own side:
+  [below](#when-tasmota-misses-the-cse7761).
+
+#### When Tasmota misses the CSE7761
+
+Tasmota times its side of a CSE7761 read by a clock that is the wall's
+([`-icount`, under the fork](#the-fork-patchespatch)): it asks from its energy
+ticker, in the `esp_timer` task on CPU 0, while UART2's interrupt, which moves
+the answer into the buffer the ticker reads, is on CPU 1, and the emulator can
+run that path slower than 6 ms of the wall. On 20 November 2026 Tasmota asked
+again for one read in twenty with nothing else running and one in five with
+four to six emulators on eight cores, most while the tool's Berry commands
+read the flash or the firmware started slowly. It looks for the chip once,
+about three seconds after it starts, and gives up on it when all three tries
+of its first read miss, as on a Dual R3 that day: the boot after a panic took
+9 s to reach the Wi-Fi rather than 2.7, logged `NRG: Init driver 19` but no
+`C61: CSE7761 found`, and read 0 V, 0 W until it restarted. The end-of-run
+check then fails, as it should: that firmware read nothing. Two Tasmota routes
+in 36 did so with six emulators on eight cores, none in 30 with one for every
+two cores; run the check again before suspecting the meter.
+
+Such a failure says so: where a Tasmota device with a CSE7761 fails its
+meter's check and its serial output has the driver started but no chip found
+after it, the failure adds a line naming this miss and pointing here
+(`CSE7761_MISSED` in `tools/repo/fault_verdicts.py`). It is still a failure.
 
 ### The browser forward (`container/bin/browser-forward`)
 
