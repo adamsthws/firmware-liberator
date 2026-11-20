@@ -1266,8 +1266,9 @@ start on the instance given (`earlier_on`). `list openbeken` gives the six scena
 build must pass ([updating-firmware.md](updating-firmware.md#5-test)).
 `check` runs each final firmware with no faults, installed from Sonoff's
 firmware and then each taken to the other, and holds each way to the
-end-of-run checks too, on emulators 1 and 2 unless `--instances` names two
-others. It is what `tools/repo/emulator_check.py DEVICE` runs for each Beken
+end-of-run checks too, and, on the S61's ESPHome, to its button toggling the
+relay ([why not on OpenBeken](../tools/beken/emulator/README.md#the-devices-board-boardpy)),
+on emulators 1 and 2 unless `--instances` names two others. It is what `tools/repo/emulator_check.py DEVICE` runs for each Beken
 device: the S61 from its public dump, the Basic Gen5 from a flash rebuilt
 from that dump and the Basic Gen5's official file, each with its logs in
 `captures/emulation/device-check/DEVICE/`. To check both on one computer at

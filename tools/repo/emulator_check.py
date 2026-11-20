@@ -15,7 +15,9 @@ for every device the tool converts, so a new one has it by being added.
         Espressif device from its public dump on the cloud stub, an S61 from
         upstream's public dump, and a Beken device with no public dump from a
         flash rebuilt from the S61's and its official update file
-        (rebuilt_flash).
+        (rebuilt_flash). On the firmware each way ends on, the device's
+        button and wall switches are pressed, each to switch its relay
+        (Device.inputs_problem).
     .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [calibrated] [--instances 1,2]
         the same for a device with a motor mode, from its test copy set up to
         drive a motor (public_dump.MOTOR_COPIES; calibrated: its travel timed
@@ -23,7 +25,8 @@ for every device the tool converts, so a new one has it by being added.
         the travel and direction carried across, driving the motor that way,
         its outputs never on together and both off after a power cut
         (motor_problem); the first firmware of each way then set to another
-        travel and direction (moved_setup), which the next must carry across
+        travel and direction (moved_setup), which the next must carry across, and the motor
+        moved and stopped by its wall switches and button
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds, motor as motor_setup  # noqa: E402
-from tools.repo import emulator_stats  # noqa: E402
+from tools.repo import emulator_buttons, emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
 # publishes it, and the variable that says where the tool pulls it from.
@@ -102,8 +105,9 @@ def jobs(changed: list[str] | None) -> list[dict[str, str]]:
 def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:
     """An Espressif device from its public dump, on the cloud stub: with
     `motor`, that test copy of it that drives a motor, each firmware then put
-    to motor_problem."""
-    from tools.espressif.emulator import public_dump, public_devices
+    to motor_problem; in relay mode, the firmware each way ends on to
+    espressif_inputs_problem."""
+    from tools.espressif.emulator import fault_suite, public_dump, public_devices
 
     public_dump.make(kind.key, motor)
     dump = public_dump.recipe(kind.key, motor)
@@ -120,27 +124,42 @@ def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -
     def way(instance: int, firmwares: tuple[str, ...]) -> int:
         saved, wanted = None, carried
         for firmware in firmwares:
-            keep = f"check-{kind.key}-{instance}-{firmware}"
+            # The last run of a way in relay mode leaves the device running
+            # for its inputs to be pressed; any other is kept for the next.
+            last = firmware == firmwares[-1] and not motor
+            keep = None if last else f"check-{kind.key}-{instance}-{firmware}"
             log = folder / f"{instance}-{firmware}.log"
             began = time.time()
-            converted, said = public_devices.run(instance, saved, firmware, keep, log,
-                                               extra=(*stub, *(() if saved else ("--fresh",))), kind=kind)
+            converted, said = public_devices.run(instance, saved, firmware, keep, log, kind=kind,
+                                               extra=(*stub, *(() if saved else ("--fresh",)),
+                                                      *(("--keep",) if last else ())))
             start = f"on {saved.rsplit('-', 1)[1]}" if saved else "from Sonoff's"
             print(f"{'PASS' if converted else 'FAIL'}  {kind.key} {start} to {firmware}: {said}", flush=True)
             emulator_stats.check_run(folder, family=kind.family, device=kind.key,
                                      route=f"{saved.rsplit('-', 1)[1] if saved else 'sonoff'}>{firmware}",
                                      passed=converted, seconds=round(time.time() - began), cloud="stub")
             if not converted:
+                if last:
+                    subprocess.run(["docker", "stop", fault_suite.name(instance)], capture_output=True, check=False)
                 return 1
+            if last:
+                problem = espressif_inputs_problem(kind, instance, firmware)
+                if problem != NO_INPUTS:
+                    print(f"{'FAIL' if problem else 'PASS'}  {kind.key} on {firmware} follows its button"
+                          f"{' and wall switches' if board_inputs(kind)['switches'] else ''}: "
+                          f"{problem or 'each press and each change switched its relay'}", flush=True)
+                if problem not in (None, NO_INPUTS):
+                    return 1
             if motor:
                 # Where another firmware follows, this one is then set to
                 # moved_setup and kept so, for the next to carry across from
                 # it rather than from the backup.
                 then = moved_setup(wanted) if firmware != firmwares[-1] else None
                 problem = motor_problem(instance, keep, firmware, stub, folder / f"{instance}-{firmware}-motor.log",
-                                        wanted, then)
+                                        wanted, then, board_inputs(kind))
                 done = f"set to {wanted.open:g} s and {wanted.close:g} s, {'' if wanted.reversed else 'not '}" \
-                       "reversed, its outputs interlocked, both off after a power cut" + \
+                       "reversed, its outputs interlocked, both off after a power cut, moved and stopped by its wall " \
+                       "switches and button" + \
                        (f"; then set to {then.open:g} s, {'' if then.reversed else 'not '}reversed" if then else "")
                 print(f"{'FAIL' if problem else 'PASS'}  {kind.key} on {firmware} drives its motor: "
                       f"{problem or done}", flush=True)
@@ -194,8 +213,38 @@ def moved_setup(carried: motor_setup.Setup) -> motor_setup.Setup:
     return motor_setup.Setup(MOVED_TRAVEL, MOVED_TRAVEL, not carried.reversed)
 
 
+def board_inputs(kind: kinds.Kind) -> dict[str, tuple[int, ...]]:
+    """An Espressif device's buttons and wall switches, as its board has them."""
+    from tools.espressif.emulator import board
+    return board.inputs(kind)
+
+
+# What espressif_inputs_problem says of a device with no button nor wall switch.
+NO_INPUTS = "nothing to press"
+
+
+def espressif_inputs_problem(kind: kinds.Kind, instance: int, firmware: str) -> str | None:
+    """What is wrong with how `kind`, on `firmware` in Espressif emulator
+    `instance`, left running by its run, follows its button and wall switches
+    (Device.inputs_problem); None if nothing, NO_INPUTS for a device with
+    neither. The emulator is stopped after."""
+    from tools.espressif.emulator import board, fault_suite
+    container = fault_suite.name(instance)
+    try:
+        pins = board.inputs(kind)
+        if not any(pins.values()):
+            return NO_INPUTS
+        device = Device(f"127.0.0.1:{8080 + instance}", firmware)
+        if not device.answers():
+            return "the device did not answer after its run"
+        return device.inputs_problem(board.buttons(container), pins)
+    finally:
+        subprocess.run(["docker", "stop", container], capture_output=True, check=False)
+
+
 def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...], log: Path,
-                  wanted: motor_setup.Setup = motor_setup.DEFAULT, then: motor_setup.Setup | None = None) -> str | None:
+                  wanted: motor_setup.Setup = motor_setup.DEFAULT, then: motor_setup.Setup | None = None,
+                  pins: dict[str, tuple[int, ...]] | None = None) -> str | None:
     """What is wrong with how the device kept as `saved`, on `firmware`, drives
     its motor; None if nothing. It is started again from where the run left
     it, left running (--keep) for this, and stopped after: it is set to the
@@ -203,7 +252,8 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
     one way (the emulated meter shows that output's load, and no other) -
     output 2 opening where reversed; asked the other way while moving, the
     first is off before the second is on; and, one on, a power cut leaves
-    both off. With `then`, the firmware is then set to it through its own
+    both off; and its wall switches and button on `pins` move it and stop it
+    (MotorDevice.inputs_problem). With `then`, the firmware is then set to it through its own
     settings, seen to keep it through a power cut, and the device kept as
     `saved` again so, for the next conversion to start from. What it saw is
     in `log`, after the run's own output."""
@@ -225,6 +275,9 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
             if not device.answers():
                 return "the device did not answer after its run"
             problem = device.problem(power_cut, wanted)
+            if not problem and pins:
+                from tools.espressif.emulator import board
+                problem = device.inputs_problem(board.buttons(container), pins, wanted)
             if problem or then is None:
                 return problem
             problem = device.set_to(then, power_cut)
@@ -241,10 +294,21 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
         subprocess.run(["docker", "stop", container], capture_output=True, check=False)
 
 
-class MotorDevice:
-    """A device on Tasmota or ESPHome that drives a motor, through its web page
-    as the emulator's browser port gives it: each moved, which way its
-    firmware says the motor is moving, and which outputs are on meanwhile."""
+# How long a firmware is given to show what a press or a wall switch did (s),
+# asked every LOOK_EVERY.
+SHOWS_WITHIN, LOOK_EVERY = 6.0, 0.25
+# How long after a press shows before the next: more than Tasmota waits for a
+# second press of a double press (SetOption13 off), so each is a press of its own.
+BETWEEN_PRESSES = 1.5
+
+
+class Device:
+    """A device on Tasmota, OpenBeken or ESPHome, through its web page at
+    `address`: its relays, and how it takes the board's buttons and wall
+    switches as the emulator presses them (emulator_buttons)."""
+
+    # The page that answers once the firmware is up.
+    PAGES = {"esphome": "/"}
 
     def __init__(self, address: str, firmware: str, note=lambda text: None) -> None:
         self.address, self.firmware, self.note = address, firmware, note
@@ -271,10 +335,66 @@ class MotorDevice:
     def answers(self, within: float = BACK_WITHIN) -> bool:
         started = time.monotonic()
         while time.monotonic() - started < within:
-            if self.get("/cm?cmnd=Power" if self.firmware == "tasmota" else "/cover/Motor"):
+            if self.get(self.PAGES.get(self.firmware, "/cm?cmnd=Power")):
                 return True
             time.sleep(3)
         return False
+
+    def relay(self, n: int) -> bool | None:
+        """Whether relay `n` (1 the first) is on, as the firmware says; None
+        where it cannot be read. Tasmota and OpenBeken name a single relay
+        POWER, more POWER1, POWER2..."""
+        if self.firmware == "esphome":
+            body = self.get("/switch/" + urllib.parse.quote("Relay" if n == 1 else f"Relay {n}"))
+            try:
+                value = json.loads(body)["value"] if body else None
+            except (ValueError, KeyError, TypeError):
+                return None
+            return value if isinstance(value, bool) else None
+        states = self.tasmota(f"Power{n}")
+        state = states.get(f"POWER{n}", states.get("POWER") if n == 1 else None)
+        return state == "ON" if state in ("ON", "OFF") else None
+
+    def relay_becomes(self, n: int, wanted: bool | None = None) -> bool | None:
+        """Relay `n` once it reads `wanted` - with None, once it reads at all,
+        as a firmware busy with the last change may not answer - or as it last
+        read after SHOWS_WITHIN."""
+        found = None
+        for _ in range(int(SHOWS_WITHIN / LOOK_EVERY)):
+            found = self.relay(n)
+            if found is wanted or (wanted is None and found is not None):
+                break
+            time.sleep(LOOK_EVERY)
+        return found
+
+    def inputs_problem(self, buttons: emulator_buttons.Buttons, pins: dict[str, tuple[int, ...]]) -> str | None:
+        """What is wrong with how the device's relays follow its inputs; None
+        if nothing: its first button pressed toggles the first relay, each
+        press; each wall switch toggles its own relay each time it changes,
+        closed and opened again (the Dual R3's S1 and S2)."""
+        steps = [(pin, 1, "press") for pin in pins["buttons"][:1]] * 2
+        steps += [(pin, n, how) for n, pin in enumerate(pins["switches"], 1) for how in ("close", "open")]
+        for pin, relay, how in steps:
+            what = {"press": "its button pressed", "close": f"wall switch {relay} closed",
+                    "open": f"wall switch {relay} opened"}[how]
+            before = self.relay_becomes(relay)
+            if before is None:
+                return f"relay {relay} could not be read before {what}"
+            {"press": buttons.press, "close": buttons.hold, "open": buttons.release}[how](pin)
+            after = self.relay_becomes(relay, not before)
+            if after is None or after == before:
+                found = "could not be read" if after is None else f"stayed {'on' if before else 'off'}"
+                return f"relay {relay} {found} with {what} (GPIO{pin})"
+            time.sleep(BETWEEN_PRESSES)
+        return None
+
+
+class MotorDevice(Device):
+    """A device on Tasmota or ESPHome that drives a motor, through its web page
+    as the emulator's browser port gives it: each moved, which way its
+    firmware says the motor is moving, and which outputs are on meanwhile."""
+
+    PAGES = {"esphome": "/cover/Motor"}
 
     def set_travel(self, reversed: bool | None) -> str | None:
         """The travel times set to TRAVEL_OPEN and TRAVEL_CLOSE, and seen set,
@@ -404,6 +524,62 @@ class MotorDevice:
         if len(counted) > 1:
             return f"the outputs changed while it moved: {sorted(counted)}"
         return counted.pop() if counted else "the motor stopped before its outputs could be read"
+
+    def inputs_problem(self, buttons: emulator_buttons.Buttons, pins: dict[str, tuple[int, ...]],
+                       wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
+        """What is wrong with how the motor follows the board's inputs, the
+        travel as `problem` left it; None if nothing: wall switch 1 closed
+        opens it and opened again stops it, wall switch 2 the same closing it -
+        output 2 opening where reversed, as in `problem` - and the button
+        pressed sets it moving one way and pressed again stops it; never both
+        outputs on. The outputs are read while the firmware says the motor
+        moves (driving), the close twice the open's travel (TRAVEL_CLOSE)."""
+        swapped = bool(wanted.reversed) and self.firmware == "esphome"
+        for n, (pin, way, on) in enumerate(zip(pins["switches"], ("open", "close"), ((True, False), (False, True))), 1):
+            self.note(f"wall switch {n} closed")
+            buttons.hold(pin)
+            found = self.driving(way)
+            if isinstance(found, str) or found != (on[::-1] if swapped else on):
+                return f"wall switch {n} (GPIO{pin}) closed to {way}: {found}"
+            self.note(f"wall switch {n} opened")
+            buttons.release(pin)
+            problem = self.stops()
+            if problem:
+                return f"wall switch {n} opened again: {problem}"
+        pin = pins["buttons"][0]
+        self.note("the button pressed")
+        buttons.press(pin)
+        way = self.starts()
+        found = self.driving(way) if way else "the motor did not start"
+        if isinstance(found, str) or found not in ((True, False), (False, True)):
+            return f"its button (GPIO{pin}) pressed: {found}"
+        time.sleep(BETWEEN_PRESSES)
+        self.note("the button pressed again")
+        buttons.press(pin)
+        problem = self.stops()
+        return f"its button pressed again: {problem}" if problem else None
+
+    def starts(self) -> str | None:
+        """Which way the motor starts to move within STARTS_WITHIN, as the
+        firmware says; None if it does not."""
+        started = time.monotonic()
+        while (way := self.moving()) not in ("open", "close"):
+            if time.monotonic() - started > STARTS_WITHIN:
+                return None
+            time.sleep(0.5)
+        return way
+
+    def stops(self) -> str | None:
+        """What is wrong where the motor, just asked to stop, does not: the
+        firmware saying it still moves after STARTS_WITHIN, or an output on
+        once it says it is still; None if nothing."""
+        started = time.monotonic()
+        while (way := self.moving()) is not None:
+            if time.monotonic() - started > STARTS_WITHIN:
+                return "the motor did not stop" if way != UNANSWERED else "the firmware stopped answering"
+            time.sleep(0.5)
+        found = self.settled()
+        return None if found == (False, False) else f"the outputs read {found}, not both off"
 
     def setup(self) -> motor_setup.Setup:
         """The travel times and direction the firmware is set to."""

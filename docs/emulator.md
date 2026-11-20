@@ -505,7 +505,13 @@ A pin still named when the device starts again is held from its start, as a
 button held while the device is plugged in. Which pins a device's buttons and
 switches are is its board's `inputs()`
 ([Espressif](../tools/espressif/emulator/board.py), from its Tasmota template;
-[Beken](../tools/beken/emulator/board.py)).
+[Beken](../tools/beken/emulator/board.py)). `emulator_check.py` presses them
+on every firmware a check ends on but OpenBeken, which does not see its button
+in the emulator yet
+([why](../tools/beken/emulator/README.md#the-devices-board-boardpy)): the
+button toggles the relay, each wall switch its own relay each time it changes,
+and on a Dual R3 in motor mode (`--motor`) wall switch 1 opens and 2 closes,
+each stopping the motor when opened again, and the button starts and stops it.
 
 ### On Windows
 

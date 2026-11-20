@@ -100,7 +100,7 @@ class PublicDevicesTests(unittest.TestCase):
         events, lock = [], threading.Lock()
         second_started = threading.Event()
 
-        def fake_run(instance, source, firmware, save, log, kind):
+        def fake_run(instance, source, firmware, save, log, kind, extra=()):
             with lock:
                 events.append(("start", source))
             if source == "public-on-esphome":
@@ -120,7 +120,9 @@ class PublicDevicesTests(unittest.TestCase):
             out = io.StringIO()
             with mock.patch.object(public_devices, "SAVED", saved), \
                     mock.patch.object(public_devices, "LOGS", saved / "logs"), \
-                    mock.patch.object(public_devices, "run", side_effect=fake_run), redirect_stdout(out):
+                    mock.patch.object(public_devices, "run", side_effect=fake_run), \
+                    mock.patch("tools.repo.emulator_check.espressif_inputs_problem", return_value=None) as pressed, \
+                    redirect_stdout(out):
                 code = public_devices.command_test(argparse.Namespace(instances=[1, 2]))
         self.assertEqual(code, 1)
         self.assertLess(events.index(("start", "public-on-esphome")),
@@ -129,7 +131,9 @@ class PublicDevicesTests(unittest.TestCase):
         said = out.getvalue()
         self.assertIn("FAIL  public-pre-final-tasmota to tasmota: exit 1", said)
         self.assertIn("SKIP  public-on-tasmota to esphome: the run before it failed", said)
-        self.assertIn("PASS  public-on-esphome to tasmota: Converted", said)
+        self.assertIn("PASS  public-on-esphome to tasmota: Converted, and its button switched its relay", said)
+        # The device a way ends with, pressed as it was left running.
+        pressed.assert_called_once_with(kinds.SONOFF_S60, 2, "tasmota")
         self.assertIn("1 failed", said)
 
 

@@ -590,7 +590,7 @@ class CheckTests(unittest.TestCase):
             self.assertEqual(fault_suite.check_way(1, ("sonoff>openbeken",)), 1)
         self.assertIn("FAIL  sonoff>openbeken: Checks passed: False", out.getvalue())
 
-    def way_with_meter_unchanged(self, kind):
+    def way_with_meter_unchanged(self, kind, button=None, route="sonoff>openbeken"):
         import io
         from contextlib import redirect_stdout
         from unittest import mock
@@ -600,14 +600,27 @@ class CheckTests(unittest.TestCase):
                            dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log)
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
                 mock.patch.object(fault_suite, "Instance", return_value=device), \
+                mock.patch.object(fault_suite, "inputs_problem", return_value=button) as pressed, \
+                mock.patch.object(fault_suite, "interim_problems", return_value=[]), \
                 mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
-            return fault_suite.check_way(1, ("sonoff>openbeken",)), out.getvalue()
+            found = fault_suite.check_way(1, (route,)), out.getvalue()
+        if found[0] == 0 and route.endswith("esphome"):
+            pressed.assert_called_once_with(device, "esphome")
+        return found
 
     def test_a_way_on_a_device_without_a_meter_passes_with_it_unchanged(self):
         self.assertEqual(self.way_with_meter_unchanged("sonoff-basic-1gs"), (0, "PASS  sonoff>openbeken\n"))
+        self.assertEqual(self.way_with_meter_unchanged("sonoff-basic-1gs", route="sonoff>esphome"),
+                         (0, "PASS  sonoff>esphome\nPASS  sonoff>esphome, its button: each press switched its relay\n"))
         status, said = self.way_with_meter_unchanged("sonoff-s61")
         self.assertEqual(status, 1)
         self.assertIn("FAIL  sonoff>openbeken: the meter did not confirm the switch", said)
+
+    def test_a_way_whose_firmware_did_not_follow_its_button_has_failed(self):
+        status, said = self.way_with_meter_unchanged("sonoff-basic-1gs", "relay 1 stayed off with its button pressed",
+                                                     "sonoff>esphome")
+        self.assertEqual(status, 1)
+        self.assertIn("FAIL  sonoff>esphome, its button: relay 1 stayed off with its button pressed", said)
 
     def test_each_of_its_routes_is_one_the_tool_has(self):
         for way in fault_suite.CHECK_WAYS:

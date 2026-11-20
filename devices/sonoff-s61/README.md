@@ -8,8 +8,10 @@
 
 **In the emulator:** it converts in every direction, faults and all, from the
 public dump of a real one ([the fault suite](../../docs/testing.md#the-beken-fault-suite)).
-The emulator has its meter, measuring a load while the relay pin is on, but no
-relay, button or LEDs.
+The emulator has its meter, measuring a load while the relay pin is on, and
+its button, but no relay or LEDs: on ESPHome each press of the button toggled
+the relay; OpenBeken does not see the button in the emulator yet
+([why](../../tools/beken/emulator/README.md#the-devices-board-boardpy)).
 
 **Worth checking:** whether it came back on your Wi-Fi, and whether the relay,
 button, LEDs and meter work.

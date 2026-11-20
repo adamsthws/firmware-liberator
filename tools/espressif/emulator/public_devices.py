@@ -12,8 +12,9 @@
     python -I tools/espressif/emulator/public_devices.py test
         from those, the final firmware firmware.json pins, both ways: each
         installed (F2 to H1, I1 and I2), then each device taken to the other
-        (L1 to I2, X1 to H1). No cloud, real or stub, no account and nothing
-        of Sonoff's: docs/updating-firmware.md.
+        (L1 to I2, X1 to H1), where its button is pressed, each press to
+        toggle the relay. No cloud, real or stub, no account and nothing of
+        Sonoff's: docs/updating-firmware.md.
 
     python -I tools/espressif/emulator/public_devices.py publish --stock DIR
         shown public again (sanitise_device.prove, against the real backup),
@@ -227,9 +228,19 @@ def command_test(args: argparse.Namespace) -> int:
                          total=sum(map(len, WAYS)), planned=sum(map(len, WAYS)), cloud="none", workers=len(WAYS))
 
     def way(instance: int, runs: list) -> int:
+        from tools.repo import emulator_check
         for n, (source, firmware, keep) in enumerate(runs):
             began = time.time()
-            ok, said = run(instance, source, firmware, keep, LOGS / f"test-{source}-to-{firmware}.log", kind=device)
+            # The device a way ends with is left running, for its button to be pressed.
+            ok, said = run(instance, source, firmware, keep, LOGS / f"test-{source}-to-{firmware}.log", kind=device,
+                           extra=() if keep else ("--keep",))
+            if not keep and ok:
+                problem = emulator_check.espressif_inputs_problem(device, instance, firmware)   # and stopped
+                said = f"{said}, but {problem}" if problem else f"{said}, and its button switched its relay"
+                ok = not problem
+            elif not keep:
+                from tools.espressif.emulator import fault_suite
+                subprocess.run(["docker", "stop", fault_suite.name(instance)], capture_output=True, check=False)
             # From part way to its final firmware, as the run from Sonoff's it stands for, or from that firmware.
             start = "sonoff" if source.startswith("public-pre-final") else source.rsplit("-", 1)[1]
             emulator_stats.check_run(LOGS, family=device.family, device=device.key, route=f"{start}>{firmware}",

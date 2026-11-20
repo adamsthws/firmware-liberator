@@ -1926,9 +1926,39 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
             if not instance.start(target):
                 print(f"FAIL  {route}: the device did not start again on {target}", flush=True)
                 return 1
+            if STATS_DEVICE is DEVICE and target in BUTTON_CHECKED:
+                problem = inputs_problem(instance, target)
+                print(f"{'FAIL' if problem else 'PASS'}  {route}, its button: "
+                      f"{problem or 'each press switched its relay'}", flush=True)
+                if problem:
+                    return 1
         return 0
     finally:
         instance.stop()
+
+
+# The firmware whose button the check presses. Not OpenBeken's: its button
+# scanner, run from its 25 ms quick tick and timed by rtos_get_time, never
+# saw P9 pressed in the emulator, nor ran a repeating event, while its
+# once-a-second timer and ESPHome's button did
+# (tools/beken/emulator/README.md#the-devices-board-boardpy).
+BUTTON_CHECKED = ("esphome",)
+
+
+def inputs_problem(instance: Instance, firmware: str) -> str | None:
+    """What is wrong with how the device, running `firmware`, follows its
+    button as the board presses it (emulator_check.Device.inputs_problem);
+    None if nothing. Only for the device whose board it is, the S61
+    (device.py's KIND): another device's firmware has its button elsewhere."""
+    from tools.beken.emulator import board
+    from tools.repo import emulator_check
+    address = instance.lease()
+    if not address:
+        return "the device has no address"
+    device = emulator_check.Device(address, firmware)
+    if not device.answers(60):
+        return "the device did not answer"
+    return device.inputs_problem(board.buttons(instance.state), board.inputs(DEVICE.key))
 
 
 def check(instances: tuple[int, ...] = (1, 2)) -> int:

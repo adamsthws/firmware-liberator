@@ -10,8 +10,11 @@
 the TH Elite's flash, as no dump of a real one is published, with its own
 settings in relay mode
 ([its work mode](../../docs/espressif-research.md#the-dual-r3s-work-mode)). The
-emulator has none of its hardware but its CSE7761 meter, which ESPHome reads, so
-the rest of its wiring below is what its sources say, not what was seen.
+emulator has none of its hardware but its CSE7761 meter, which ESPHome reads,
+and its button and wall switches, which it presses: on Tasmota and on ESPHome
+the button toggled relay 1, and S1 and S2 each toggled their own relay as
+they closed and as they opened. The rest of its wiring below is what its
+sources say, not what was seen.
 Its firmware (1.6.1) reports its Wi-Fi MAC to the cloud (`staMac`) as 12 hex
 digits with no separators, as the emulator's stand-in for eWeLink saw: the
 tool finds the device on your network by that MAC, written either way.
@@ -107,7 +110,9 @@ before the second came on - never both, even asked for both at once on
 Tasmota, and both were off after a power cut: on ESPHome as the emulated meter
 read each channel, on Tasmota as it said it drove its relays, each read while
 the firmware said the motor was moving
-([the check](../../docs/emulator.md#a-motor)). What the
+([the check](../../docs/emulator.md#a-motor)). Wall switch 1 closed opened
+the motor and wall switch 2 closed it, each opened again stopped it, and the
+button started it one way and stopped it, on both firmware. What the
 calibration and the reversal mean was seen in the emulator's Sonoff firmware
 ([research](../../docs/espressif-research.md#the-dual-r3s-work-mode)); how the
 times suit a real motor, with its own limit switches, is for its owner to

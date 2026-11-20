@@ -347,6 +347,17 @@ itself is run: changing it needs no new image.
   `_pacing`, between chunks. So the Beken emulator needed no patch for it,
   where QEMU did. A rebuilt flash of another device runs on the S61's board
   (`device.py`'s `KIND`), so only the S61's check presses its button.
+- **ESPHome follows the button; OpenBeken does not, yet.** On ESPHome each
+  press toggles the relay. OpenBeken reads its buttons from its 25 ms quick
+  tick (`QuickTick`, a FreeRTOS timer), debouncing by the time between ticks
+  (`rtos_get_time`), and in the emulator it never saw P9 pressed: no
+  `Button_OnInitialPressDown` in its log, P9 made a digital input on the
+  relay's channel (`setPinRole 9 dInput`) did not move the relay either, and
+  a repeating event (`addRepeatingEvent 1 4 Power1 TOGGLE`), run from the same
+  tick, never fired - while its once-a-second timer ran, and its relay
+  switched from `/cm`. So its quick tick does not run in the emulator, or its
+  clock does not move there; which, is open. Until then the check presses
+  the button on ESPHome alone (`fault_suite.BUTTON_CHECKED`).
 - **Not modelled:** the chip's pulse shape and width (only the rate counts),
   or a pulse's timing within a 0.2 ms chunk.
 

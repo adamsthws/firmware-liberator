@@ -12,9 +12,10 @@ firmware ([real devices](../../docs/testing.md#real-devices)).
 
 **In the emulator:** it converts in every direction, faults and all, from a dump
 of a real one ([the fault suite](../../docs/testing.md#the-espressif-fault-suite)).
-The emulator has no button or LED, but it has the CSE7766 meter, measuring a
-100 W load while the relay is on: Tasmota, ESPHome and Sonoff's firmware 1.2.0
-each read it (Sonoff's reports 230.08 V, 0.43 A and 99.99 W).
+The emulator has no LED, but it has the CSE7766 meter, measuring a 100 W load
+while the relay is on: Tasmota, ESPHome and Sonoff's firmware 1.2.0 each read
+it (Sonoff's reports 230.08 V, 0.43 A and 99.99 W). Its button can be pressed
+there: on Tasmota and on ESPHome each press toggled the relay.
 
 **Worth checking:** whether the relay, button, LED and meter work on yours.
 

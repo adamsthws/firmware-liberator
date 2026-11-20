@@ -1,11 +1,13 @@
 """Which devices a change checks, and what each device's check runs."""
 
 import hashlib
+import io
 import os
 import re
 import tempfile
 import json
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -217,8 +219,9 @@ class MotorCheckTests(unittest.TestCase):
         from tools.espressif.emulator import public_devices, public_dump
         calls = []
 
-        def checked(instance, saved, firmware, stub, log, wanted, then=None):
+        def checked(instance, saved, firmware, stub, log, wanted, then=None, pins=None):
             calls.append((instance, firmware, wanted, then))
+            self.assertEqual(pins, {"buttons": (0,), "switches": (32, 33)})   # pressed too
         copy = SimpleNamespace(mac="12:34:56:ab:cd:ef", settings='{"deviceMode":2}')
         with mock.patch.object(public_dump, "make"), mock.patch.object(public_dump, "recipe", return_value=copy), \
                 mock.patch.object(public_devices, "run", return_value=(True, "Converted")), \
@@ -481,6 +484,180 @@ class FakeShutter:
         if text == "Status 10":
             return {"StatusSNS": {"Shutter1": {"Position": round(self.position * 100), "Direction": self.direction}}}
         return {}
+
+class Board:
+    """The board's buttons file as a check presses it, wired to a firmware
+    that switches its relays as `react` says: (pin, now held) -> relay to
+    toggle, or None."""
+    def __init__(self, react, relays=2):
+        self.held, self.react, self.relays = set(), react, [False] * relays
+        self.buttons = check.emulator_buttons.Buttons(self.read, self.write)
+
+    def read(self):
+        return check.emulator_buttons.text_of(self.held)
+
+    def write(self, text):
+        now = check.emulator_buttons.pins_of(text)
+        for pin in now ^ self.held:
+            relay = self.react(pin, pin in now)
+            if relay:
+                self.relays[relay - 1] = not self.relays[relay - 1]
+        self.held = set(now)
+
+
+class InputsCheckTests(unittest.TestCase):
+    """Each firmware's relays as its button and wall switches change them."""
+
+    def device(self, firmware, board):
+        device = check.Device("127.0.0.1:8081", firmware)
+        if firmware == "esphome":
+            def get(path, post=False):
+                n = 2 if path.endswith("Relay%202") else 1
+                return json.dumps({"value": board.relays[n - 1]})
+            device.get = get
+        else:
+            device.tasmota = lambda command: {"POWER" if len(board.relays) == 1 else command.upper():
+                                              "ON" if board.relays[int(command[-1]) - 1] else "OFF"}
+        return device
+
+    def problem(self, firmware, board, pins):
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.emulator_buttons.time, "sleep"):
+            return self.device(firmware, board).inputs_problem(board.buttons, pins)
+
+    def test_the_button_toggles_the_relay_each_press(self):
+        s60 = {"buttons": (9,), "switches": ()}
+        for firmware in ("tasmota", "openbeken", "esphome"):
+            with self.subTest(firmware=firmware):
+                self.assertIsNone(self.problem(firmware, Board(lambda pin, held: 1 if held else None, 1), s60))
+
+    def test_a_button_that_switches_nothing_fails(self):
+        found = self.problem("esphome", Board(lambda pin, held: None, 1), {"buttons": (9,), "switches": ()})
+        self.assertEqual(found, "relay 1 stayed off with its button pressed (GPIO9)")
+
+    def test_each_wall_switch_toggles_its_own_relay_each_change(self):
+        dualr3 = {"buttons": (0,), "switches": (32, 33)}
+        wired = {0: 1, 32: 1, 33: 2}
+        self.assertIsNone(self.problem("tasmota", Board(lambda pin, held: wired[pin] if held or pin else None),
+                                       dualr3))
+        swapped = {0: 1, 32: 2, 33: 1}
+        self.assertIn("wall switch 1 closed (GPIO32)",
+                      self.problem("esphome", Board(lambda pin, held: swapped[pin] if held or pin else None), dualr3))
+        self.assertIn("wall switch 1 opened (GPIO32)",
+                      self.problem("esphome", Board(lambda pin, held: wired[pin] if held else None), dualr3))
+
+    def test_a_relay_that_cannot_be_read_fails(self):
+        device = check.Device("127.0.0.1:8081", "tasmota")
+        device.tasmota = lambda command: {}
+        with mock.patch.object(check.time, "sleep"):
+            self.assertEqual(device.inputs_problem(Board(lambda pin, held: None).buttons,
+                                                   {"buttons": (9,), "switches": ()}),
+                             "relay 1 could not be read before its button pressed")
+
+    def test_a_single_relay_is_power_and_more_are_numbered(self):
+        device = check.Device("127.0.0.1:8081", "openbeken")
+        device.tasmota = lambda command: {"POWER": "ON"}
+        self.assertIs(device.relay(1), True)
+        self.assertIsNone(device.relay(2))
+        device.tasmota = lambda command: {"POWER2": "OFF"}
+        self.assertIs(device.relay(2), False)
+
+
+class PublicDumpInputsTests(unittest.TestCase):
+    """A public dump's check presses the inputs of the firmware each way ends on."""
+
+    def check(self, problem):
+        from types import SimpleNamespace
+        from tools.espressif.emulator import public_devices, public_dump
+        runs = []
+
+        def run(instance, saved, firmware, keep, log, kind, extra):
+            runs.append((instance, firmware, keep, "--keep" in extra))
+            return True, "Converted"
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(check, "LOGS", Path(tmp)), \
+                mock.patch.object(public_dump, "make"), \
+                mock.patch.object(public_dump, "recipe", return_value=SimpleNamespace(mac="12:34:56:ab:cd:ef")), \
+                mock.patch.object(public_devices, "run", side_effect=run), \
+                mock.patch.object(check, "espressif_inputs_problem", return_value=problem) as pressed, \
+                mock.patch.object(check.emulator_stats, "send", return_value=""), \
+                mock.patch.object(check.subprocess, "run"), redirect_stdout(io.StringIO()) as out:
+            code = check.check_public_dump(kinds.find("sonoff-dualr3"), [1, 2])
+        return code, sorted(runs), sorted(call.args[1:] for call in pressed.call_args_list), out.getvalue()
+
+    def test_each_way_ends_left_running_and_pressed(self):
+        code, runs, pressed, said = self.check(None)
+        self.assertEqual(code, 0)
+        self.assertEqual(runs, [(1, "esphome", None, True), (1, "tasmota", "check-sonoff-dualr3-1-tasmota", False),
+                                (2, "esphome", "check-sonoff-dualr3-2-esphome", False), (2, "tasmota", None, True)])
+        self.assertEqual(pressed, [(1, "esphome"), (2, "tasmota")])
+        self.assertIn("PASS  sonoff-dualr3 on tasmota follows its button and wall switches: each press and each "
+                      "change switched its relay", said)
+
+    def test_a_firmware_that_does_not_follow_them_fails(self):
+        code, _, _, said = self.check("relay 2 stayed off with wall switch 2 closed (GPIO33)")
+        self.assertEqual(code, 2)
+        self.assertIn("FAIL  sonoff-dualr3 on esphome follows its button and wall switches: relay 2 stayed off", said)
+
+
+class MotorInputsTests(unittest.TestCase):
+    """A motor's wall switches and button, as MotorDevice.inputs_problem moves
+    it: a firmware that moves the motor as `moves` says - (pin, now held,
+    which way it moved) -> which way it moves now - each way driving the
+    outputs `drives` gives."""
+
+    OUTPUTS = {"open": (True, False), "close": (False, True)}
+
+    @staticmethod
+    def moves(pin, held, moving):
+        if pin == 0:
+            return ("open" if moving is None else None) if held else moving
+        return {32: "open", 33: "close"}[pin] if held else None
+
+    def problem(self, moves=None, drives=None, wanted=check.motor_setup.DEFAULT, firmware="esphome"):
+        device = check.MotorDevice("127.0.0.1:8081", firmware)
+        motor = {"moving": None}
+        drives = drives or self.OUTPUTS
+        device.moving = lambda: motor["moving"]
+        device.driving = lambda way: drives[way] if motor["moving"] == way else f"the motor did not start to {way}"
+        device.settled = lambda: (False, False) if motor["moving"] is None else drives[motor["moving"]]
+
+        def react(pin, held):
+            motor["moving"] = (moves or self.moves)(pin, held, motor["moving"])
+        board = Board(react)
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check, "STARTS_WITHIN", 0):
+            return device.inputs_problem(board.buttons, {"buttons": (0,), "switches": (32, 33)}, wanted)
+
+    def test_each_switch_moves_it_its_way_and_the_button_moves_and_stops_it(self):
+        self.assertIsNone(self.problem())
+        self.assertIsNone(self.problem(firmware="tasmota"))
+
+    def test_a_reversed_motors_esphome_opens_with_output_2(self):
+        reversed_motor = check.motor_setup.Setup(8.0, 8.0, True)
+        self.assertIsNone(self.problem(drives={"open": (False, True), "close": (True, False)}, wanted=reversed_motor))
+        self.assertIn("closed to open", self.problem(wanted=reversed_motor))
+
+    def test_a_switch_that_moves_it_the_wrong_way_or_not_at_all_fails(self):
+        swapped = lambda pin, held, moving: {32: "close", 33: "open"}.get(pin) if held and pin else None  # noqa: E731
+        self.assertEqual(self.problem(swapped), "wall switch 1 (GPIO32) closed to open: the motor did not start to open")
+
+    def test_one_that_does_not_stop_it_when_opened_again_fails(self):
+        latched = lambda pin, held, moving: {32: "open", 33: "close"}.get(pin, moving) if held else moving  # noqa: E731
+        self.assertEqual(self.problem(latched), "wall switch 1 opened again: the motor did not stop")
+
+    def test_a_button_that_does_nothing_fails(self):
+        switches_only = lambda pin, held, moving: self.moves(pin, held, moving) if pin else moving  # noqa: E731
+        self.assertEqual(self.problem(switches_only), "its button (GPIO0) pressed: the motor did not start")
+
+    def test_they_are_pressed_once_the_motor_checks_have_passed(self):
+        # The travel the motor checks set first, for their reads while it moves.
+        order = []
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(check.subprocess, "run"), \
+                mock.patch.object(check.MotorDevice, "answers", return_value=True), \
+                mock.patch.object(check.MotorDevice, "problem", side_effect=lambda *_: order.append("motor")), \
+                mock.patch.object(check.MotorDevice, "inputs_problem",
+                                  side_effect=lambda *_: order.append("inputs") or "stayed off"):
+            found = check.motor_problem(1, "kept", "esphome", (), Path(tmp) / "motor.log",
+                                        pins={"buttons": (0,), "switches": (32, 33)})
+        self.assertEqual((order, found), (["motor", "inputs"], "stayed off"))
 
 
 class SideBySideTests(unittest.TestCase):
