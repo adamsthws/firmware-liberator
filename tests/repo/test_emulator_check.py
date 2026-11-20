@@ -214,7 +214,8 @@ class MotorCheckTests(unittest.TestCase):
     def device(self, firmware, answers, setup=check.motor_setup.DEFAULT):
         device = check.MotorDevice("127.0.0.1:8081", firmware)
         readings = iter(answers)
-        device.outputs = lambda: next(readings)
+        device.driving = lambda way: next(readings)
+        device.settled = lambda: next(readings)
         device.answers = lambda within=None: True
         device.get = lambda path, post=False: '{"state": "OPEN"}'
         device.setup = lambda: setup
@@ -267,7 +268,50 @@ class MotorCheckTests(unittest.TestCase):
         states = iter([{"POWER1": "ON", "POWER2": "OFF"}, {"POWER1": "ON", "POWER2": "ON"}])
         device.tasmota = lambda command: next(states, {"POWER1": "OFF", "POWER2": "ON"})
         with mock.patch.object(check.time, "sleep"):
-            self.assertEqual(device.outputs(), (True, True))
+            self.assertEqual(device.settled(), (True, True))
+
+    def drive(self, shutter, way):
+        """`way` asked of a Tasmota that is `shutter`, on its clock."""
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        device.tasmota = shutter.command
+        with mock.patch.object(check.time, "sleep", shutter.run), \
+                mock.patch.object(check.time, "monotonic", lambda: shutter.now):
+            device.move(way)
+            return device.driving(way)
+
+    def test_a_close_back_from_near_closed_is_seen_while_it_runs(self):
+        # Seen once in a --motor calibrated run: opened for about 5 s of 60, the
+        # close back took as long, and a slow look put the check's last one
+        # after the motor had stopped - "asked to close, output 1 is off and
+        # output 2 off" from a Tasmota that had closed it as asked.
+        shutter = FakeShutter()
+        shutter.command(f"Backlog ShutterOpenDuration1 {check.TRAVEL_OPEN}; "
+                        f"ShutterCloseDuration1 {check.TRAVEL_CLOSE}")
+        self.assertEqual(self.drive(shutter, "open"), (True, False))
+        shutter.slow_after = shutter.now + 2   # one look during the close takes 2 s
+        self.assertEqual(self.drive(shutter, "close"), (False, True))
+        self.assertEqual(shutter.direction, -1, "still closing after the last look")
+
+    def test_a_close_that_ends_before_the_last_look_is_seen_while_it_ran(self):
+        # The same both ways: the close ends within the looks, which count only
+        # while Tasmota says it is closing.
+        shutter = FakeShutter()
+        self.assertEqual(self.drive(shutter, "open"), (True, False))
+        shutter.slow_after = shutter.now + 2
+        self.assertEqual(self.drive(shutter, "close"), (False, True))
+        self.assertEqual(shutter.direction, 0, "closed before the last look")
+
+    def test_a_close_tasmota_never_starts_fails(self):
+        shutter = FakeShutter(ignores_close=True)
+        self.assertEqual(self.drive(shutter, "open"), (True, False))
+        self.assertEqual(self.drive(shutter, "close"), "the motor did not start to close")
+
+    def test_an_esphome_cover_that_stops_before_its_meter_shows_fails_saying_so(self):
+        device = check.MotorDevice("127.0.0.1:8081", "esphome")
+        covers = iter(['{"current_operation": "CLOSING"}', '{"current_operation": "IDLE"}'])
+        device.get = lambda path, post=False: next(covers) if path == "/cover/Motor" else '{"value": 0}'
+        with mock.patch.object(check.time, "sleep"):
+            self.assertEqual(device.driving("close"), "the motor stopped before its outputs could be read")
 
     def test_each_request_names_the_device_as_a_browser_does(self):
         # Tasmota turns away /cm without it (seen through the emulator's browser port).
@@ -276,6 +320,56 @@ class MotorCheckTests(unittest.TestCase):
             self.assertIsNone(device.get("/cm?cmnd=Power"))
         self.assertEqual(opened.call_args.args[0].get_header("Referer"), "http://127.0.0.1:8081/")
 
+
+
+class FakeShutter:
+    """Tasmota's shutter on relays 1 and 2 as the motor check asks it, on a
+    clock of its own: Power1 ON opens and Power2 ON closes, the other relay
+    off first and the motor started half a second later (ShutterMotorStop),
+    both off at its end; each request takes LOOK seconds, or SLOW once after
+    `slow_after`. Its travel is 60 s each way until a Backlog sets it."""
+
+    LOOK, SLOW, MOTOR_STOP = 0.1, 2.0, 0.5
+
+    def __init__(self, ignores_close=False):
+        self.travel = {1: 60.0, -1: 60.0}
+        self.ignores_close = ignores_close
+        self.now, self.position, self.direction, self.starts = 0.0, 0.0, 0, 0.0
+        self.relays = [False, False]
+        self.slow_after = None
+
+    def run(self, seconds):
+        until = self.now + seconds
+        while self.now < until:
+            step = min(0.05, until - self.now)
+            self.now += step
+            if self.direction and self.now >= self.starts:
+                self.position += self.direction * step / self.travel[self.direction]
+                if not 0 < self.position < 1:
+                    self.position = min(max(self.position, 0.0), 1.0)
+                    self.direction, self.relays = 0, [False, False]
+
+    def command(self, text):
+        slow = self.slow_after is not None and self.now >= self.slow_after
+        if slow:
+            self.slow_after = None
+        self.run(self.SLOW if slow else self.LOOK)
+        if text.startswith("Backlog ShutterOpenDuration1"):
+            opening, closing = re.findall(r"Duration1 (\d+)", text)
+            self.travel = {1: float(opening), -1: float(closing)}
+            return {}
+        if text in ("Power1 ON", "Power2 ON"):
+            way = 1 if text == "Power1 ON" else -1
+            self.direction, self.relays = 0, [False, False]
+            if way == -1 and self.ignores_close:
+                return {}
+            self.direction, self.starts, self.relays = way, self.now + self.MOTOR_STOP, [way == 1, way == -1]
+            return {text.split()[0].upper(): "ON"}
+        if text == "Power0":
+            return {"POWER1": "ON" if self.relays[0] else "OFF", "POWER2": "ON" if self.relays[1] else "OFF"}
+        if text == "Status 10":
+            return {"StatusSNS": {"Shutter1": {"Position": round(self.position * 100), "Direction": self.direction}}}
+        return {}
 
 
 class SideBySideTests(unittest.TestCase):

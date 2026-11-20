@@ -102,7 +102,9 @@ travel times and direction were what was carried across; the outputs came on
 one at a time, each way - asked to close while opening, the first went off
 before the second came on - never both, even asked for both at once on
 Tasmota, and both were off after a power cut: on ESPHome as the emulated meter
-read each channel, on Tasmota as it said it drove its relays. What the
+read each channel, on Tasmota as it said it drove its relays, each read while
+the firmware said the motor was moving
+([the check](../../docs/emulator.md#a-motor)). What the
 calibration and the reversal mean was seen in the emulator's Sonoff firmware
 ([research](../../docs/espressif-research.md#the-dual-r3s-work-mode)); how the
 times suit a real motor, with its own limit switches, is for its owner to

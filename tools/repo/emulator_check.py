@@ -163,10 +163,16 @@ METER_SHOWS = 8.0
 TASMOTA_LOOKS = 5
 # How long a device switched off and on is given to answer again.
 BACK_WITHIN = 240.0
+# How long a firmware asked to move the motor is given to start it: Tasmota's
+# shutter first waits for it to stop (ShutterMotorStop, 0.5 s), as ESPHome's
+# interlock does (interlock_wait_time, 500 ms).
+STARTS_WITHIN = 10.0
 # The travel times the check sets first (seconds), through each firmware's own
-# setting for them: long enough that the motor is still moving each time the
-# meter is read.
-TRAVEL = 60
+# setting for them: closing twice opening's, so that the move back from where
+# the open left the motor outlasts every look at its outputs - closing from 10%
+# at the same speed ended within them once, the check reading its outputs
+# after the motor had stopped (docs/emulator.md#a-motor).
+TRAVEL_OPEN, TRAVEL_CLOSE = 60, 120
 
 
 def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...], log: Path,
@@ -178,29 +184,35 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
     one way (the emulated meter shows that output's load, and no other) -
     output 2 opening where reversed; asked the other way while moving, the
     first is off before the second is on; and, one on, a power cut leaves
-    both off."""
+    both off. What it saw is in `log`, after the run's own output."""
     from tools.espressif.emulator import fault_suite, public_devices
     container = fault_suite.name(instance)
     try:
         with open(log, "w", encoding="utf-8") as out:
             subprocess.run([str(public_devices.UNATTENDED), f"--instance={instance}", f"--from={saved}", *stub,
                             "--keep", "--", "--firmware", firmware], stdout=out, stderr=subprocess.STDOUT, check=False)
-        device = MotorDevice(f"127.0.0.1:{8080 + instance}", firmware)
-        if not device.answers():
-            return "the device did not answer after its run"
-        return device.problem(lambda: subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD, "restart"],
-                                                     capture_output=True, check=False), wanted)
+        with open(log, "a", encoding="utf-8") as out:
+            began = time.monotonic()
+
+            def note(text: str) -> None:
+                out.write(f"{time.monotonic() - began:7.1f} s  {text}\n")
+                out.flush()
+            device = MotorDevice(f"127.0.0.1:{8080 + instance}", firmware, note)
+            if not device.answers():
+                return "the device did not answer after its run"
+            return device.problem(lambda: subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD,
+                                                          "restart"], capture_output=True, check=False), wanted)
     finally:
         subprocess.run(["docker", "stop", container], capture_output=True, check=False)
 
 
 class MotorDevice:
     """A device on Tasmota or ESPHome that drives a motor, through its web page
-    as the emulator's browser port gives it: each moved, and what its meter
-    reads of each output."""
+    as the emulator's browser port gives it: each moved, which way its
+    firmware says the motor is moving, and which outputs are on meanwhile."""
 
-    def __init__(self, address: str, firmware: str) -> None:
-        self.address, self.firmware = address, firmware
+    def __init__(self, address: str, firmware: str, note=lambda text: None) -> None:
+        self.address, self.firmware, self.note = address, firmware, note
 
     def get(self, path: str, post: bool = False) -> str | None:
         # Tasmota answers a page but its first only to a request whose Referer
@@ -231,10 +243,10 @@ class MotorDevice:
 
     def set_travel(self) -> None:
         if self.firmware == "tasmota":
-            self.tasmota(f"Backlog ShutterOpenDuration1 {TRAVEL}; ShutterCloseDuration1 {TRAVEL}")
+            self.tasmota(f"Backlog ShutterOpenDuration1 {TRAVEL_OPEN}; ShutterCloseDuration1 {TRAVEL_CLOSE}")
         else:
-            for name in ("Open duration", "Close duration"):
-                self.get(f"/number/{urllib.parse.quote(name)}/set?value={TRAVEL}", post=True)
+            for name, seconds in (("Open duration", TRAVEL_OPEN), ("Close duration", TRAVEL_CLOSE)):
+                self.get(f"/number/{urllib.parse.quote(name)}/set?value={seconds}", post=True)
         time.sleep(2)
 
     def move(self, way: str) -> None:
@@ -245,33 +257,90 @@ class MotorDevice:
         else:
             self.get(f"/cover/Motor/{way}", post=True)
 
-    def outputs(self) -> tuple[bool, bool] | None:
-        """Whether each output is on, once it has had time to settle: on
-        ESPHome, whose relays are the cover's own, as the emulated meter reads
-        each channel's load; on Tasmota, as it says it drives its relays, read
-        a few times over - under Tasmota the emulated CSE7761 reads both
-        channels' load while either relay is on (docs/emulator.md), so its
-        meter cannot tell them apart. None where nothing can be read."""
+    def moving(self) -> str | None:
+        """Which way the firmware says the motor is moving, "open" or "close";
+        None while it says it is still, or says nothing: Tasmota's shutter by
+        its direction, ESPHome's cover by its current operation."""
         if self.firmware == "tasmota":
-            seen = None
-            for _ in range(TASMOTA_LOOKS):
-                time.sleep(1)
-                states = self.tasmota("Power0")
-                if "POWER1" not in states or "POWER2" not in states:
-                    return None
-                seen = (states["POWER1"] == "ON", states["POWER2"] == "ON")
-                if all(seen):
-                    return seen
-            return seen
-        time.sleep(METER_SHOWS)
-        found = []
-        for name in ("Power 1", "Power 2"):
-            body = self.get("/sensor/" + urllib.parse.quote(name))
-            try:
-                found.append(float(json.loads(body)["value"]) >= 1.0)
-            except (TypeError, ValueError, KeyError):
+            shutter = self.tasmota("Status 10").get("StatusSNS", {}).get("Shutter1", {})
+            self.note(f"Tasmota's shutter: {shutter}")
+            return {1: "open", -1: "close"}.get(shutter.get("Direction")) if isinstance(shutter, dict) else None
+        try:
+            cover = json.loads(self.get("/cover/Motor") or "{}")
+        except ValueError:
+            cover = {}
+        self.note(f"ESPHome's cover: {cover}")
+        return {"OPENING": "open", "CLOSING": "close"}.get(cover.get("current_operation")) \
+            if isinstance(cover, dict) else None
+
+    def outputs(self) -> tuple[bool, bool] | None:
+        """Whether each output is on: on ESPHome, whose relays are the cover's
+        own, as the emulated meter reads each channel's load, once it has had
+        time to show it; on Tasmota, as it says it drives its relays - under
+        Tasmota the emulated CSE7761 reads both channels' load while either
+        relay is on (docs/emulator.md), so its meter cannot tell them apart.
+        None where nothing can be read."""
+        if self.firmware == "tasmota":
+            states = self.tasmota("Power0")
+            if "POWER1" not in states or "POWER2" not in states:
                 return None
-        return found[0], found[1]
+            found = (states["POWER1"] == "ON", states["POWER2"] == "ON")
+        else:
+            time.sleep(METER_SHOWS)
+            readings = []
+            for name in ("Power 1", "Power 2"):
+                body = self.get("/sensor/" + urllib.parse.quote(name))
+                try:
+                    readings.append(float(json.loads(body)["value"]) >= 1.0)
+                except (TypeError, ValueError, KeyError):
+                    return None
+            found = (readings[0], readings[1])
+        self.note(f"outputs: {'on' if found[0] else 'off'}, {'on' if found[1] else 'off'}")
+        return found
+
+    def settled(self) -> tuple[bool, bool] | None:
+        """The outputs once they have had time to settle: on Tasmota read a
+        few times over, a second apart, both on at any one taken as both on."""
+        if self.firmware != "tasmota":
+            return self.outputs()
+        seen = None
+        for _ in range(TASMOTA_LOOKS):
+            time.sleep(1)
+            seen = self.outputs()
+            if seen is None or all(seen):
+                return seen
+        return seen
+
+    def driving(self, way: str) -> tuple[bool, bool] | str:
+        """The outputs on while the firmware moves the motor `way`, just asked
+        of it: a look counted only if the firmware says it moves that way after
+        it too (one after the motor stopped finds both off), every look the
+        same, and both on at any one taken as both on; Tasmota looked at
+        TASMOTA_LOOKS times, a second apart, ESPHome's meter once. What is
+        wrong instead: it never moved that way, or the outputs cannot be read."""
+        started = time.monotonic()
+        while self.moving() != way:
+            # Both on before it starts counts too.
+            if self.firmware == "tasmota" and self.outputs() == (True, True):
+                return True, True
+            if time.monotonic() - started > STARTS_WITHIN:
+                return f"the motor did not start to {way}"
+            time.sleep(0.5)
+        counted: set[tuple[bool, bool]] = set()
+        for _ in range(TASMOTA_LOOKS if self.firmware == "tasmota" else 1):
+            if self.firmware == "tasmota":
+                time.sleep(1)
+            found = self.outputs()
+            if found is None:
+                return "the outputs could not be read"
+            if all(found):
+                return found
+            if self.moving() != way:
+                break
+            counted.add(found)
+        if len(counted) > 1:
+            return f"the outputs changed while it moved: {sorted(counted)}"
+        return counted.pop() if counted else "the motor stopped before its outputs could be read"
 
     def setup(self) -> motor_setup.Setup:
         """The travel times and direction the firmware is set to."""
@@ -297,24 +366,27 @@ class MotorDevice:
         swapped = bool(wanted.reversed) and self.firmware == "esphome"
         for way, wanted_on in (("open", (True, False)), ("close", (False, True))):
             wanted_on = wanted_on[::-1] if swapped else wanted_on
+            self.note(f"asked to {way}")
             self.move(way)   # closing while it opens: the second while the first is on
-            found = self.outputs()
-            if found is None:
-                return "the outputs could not be read"
+            found = self.driving(way)
+            if isinstance(found, str):
+                return f"asked to {way}, {found}"
             if found != wanted_on:
                 return f"asked to {way}, output 1 is {'on' if found[0] else 'off'} and output 2 " \
                        f"{'on' if found[1] else 'off'}"
         if self.firmware == "tasmota":
             # Both asked for at once, as two wall switches could: never both.
+            self.note("asked for both at once")
             self.tasmota("Backlog Power1 ON; Power2 ON")
-            if self.outputs() == (True, True):
+            if self.settled() == (True, True):
                 return "both outputs came on together"
+        self.note("asked to open, then a power cut")
         self.move("open")
         time.sleep(2)
         power_cut()
         if not self.answers():
             return "the device did not answer after a power cut"
-        found = self.outputs()
+        found = self.settled()
         if found != (False, False):
             return f"after a power cut the outputs read {found}"
         return None

@@ -451,6 +451,30 @@ file each output draws the plain load while it is on. The motor is the
 board's ([board.py](../tools/espressif/emulator/board.py)'s `Motor`), so it
 needs no new image.
 
+The motor check, `tools/repo/emulator_check.py sonoff-dualr3 --motor`
+(`--motor calibrated` for the copy calibrated at 8 s with its outputs
+reversed), takes a test copy in motor mode from Sonoff's firmware to each
+firmware and on to the other. On each it reads that the travel times and
+direction are what was carried across, then asks it to open, and to close
+while it opens, and reads which output is on while the firmware says the
+motor is moving that way: Tasmota's shutter by its `Direction` (`Status 10`),
+ESPHome's cover by its `current_operation`. A look taken once the motor has
+stopped would find both outputs off, so it is not counted. The close is given
+twice the open's travel (`TRAVEL_OPEN`, `TRAVEL_CLOSE`), so the move back
+lasts past every look. Each look is logged with its time in
+`captures/emulation/device-check/sonoff-dualr3-COPY/N-FIRMWARE-motor.log`.
+
+Before that, the check read Tasmota's relays five times, a second apart,
+after each move, and took the last look. The close then ran back from where
+the open had stopped, about 10%, at the same speed: it lasted as long as the
+open had, about 6 s. Tasmota answers `Power2 ON` only after its motor-stop
+wait, about a second, so the five looks ended about when the close did.
+Tasmota closed and switched output 2 off as asked, and a last look after that
+read "asked to close, output 1 is off and output 2 off". That was 1 check in
+5, and 3 in 16 runs of its Tasmota part with four emulators at once on one
+computer. Nothing was wrong on the device: a real Tasmota stops the close at
+its travel time in the same way.
+
 ### On Windows
 
 To test the tool's Windows code paths (`arp -a`, `netsh` firewall rules behind
