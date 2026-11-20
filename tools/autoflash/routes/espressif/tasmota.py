@@ -18,6 +18,7 @@ from tools.autoflash import (
     errors,
     join,
     kinds,
+    motor,
     names,
     output,
     phases,
@@ -586,9 +587,11 @@ def startup_settings_report(device: device.Device) -> str | None:
 
 
 def step_configure(ctx: Context) -> dict[str, Any]:
-    """F3/F4 - Wi-Fi, settings persistence and the device's template; then the
-    meter calibrated, which the template's reset put back to the chip's own."""
+    """F3/F4 - Wi-Fi, settings persistence and the device's template; then a
+    device that drives a motor set up for it, and the meter calibrated, which
+    the template's reset put back to the chip's own."""
     result = configure_tasmota(ctx)
+    result.update(motor.set_up_tasmota(ctx))
     result["meter"] = calibrate_tasmota_meter(ctx)
     return result
 

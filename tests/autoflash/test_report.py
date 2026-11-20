@@ -542,6 +542,72 @@ class EndOfRunCheckTests(unittest.TestCase):
         log.assert_called_once_with("    Sensor: 21.3 C")
 
 
+class MotorCheckTests(unittest.TestCase):
+    """A Dual R3 that drives a motor, on Tasmota or ESPHome: never switched over
+    and back, which would run the motor one way and then the other, but seen
+    set up for it - as one on Sonoff's firmware says "motor mode"."""
+
+    def check(self, firmware="tasmota", *, drives=True, running=True, in_force=True, kind="sonoff-dualr3"):
+        inputs = {"firmware": firmware, "device_kind": kind, "device_ip": "192.0.2.50"}
+        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get), esphome_firmware=None,
+                              device=SimpleNamespace(command=mock.Mock(return_value={})))
+        with mock.patch.object(report.motor, "drives", return_value=drives), \
+                mock.patch.object(report.motor, "running_motor", return_value=running), \
+                mock.patch.object(report.motor, "tasmota_in_force", return_value=in_force), \
+                mock.patch.object(report.runs, "run_firmware", return_value=firmware), \
+                mock.patch.object(report, "check_hardware", return_value={"Relay": "switches"}) as tasmota, \
+                mock.patch.object(report, "check_esphome_hardware", return_value={"Relay": "switches"}) as esp, \
+                mock.patch.object(report, "check_release", return_value={}), \
+                mock.patch.object(report, "check_sensors", return_value={}), \
+                mock.patch.object(report.output, "say"):
+            found = report.end_of_run_checks(ctx)
+        return found, tasmota.called or esp.called
+
+    def test_one_set_up_for_its_motor_is_not_switched(self):
+        for firmware in ("tasmota", "esphome"):
+            with self.subTest(firmware):
+                found, switched = self.check(firmware)
+                self.assertEqual(found, {"Relay": report.MOTOR_MODE, "Power meter": "not checked"})
+                self.assertFalse(switched)
+                self.assertEqual(report.checks_passed(found), "not run")
+
+    def test_one_left_free_to_have_both_outputs_on_fails(self):
+        for firmware in ("tasmota", "esphome"):
+            with self.subTest(firmware):
+                found, switched = self.check(firmware, running=False)
+                self.assertEqual(found["Relay"], report.NOT_MOTOR_MODE)
+                self.assertFalse(switched)
+                self.assertEqual(report.checks_passed(found), "fail")
+
+    def test_a_tasmota_missing_a_setting_fails(self):
+        # Interlocked, but its relays not off at power-on, say.
+        found, _ = self.check(in_force=False)
+        self.assertEqual(found["Relay"], report.NOT_MOTOR_MODE)
+
+    def test_one_that_does_not_answer_could_not_be_checked(self):
+        found, switched = self.check(running=None)
+        self.assertEqual(found["Relay"], report.UNCHECKED_LINE)
+        self.assertFalse(switched)
+
+    def test_one_set_up_for_a_motor_by_hand_is_not_switched_either(self):
+        found, switched = self.check(drives=False, in_force=False)
+        self.assertEqual(found["Relay"], report.MOTOR_MODE)
+        self.assertFalse(switched)
+
+    def test_one_in_relay_mode_is_switched_as_before(self):
+        found, switched = self.check(drives=False, running=False)
+        self.assertEqual(found, {"Relay": "switches"})
+        self.assertTrue(switched)
+
+    def test_a_kind_with_no_motor_mode_is_never_asked(self):
+        inputs = {"firmware": "tasmota", "device_kind": "sonoff-th-elite"}
+        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get))
+        with mock.patch.object(report.motor, "drives", side_effect=AssertionError), \
+                mock.patch.object(report.motor, "running_motor", side_effect=AssertionError), \
+                mock.patch.object(report.runs, "run_firmware", return_value="tasmota"):
+            self.assertIsNone(report.check_motor(ctx))
+
+
 class StoppedRunIssueTests(RouteTestCase):
     """A run that failed has the way to open an issue, and its log, where the
     links to support the project would be."""
@@ -690,6 +756,7 @@ class CheckLinesTests(unittest.TestCase):
         self.assertIs(report.check_passed("Relay", report.METER_CONFIRMS), True)
         self.assertIs(report.check_passed("Relay", report.DID_NOT_SWITCH), False)
         self.assertIsNone(report.check_passed("Relay", report.MOTOR_MODE))
+        self.assertIs(report.check_passed("Relay", report.NOT_MOTOR_MODE), False)
         self.assertIs(report.check_passed("Relay", "switches, but reworded"), False, "never taken for a pass")
         self.assertIs(report.check_passed("Release", f"2026.10.0{report.AS_INSTALLED}"), True)
 

@@ -14,7 +14,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, join, kinds, output, records, report_upload, routes, runs, testers
+from tools.autoflash import (__version__, esphome, hostsys, join, kinds, motor, output, records, report_upload, routes,
+                             runs, testers)
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -278,9 +279,12 @@ SWITCHES_THROUGH_EWELINK = "switches (through eWeLink)"
 # meter's or the release's: a failure, as nothing shows the device works.
 UNCHECKED_LINE = "could not be checked"
 DID_NOT_SWITCH, RELAY_NOT_CHECKED, MOTOR_MODE = "did not switch", "not checked", "motor mode"
+# A device that drives a motor (tools/autoflash/motor.py) found with its
+# outputs free to be on together: a failure, whatever else works.
+NOT_MOTOR_MODE = "not set up for its motor"
 RELAY_LINES = {RELAY_SWITCHES: True, METER_CONFIRMS: True, "switches (meter unchanged)": True,
                SWITCHES_THROUGH_EWELINK: True, DID_NOT_SWITCH: False, UNCHECKED_LINE: False,
-               RELAY_NOT_CHECKED: None, MOTOR_MODE: None}
+               RELAY_NOT_CHECKED: None, MOTOR_MODE: None, NOT_MOTOR_MODE: False}
 # How the release check's line ends where the device runs the release installed.
 AS_INSTALLED = ", as installed"
 
@@ -613,6 +617,26 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
     return said(describe_hardware(switched, restored, on, off, metered))
 
 
+def check_motor(ctx: Context) -> dict[str, str] | None:
+    """A device on Tasmota or ESPHome that drives a motor, or is set up as if
+    it did: its relay not switched - over and back, it would run the motor
+    one way, then the other - but seen set up for it, as MOTOR_MODE says it,
+    as of one on Sonoff's firmware (check_ewelink_hardware). None for one in
+    relay mode, which is switched as any other."""
+    firmware = runs.run_firmware(ctx.state)
+    if not kinds.of_run(ctx.state).motor_mode or firmware not in ("tasmota", "esphome"):
+        return None
+    drives, set_up = motor.drives(ctx), motor.running_motor(ctx, firmware)
+    if firmware == "tasmota" and set_up and drives:
+        set_up = motor.tasmota_in_force(ctx.device)   # every setting, not only what shows a motor's
+    if not set_up and not drives:
+        return None
+    metered = has_meter(ctx)
+    output.say(checking(metered))
+    relay = MOTOR_MODE if set_up else UNCHECKED_LINE if set_up is None else NOT_MOTOR_MODE
+    return said({"Relay": relay, "Power meter": "not checked"}, metered)
+
+
 def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     """check_hardware's two switches and two readings for a device back on
     Sonoff's firmware, through eWeLink as the app switches it and asks for
@@ -741,7 +765,7 @@ def end_of_run_checks(ctx: Context) -> dict[str, str]:
     # OpenBeken takes Tasmota's commands (Power, Status 10): the same check.
     relay = {"esphome": check_esphome_hardware, "tasmota": check_hardware, "openbeken": check_hardware,
              "sonoff": check_ewelink_hardware}.get(firmware) if kinds.of_run(ctx.state).has_relay else None
-    found = relay(ctx) if relay else {}
+    found = (check_motor(ctx) or relay(ctx)) if relay else {}
     for label, value in {**check_release(ctx), **check_sensors(ctx)}.items():
         (output.say if check_passed(label, value) is False else output.log_only)(f"    {label}: {answer(value)}")
         found[label] = value

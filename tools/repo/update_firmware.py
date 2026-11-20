@@ -25,7 +25,8 @@
         LibreTiny): the rt_ota image its build makes, checked and published
 
     python3 tools/repo/update_firmware.py esphome [VERSION] --device KIND
-        the same for another Espressif device's ESPHome (KIND's folder's esphome.yaml)
+        the same for another Espressif device's ESPHome: each config in KIND's folder
+        (Kind.esphome_configs), at one version
 
     python3 tools/repo/update_firmware.py esp32 [tasmota] [bridge] [recovery] [mover] [template] [tables]
         what the conversion of any device with a classic ESP32 needs, each in a
@@ -596,7 +597,7 @@ def adopt_every_config_from_the_release() -> None:
     or not: the release workflow holds each one to the release's tag
     (release_notes.py --adoption-tags), a device not ready yet's too."""
     tag = adoption_tag()
-    for path in sorted(ROOT.glob("devices/*/esphome.yaml")):
+    for path in sorted(ROOT.glob(kinds.ESPHOME_CONFIGS)):
         config = path.read_text(encoding="utf-8")
         adopted = ADOPTION_RELEASE.sub(lambda match: match.group(1) + tag, config)
         if adopted != config:
@@ -1357,41 +1358,49 @@ def command_esphome_every(args: argparse.Namespace) -> int:
 
 
 def command_esphome_kind(args: argparse.Namespace) -> int:
-    """ESPHome for an Espressif device other than the S60, from its folder."""
+    """ESPHome for an Espressif device other than the S60, from its folder: each
+    of its configs (Kind.esphome_configs), at the one version."""
     kind = kinds.find(args.device)
     chip = chips.of(kind.chip)
     release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
     pins = load_pins()
     section = espressif_section(pins, kind.key)
-    config_path = ROOT / kind.folder / "esphome.yaml"
-    config = config_path.read_text(encoding="utf-8")
-    current = section.get("esphome", {})
     # A build no release has published is built again under its own version.
-    version = build_version(release, current, folded=unreleased(current))
+    # Every config of the kind's at its own's, so the device answers its
+    # release alike whichever it runs (report.check_release).
+    own = section.get("esphome", {})
+    version = build_version(release, own, folded=unreleased(own))
     builder = esphome_builder(release)
     print(f"ESPHome {release} for the {kind.name}: {builder}")
     check_esphome_internals(builder)
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
-    app, _bootloader = build(builder, config_path, version, BUILD_CACHE)
-    described = check_esphome_app(app, "the ESPHome built", release, chip)
+    built = {}
+    for key, name in kind.esphome_configs.items():
+        app, _bootloader = build(builder, ROOT / kind.folder / name, version, BUILD_CACHE)
+        built[key] = (app, check_esphome_app(app, f"the ESPHome built from {name}", release, chip))
     if args.dry_run:
         print("\nBuilt and checked; nothing published (--dry-run).")
         return 0
-    file = f"artifacts/esphome-{kind.key}-imprintable-{version}.bin"
-    # Worked out before anything is written, so a passage not found changes nothing.
-    texts = {} if args.no_docs or not current else kind_esphome_doc_texts(
-        current, {"file": file, "sha256": sha256_bytes(app)})
-    config_path.write_text(as_built(config, version), encoding="utf-8")
-    publish(section, "esphome", file, app,
-            {"config": f"{kind.folder}/esphome.yaml", "version": version, "esphome": release,
-             "esp_idf": described["esp_idf"], "builder": builder,
-             **builds_record(app, "the ESPHome built", current, version)})
-    save_pins(pins)
-    write_texts(texts)
+    left = []
+    for key, name in kind.esphome_configs.items():
+        app, described = built[key]
+        config_path, current = ROOT / kind.folder / name, section.get(key, {})
+        # esphome-sonoff-dualr3-imprintable-*, esphome-sonoff-dualr3-motor-imprintable-*
+        file = f"artifacts/esphome-{kind.key}{key.removeprefix('esphome')}-imprintable-{version}.bin"
+        # Worked out before anything is written, so a passage not found changes nothing.
+        texts = {} if args.no_docs or not current else kind_esphome_doc_texts(
+            current, {"file": file, "sha256": sha256_bytes(app)})
+        config_path.write_text(as_built(config_path.read_text(encoding="utf-8"), version), encoding="utf-8")
+        publish(section, key, file, app,
+                {"config": f"{kind.folder}/{name}", "version": version, "esphome": release,
+                 "esp_idf": described["esp_idf"], "builder": builder,
+                 **builds_record(app, "the ESPHome built", current, version)})
+        save_pins(pins)
+        write_texts(texts)
+        if not texts:
+            left += [f"artifacts/README.md: {Path(file).name}'s row (name, SHA-256)", f"NOTICES.md: {Path(file).name}"]
     adopt_every_config_from_the_release()
-    left_to_do([*([] if texts else ["artifacts/README.md: the file's row (name, SHA-256)",
-                                    "NOTICES.md: the file's name"]),
-                "python3 tests/run.py, then a conversion in the emulator"])
+    left_to_do([*left, "python3 tests/run.py, then a conversion in the emulator"])
     return 0
 
 

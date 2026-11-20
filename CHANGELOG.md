@@ -56,6 +56,17 @@ check.
   off until you turn them on. New on the S61, the POW Elite, the POWCT (of its
   clamp's circuit, as its power is) and both channels of the Dual R3
   (`Apparent power 1`, `Power factor 2` ...).
+- A Dual R3 set up in the eWeLink app to drive a curtain motor stays a motor
+  after conversion, on Tasmota (its shutter, the two relays interlocked, both
+  off at power-on) or on ESPHome (a build of its own with a `Curtain` cover,
+  its outputs interlocked in the build), so that its two outputs are never on
+  together. Before, both firmware gave it two free relays, which could drive
+  the motor both ways at once and burn it out. The mode comes from the
+  device's Sonoff backup, or the Tasmota or ESPHome it runs; one converted to
+  relays before is set up for its motor when the tool next runs on it. Set its
+  travel times, 10 s each way until you do. The end-of-run check no longer
+  switches its outputs over and back, which would run the motor both ways
+  ([its motor mode](devices/sonoff-dualr3/README.md#a-curtain-motor)).
 - What every device's ESPHome shares is in `devices/shared-esphome/`, included
   by each device's config rather than copied into it. A copy of a config you
   keep yourself needs that folder beside it

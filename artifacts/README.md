@@ -28,6 +28,7 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 | `esphome-sonoff-powct-imprintable-2026.10.0-4.bin` | ESPHome for the POW Ring (POWCT), the same way | `79e9a36182a87ee358c13ec4961bac89333d97abc2dffe2b156baaacd828c0d0` |
 | `esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin` | ESPHome for the TH Elite, the same way | `e7256acd04630418058473508d712dc506c2de4ed840b55e33ce42d962447a92` |
 | `esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin` | ESPHome for the Dual R3, the same way | `b755f2bbdbfcab8749d522fcc782e6211e34a7e364087d2f36d3332ea9629b75` |
+| `esphome-sonoff-dualr3-motor-imprintable-2026.10.0-3.bin` | ESPHome for a Dual R3 that drives a curtain motor, from its `esphome-motor.yaml` | `2aaeb424ae176b552685b92fd3d7c854ba4554a09a371bfbe2e71728cbb75f25` |
 | `sonoff-s60-partition-table.bin` | [Sonoff's partition table](#sonoffs-partition-tables) of the S60, and of every device on its layout | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
 | `sonoff-nspanel-partition-table.bin` | Sonoff's partition table of the NSPanel: the S60's without its unused `reserve` entry | `3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70` |
 | `sonoff-th-elite-partition-table.bin` | Sonoff's partition table of the TH Elite, with a larger NVS and smaller app slots | `36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6` |

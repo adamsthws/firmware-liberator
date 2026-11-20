@@ -29,8 +29,30 @@ Home Assistant's ESPHome builder can adopt a converted device from this config:
 
 ## Changing it
 
-Edit `esphome.yaml`, then build and publish it with
-`python3 tools/repo/update_firmware.py esphome --device sonoff-dualr3`. Keep the
+Edit `esphome.yaml` or `esphome-motor.yaml`, then build and publish both with
+`python3 tools/repo/update_firmware.py esphome --device sonoff-dualr3`. Keep
+their boards alike: `tests/repo/test_esphome_shared.py` holds the motor's to
+`esphome.yaml`'s. Keep the
 `WiFi Signal` sensor's and `Relay` switch's names, the `autoflash_wifi` action
 and the two `AUTOFLASH-IMPRINT-` placeholders: the tool uses each
 ([how](../sonoff-s60/esphome.md#changing-it)).
+
+## A curtain motor
+
+A Dual R3 set up in Sonoff's firmware to drive a curtain motor is given
+[`esphome-motor.yaml`](esphome-motor.yaml) instead
+([why](README.md#a-curtain-motor)). Its board is the same, and it reports the
+same voltage, currents, power and energy, each channel's now the motor's each
+way. In place of the two relays it has a `Curtain` cover, which Home Assistant
+opens, closes, stops and sets to a position:
+
+- Output 1 opens and output 2 closes. Each is interlocked with the other in
+  the build itself: switching one on turns the other off and waits half a
+  second for the motor to stop. Both are off at every start, whatever they were
+  before, so the cover has no power-on state, nor countdown, nor overload
+  threshold (the motor draws far less than an output's rating).
+- The button opens, stops and closes in turn; wall switch 1 opens and wall
+  switch 2 closes, each stopping the motor if it is moving that way already.
+- `Open duration` and `Close duration`, settings in Home Assistant, are how
+  long your motor takes each way: 10 seconds until you set them. The cover's
+  position is worked out from them.

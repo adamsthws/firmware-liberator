@@ -1,0 +1,245 @@
+# ESPHome for a Sonoff Dual R3 that drives a curtain motor (Sonoff's motor
+# mode), in place of esphome.yaml's two relays.
+#
+# The conversion tool installs this pre-built in place of esphome.yaml on a
+# Dual R3 it finds in motor mode (tools/autoflash/motor.py), with no Wi-Fi and
+# no passwords in it, as it does esphome.yaml. Its board is esphome.yaml's: the
+# same pins, meter, button and wall switches, written out again here so that a
+# config people copy stays one file (docs/home-assistant-adoption.md), and
+# held to esphome.yaml's by tests/repo/test_esphome_shared.py.
+#
+# Output 1 (GPIO27) opens and output 2 (GPIO14) closes, as Sonoff's firmware
+# drives them unless set to reverse. They are never on together: each is
+# interlocked with the other, a reversal waits for the motor to stop, and both
+# are off at every start, whatever they were before.
+
+esphome:
+  # Named as every firmware the conversion installs is, whatever the device.
+  name: esphome
+  friendly_name: esphome
+  # The Dual R3's, as esphome.yaml's: the same device, set up another way.
+  comment: Sonoff-DUALR3
+  name_add_mac_suffix: true
+  project:
+    name: liberator.sonoff-dualr3
+    version: "2026.10.0-3"
+  on_boot:
+    # Tasmota holds its output pins through a software restart, and the install
+    # ends with one: release them before anything drives them.
+    - priority: 1000
+      then:
+        - lambda: |-
+            gpio_hold_dis(GPIO_NUM_27);
+            gpio_hold_dis(GPIO_NUM_14);
+            gpio_hold_dis(GPIO_NUM_13);
+    # The travel times set, once they are restored.
+    - priority: 700
+      then:
+        - lambda: |-
+            id(curtain).set_open_duration(id(open_duration).state * 1000);
+            id(curtain).set_close_duration(id(close_duration).state * 1000);
+
+# Adopting the device in Home Assistant's ESPHome builder takes this config as
+# a package. update_firmware.py writes the release.
+dashboard_import:
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome-motor.yaml@v3.1.0
+  import_full_config: false
+
+esp32:
+  variant: esp32
+  framework:
+    type: esp-idf
+  flash_size: 4MB
+
+# The serial port's pins are not the meter's, but its log is of no use on a
+# device whose case is not opened.
+logger:
+  baud_rate: 0
+
+uart:
+  tx_pin: GPIO25
+  rx_pin: GPIO26
+  baud_rate: 38400
+  parity: EVEN
+  stop_bits: 1
+
+status_led:
+  pin:
+    number: GPIO13
+    inverted: true
+
+# What every device has (devices/shared-esphome/README.md), then this one's own.
+# No relay.yaml: neither output may come on at a start, nor be switched on its
+# own, so neither has a choice of its state at a start, nor a countdown. No
+# overload.yaml: the motor's draw is far below either output's rating, and an
+# output switched off under the cover would leave its position wrong.
+packages:
+  base: !include ../shared-esphome/base.yaml
+  wifi: !include ../shared-esphome/wifi-esp32.yaml
+  energy_1: !include {file: ../shared-esphome/energy-totals.yaml, vars: {energy: energy_1, id_end: "_1", name_end: " 1"}}
+  energy_2: !include {file: ../shared-esphome/energy-totals.yaml, vars: {energy: energy_2, id_end: "_2", name_end: " 2"}}
+  derived_1: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current_1, power: power_1, id_end: "_1", name_end: " 1"}}
+  derived_2: !include {file: ../shared-esphome/derived-power.yaml, vars: {voltage: voltage, current: current_2, power: power_2, id_end: "_2", name_end: " 2"}}
+
+# The cover's alone: switching one on turns the other off first, then waits
+# for the motor to stop before it turns on.
+switch:
+  - id: relay
+    platform: gpio
+    internal: true
+    pin: GPIO27
+    restore_mode: ALWAYS_OFF
+    interlock: [relay_2]
+    interlock_wait_time: 500ms
+  - id: relay_2
+    platform: gpio
+    internal: true
+    pin: GPIO14
+    restore_mode: ALWAYS_OFF
+    interlock: [relay]
+    interlock_wait_time: 500ms
+
+# Its position is worked out from how long the motor has run, so it is only as
+# right as its travel times (Open duration, Close duration).
+cover:
+  - platform: time_based
+    id: curtain
+    name: "Curtain"
+    device_class: curtain
+    open_action:
+      - switch.turn_on: relay
+    open_duration: 10s
+    close_action:
+      - switch.turn_on: relay_2
+    close_duration: 10s
+    stop_action:
+      - switch.turn_off: relay
+      - switch.turn_off: relay_2
+
+number:
+  # Seconds the motor takes to open the curtain fully, and to close it: 10 s,
+  # Tasmota's own default, until you time yours. Sonoff's firmware times its
+  # own travel by the motor's current, which is not carried across.
+  - platform: template
+    id: open_duration
+    name: "Open duration"
+    icon: mdi:timer-outline
+    entity_category: config
+    unit_of_measurement: "s"
+    min_value: 1
+    max_value: 600
+    step: 0.1
+    initial_value: 10
+    optimistic: true
+    restore_value: true
+    mode: box
+    on_value:
+      - lambda: id(curtain).set_open_duration(x * 1000);
+  - platform: template
+    id: close_duration
+    name: "Close duration"
+    icon: mdi:timer-outline
+    entity_category: config
+    unit_of_measurement: "s"
+    min_value: 1
+    max_value: 600
+    step: 0.1
+    initial_value: 10
+    optimistic: true
+    restore_value: true
+    mode: box
+    on_value:
+      - lambda: id(curtain).set_close_duration(x * 1000);
+
+# The button opens, stops and closes in turn; wall switch 1 opens and wall
+# switch 2 closes, each stopping the motor if it is moving that way already.
+binary_sensor:
+  - platform: gpio
+    id: button_1
+    internal: true
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      - cover.toggle: curtain
+  - platform: gpio
+    id: wall_switch_1
+    internal: true
+    pin:
+      number: GPIO32
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on_off: 50ms
+    on_state:
+      - lambda: |-
+          auto call = id(curtain).make_call();
+          if (id(curtain).current_operation == cover::COVER_OPERATION_OPENING) {
+            call.set_command_stop();
+          } else {
+            call.set_command_open();
+          }
+          call.perform();
+  - platform: gpio
+    id: wall_switch_2
+    internal: true
+    pin:
+      number: GPIO33
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on_off: 50ms
+    on_state:
+      - lambda: |-
+          auto call = id(curtain).make_call();
+          if (id(curtain).current_operation == cover::COVER_OPERATION_CLOSING) {
+            call.set_command_stop();
+          } else {
+            call.set_command_close();
+          }
+          call.perform();
+
+sensor:
+  # Units since September 2021 have a BL0930 instead, which this does not read.
+  - platform: cse7761
+    update_interval: 5s
+    voltage:
+      name: "Voltage"
+      id: voltage
+    current_1:
+      name: "Current 1"
+      id: current_1
+    current_2:
+      name: "Current 2"
+      id: current_2
+    active_power_1:
+      name: "Power 1"
+      id: power_1
+    active_power_2:
+      name: "Power 2"
+      id: power_2
+
+  # Energy since boot (Wh), from the power: its meter gives none of its own.
+  - platform: integration
+    name: "Energy 1"
+    id: energy_1
+    sensor: power_1
+    time_unit: h
+    unit_of_measurement: Wh
+    device_class: energy
+    state_class: total_increasing
+    restore: false
+
+  - platform: integration
+    name: "Energy 2"
+    id: energy_2
+    sensor: power_2
+    time_unit: h
+    unit_of_measurement: Wh
+    device_class: energy
+    state_class: total_increasing
+    restore: false

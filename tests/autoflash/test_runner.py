@@ -299,6 +299,21 @@ class RunStepsTests(unittest.TestCase):
         self.assertEqual((code, ran), (0, []))
         stand_ins["rerun_on_tasmota"].assert_called_once()
 
+    def test_kept_on_tasmota_a_device_that_drives_a_motor_is_set_up_for_it(self):
+        # One an earlier release converted to two free relays, put right.
+        ctx = mock.Mock()
+        with mock.patch.object(runner.unlock, "unlock_tasmota"), \
+                mock.patch.object(runner.motor, "set_up_tasmota") as set_up, \
+                mock.patch.object(runner.tasmota, "calibrate_tasmota_meter"), mock.patch.object(runner.output, "tell"):
+            self.assertEqual(runner.rerun_on_tasmota(ctx), 0)
+        set_up.assert_called_once_with(ctx)
+        with mock.patch.object(runner.unlock, "unlock_tasmota"), \
+                mock.patch.object(runner.motor, "set_up_tasmota", side_effect=errors.Abort("did not take")), \
+                mock.patch.object(runner.tasmota, "calibrate_tasmota_meter") as meter, \
+                mock.patch.object(runner.output, "tell"):
+            self.assertEqual(runner.rerun_on_tasmota(ctx), 2)
+        meter.assert_not_called()
+
     def test_steps_done_and_agreed_with_are_skipped(self):
         self.state.mark("S1", DONE)
         code, ran, stand_ins = self.run_steps()

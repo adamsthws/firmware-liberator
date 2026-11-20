@@ -214,6 +214,32 @@ class ESPHomeRebuildTests(unittest.TestCase):
                 sums = (self.root / "artifacts" / "SHA256SUMS").read_text(encoding="utf-8")
                 self.assertIn(f"{pin['sha256']}  {Path(file).name}", sums)
 
+    def test_a_device_with_a_motor_mode_has_each_config_built_at_its_own_version(self):
+        # The Dual R3's motor build first published beside its own, at its
+        # version: the device answers its release alike whichever it runs.
+        version, folder = f"{self.RELEASE}-2", self.root / "devices" / "sonoff-dualr3"
+        folder.mkdir(parents=True)
+        for name in ("esphome.yaml", "esphome-motor.yaml"):
+            (folder / name).write_text(self.CONFIG.format(key="sonoff-dualr3", version="2099.1.0-1")
+                                       .replace("esphome.yaml@", f"{name}@"), encoding="utf-8")
+        file = f"artifacts/esphome-sonoff-dualr3-imprintable-{version}.bin"
+        (self.root / file).write_bytes(b"the build before")
+        pins = json.loads((self.root / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
+        pins["espressif"]["sonoff-dualr3"] = {"esphome": {
+            **pins["espressif"]["sonoff-pow-elite"]["esphome"], "file": file,
+            "config": "devices/sonoff-dualr3/esphome.yaml"}}
+        (self.root / "artifacts" / "firmware.json").write_text(json.dumps(pins), encoding="utf-8")
+        with mock.patch.object(uf.kinds, "find", return_value=uf.kinds.SONOFF_DUALR3):
+            section = self.run_main("--device", "sonoff-dualr3", "--no-docs")["espressif"]["sonoff-dualr3"]
+        motor = section[uf.kinds.MOTOR_ESPHOME]
+        self.assertEqual((motor["version"], motor["file"], motor["config"]),
+                         (version, f"artifacts/esphome-sonoff-dualr3-motor-imprintable-{version}.bin",
+                          "devices/sonoff-dualr3/esphome-motor.yaml"))
+        self.assertEqual(section["esphome"]["version"], version)
+        self.assertIn(f'version: "{version}"', (folder / "esphome-motor.yaml").read_text(encoding="utf-8"))
+        self.assertIn("devices/sonoff-dualr3/esphome-motor.yaml@v3.0.0\n",
+                      (folder / "esphome-motor.yaml").read_text(encoding="utf-8"))
+
     def test_one_a_release_published_takes_the_next_version(self):
         self.published.return_value = True
         pin = self.esphome_pin(self.run_main("--device", "sonoff-pow-elite", "--no-docs"), "sonoff-pow-elite")

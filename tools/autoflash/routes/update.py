@@ -53,8 +53,10 @@ def published_builds(kind: kinds.Kind) -> set[str]:
     # Each family's images are its package's, and each package imports this.
     from tools.autoflash.routes.beken import images as beken_images
     from tools.autoflash.routes.espressif import images as espressif_images
-    pin = (beken_images if kind.family == "beken" else espressif_images).PINS[kind.key]["esphome"]
-    return {pin["built"], *pin.get("earlier_builds", ())}
+    section = (beken_images if kind.family == "beken" else espressif_images).PINS[kind.key]
+    # The motor's build too, where the kind has one (kinds.MOTOR_ESPHOME).
+    return {built for key in kind.esphome_configs if key in section
+            for built in (section[key]["built"], *section[key].get("earlier_builds", ()))}
 
 
 class NoAnswer(OSError):

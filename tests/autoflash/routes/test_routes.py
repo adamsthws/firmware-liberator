@@ -191,6 +191,21 @@ class ReadoutLeftTests(unittest.TestCase):
         self.assertEqual(back.call_args.args[1], "192.0.2.60")
 
 
+class MotorModeNotedTests(unittest.TestCase):
+    def test_the_firmware_found_is_asked_of_a_motor_before_the_device_leaves_it(self):
+        # Gone with that firmware: Tasmota's shutter, ESPHome's cover (tools/autoflash/motor.py).
+        state = SimpleNamespace(input={}.get, is_done=lambda step: False)
+        ctx = SimpleNamespace(state=state, replace_own_build=False, firmware_given=None)
+
+        class Noted(Exception):
+            pass
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="tasmota"), \
+                mock.patch.object(routes.motor, "note_running", side_effect=Noted) as noted, \
+                self.assertRaises(Noted):
+            routes.settle_route(ctx)
+        self.assertEqual(noted.call_args.args, (ctx, "tasmota"))
+
+
 class BekenTargetTests(unittest.TestCase):
     """An S61 goes back to Sonoff's firmware from the public dump, not a
     backup; and a run of one that stopped before its firmware was chosen is

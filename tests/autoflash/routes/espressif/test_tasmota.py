@@ -1067,6 +1067,25 @@ class ConfigureStepTests(unittest.TestCase):
         self.assertIn("Reset 4", sent)
 
 
+class MotorSetUpTests(unittest.TestCase):
+    """F4 sets up a device that drives a motor once its template is in place:
+    its relays interlocked as Tasmota's shutter, off at power-on
+    (tools/autoflash/motor.py), before the meter is calibrated."""
+
+    def test_after_the_template_and_before_the_meter(self):
+        from unittest import mock
+        order = []
+        with mock.patch.object(tasmota, "configure_tasmota",
+                               side_effect=lambda ctx: order.append("template") or {"template": "applied"}), \
+                mock.patch.object(tasmota.motor, "set_up_tasmota",
+                                  side_effect=lambda ctx: order.append("motor") or {"motor": "set up"}), \
+                mock.patch.object(tasmota, "calibrate_tasmota_meter",
+                                  side_effect=lambda ctx: order.append("meter") or {"changed": False}):
+            result = tasmota.step_configure(object())
+        self.assertEqual(order, ["template", "motor", "meter"])
+        self.assertEqual(result["motor"], "set up")
+
+
 class OfficialTasmotaSeenTests(unittest.TestCase):
     """F2 - official Tasmota is seen running only from what it says it is: a
     device restarting does not answer its page for a moment (seen in the fault

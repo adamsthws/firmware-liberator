@@ -21,6 +21,76 @@ from tools.autoflash.state import DONE
 from tools.espressif import nvs_image, sonoff_identity
 
 
+class MotorTests(RouteTestCase):
+    """A Dual R3 that drives a motor given ESPHome's build for it, whose outputs
+    are interlocked in the build itself (devices/sonoff-dualr3/esphome-motor.yaml),
+    and seen running it; one in relay mode given its own, as before."""
+
+    def image(self, drives, own=None):
+        ctx = self.ctx(device_kind="sonoff-dualr3")
+        ctx.esphome_firmware = own
+        with mock.patch.object(mover.motor, "drives", return_value=drives), \
+                mock.patch.object(images.imprint, "imprint", side_effect=lambda image, ssid, password: image):
+            return mover.esphome_image(ctx, "Home", "pw")
+
+    def test_a_device_that_drives_a_motor_is_given_the_motors_build(self):
+        pin = images.PINS["sonoff-dualr3"][kinds.MOTOR_ESPHOME]
+        self.assertEqual(pin["config"], "devices/sonoff-dualr3/esphome-motor.yaml")
+        self.assertEqual(self.image(True), images.published_image(kinds.SONOFF_DUALR3, motor=True))
+
+    def test_one_in_relay_mode_is_given_its_own_as_before(self):
+        self.assertEqual(self.image(False), images.published_image(kinds.SONOFF_DUALR3))
+        self.assertNotEqual(images.published_image(kinds.SONOFF_DUALR3),
+                            images.published_image(kinds.SONOFF_DUALR3, motor=True))
+
+    def test_the_persons_own_build_is_theirs_whatever_the_mode(self):
+        with mock.patch.object(images, "image_for", return_value=b"own") as made:
+            ctx = self.ctx(device_kind="sonoff-dualr3")
+            ctx.esphome_firmware = Path("own.bin")
+            with mock.patch.object(mover.motor, "drives", return_value=True):
+                mover.esphome_image(ctx, "Home", "pw")
+        self.assertEqual(made.call_args.kwargs["own"], Path("own.bin"))
+
+    def test_a_kind_with_no_motor_build_has_none(self):
+        with self.assertRaisesRegex(images.ImageError, "for a motor"):
+            images.image_pin(kinds.SONOFF_S60, motor=True)
+
+    def check(self, drives, cover):
+        ctx = self.ctx(firmware="esphome", device_kind="sonoff-dualr3")
+        with mock.patch.object(esphome, "is_esphome", return_value=True), \
+                mock.patch.object(mover, "calibrate_esphome_meter", return_value={}), \
+                mock.patch.object(mover.motor, "drives", return_value=drives), \
+                mock.patch.object(mover.motor, "backup_settings", return_value={}), \
+                mock.patch.object(esphome, "cover", return_value={"state": "OPEN"} if cover else None), \
+                mock.patch.object(output, "tell") as told:
+            return mover.step_esphome_check(ctx), told
+
+    def test_esphome_seen_driving_the_motor_tells_the_person_its_travel_times(self):
+        result, told = self.check(True, cover=True)
+        self.assertEqual(result["motor"], "set up")
+        self.assertIn(mover.motor.ESPHOME_TRAVEL, told.call_args_list[-1].args[0])
+
+    def test_esphome_not_the_motors_build_stops_the_run(self):
+        with self.assertRaisesRegex(errors.Abort, "did not take ESPHome's build for its motor"):
+            self.check(True, cover=False)
+
+    def test_relay_mode_says_nothing_of_a_motor(self):
+        result, told = self.check(False, cover=False)
+        self.assertNotIn("motor", result)
+        told.assert_not_called()
+
+    def test_the_motors_builds_are_this_projects_too(self):
+        section = images.PINS["sonoff-dualr3"]
+        builds = update.published_builds(kinds.SONOFF_DUALR3)
+        self.assertIn(section[kinds.MOTOR_ESPHOME]["built"], builds)
+        self.assertIn(section["esphome"]["built"], builds)
+
+    def test_both_builds_are_one_release(self):
+        # The device answers its release alike whichever it runs (report.check_release).
+        section = images.PINS["sonoff-dualr3"]
+        self.assertEqual(section[kinds.MOTOR_ESPHOME]["version"], section["esphome"]["version"])
+
+
 class CheckStepTests(RouteTestCase):
     def test_it_recognises_esphome_itself(self):
         with mock.patch.object(esphome, "is_esphome", return_value=True):

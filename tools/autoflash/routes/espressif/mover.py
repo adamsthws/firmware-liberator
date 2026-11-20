@@ -17,6 +17,7 @@ from tools.autoflash import (
     imprint,
     join,
     kinds,
+    motor,
     names,
     output,
     plans,
@@ -40,6 +41,18 @@ if TYPE_CHECKING:
     from tools.espressif.layouts import Layout
 
 
+def esphome_image(ctx: Context, ssid: str, password: str, own: bool = True) -> bytes:
+    """The ESPHome the run installs, this Wi-Fi written in: the person's own
+    (--esphome), unless not `own`, as for an update; else the one this
+    project publishes for the device - the motor's, where it drives one
+    (motor.drives)."""
+    try:
+        return images.image_for(ssid, password, own=ctx.esphome_firmware if own else None,
+                                kind=kinds.of_run(ctx.state), motor=motor.drives(ctx))
+    except (images.ImageError, imprint.ImprintError, OSError) as exc:
+        raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
+
+
 def step_esphome_install(ctx: Context) -> dict[str, Any]:
     """I1 - ESPHome into ota_0 from the temporary Tasmota, every block read back.
 
@@ -58,11 +71,9 @@ def step_esphome_install(ctx: Context) -> dict[str, Any]:
     signal = join.note_signal(ctx, join.device_signal(ctx.device), [
         "Once ESPHome is written, it has to join",
         "your Wi-Fi on its own, and a weak signal makes that less certain."])
-    try:
-        image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
-    except (images.ImageError, imprint.ImprintError, OSError) as exc:
-        raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
-    name = ctx.esphome_firmware.name if ctx.esphome_firmware else images.image_file(kinds.of_run(ctx.state)).name
+    image = esphome_image(ctx, ssid, password)
+    name = (ctx.esphome_firmware.name if ctx.esphome_firmware
+            else images.image_file(kinds.of_run(ctx.state), motor.drives(ctx)).name)
     prompts.section("Installing ESPHome", quiet=True, body=[
         f"{name}, with your Wi-Fi written in (in memory only), goes into the half",
         "of the device's memory Tasmota is not running from. Every block is read back",
@@ -194,17 +205,11 @@ def step_esphome_from_mover(ctx: Context) -> dict[str, Any]:
         output.say("The device already runs ESPHome.")
         return {"already": True}
     ssid, password = ctx.wifi()
-    try:
-        image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
-    except (images.ImageError, imprint.ImprintError, OSError) as exc:
-        raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
+    image = esphome_image(ctx, ssid, password)
     if wait_for_mover(ctx, "the mover"):
         # Given new Wi-Fi details on its own network: ESPHome gets those too.
         ssid, password = ctx.wifi()
-        try:
-            image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
-        except (images.ImageError, imprint.ImprintError, OSError) as exc:
-            raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
+        image = esphome_image(ctx, ssid, password)
     seconds = handover.send_as_esphome_update(ctx, image, "ESPHome")
     output.say(f"    ESPHome sent in {seconds}s; the device restarts into it.")
     return {"seconds": seconds, "size": len(image)}
@@ -220,10 +225,7 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
     ssid, password = ctx.wifi(why=[
         "ESPHome can't give its Wi-Fi password, and the update needs it.",
     ])
-    try:
-        image = images.image_for(ssid, password, kind=kinds.of_run(ctx.state))
-    except (images.ImageError, imprint.ImprintError, OSError) as exc:
-        raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
+    image = esphome_image(ctx, ssid, password, own=False)
     seconds = handover.send_as_esphome_update(ctx, image, f"ESPHome {new}")
     output.say(f"    ESPHome {new} sent in {seconds}s; the device restarts into it.")
     return {"seconds": seconds, "size": len(image)}
@@ -321,7 +323,26 @@ def step_esphome_check(ctx: Context, wait: float = 180.0) -> dict[str, Any]:
     then given the device's factory calibration, where its backup has it."""
     result = wait_for_esphome(ctx, wait)
     result["meter"] = calibrate_esphome_meter(ctx)
+    result.update(esphome_motor(ctx))
     return result
+
+
+def esphome_motor(ctx: Context) -> dict[str, Any]:
+    """A device that drives a motor seen to run the motor's build (its cover),
+    and the person told what is left to do; nothing for one in relay mode.
+    The person's own build (--esphome) is theirs to have made safe."""
+    if not motor.drives(ctx):
+        return {}
+    motor.log_sonoff_motor(ctx)
+    if ctx.esphome_firmware:
+        output.tell("    The device drives a motor, and runs your own ESPHome: make sure it never has both "
+                    "outputs on together.")
+        return {"motor": "own build"}
+    if not motor.esphome_motor(ctx.state.input("device_ip")):
+        raise Abort("the device did not take ESPHome's build for its motor, and could have both its outputs on: "
+                    "run the tool again before the motor is used")
+    motor.tell_set_up("ESPHome", motor.ESPHOME_TRAVEL)
+    return {"motor": "set up"}
 
 
 def calibrate_esphome_meter(ctx: Context) -> dict[str, Any]:

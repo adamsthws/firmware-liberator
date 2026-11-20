@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import __version__  # noqa: E402
+from tools.autoflash import __version__, kinds  # noqa: E402
 
 CHANGELOG = ROOT / "CHANGELOG.md"
 
@@ -43,7 +43,7 @@ def notes(version: str, changelog: str) -> str:
 def adoption_tags() -> list[str]:
     """The release each device's ESPHome config names for Home Assistant to adopt
     it from: one that never comes out leaves that device's image impossible to adopt."""
-    return sorted({tag for path in sorted(ROOT.glob("devices/*/esphome.yaml"))
+    return sorted({tag for path in sorted(ROOT.glob(kinds.ESPHOME_CONFIGS))
                    for tag in re.findall(r"^  package_import_url: \S+@(\S+)$", path.read_text(encoding="utf-8"),
                                          re.MULTILINE)})
 

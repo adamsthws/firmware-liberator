@@ -28,7 +28,7 @@ from __future__ import annotations
 from types import ModuleType
 from typing import Any, Callable, NamedTuple, TYPE_CHECKING
 
-from tools.autoflash import account, detect, kinds, output, records, prompts, runs
+from tools.autoflash import account, detect, kinds, motor, output, records, prompts, runs
 from tools.autoflash.errors import Abort, Finished
 from tools.autoflash.routes import beken, espressif, update
 from tools.autoflash.routes import source
@@ -306,6 +306,7 @@ def settle_route(ctx: Context, defer: bool = False) -> tuple[str | None, str]:
         ctx.state.set_input("firmware", "tasmota")
         return "tasmota", "sonoff"
     running = source.find_current_firmware(ctx)
+    motor.note_running(ctx, running)
     if running == "readout":
         # A readout stopped part way left a device of no kind on its readout
         # firmware: whatever was asked for, its Sonoff firmware goes back.

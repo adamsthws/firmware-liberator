@@ -151,6 +151,21 @@ def switch_relay(host: str, on: bool) -> bool:
     return relay(host) is on
 
 
+# The motor's build's cover, by its name in devices/sonoff-dualr3/esphome-motor.yaml.
+COVER = "Curtain"
+
+
+def cover(host: str) -> dict | None:
+    """The cover's state (its "state", "position"...), from a device that
+    drives a motor; None from one with no cover, or that does not answer."""
+    body = _request(host, "/cover/" + urllib.parse.quote(COVER))
+    try:
+        found = json.loads(body) if body else None
+    except ValueError:
+        return None
+    return found if isinstance(found, dict) and "state" in found else None
+
+
 # The Wi-Fi signal sensor, by its name in devices/sonoff-s60/esphome.yaml.
 SIGNAL_SENSOR = "WiFi Signal"
 

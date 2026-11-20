@@ -7,6 +7,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tools.autoflash.esphome import COVER
+
 ROOT = Path(__file__).resolve().parents[2]
 SHARED = ROOT / "devices/shared-esphome"
 METER = re.compile(r"platform: *(cse7766|cse7761|bl0942|bl0937|bl0940|hlw8012|hlw8032|ade7953)")
@@ -240,6 +242,73 @@ class MeterTests(unittest.TestCase):
         for period in ("daily", "monthly", "yearly", "total"):
             self.assertIn(f"  - id: energy_{period}_wh${{id_end}}\n", shared)
         self.assertIn('vars: {energy: energy, id_end: "", name_end: ""}', configs()["sonoff-s60"])
+
+
+def section(config: str, name: str) -> str:
+    """A top-level section of a config (uart:, sensor: ...), as its text."""
+    found = re.search(rf"^{name}:\n(.*?)(?=^\S|\Z)", config, re.M | re.S)
+    return found.group(1) if found else ""
+
+
+class MotorBuildTests(unittest.TestCase):
+    """The Dual R3's build for a motor (esphome-motor.yaml): its own config, so
+    that a config people copy stays one file, held here to esphome.yaml's
+    board, with what is shared included as there - but no relay's settings,
+    as neither output may come on at a start or on its own."""
+
+    def setUp(self):
+        self.relays = (ROOT / "devices/sonoff-dualr3/esphome.yaml").read_text(encoding="utf-8")
+        self.motor = (ROOT / "devices/sonoff-dualr3/esphome-motor.yaml").read_text(encoding="utf-8")
+
+    def test_its_board_is_the_relay_builds(self):
+        for name in ("esp32", "logger", "uart", "status_led", "sensor"):
+            with self.subTest(name):
+                self.assertTrue(section(self.relays, name))
+                self.assertEqual(section(self.motor, name).strip(), section(self.relays, name).strip())
+        pins = re.compile(r"^      number: (GPIO\d+)$|^    pin: (GPIO\d+)$", re.M)
+        for name in ("switch", "binary_sensor"):
+            with self.subTest(name):
+                self.assertEqual(pins.findall(section(self.motor, name)), pins.findall(section(self.relays, name)))
+        # The pins Tasmota held through its restart, released alike.
+        self.assertIn(self.relays[self.relays.index("gpio_hold_dis"):self.relays.index("# Adopting")].strip(),
+                      self.motor)
+
+    def test_it_is_the_same_device_and_release(self):
+        for field in (r"^  comment: (.+)$", r"^    name: (liberator\.\S+)$", r'^    version: "(.+)"$'):
+            self.assertEqual(re.search(field, self.motor, re.M).group(1), re.search(field, self.relays, re.M).group(1))
+        self.assertIn("devices/sonoff-dualr3/esphome-motor.yaml@", self.motor)
+
+    def test_what_is_shared_is_included_as_in_the_relay_build_but_a_relays_settings(self):
+        for pattern in (ENERGY, DERIVED):
+            self.assertEqual(pattern.findall(self.motor), pattern.findall(self.relays))
+        self.assertRegex(self.motor, r"(?m)^  base: !include \.\./shared-esphome/base\.yaml$")
+        self.assertRegex(self.motor, r"(?m)^  wifi: !include \.\./shared-esphome/wifi-esp32\.yaml$")
+        self.assertEqual(RELAY.findall(self.motor), [])
+        self.assertEqual(OVERLOAD.findall(self.motor), [])
+        for shared, patterns in SHARED_ONLY.items():
+            for pattern in patterns:
+                with self.subTest(shared=shared, pattern=pattern):
+                    self.assertNotRegex(self.motor, re.compile(pattern, re.M))
+
+    def test_neither_output_is_switched_on_its_own_nor_on_with_the_other_nor_at_a_start(self):
+        items = {re.search(r"id: (\w+)", item).group(1): item for item in switches(self.motor)}
+        self.assertEqual(set(items), {"relay", "relay_2"})
+        self.assertEqual(relays(self.motor), {})
+        for ident, other in (("relay", "relay_2"), ("relay_2", "relay")):
+            with self.subTest(ident):
+                self.assertIn("    internal: true\n", items[ident])
+                self.assertIn("    restore_mode: ALWAYS_OFF\n", items[ident])
+                self.assertIn(f"    interlock: [{other}]\n", items[ident])
+                self.assertIn("    interlock_wait_time: ", items[ident])
+
+    def test_its_cover_drives_one_output_each_way_and_stops_both(self):
+        cover = section(self.motor, "cover")
+        self.assertIn("    open_action:\n      - switch.turn_on: relay\n", cover)
+        self.assertIn("    close_action:\n      - switch.turn_on: relay_2\n", cover)
+        self.assertIn("    stop_action:\n      - switch.turn_off: relay\n      - switch.turn_off: relay_2\n", cover)
+        self.assertIn(f'    name: "{COVER}"\n', cover)
+        for name in ("Open duration", "Close duration"):
+            self.assertIn(f'    name: "{name}"\n', section(self.motor, "number"))
 
 
 if __name__ == "__main__":

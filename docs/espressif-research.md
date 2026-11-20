@@ -93,6 +93,18 @@ Dual R3 (uiid 126) as a cover. The firmware resets all its user settings,
 `deviceMode` 2 among them, when it registers with an account other than the
 one its `user_unusual` settings name (`finalUserApikey`).
 
+Beside `deviceMode`, the user settings' keys, as the firmware's strings list
+them, include the motor's own: `calibrate_time`, `motorCalibrate`,
+`calibrateWay`, `motorLocation`, `limitCurrent`, `motorDriverReverse` and
+`motorKeyReverse` (read from the 1.6.1 image's strings, not from a real one's
+settings). Its motor task calibrates by the motor's current
+(`MOTOR_AUTO_GET_CURRENT_TO_END`) or by hand; what unit `calibrate_time` is
+kept in was not found, so the tool carries no travel time across and logs
+what a device's backup holds of these
+([the device's page](../devices/sonoff-dualr3/README.md#a-curtain-motor)).
+eWeLink's `motorTurn` (0 stop, 1 open, 2 close), `location` and `currLocation`
+(0 closed, 100 open) are how SonoffLAN drives it.
+
 The emulator's Dual R3 runs on the TH Elite's settings, which have no
 `deviceMode`, so [public_dump.py](../tools/espressif/emulator/public_dump.py)
 gives it `{"init":"true","deviceMode":1}` (the firmware adds its other

@@ -238,6 +238,18 @@
         ],
         "size": 906224,
         "sha256": "b755f2bbdbfcab8749d522fcc782e6211e34a7e364087d2f36d3332ea9629b75"
+      },
+      "esphome-motor": {
+        "file": "artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-3.bin",
+        "config": "devices/sonoff-dualr3/esphome-motor.yaml",
+        "version": "2026.10.0-3",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-20 15:05:07 +0000",
+        "earlier_builds": [],
+        "size": 903264,
+        "sha256": "2aaeb424ae176b552685b92fd3d7c854ba4554a09a371bfbe2e71728cbb75f25"
       }
     },
     "sonoff-nspanel": {

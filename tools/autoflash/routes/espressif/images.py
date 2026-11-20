@@ -102,25 +102,26 @@ def check_app(image: bytes, label: str, chip: chips.Chip = chips.ESP32C3) -> Non
         raise ImageError(f"{label} fails its own integrity check")
 
 
-def image_pin(kind: kinds.Kind) -> dict:
-    """What firmware.json pins for `kind`'s ESPHome."""
+def image_pin(kind: kinds.Kind, motor: bool = False) -> dict:
+    """What firmware.json pins for `kind`'s ESPHome: with `motor`, the build
+    for a device that drives a motor (kinds.MOTOR_ESPHOME)."""
     try:
-        return PINS[kind.key]["esphome"]
+        return PINS[kind.key][kinds.MOTOR_ESPHOME if motor else "esphome"]
     except KeyError:
-        raise ImageError(f"no ESPHome is published for the {kind.name}") from None
+        raise ImageError(f"no ESPHome {'for a motor ' if motor else ''}is published for the {kind.name}") from None
 
 
-def image_file(kind: kinds.Kind) -> Path:
-    return ROOT / image_pin(kind)["file"]
+def image_file(kind: kinds.Kind, motor: bool = False) -> Path:
+    return ROOT / image_pin(kind, motor)["file"]
 
 
 def chip_of(kind: kinds.Kind) -> chips.Chip:
     return chips.of(kind.chip)
 
 
-def published_image(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
-    """The pinned image, its placeholders untouched."""
-    pin = image_pin(kind)
+def published_image(kind: kinds.Kind = kinds.SONOFF_S60, motor: bool = False) -> bytes:
+    """The pinned image, its placeholders untouched: with `motor`, the motor's."""
+    pin = image_pin(kind, motor)
     path = IMAGE if kind is kinds.SONOFF_S60 else ROOT / pin["file"]
     image = path.read_bytes()
     size, digest = (IMAGE_SIZE, IMAGE_SHA256) if kind is kinds.SONOFF_S60 else (pin["size"], pin["sha256"])
@@ -207,11 +208,13 @@ def leaving_table(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
     return table
 
 
-def image_for(ssid: str, password: str, own: Path | None = None, kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
-    """The image to install: the published one with this Wi-Fi written in, or
-    one built by hand (--esphome PATH), imprinted too if it has placeholders."""
+def image_for(ssid: str, password: str, own: Path | None = None, kind: kinds.Kind = kinds.SONOFF_S60,
+              motor: bool = False) -> bytes:
+    """The image to install: the published one with this Wi-Fi written in -
+    with `motor`, the one for a device that drives a motor (tools/autoflash/motor.py)
+    - or one built by hand (--esphome PATH), imprinted too if it has placeholders."""
     if own is None:
-        return imprint.imprint(published_image(kind), ssid, password)
+        return imprint.imprint(published_image(kind, motor), ssid, password)
     image = own.read_bytes()
     check_app(image, own.name, chip_of(kind))
     if imprint.has_placeholders(image):

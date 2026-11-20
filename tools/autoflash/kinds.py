@@ -87,6 +87,13 @@ class Status(enum.Enum):
         return self is not Status.NOT_SUPPORTED
 
 
+# A kind with a motor mode (Kind.motor_mode) has a second ESPHome, pinned under
+# this key beside its own: devices/<kind>/esphome-motor.yaml.
+MOTOR_ESPHOME = "esphome-motor"
+# Every ESPHome config a device's image is built from and Home Assistant
+# adopts: each kind's esphome.yaml, and a motor's esphome-motor.yaml.
+ESPHOME_CONFIGS = "devices/*/esphome*.yaml"
+
 STATUS_FILE = Path(__file__).resolve().parents[2] / "devices" / "status.json"
 STATUSES = {key: Status(value) for key, value in json.loads(STATUS_FILE.read_text(encoding="utf-8")).items()}
 
@@ -155,6 +162,10 @@ class Kind:
     # (QEMU property, raw 12-bit sample), where stock firmware acts on one: only
     # the emulator asks.
     adc_readings: tuple[tuple[str, int], ...] = ()
+    # Whether Sonoff's firmware can drive a curtain motor with it, in place of
+    # its relays (the Dual R3's motor mode): the mode is carried across
+    # (tools/autoflash/motor.py), and its ESPHome has a build of its own for it.
+    motor_mode: bool = False
 
     @property
     def status(self) -> Status:
@@ -183,6 +194,13 @@ class Kind:
         by region), which only eWeLink tells apart."""
         pattern = self.product.pattern
         return pattern if re.fullmatch(r"[A-Z0-9-]+", pattern) else ""
+
+    @property
+    def esphome_configs(self) -> dict[str, str]:
+        """Each ESPHome built for it, by its key in firmware.json, and its
+        config in its folder: its own, and for a kind with a motor mode the
+        motor's (MOTOR_ESPHOME)."""
+        return {"esphome": "esphome.yaml", **({MOTOR_ESPHOME: "esphome-motor.yaml"} if self.motor_mode else {})}
 
     @property
     def esphome_project(self) -> str:
@@ -514,6 +532,7 @@ SONOFF_DUALR3 = Kind(
     sensors=(),
     product_model_decides=True,
     example_product_model="DUALR3",
+    motor_mode=True,
 )
 
 

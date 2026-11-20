@@ -21,6 +21,7 @@ from tools.autoflash import (
     interrupt,
     join,
     kinds,
+    motor,
     names,
     output,
     prompts,
@@ -450,11 +451,18 @@ def stop_here_after_ctrl_c(step: str) -> bool:
 def rerun_on_tasmota(ctx: Context) -> int:
     """A device kept on Tasmota: its meter calibrated, as F4 would have, if it
     is not - a device converted before the tool did, or whose calibration was
-    lost with its settings.  One calibrated by hand is left as it is."""
+    lost with its settings.  One calibrated by hand is left as it is.  So is
+    a device that drives a motor set up for it, as F4 does, if it is not: one
+    an earlier release converted to two relays."""
     try:
         unlock.unlock_tasmota(ctx)
     except Abort as refused:
         output.tell(f"Stopped before anything was done: {refused}.")
+        return 2
+    try:
+        motor.set_up_tasmota(ctx)
+    except Abort as refused:
+        output.tell(f"Stopped: {refused}.")
         return 2
     output.tell("Checking its meter's calibration...")
     tasmota.calibrate_tasmota_meter(ctx, show=True)

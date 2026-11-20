@@ -297,5 +297,23 @@ class TemplateNameTests(unittest.TestCase):
         )
 
 
+class MotorModeTests(unittest.TestCase):
+    def test_only_the_dual_r3_has_a_motor_mode_and_a_build_for_it(self):
+        self.assertEqual([kind.key for kind in kinds.EVERY if kind.motor_mode], ["sonoff-dualr3"])
+        self.assertEqual(kinds.SONOFF_DUALR3.esphome_configs,
+                         {"esphome": "esphome.yaml", kinds.MOTOR_ESPHOME: "esphome-motor.yaml"})
+        self.assertEqual(kinds.SONOFF_S60.esphome_configs, {"esphome": "esphome.yaml"})
+
+    def test_every_config_is_one_the_configs_pattern_finds(self):
+        found = {path.relative_to(kinds.STATUS_FILE.parents[1]).as_posix()
+                 for path in kinds.STATUS_FILE.parents[1].glob(kinds.ESPHOME_CONFIGS)}
+        for kind in kinds.EVERY:
+            for name in kind.esphome_configs.values():
+                path = f"{kind.folder}/{name}"
+                if (kinds.STATUS_FILE.parents[1] / path).exists():
+                    self.assertIn(path, found)
+        self.assertIn("devices/sonoff-dualr3/esphome-motor.yaml", found)
+
+
 if __name__ == "__main__":
     unittest.main()
