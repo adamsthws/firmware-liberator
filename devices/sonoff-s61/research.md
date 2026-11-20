@@ -64,15 +64,20 @@ Each firmware reads them back:
 
 | Firmware | Relay on | Relay off |
 |---|---|---|
-| OpenBeken | 248-250 V, 103-105 W | 0 W |
-| ESPHome | 244 V, 103 W | 0 W |
+| OpenBeken | 226-235 V, 97.6-100.3 W | 226-231 V, 0 W |
+| ESPHome | 230.0-230.6 V, 100.1-100.8 W | 230.4-230.6 V, 0 W |
 | Sonoff's | 230.22 V, 0.43 A, 100.00 W | 230.22 V and nothing else |
 
-OpenBeken and ESPHome read a little high, from the firmware's clock in the
-emulator; Sonoff's firmware times each period by the chip's clock. The voltage
-being further out than the power, ESPHome's voltage times current is 108-110 VA,
-6% over its power, so the resistive load reads 24-39 var and a power factor of
-0.94-0.98 there. Which way
+OpenBeken and ESPHome count pulses over a second of the firmware's own clock,
+Sonoff's firmware times each period by the chip's: the first two read true only
+while the firmware's clock keeps the device's time. Before the emulator's
+[patch 0008](../../tools/beken/emulator/README.md#the-fork-patchespatch) it ran
+8.4% slow in the voltage's windows and 4.7% in the current's, and they read
+245-250 V and 103-108 W (ESPHome a power factor of 0.94-0.98); a real S61 has
+no such lag. OpenBeken's wider spread is not its calibration, which is the
+stock store's whether it comes from Sonoff's firmware or from ESPHome (its log
+says `OpenBeken cal I=0.011095 V=0.128238 P=1.334562` both ways): one read
+differs from the next by up to 2%. Which way
 SEL selects was settled from three sources:
 OpenBeken's template (`SEL`, not `SEL_n`: voltage on high), Tasmota's BL0937
 driver (voltage on high unless the pin is `NRG_SEL_i`) and ESPHome's `hlw8012`

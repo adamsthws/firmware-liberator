@@ -42,7 +42,9 @@ for working on it. How to use it is in
   s, against 603) and the safe-mode scenarios, which now wait out the full
   five minutes (786 and 861 s). The computer's CPU is free while it waits. `net.log` has
   both times each minute (`[clock]`); `DEVICE_WALL_CLOCK=0 beken-emu.sh device`
-  lets it run free, to compare.
+  lets it run free, to compare. The firmware's own clock, its RTOS tick, keeps
+  the device's time (patch [0008](#the-fork-patchespatch)); before, it ran 5-9%
+  behind it.
 
 ## The image
 
@@ -202,12 +204,57 @@ under them.
   unacknowledged (`RETRY_LIMIT_REACHED`), as the hardware reports it. The
   firmware counts beacons lost since its last acknowledged frame, so with
   every frame acknowledged it never saw its access point go: now it does,
-  while the router is still off. It could go upstream, with one of upstream's
-  self-tests changed: the firmware's timing moved a little, so in "BK7238
-  Tuya GBDQA protection switch" two of its tasks' lines now print into each
-  other, and its `initial BLE...` comes out cut ("data is NULLdata al
-  BLE..."), though the device goes on as before, to its MQTT exchange; the
-  other 162 pass.
+  while the router is still off. It could go upstream. The firmware's timing
+  moved a little under it, so in "BK7238 Tuya GBDQA protection switch" two of
+  its tasks' lines printed into each other and its `initial BLE...` came out
+  cut, though the device went on as before, to its MQTT exchange; with 0008
+  it passes again.
+- **`0008-slow-tick-keeps-the-device-clock`** (`src/emulator.py`,
+  `tests/slow_tick.py`): each slow tick, which raises the firmware's RTOS
+  tick, is due one period after the last was due, not after the chunk it was
+  raised in. A chunk crossing between ARM and Thumb, as one taking or leaving
+  an interrupt does, steps the clock by 420 or 2381 rather than 1000, and what
+  it overshot by was dropped: the firmware's clock ran 5% behind the device's
+  (one tick each 10,500 of its instructions on the S61's OpenBeken and
+  ESPHome, each 10,900 under the meter's 1.8 kHz of pulses), and its meter,
+  counting pulses over a second of its own time, read that much high (found
+  20 November 2026). `tests/slow_tick.py` fails without it. It could go
+  upstream.
+
+  Every firmware now gets about 5% fewer instructions per millisecond of its
+  own time, and eleven of upstream's self-tests moved. Nine hung on timing
+  alone and are re-recorded in the patch: three CC8000 bulbs print a later
+  `tick=`, two Zengge lights their BRMT task's start some 60 ms later, the
+  BIM8774 socket 48 more bytes free, and in the Tuya device left in factory
+  mode, the TH01 sensor and the CB3S IR module a line now comes out cut by
+  another task's, so each looks for one printed intact beside it that says
+  the same.
+  The other two are real changes, firmware races the new timing exposes, and
+  are left failing, marked known by 0009:
+
+  - **Zengge ZJ21412** never advertises: its app asks for its advertisement
+    before the BLE host is ready ("ble is not ready", "actv[0] is not
+    created") and never asks again. Given 10,500 instructions a tick, as the
+    slow tick gave it, it advertises; given 10,000 it does not, however the
+    tick is counted.
+  - **Dreo BL2028N fan** hangs after `Soft_AP_start`, its FreeRTOS timer task
+    and `wpas_thread` each blocked without a timeout, as when a software
+    timer is lost. It turns on where the first tick falls: shifted by 0 to
+    11,000 instructions it hung at three offsets of twelve with 0008, and at
+    two of five without it, where offset 0, the one the run takes, happened
+    to pass.
+
+  Both race because the emulated CPU is slow: `SLOW_TICK_INSNS` per
+  `SLOW_TICK_MS`, 5,000 instructions a millisecond of the device's time,
+  where a real chip runs 100,000 or more, so a task's work takes twenty
+  times as many of its ticks. A faster emulated CPU would be the real fix;
+  it is not made.
+- **`0009-self-test-known-failures-reported-as-known`**
+  (`tests/self_test.py`): a case may carry `known_failure`, its reason, the
+  evidence in a comment beside it. It still runs and prints its checks; the
+  summary names it with its reason, says how many failures are known, and
+  the run fails only if another case does. A known failure that passes is
+  named too: the Dreo fan's, depending on its tick phase, may.
 
 To change the fork, extract the archive (`captures/emulation/cache/`), apply
 the patches in order, commit the change, and `git format-patch` it into
@@ -271,19 +318,21 @@ itself is run: changing it needs no new image.
   1.8 kHz a quarter of the voltage's edges were lost: OpenBeken read 176 V of
   230.
 - **What the firmwares read**, in each way of `fault_suite.py check` (the
-  end-of-run check, with the cloud stub): OpenBeken 248-250 V and 103-105 W
-  with the relay on, the same voltage and 0 W off; ESPHome 244 V with 103 W on
-  and 0 W off. Both read a few percent high because the firmware's clock
-  falls behind the device's in the emulator: OpenBeken's uptime counted 67 s
-  in 70 s of the device's time (seen by printing the device's time beside its
-  log). The voltage being further out than the power is inferred to come from
-  its read windows losing more, each with 1.8 kHz of interrupts. So ESPHome's
-  apparent power, voltage times current, is 108-110 VA, 6% over its power, and
-  the resistive load reads 24-39 var and a power factor of 0.94-0.98. Sonoff's
-  firmware, timing the periods by the chip's clock, not its own, reports the
-  load as it is to the stub: 230.22 V, 0.43 A and
-  100.00 W with the relay on (switched through the stub's eWeLink, and asked
-  for readings as the app asks, `uiActive`), 230.22 V and nothing off.
+  end-of-run check, with the cloud stub): OpenBeken 226-235 V and
+  97.6-100.3 W with the relay on, 226-231 V and 0 W off; ESPHome 230.0-230.6 V
+  and 100.1-100.8 W on, 230.4-230.6 V and 0 W off; Sonoff's firmware 230.22 V, 0.43 A and 100.00 W on (switched through
+  the stub's eWeLink, and asked for readings as the app asks, `uiActive`),
+  230.22 V and nothing off. OpenBeken and ESPHome count pulses over a second
+  of the firmware's own clock, so they read true only while it keeps the
+  device's time: before patch [0008](#the-fork-patchespatch) it ran 8.4% slow
+  in the voltage's windows and 4.7% in the current's, and they read 245-250 V
+  and 103-108 W (ESPHome a power factor of 0.94-0.98). Sonoff's firmware times
+  the pulses' periods by the chip's clock and read the same before and after.
+  OpenBeken's wider spread is not its calibration: from Sonoff's firmware and
+  from ESPHome alike it starts with the stock store's
+  (`AutoflashImport: OpenBeken cal I=0.011095 V=0.128238 P=1.334562` in its
+  serial log, and the tool reports `stock store` both ways), and one read
+  differs from the next by up to 2% under it (found 20 November 2026).
 - **Not modelled:** the chip's pulse shape and width (only the rate counts),
   or a pulse's timing within a 0.2 ms chunk.
 

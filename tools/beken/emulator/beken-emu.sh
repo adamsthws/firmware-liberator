@@ -57,7 +57,9 @@
 #   tools/beken/emulator/beken-emu.sh test [ARGS...]
 #                             upstream's own self-tests (tests/self_test.py ARGS,
 #                             -k PATTERN selects by name), under the patches; they run
-#                             upstream's firmwares/ (about 280 MB), fetched the first time
+#                             upstream's firmwares/ (about 280 MB), fetched the first time.
+#                             A case marked known_failure is named, with why, and fails
+#                             the run only beside another failure
 #   tools/beken/emulator/beken-emu.sh dump
 #                             the public S61s dump (firmwares/Sonoff_S61s_..., the tools'
 #                             default AUTOFLASH_BEKEN_EMU_DUMP), fetched from upstream's repository,

@@ -1,0 +1,183 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 15:00:00 +0000
+Subject: [PATCH] emulator: keep the slow tick on the device clock
+
+The slow tick restarted its count from the chunk it was raised in, so what
+that chunk overshot its period by was lost. A chunk steps insn_count by 1000
+in one state, but by 420 (ARM to Thumb) or 2381 (Thumb to ARM) where it
+crosses between them, as one taking or leaving an interrupt does: on a
+BK7238 OpenBeken or ESPHome image the tick came every 10,500 of insn_count,
+not 10,000, and every 10,900 under a BL0937's 1.8 kHz of pulses. The guest's
+RTOS tick, raised here, ran 5-9% slow against insn_count, the clock the rest
+of the device keeps, and a meter counting pulses over a second of the
+guest's time read that much high.
+
+Each tick is now due SLOW_TICK_INSNS after the last was due. A step is
+always shorter than a period, so one is raised each period; the idle skip
+already aims at last_slow + SLOW_TICK_INSNS. tests/slow_tick.py fails
+without it: 1333 ticks for 1444 periods.
+
+Firmware now gets about 5% fewer instructions per millisecond of its own
+time, so nine self-tests' expectations that hang on timing alone are
+re-recorded:
+
+- CC8000 A19 and A60 2.0.4.51 print tick=179 where they printed 172, and
+  A60 2.0.3.47 tick=180 where 173; their GPIO checks failed only because
+  the run stopped at the missing line.
+- Zengge ZJ21413 and XGD-NZ-002 print their BRMT task's start at 2470 and
+  2664 ms, not 2408 and 2588.
+- BIM8774 reports 67424 bytes free at device_init, not 67376.
+- The SDK banner of the Tuya device in factory mode, TH01's
+  Wakeup_GetEvent line and the CB3S IR module's app version and
+  BLE_STACK_OK lines come out cut by other tasks' lines; each now looks
+  for a line printed intact beside them that says the same.
+---
+ src/emulator.py    | 13 ++++++++---
+ tests/self_test.py | 25 ++++++++++++---------
+ tests/slow_tick.py | 54 ++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 79 insertions(+), 13 deletions(-)
+ create mode 100644 tests/slow_tick.py
+
+diff --git a/src/emulator.py b/src/emulator.py
+index 43071aa..4525ddc 100644
+--- a/src/emulator.py
++++ b/src/emulator.py
+@@ -199,3 +199,3 @@ class SimulatorState:
+         self.last_pc = 0           # start of the last basic block, for the GUI status bar
+-        self.last_slow = 0         # insn_count at last slow (timer) tick
++        self.last_slow = 0         # insn_count the last slow (timer) tick was due at
+         self.last_fast = 0         # insn_count at last ~1000-insn (UART) tick
+@@ -2060,5 +2060,12 @@ class BekenEmulator:
+ 
+-        # Slow tick: raise the periodic sources' pending.
++        # Slow tick: raise the periodic sources' pending. Each is due
++        # SLOW_TICK_INSNS after the last was due, not after the chunk it was
++        # raised in ended: a chunk that crosses between ARM and Thumb steps
++        # the clock by 420 or 2381, not 1000, and counting from its end
++        # dropped what it overshot by. The guest's RTOS tick, raised here,
++        # then ran 5% slow against insn_count, which the rest of the device
++        # keeps, and up to 9% under a stream of interrupts, each entered and
++        # left by such a crossing.
+         if state.insn_count - state.last_slow >= SLOW_TICK_INSNS:
+-            state.last_slow = state.insn_count
++            state.last_slow += SLOW_TICK_INSNS
+             if self.meter_cf_pin is not None or self.meter_cf1_pin is not None:
+diff --git a/tests/self_test.py b/tests/self_test.py
+index 52a341c..4aa0b68 100644
+--- a/tests/self_test.py
++++ b/tests/self_test.py
+@@ -1492,3 +1492,4 @@ TEST_CASES = [
+         "expected_strings": [
+-            "< TUYA IOT SDK V:2.3.3 BS:40.00_PT:2.2_LAN:3.4_CAD:1.0.5_CD:1.0.0 >",
++            # Another task's line prints into the start of the banner.
++            "IOT SDK V:2.3.3 BS:40.00_PT:2.2_LAN:3.4_CAD:1.0.5_CD:1.0.0 >",
+             "IOT DEFS < WIFI_GW:1 DEBUG:1 KV_FILE:0 SHUTDOWN_MODE:0 LITTLE_END:1 TLS_MODE:2",
+@@ -2811,6 +2812,9 @@ TEST_CASES = [
+         "expected_strings": [
+-            "oem_bk7231n_irbox_mol_ty:1.2.1",
++            # The app's own version line and BLE_STACK_OK come out cut by
++            # other tasks' lines; the SDK banner and the platform's STACK INIT
++            # OK, printed beside them, survive.
++            "< TUYA IOT SDK V:2.3.1 BS:40.00_PT:2.2_LAN:3.3_CAD:1.0.3_CD:1.0.0 >",
+             "rwble_hl_init ok",
+             ("gapm_cmp_evt:GAPM_GEN_RAND_NB", 2),
+-            "gapm_cmp_evt:BLE_STACK_OK",
++            "[PLATFORM NOTICE]STACK INIT OK",
+             "CREATE DB SUCCESS",
+@@ -3385,3 +3389,3 @@ TEST_CASES = [
+             "[WIFI] device RX filter 0x7fffffde: monitor mode",
+-            "enter [cc8000::V2.3.72::V2.04.51] main ok ; tick=172",
++            "enter [cc8000::V2.3.72::V2.04.51] main ok ; tick=179",
+             "-----rw_main task init----",
+@@ -3404,3 +3408,3 @@ TEST_CASES = [
+         "expected_strings": [
+-            "enter [cc8000::V2.2.18::V2.03.47] main ok ; tick=173",
++            "enter [cc8000::V2.2.18::V2.03.47] main ok ; tick=180",
+             "-----rw_main task init----",
+@@ -3429,3 +3433,3 @@ TEST_CASES = [
+             "[WIFI] device RX filter 0x7fffffde: monitor mode",
+-            "enter [cc8000::V2.3.72::V2.04.51] main ok ; tick=172",
++            "enter [cc8000::V2.3.72::V2.04.51] main ok ; tick=179",
+             "-----rw_main task init----",
+@@ -4083,3 +4087,3 @@ TEST_CASES = [
+             "IOTWF8A9",
+-            "D(BRMT) (2408) task init success",
++            "D(BRMT) (2470) task init success",
+         ],
+@@ -4174,3 +4178,3 @@ TEST_CASES = [
+             "IOTWF829",
+-            "D(BRMT) (2588) task init success",
++            "D(BRMT) (2664) task init success",
+         ],
+@@ -4646,3 +4650,3 @@ TEST_CASES = [
+             "dltj_run_int",
+-            "device_init ok  free_mem_size:67376",
++            "device_init ok  free_mem_size:67424",
+             "appm start advertising",
+@@ -4774,3 +4778,4 @@ TEST_CASES = [
+             "oem_bk7231n_temp_hum_sensor:1.1.17",
+-            "Wakeup_GetEvent is:0",
++            # Wakeup_GetEvent's own line comes out cut; this one says the same.
++            "g_dev_ctl.wake_event is:0",
+             "sleep sec is:3600",
+diff --git a/tests/slow_tick.py b/tests/slow_tick.py
+new file mode 100644
+index 0000000..497812b
+--- /dev/null
++++ b/tests/slow_tick.py
+@@ -0,0 +1,54 @@
++"""The slow tick, which raises the guest's RTOS timer, keeps the device clock:
++one tick each SLOW_TICK_INSNS of insn_count, however the chunks step it."""
++
++import sys
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++from src.emulator import BekenEmulator, SLOW_TICK_INSNS
++
++
++def ticks_over(steps, rounds):
++    """How many times the slow tick raises Timer 3's status while insn_count
++    moves by `steps`, `rounds` times over, the ISR acknowledging each; and
++    how many periods insn_count moved by."""
++    emu = BekenEmulator(b"\xff" * 0x20000, None, b"", only_uart=True)
++    emu.setup()
++    state = emu.state
++    state.icu_int_enable |= 1 << 8          # BKTIMER
++    raised = 0
++    for _ in range(rounds):
++        for step in steps:
++            state.insn_count += step
++            emu._pacing(state)
++            if state.timer3_5_ctl & (1 << 7):
++                raised += 1
++                state.timer3_5_ctl &= ~(1 << 7)
++    return raised, state.insn_count // SLOW_TICK_INSNS
++
++
++def test_a_tick_each_period_of_whole_chunks():
++    raised, periods = ticks_over([1000], 10_000)
++    assert raised == periods, (raised, periods)
++
++
++def test_a_tick_each_period_when_chunks_cross_between_arm_and_thumb():
++    # A chunk ending in the other state than it began in steps the clock by
++    # 420 (ARM to Thumb) or 2381 (Thumb to ARM), as one taking an interrupt
++    # or returning from it does: what a tick lands past its period counts
++    # towards the next, not lost.
++    raised, periods = ticks_over([1000, 420, 2381, 1000, 1000, 420, 1000], 2_000)
++    assert raised == periods, (raised, periods)
++
++
++def main():
++    test_a_tick_each_period_of_whole_chunks()
++    test_a_tick_each_period_when_chunks_cross_between_arm_and_thumb()
++    print("Slow tick self-tests passed.")
++
++
++if __name__ == "__main__":
++    main()

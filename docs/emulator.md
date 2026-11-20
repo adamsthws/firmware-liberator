@@ -800,11 +800,9 @@ its relay switching, not to a meter seeing it.
 - **A power meter, but no button.** The S61's BL0937 measures a 100 W load on
   230 V while the relay pin is driven high and none while it is low, so the
   end-of-run check can say the meter confirms the switch
-  ([how](../tools/beken/emulator/README.md#the-devices-board-boardpy)). OpenBeken
-  and ESPHome read it a little high, 244-250 V and 103-105 W, as the firmware's
-  clock falls behind in the emulator; Sonoff's firmware reports 230 V and
-  100 W to the stub. A conversion passing says the firmware installs, starts
-  and reads a meter on the pins its config names - not that those are the
-  device's.
+  ([how](../tools/beken/emulator/README.md#the-devices-board-boardpy)). Each
+  firmware reads it within a few percent of 230 V and 100 W. A conversion
+  passing says the firmware installs, starts and reads a meter on the pins
+  its config names - not that those are the device's.
 - **A Linux computer only.** `beken-emu.sh computer` is a Linux container; the
   Espressif emulator's [Windows](#on-windows) set-up has no Beken counterpart yet.
