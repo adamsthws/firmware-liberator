@@ -1,0 +1,24 @@
+# The network a Beken device starts on: the one its stock firmware was on,
+# from the stock store (ef40.h), which the conversion leaves as it is. Built
+# by Home Assistant's ESPHome builder, it starts on what it saved since
+# (base.yaml).
+
+esphome:
+  includes:
+    - ef40.h
+  on_boot:
+    # Before Wi-Fi starts (its priority is 250). Wi-Fi details saved later
+    # (from Home Assistant, say) take their place as Wi-Fi starts.
+    - priority: 1000
+      then:
+        - lambda: |-
+            std::string ssid, password;
+            if (autoflash::ef40_read("wifi-ssid", ssid)) {
+              autoflash::ef40_read("wifi-pass", password);  // none: an open network
+              id(start_ssid) = ssid;
+              id(start_password) = password;
+              wifi::WiFiAP sta;
+              sta.set_ssid(ssid);
+              sta.set_password(password);
+              wifi::global_wifi_component->set_sta(sta);
+            }

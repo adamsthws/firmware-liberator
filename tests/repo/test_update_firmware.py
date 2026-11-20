@@ -23,12 +23,18 @@ class IncludedFilesTests(unittest.TestCase):
         self.assertEqual(uf.included(config), ["a.h"])
         s60 = (ROOT / "devices/sonoff-s60/esphome.yaml").read_text(encoding="utf-8")
         self.assertIn("    - <nvs.h>\n", s60)
-        self.assertEqual(uf.included(s60), ["../power-on-state.yaml"])
+        self.assertEqual(uf.included(s60), ["../shared-esphome/base.yaml", "../shared-esphome/wifi-esp32.yaml",
+                                            "../shared-esphome/relay.yaml", "../shared-esphome/energy-totals.yaml",
+                                            "../shared-esphome/overload.yaml"])
 
     def test_a_package_included_is_a_file_to_copy_once(self):
         config = ("packages:\n  a: !include {file: ../p.yaml, vars: {relay: relay}}\n"
                   "  b: !include {file: ../p.yaml, vars: {relay: relay_2}}\n")
         self.assertEqual(uf.included(config), ["../p.yaml"])
+
+    def test_a_package_included_whole_is_a_file_to_copy_too(self):
+        self.assertEqual(uf.included("packages:\n  base: !include ../shared-esphome/base.yaml\n"),
+                         ["../shared-esphome/base.yaml"])
 
     def test_both_movers_include_the_one_restart_route(self):
         for chip in ("esp32c3", "esp32"):
@@ -47,6 +53,7 @@ class IncludedFilesTests(unittest.TestCase):
             config_path = devices / "chip" / "mover.yaml"
             config_path.write_text(config, encoding="utf-8")
             for name, text in files.items():
+                (devices / name).parent.mkdir(parents=True, exist_ok=True)
                 (devices / name).write_text(text, encoding="utf-8")
 
             def compiled(*args):
@@ -86,6 +93,14 @@ class IncludedFilesTests(unittest.TestCase):
                     uf.build_libretiny("builder", config_path, "1.0.0", work)
             self.assertEqual((work / "p.yaml").read_text(encoding="utf-8"), "switch: []\n")
             self.assertIn("!include {file: p.yaml,", (work / "esphome.yaml").read_text(encoding="utf-8"))
+
+    def test_what_a_shared_file_includes_is_built_beside_it_too(self):
+        # wifi-bk72xx.yaml's ef40.h, named from where that file is.
+        config = self.CONFIG + "packages:\n  wifi: !include ../shared/w.yaml\n"
+        given = self.build_with(config, {"r.h": "shared", "shared/w.yaml": "esphome:\n  includes:\n    - e.h\n",
+                                         "shared/e.h": "header"})
+        self.assertEqual(given["e.h"], "header")
+        self.assertIn("  wifi: !include w.yaml\n", given["mover.yaml"])
 
     def test_includes_are_named_from_the_folder_given(self):
         with tempfile.TemporaryDirectory() as tmp:

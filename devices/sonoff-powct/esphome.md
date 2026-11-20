@@ -9,10 +9,15 @@ memory only.
 
 It switches the relay, from its button and over the network, and reports
 voltage, current and power, showing voltage and power on the display. Current
-and power are divided by π ([why](README.md#the-meters-clamp)).
+and power are divided by π ([why](README.md#the-meters-clamp)). `Daily energy`,
+`Monthly energy`, `Yearly energy` and `Total energy`, counted from its power,
+are kept through restarts and updates; the first three start again each day,
+month and year. It has no overload switch-off: its clamp measures a circuit of
+its own, not the relay's load.
 
 The relay is off after a first start, and otherwise as it was before a power
-cut, unless you set its power-on state to `On` or `Off`.
+cut, unless you set its power-on state to `On` or `Off`. Its `Countdown`
+switches it over after the seconds you set.
 
 ## Adopted into Home Assistant
 

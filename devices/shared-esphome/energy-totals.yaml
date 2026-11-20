@@ -1,0 +1,109 @@
+# One meter's energy totals: today's, this month's, this year's and all of it,
+# in kWh, kept through restarts and updates. A device's config includes this
+# once for each meter channel, naming it in vars:
+#
+#   energy    its energy sensor's id: Wh since the device started, rising
+#   id_end    what each id here ends with: "" for a device with one channel,
+#             else "_1", "_2"
+#   name_end  what each name ends with: "", else " 1", " 2"
+#
+# Named as the S60's first builds named them, so Home Assistant keeps their
+# history. The clock is base.yaml's.
+
+globals:
+  # Doubles: a float would drop a small load's few mWh once a total is large.
+  - id: energy_daily_wh${id_end}
+    type: double
+    restore_value: true
+    initial_value: "0.0"
+  - id: energy_monthly_wh${id_end}
+    type: double
+    restore_value: true
+    initial_value: "0.0"
+  - id: energy_yearly_wh${id_end}
+    type: double
+    restore_value: true
+    initial_value: "0.0"
+  - id: energy_total_wh${id_end}
+    type: double
+    restore_value: true
+    initial_value: "0.0"
+  # The day the totals were last counted on (20261120), 0 before the clock was
+  # first set: a device off at midnight starts the new day when it is back.
+  - id: energy_counted_on${id_end}
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+sensor:
+  # Each rise of the energy sensor is added to every total. It counts from 0
+  # again each start. A copy, as a meter's energy sensor is often part of its
+  # platform, where !extend cannot reach it.
+  - platform: copy
+    id: energy_counted${id_end}
+    source_id: ${energy}
+    internal: true
+    on_value:
+      - lambda: |-
+          static float last = 0.0f;
+          if (std::isnan(x)) return;
+          double wh = x >= last ? x - last : x;
+          last = x;
+          id(energy_daily_wh${id_end}) += wh;
+          id(energy_monthly_wh${id_end}) += wh;
+          id(energy_yearly_wh${id_end}) += wh;
+          id(energy_total_wh${id_end}) += wh;
+  - platform: template
+    name: "Daily energy${name_end}"
+    id: energy_daily${id_end}
+    lambda: return id(energy_daily_wh${id_end}) / 1000.0;
+    update_interval: 5s
+    unit_of_measurement: kWh
+    accuracy_decimals: 3
+    device_class: energy
+    state_class: total_increasing
+  - platform: template
+    name: "Monthly energy${name_end}"
+    id: energy_monthly${id_end}
+    lambda: return id(energy_monthly_wh${id_end}) / 1000.0;
+    update_interval: 5s
+    unit_of_measurement: kWh
+    accuracy_decimals: 3
+    device_class: energy
+    state_class: total_increasing
+  - platform: template
+    name: "Yearly energy${name_end}"
+    id: energy_yearly${id_end}
+    lambda: return id(energy_yearly_wh${id_end}) / 1000.0;
+    update_interval: 5s
+    unit_of_measurement: kWh
+    accuracy_decimals: 3
+    device_class: energy
+    state_class: total_increasing
+  - platform: template
+    name: "Total energy${name_end}"
+    id: energy_total${id_end}
+    lambda: return id(energy_total_wh${id_end}) / 1000.0;
+    update_interval: 5s
+    unit_of_measurement: kWh
+    accuracy_decimals: 3
+    device_class: energy
+    state_class: total_increasing
+
+interval:
+  # Today's starts again on a new day, this month's on the 1st, this year's on
+  # 1 January, by the clock once it is set.
+  - interval: 10s
+    then:
+      - lambda: |-
+          const auto now = id(time_sntp).now();
+          if (!now.is_valid()) return;
+          const int today = now.year * 10000 + now.month * 100 + now.day_of_month;
+          int &counted = id(energy_counted_on${id_end});
+          if (counted == today) return;
+          if (counted != 0) {
+            id(energy_daily_wh${id_end}) = 0;
+            if (today / 100 != counted / 100) id(energy_monthly_wh${id_end}) = 0;
+            if (today / 10000 != counted / 10000) id(energy_yearly_wh${id_end}) = 0;
+          }
+          counted = today;

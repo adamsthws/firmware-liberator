@@ -13,7 +13,8 @@ in [this device's page](README.md). It switches the relay, from its two inputs
 and over the network.
 
 The relay is on after a first start, and otherwise as it was before a power cut,
-unless you set its power-on state to `On` or `Off`.
+unless you set its power-on state to `On` or `Off`. Its `Countdown` switches it
+over after the seconds you set.
 
 ## Adopted into Home Assistant
 

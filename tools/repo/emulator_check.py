@@ -42,8 +42,9 @@ EMULATORS = {
     "beken": {"image_workflow": "beken-emulator-image.yml", "image_tag": "tools/beken/emulator/image.sh tag",
               "image_name": "autoflash-beken-emu", "published_variable": "AUTOFLASH_BEKEN_EMU_PUBLISHED"},
 }
-# What every device's conversion runs on, whichever changed.
-SHARED = ("tools/autoflash/", "tools/ewelink/", "tools/repo/emulator_check.py", "artifacts/",
+# What every device's conversion runs on, whichever changed: devices/shared-esphome/
+# is in every device's ESPHome.
+SHARED = ("tools/autoflash/", "tools/ewelink/", "devices/shared-esphome/", "tools/repo/emulator_check.py", "artifacts/",
           ".github/workflows/emulator-check.yml")
 LOGS = ROOT / "captures/emulation/device-check"
 # Devices with nothing for an emulator to run: no public dump, nor a flash to

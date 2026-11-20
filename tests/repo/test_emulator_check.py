@@ -67,7 +67,8 @@ class WhichDevicesTests(unittest.TestCase):
 
     def test_what_all_of_them_run_on_checks_all_of_them(self):
         for path in ("tools/autoflash/plans.py", "artifacts/firmware.json", "tools/ewelink/ota_push.py",
-                     ".github/workflows/emulator-check.yml", "tools/repo/emulator_check.py"):
+                     ".github/workflows/emulator-check.yml", "tools/repo/emulator_check.py",
+                     "devices/shared-esphome/base.yaml"):
             self.assertEqual(keys([path]), self.ALL, path)
 
     def test_a_chips_shared_files_check_the_devices_on_it(self):

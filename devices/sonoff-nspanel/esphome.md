@@ -11,7 +11,8 @@ It switches the two relays, from the buttons and over the network. It does not
 drive the screen.
 
 Each relay is off after a first start, and otherwise as it was before a power
-cut, unless you set its power-on state to `On` or `Off`.
+cut, unless you set its power-on state to `On` or `Off`. Each relay's countdown
+(`Countdown`, `Countdown 2` ...) switches it over after the seconds you set.
 
 ## Adopted into Home Assistant
 

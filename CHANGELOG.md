@@ -39,9 +39,21 @@ check.
   (`Relay power-on state`): `Off`, `On` or `Last state`, as Sonoff's own
   firmware offers. It starts as `Last state`, so a device does as before
   until you change it, and an update keeps the relay as it was. A
-  `restore_mode` you gave a relay in your own config is overridden by it, and
-  a copy of the config you keep yourself needs `devices/power-on-state.yaml`
-  beside it
+  `restore_mode` you gave a relay in your own config is overridden by it.
+- On ESPHome, every device has what only some had, the same way: each relay a
+  `Countdown` (`Countdown 2` for a second relay) that switches it over after the
+  seconds you set, and every meter the `Daily energy`, `Monthly energy`, `Yearly
+  energy` and `Total energy` totals and, where it measures the relay's own load,
+  the `Overload threshold` that switches the relay off after five seconds over
+  it. New on the POW Elite, the POWCT (totals, not overload: its clamp measures
+  a circuit of its own) and both channels of the Dual R3 (`Daily energy 1`,
+  `Overload threshold 2` ...). The POW Elite's `Overload` now shows at once, as
+  the S60's always did, and the relay goes off five seconds later. A total that
+  was counting at midnight with the device off starts the new day when the
+  device is back; before, it carried on into it.
+- What every device's ESPHome shares is in `devices/shared-esphome/`, included
+  by each device's config rather than copied into it. A copy of a config you
+  keep yourself needs that folder beside it
   ([how](docs/home-assistant-adoption.md#using-your-own-config-instead)).
 - A conversion or a readout asks what next however it ended, not only one that
   finished: unless you stopped it with `q` or Ctrl-C, you can read out or convert

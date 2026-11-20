@@ -11,10 +11,14 @@ It switches the relay, and reports voltage, current, power and energy from the
 meter, uncalibrated. The display shows them: a short press of the button
 switches the relay, and a longer one changes what the display shows. Over the
 `Overload threshold` (3680 W unless you change it) for five seconds, it switches
-the relay off.
+the relay off, and the `Overload` sensor shows it. `Daily energy`, `Monthly
+energy`, `Yearly energy` and `Total energy`, counted from the meter's energy,
+are kept through restarts and updates; the first three start again each day,
+month and year.
 
 The relay is off after a first start, and otherwise as it was before a power
-cut, unless you set its power-on state to `On` or `Off`.
+cut, unless you set its power-on state to `On` or `Off`. Its `Countdown`
+switches it over after the seconds you set.
 
 ## Adopted into Home Assistant
 

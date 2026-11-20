@@ -180,7 +180,8 @@ class PublishedESPHomeTests(unittest.TestCase):
         for key in ("password:", "encryption:", "auth:", "key:"):
             self.assertNotIn(key, config.replace("password: !lambda", ""), key)
         self.assertIn("package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v", config)
-        # Adoption takes this one file: system headers (<...>) only, no local files
+        # Its own includes are system headers (<...>): what it shares is in
+        # devices/shared-esphome/, which adoption fetches with it
         for entry in include_entries(config):
             self.assertTrue(entry.startswith("<"), entry)
 

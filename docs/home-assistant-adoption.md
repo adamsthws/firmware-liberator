@@ -64,9 +64,10 @@ packages:
   liberator.sonoff-s60: !include common/sonoff-s60.yaml
 ```
 
-Download `devices/power-on-state.yaml` from the same release too, and save it
-beside your device's config, not in `common/`: your copy includes it from the
-folder above its own, as `../power-on-state.yaml`.
+Download the `devices/shared-esphome/` folder from the same release too, which
+every device's config shares, and save it as `shared-esphome/` beside your
+device's config, not in `common/`: your copy includes its files from the folder
+above its own, as `../shared-esphome/base.yaml` and the rest.
 
 The builder then downloads nothing from this project, and the copy is yours to
 change.

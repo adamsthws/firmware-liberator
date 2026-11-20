@@ -1,0 +1,28 @@
+# The network an Espressif device starts on: the one the conversion tool
+# writes into the image (tools/autoflash/imprint.py), over the two
+# placeholders below. Built with none written in - by Home Assistant's
+# ESPHome builder, say - it starts on what it saved before (base.yaml).
+
+esphome:
+  on_boot:
+    # Before Wi-Fi starts (its priority is 250). Wi-Fi details saved earlier
+    # (from Home Assistant, say) take their place as Wi-Fi starts.
+    - priority: 1000
+      then:
+        - lambda: |-
+            // Written by the conversion tool: each a marker, then filler, and
+            // each must appear exactly once in the image. Read through volatile
+            // pointers, so the compiler cannot fold in this build-time text.
+            static const char ssid[] = "AUTOFLASH-IMPRINT-SSID>.................................";
+            static const char password[] = "AUTOFLASH-IMPRINT-PASS>................................................................";
+            const char *volatile at_ssid = ssid;
+            const char *volatile at_password = password;
+            const std::string written_ssid = at_ssid;
+            if (!written_ssid.empty() && written_ssid.rfind("AUTOFLASH-IMPRINT-", 0) != 0) {
+              id(start_ssid) = written_ssid;
+              id(start_password) = at_password;
+              wifi::WiFiAP sta;
+              sta.set_ssid(id(start_ssid));
+              sta.set_password(id(start_password));
+              wifi::global_wifi_component->set_sta(sta);
+            }

@@ -1,0 +1,53 @@
+# A relay switched off when the load its meter measures stays over a power
+# the owner sets, for five seconds. For a meter that measures its relay's own
+# load (not a clamp's, as the POWCT's). A device's config includes this once
+# for each such relay, naming it in vars:
+#
+#   relay    the relay switch's id
+#   power    its meter's power sensor's id, in W
+#   id_end   what each id here ends with: "" for a device with one channel,
+#            else "_1", "_2"
+#   name_end what each name ends with: "", else " 1", " 2"
+#   max      the most the threshold may be set to: the relay's rating, in W
+#   default  the threshold until the owner sets one, in W
+
+number:
+  - platform: template
+    name: "Overload threshold${name_end}"
+    id: overload_threshold${id_end}
+    icon: mdi:flash-alert
+    unit_of_measurement: "W"
+    min_value: 100
+    max_value: ${max}
+    step: 10
+    initial_value: ${default}
+    optimistic: true
+    restore_value: true
+    mode: box
+
+binary_sensor:
+  # Over the threshold now.
+  - platform: template
+    name: "Overload${name_end}"
+    id: overload${id_end}
+    device_class: problem
+    lambda: |-
+      return id(${power}).state > id(overload_threshold${id_end}).state;
+  # Over it for five seconds: the relay off.
+  - platform: template
+    id: overload_held${id_end}
+    internal: true
+    lambda: |-
+      return id(${power}).state > id(overload_threshold${id_end}).state;
+    filters:
+      - delayed_on: 5s
+      - delayed_off: 1s
+    on_press:
+      then:
+        - switch.turn_off: ${relay}
+        - logger.log:
+            level: WARN
+            format: "Overload${name_end} over 5 s (%.0f W > %.0f W): relay off"
+            args:
+              - id(${power}).state
+              - id(overload_threshold${id_end}).state

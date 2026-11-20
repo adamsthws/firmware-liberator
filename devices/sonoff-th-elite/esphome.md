@@ -15,7 +15,8 @@ cannot be read back, so what is shown is what it was last told.
 
 The main relay is off after a first start, and otherwise as last told before a
 power cut, unless you set its power-on state to `On` or `Off`; the dry contact
-is off at every start.
+is off at every start. Its `Countdown` switches the main relay over after the
+seconds you set.
 
 ## Adopted into Home Assistant
 

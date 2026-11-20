@@ -6,11 +6,11 @@ from [`artifacts/`](../../artifacts/README.md), and writes your Wi-Fi into it in
 memory only.
 
 Home Assistant adopts a converted device from this config (`dashboard_import`).
-Besides system headers it includes one file, once for each relay:
-[`devices/power-on-state.yaml`](../power-on-state.yaml), which every device's
-config shares and Home Assistant's builder fetches with it. It has no partition
-file: an app image does not hold the partition table, and the device keeps
-Sonoff's.
+What every device has - Wi-Fi, the API, the relay's power-on state and
+countdown, the energy totals and overload - it includes from
+[`devices/shared-esphome/`](../shared-esphome/README.md), which Home Assistant's
+builder fetches with it. It has no partition file: an app image does not hold
+the partition table, and the device keeps Sonoff's.
 
 ## What it reports
 

@@ -177,10 +177,11 @@ BEKEN_BUILDS = {
         "openbeken": ("tools/beken/openbeken/drv_autoflash_readout.c", "artifacts/openbeken-readout-{version}.rbl"),
     },
 }
-# What the S60's config reaches into ESPHome for, beyond its documented
-# options: its last on_boot lambda saves the Wi-Fi under the one fixed key an
-# ESPHome build with no network of its own looks in (devices/sonoff-s60/esphome.md says
-# why). An ESPHome that changes either is one the lambda must be changed for.
+# What every device's config reaches into ESPHome for, beyond its documented
+# options: devices/shared-esphome/base.yaml's last on_boot lambda saves the Wi-Fi
+# under the one fixed key an ESPHome build with no network of its own looks in
+# (it says why). An ESPHome that changes either is one the lambda must be
+# changed for.
 ESPHOME_WIFI_SOURCE = "/esphome/esphome/components/wifi"
 ESPHOME_INTERNALS = {
     "wifi_component.cpp": ("88491487UL",),
@@ -517,7 +518,7 @@ def check_esphome_internals(builder: str) -> None:
             if needle not in text:
                 raise UpdateError(
                     f"ESPHome's {name} no longer has '{needle}': the last on_boot lambda of "
-                    "devices/sonoff-s60/esphome.yaml must be checked against it (devices/sonoff-s60/esphome.md)")
+                    "devices/shared-esphome/base.yaml must be checked against it")
 
 
 def next_minor(version: str) -> str:
@@ -611,19 +612,29 @@ def staged(config_path: Path, version: str, workdir: Path, beside: Path | None =
     """The config at this version, written into `workdir` with the files it
     includes beside it, for either family's build. Its includes are named from
     `beside`, the folder the config is in unless given."""
-    config = as_built(config_path.read_text(encoding="utf-8"), version)
-    for name in included(config):
-        # Named from where the config is - shared ones up in devices/, as the
-        # movers' restart and the relays' power-on state - and built beside
-        # it, under its own name.
-        source = (beside or config_path.parent) / name
-        if not source.is_file():
-            raise UpdateError(f"{config_path.name} includes {name}, which is not there")
-        shutil.copyfile(source, workdir / source.name)
-        config = (config.replace(f"    - {name}\n", f"    - {source.name}\n")
-                  .replace(f"!include {{file: {name},", f"!include {{file: {source.name},"))
+    config = beside_it(as_built(config_path.read_text(encoding="utf-8"), version),
+                       config_path.name, beside or config_path.parent, workdir)
     (workdir / config_path.name).write_text(config, encoding="utf-8")
     return config
+
+
+def beside_it(text: str, label: str, folder: Path, workdir: Path) -> str:
+    """`text`, a config or a file it includes, with each file it includes -
+    named from `folder`, shared ones up in devices/ (the movers' restart,
+    devices/shared-esphome/) - copied into `workdir` under its own name, and named
+    so; a shared file's own includes the same way."""
+    for name in included(text):
+        source = folder / name
+        if not source.is_file():
+            raise UpdateError(f"{label} includes {name}, which is not there")
+        copied = source.read_bytes()
+        if source.suffix == ".yaml":
+            copied = beside_it(copied.decode("utf-8"), source.name, source.parent, workdir).encode("utf-8")
+        (workdir / source.name).write_bytes(copied)
+        text = (text.replace(f"    - {name}\n", f"    - {source.name}\n")
+                .replace(f"!include {{file: {name},", f"!include {{file: {source.name},")
+                .replace(f"!include {name}\n", f"!include {source.name}\n"))
+    return text
 
 
 def build(builder: str, config_path: Path, version: str, workdir: Path,
@@ -644,8 +655,8 @@ def included(config: str) -> list[str]:
     the build's own paths give; then each its packages include, once."""
     found = re.search(r"^  includes:\n((?:    - .+\n)+)", config, re.MULTILINE)
     headers = re.findall(r"^    - ([^<\s]\S*)", found.group(1), re.MULTILINE) if found else []
-    packages = re.findall(r"!include \{file: ([^\s,}]+),", config)
-    return headers + list(dict.fromkeys(packages))
+    packages = re.findall(r"!include (?:\{file: ([^\s,}]+),|([^\s{}]+)$)", config, re.MULTILINE)
+    return headers + list(dict.fromkeys(flow or plain for flow, plain in packages))
 
 
 def check_esphome_app(image: bytes, label: str, release: str, chip: chips.Chip = chips.ESP32C3) -> dict[str, str]:

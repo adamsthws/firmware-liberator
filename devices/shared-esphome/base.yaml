@@ -1,0 +1,108 @@
+# What every device's ESPHome has, whatever the device: how the conversion
+# tool and Home Assistant reach it, its own network, a clock, and the Wi-Fi it
+# starts on saved so that it stays. A device's config includes this, and its
+# chip family's Wi-Fi file (wifi-esp32.yaml or wifi-bk72xx.yaml), which gives
+# start_ssid and start_password the network to start on.
+#
+# The tool finds the WiFi Signal sensor and the autoflash_wifi action by their
+# names (devices/sonoff-s60/esphome.md lists what it finds): keep them.
+
+esphome:
+  on_boot:
+    # Before Wi-Fi starts (its priority is 250): its own network has its name
+    # (esphome-abcdef), open, as Tasmota's has its own.
+    - priority: 1000
+      then:
+        - lambda: |-
+            wifi::WiFiAP ap;
+            ap.set_ssid(App.get_name());
+            wifi::global_wifi_component->set_ap(ap);
+    # After Wi-Fi is set up: on the network it started on (nothing saved
+    # before), saved, so it stays. Not wifi.configure, which - when its first
+    # try takes over 30 s, a router restarting, say - puts back what was there
+    # before (nothing, on a first boot) and saves that.
+    - priority: -100
+      then:
+        - lambda: |-
+            if (!id(start_ssid).empty() && wifi::global_wifi_component->get_sta().get_ssid() == id(start_ssid)) {
+              wifi::global_wifi_component->save_wifi_sta(id(start_ssid), id(start_password));
+            }
+            // Saved, too, where a build of this config with no network at
+            // start-up looks for them - one Home Assistant's ESPHome builder
+            // makes, say. ESPHome keys saved details by the whole config and
+            // its version when a build has a network at start-up, and by one
+            // fixed key when it has none: without this, that build finds none,
+            // and raises its own network. Kept to the network in use, written
+            // only when changed.
+            const auto &sta = wifi::global_wifi_component->get_sta();
+            if (!sta.get_ssid().empty()) {
+              auto fixed = global_preferences->make_preference<wifi::SavedWifiSettings>(88491487UL, true);
+              wifi::SavedWifiSettings saved{};
+              if (!fixed.load(&saved) || sta.get_ssid() != saved.ssid || sta.get_password() != saved.password) {
+                wifi::SavedWifiSettings save{};
+                strncpy(save.ssid, sta.get_ssid().c_str(), sizeof(save.ssid) - 1);
+                strncpy(save.password, sta.get_password().c_str(), sizeof(save.password) - 1);
+                fixed.save(&save);
+                global_preferences->sync();
+              }
+            }
+
+globals:
+  # The network the device starts on, from its chip family's Wi-Fi file.
+  - id: start_ssid
+    type: std::string
+  - id: start_password
+    type: std::string
+
+# What is saved without a sync() of its own, such as the energy totals,
+# reaches flash at most this often (ESPHome's default).
+preferences:
+  flash_write_interval: 60s
+
+logger:
+
+api:
+  # Not restarting when Home Assistant is away: a device without it would cut
+  # the power to what it runs every 15 minutes (the default).
+  reboot_timeout: 0s
+  actions:
+    # The Wi-Fi the device is on, name and password, for the conversion tool to
+    # hand to the next firmware when the device leaves ESPHome: ESPHome says
+    # neither otherwise. Anything that can use this API can ask - anything on
+    # the network, while the API has no encryption key, as Tasmota's settings
+    # backup gives them too. Give the API a key to close it; the tool then
+    # asks for the details instead.
+    - action: autoflash_wifi
+      supports_response: only
+      then:
+        - api.respond:
+            data: !lambda |-
+              root["ssid"] = wifi::global_wifi_component->get_sta().get_ssid();
+              root["password"] = wifi::global_wifi_component->get_sta().get_password();
+
+ota:
+  - platform: esphome
+
+web_server:
+  version: 3
+  # The page's code from the device itself, so it works where the device has no internet.
+  local: true
+
+wifi:
+  reboot_timeout: 0s
+  ap: {}
+
+captive_portal:
+
+time:
+  - platform: sntp
+    id: time_sntp
+
+sensor:
+  # The Wi-Fi signal where the device is, in dBm. The conversion tool reads it
+  # (/sensor/WiFi Signal) before it changes the device's firmware, to suggest
+  # moving a device whose signal is weak.
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    entity_category: diagnostic
+    update_interval: 60s

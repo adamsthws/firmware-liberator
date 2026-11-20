@@ -143,8 +143,11 @@ or [beken-research.md](beken-research.md).
    be where the device's own table has it.
 
 5. **Add its firmware.** Write `devices/<key>/esphome.yaml` and
-   [its pages](#its-pages), then build and pin the firmware. `artifacts/`
-   changes only this way:
+   [its pages](#its-pages), then build and pin the firmware. The config holds
+   only the device's own: its pins, its meter, its buttons. What every device
+   has, and each relay's and meter's settings, it includes from
+   [`devices/shared-esphome/`](../devices/shared-esphome/README.md).
+   `artifacts/` changes only this way:
 
    ```sh
    .venv/bin/python tools/repo/update_firmware.py esphome --device sonoff-example
@@ -300,8 +303,11 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 
 5. **Add its firmware.** Write its table for the tool's OpenBeken driver,
    `devices/<key>/drv_autoflash_<key>.c`
-   ([the driver](../tools/beken/openbeken/README.md)), its `esphome.yaml` and
-   [its pages](#its-pages). Then build and pin both firmwares:
+   ([the driver](../tools/beken/openbeken/README.md)), its `esphome.yaml`
+   (with what it shares from
+   [`devices/shared-esphome/`](../devices/shared-esphome/README.md), as an
+   Espressif device's) and [its pages](#its-pages). Then build and pin both
+   firmwares:
 
    ```sh
    .venv/bin/python tools/repo/update_firmware.py openbeken --device sonoff-example

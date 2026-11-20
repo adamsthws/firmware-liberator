@@ -1,11 +1,13 @@
-# One relay's power-on state, as Sonoff's own firmware offers it: off, on, or
-# as it was last switched. A device's config includes this once for each of
-# its relays, naming it in vars:
+# One relay's own settings, as Sonoff's own firmware offers them: its power-on
+# state (off, on, or as it was last switched) and a countdown that switches it
+# over. A device's config includes this once for each of its relays, naming
+# it in vars:
 #
-#   relay    the relay switch's id
-#   name     its name, which the select's begins with
-#   default  its state on a first start, when it has never been switched:
-#            "true" or "false"
+#   relay      the relay switch's id
+#   name       its name, which its power-on state's begins with
+#   default    its state on a first start, when it has never been switched:
+#              "true" or "false"
+#   countdown  its countdown's name
 #
 # The relay is set up doing nothing (restore_mode: DISABLED), so that "Off"
 # never sees it switched on, even for a moment, and is switched as the select
@@ -63,3 +65,42 @@ select:
       # for the next loop.
       - delay: 0s
       - lambda: global_preferences->sync();
+
+number:
+  # Seconds until the relay switches over; 0 stops it. Gone at a restart.
+  - platform: template
+    name: "${countdown}"
+    id: ${relay}_countdown
+    icon: mdi:timer-outline
+    unit_of_measurement: "s"
+    min_value: 0
+    max_value: 86400
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: false
+    mode: box
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x > 0;'
+            then:
+              - script.execute: ${relay}_countdown_run
+            else:
+              - script.stop: ${relay}_countdown_run
+
+script:
+  - id: ${relay}_countdown_run
+    mode: restart
+    then:
+      - logger.log:
+          format: "${countdown}: switching in %.0f seconds"
+          args:
+            - id(${relay}_countdown).state
+      - delay: !lambda "return id(${relay}_countdown).state * 1000;"
+      - switch.toggle: ${relay}
+      - number.set:
+          id: ${relay}_countdown
+          value: 0
+      - logger.log: "${countdown} finished: relay switched"

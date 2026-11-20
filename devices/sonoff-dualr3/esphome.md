@@ -9,10 +9,14 @@ memory only.
 
 It switches both relays, from its button, its wall switches and over the
 network, and reports voltage, each channel's current and power from a CSE7761.
-Units with a BL0930 report no readings.
+Units with a BL0930 report no readings. Each channel keeps its own energy totals
+(`Daily energy 1`, `Monthly energy 2` ...), counted from its power, and switches
+its own relay off after five seconds over its `Overload threshold 1` or `2`
+(2200 W, the channel's rating, unless you change it).
 
 Each relay is off after a first start, and otherwise as it was before a power
-cut, unless you set its power-on state to `On` or `Off`.
+cut, unless you set its power-on state to `On` or `Off`. Each relay's countdown
+(`Countdown`, `Countdown 2` ...) switches it over after the seconds you set.
 
 ## Adopted into Home Assistant
 

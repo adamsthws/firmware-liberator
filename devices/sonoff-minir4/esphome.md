@@ -10,7 +10,8 @@ says.
 It switches the relay, from its button, a wall switch and over the network.
 
 The relay is off after a first start, and otherwise as it was before a power
-cut, unless you set its power-on state to `On` or `Off`.
+cut, unless you set its power-on state to `On` or `Off`. Its `Countdown`
+switches it over after the seconds you set.
 
 ## Adopted into Home Assistant
 

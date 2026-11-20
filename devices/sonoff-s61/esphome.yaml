@@ -3,13 +3,13 @@
 #
 # The conversion tool installs this pre-built, as an rt_ota update (.rbl) the
 # device's stock bootloader applies from its download slot - the update format
-# the stock firmware itself is shipped in (docs/beken-research.md). No
-# Wi-Fi and no passwords are in it: at boot the device reads its own Wi-Fi
-# from where the stock firmware left it, the EasyFlash store at 0x3e2000 that
-# no conversion touches, and joins. The tool backs the device up before this
-# goes on, through the interim firmware, so nothing here reads the device out.
-# Kept in this one file, so that Home Assistant can adopt the device from it
-# (dashboard_import) and build it there.
+# the stock firmware itself is shipped in (docs/beken-research.md). No Wi-Fi and
+# no passwords are in it: at boot the device reads its own Wi-Fi from where the
+# stock firmware left it, the EasyFlash store at 0x3e2000 that no conversion
+# touches, and joins. The tool backs the device up before this goes on, through
+# the interim firmware, so nothing here reads the device out. What every device
+# has is in devices/shared-esphome/, which Home Assistant fetches with this
+# config when it adopts the device (dashboard_import) and builds it there.
 #
 # The S60's config (sonoff_s60.yaml) is the model: the same entities, actions,
 # calibration handling and energy totals, so the two devices look alike.
@@ -27,9 +27,6 @@ esphome:
   project:
     name: liberator.sonoff-s61
     version: "2026.10.0-4"
-  # System headers only: adoption takes this one file
-  includes:
-    - <libretiny.h>
   # The S61's 4 MB flash, laid out as its stock bootloader expects (LibreTiny's
   # generic BK7238 board is the SDK's 2 MB layout). The bootloader's partition
   # table: app 0x10000+0x250000 (0x11000+0x275000 with its CRC stripes),
@@ -49,66 +46,16 @@ esphome:
     board_flash.userdata: "0x3E1000+0x1000"
     board_flash.kvs: "0x3EE000+0x8000"
   on_boot:
-    # Before Wi-Fi starts (its priority is 250): the network to join, from the
-    # stock firmware's own store, and its own network's name. Wi-Fi details
-    # saved later (from Home Assistant, say) take their place as Wi-Fi starts.
+    # Before the meter is read: its factory calibration, from the stock
+    # store (devices/shared-esphome/ef40.h).
     - priority: 1000
       then:
         - lambda: |-
-            // The stock EasyFlash V4 store, read raw. One node: "KV40", len u32,
-            // crc32 u32, name_len u8 + 0xff*3, value_len u32, name, value; the
-            // crc (zlib's) covers the name_len field through the end of the
-            // value. A key is rewritten by appending, so the last valid node
-            // wins. Scanned in 4 KB windows that overlap by more than a node.
-            struct Ef40 {
-              static uint32_t crc32(const uint8_t *p, size_t n) {
-                uint32_t crc = 0xffffffff;
-                for (size_t i = 0; i < n; i++) {
-                  crc ^= p[i];
-                  for (int b = 0; b < 8; b++) crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1);
-                }
-                return ~crc;
-              }
-              static bool read(const char *key, std::string &out) {
-                const uint32_t start = 0x3e0000, end = 0x3ec000, window = 4096, overlap = 128;
-                const size_t key_len = strlen(key);
-                std::vector<uint8_t> win(window);
-                bool found = false;
-                for (uint32_t addr = start; addr < end; addr += window - overlap) {
-                  uint32_t want = std::min<uint32_t>(window, end - addr);
-                  if (lt_flash_read(addr, win.data(), want) != want) continue;
-                  for (uint32_t i = 0; i + 20 <= want; i++) {
-                    if (memcmp(win.data() + i, "KV40", 4) != 0) continue;
-                    uint32_t name_len = win[i + 12], value_len, stored;
-                    memcpy(&value_len, win.data() + i + 16, 4);
-                    memcpy(&stored, win.data() + i + 8, 4);
-                    if (name_len != key_len || value_len == 0 || value_len >= 128) continue;
-                    uint32_t name_at = i + 20, value_at = name_at + name_len;
-                    if (value_at + value_len > want) continue;  // straddles: the next window has it
-                    if (memcmp(win.data() + name_at, key, key_len) != 0) continue;
-                    if (crc32(win.data() + i + 12, value_at + value_len - (i + 12)) != stored) continue;
-                    out.assign((const char *) win.data() + value_at, value_len);
-                    found = true;
-                  }
-                }
-                return found;
-              }
-            };
-            std::string ssid, password;
-            if (Ef40::read("wifi-ssid", ssid)) {
-              Ef40::read("wifi-pass", password);  // none: an open network
-              id(stock_ssid) = ssid;
-              id(stock_password) = password;
-              wifi::WiFiAP sta;
-              sta.set_ssid(ssid);
-              sta.set_password(password);
-              wifi::global_wifi_component->set_sta(sta);
-            }
             // The factory meter calibration, elecCalibCoef (80 bytes): a u32
             // magic, a flag byte, padding, then three 24-byte records in the
             // order current, voltage, power, each beginning with int32 a, b, c.
             std::string coef;
-            if (Ef40::read("elecCalibCoef", coef) && coef.size() >= 8 + 3 * 24) {
+            if (autoflash::ef40_read("elecCalibCoef", coef) && coef.size() >= 8 + 3 * 24) {
               for (int i = 0; i < 3; i++) {
                 int32_t abc[3];
                 memcpy(abc, coef.data() + 8 + 24 * i, sizeof(abc));
@@ -116,11 +63,6 @@ esphome:
               }
               id(calibration_stock_found) = true;
             }
-            // Its own network has its name (esphome-abcdef), open, as
-            // Tasmota's has its own.
-            wifi::WiFiAP ap;
-            ap.set_ssid(App.get_name());
-            wifi::global_wifi_component->set_ap(ap);
     # After globals are restored (800), before the meter is read: the device's
     # factory calibration, as the stock firmware applies it.
     - priority: 600
@@ -140,40 +82,11 @@ esphome:
             }
             id(calibration_status) = source;
             ESP_LOGI("s61", "Calibration: %s", source);
-            if (!id(stock_ssid).empty()) {
-              ESP_LOGI("s61", "Wi-Fi from the stock store: '%s' (%d-char password)", id(stock_ssid).c_str(),
-                       (int) id(stock_password).size());
+            if (!id(start_ssid).empty()) {
+              ESP_LOGI("s61", "Wi-Fi from the stock store: '%s' (%d-char password)", id(start_ssid).c_str(),
+                       (int) id(start_password).size());
             } else {
               ESP_LOGI("s61", "No Wi-Fi in the stock store");
-            }
-    # After Wi-Fi is set up: on the stock store's details (nothing saved
-    # before), saved, so they stay. Not wifi.configure, which - when its first
-    # try takes over 30 s, a router restarting, say - puts back what was there
-    # before (nothing, on a first boot) and saves that.
-    - priority: -100
-      then:
-        - lambda: |-
-            if (!id(stock_ssid).empty() && wifi::global_wifi_component->get_sta().get_ssid() == id(stock_ssid)) {
-              wifi::global_wifi_component->save_wifi_sta(id(stock_ssid), id(stock_password));
-            }
-            // Saved, too, where a build of this config with no network at
-            // start-up looks for them - one Home Assistant's ESPHome builder
-            // makes, say. ESPHome keys saved details by the whole config and
-            // its version when a build has a network at start-up, and by one
-            // fixed key when it has none: without this, that build finds none,
-            // and raises its own network. Kept to the network in use, written
-            // only when changed.
-            const auto &sta = wifi::global_wifi_component->get_sta();
-            if (!sta.get_ssid().empty()) {
-              auto fixed = global_preferences->make_preference<wifi::SavedWifiSettings>(88491487UL, true);
-              wifi::SavedWifiSettings saved{};
-              if (!fixed.load(&saved) || sta.get_ssid() != saved.ssid || sta.get_password() != saved.password) {
-                wifi::SavedWifiSettings save{};
-                strncpy(save.ssid, sta.get_ssid().c_str(), sizeof(save.ssid) - 1);
-                strncpy(save.password, sta.get_password().c_str(), sizeof(save.password) - 1);
-                fixed.save(&save);
-                global_preferences->sync();
-              }
             }
 
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
@@ -186,11 +99,6 @@ dashboard_import:
   import_full_config: false
 
 globals:
-  # The Wi-Fi the stock firmware was on, read at boot from its store
-  - id: stock_ssid
-    type: std::string
-  - id: stock_password
-    type: std::string
   # Power (W) of the last meter reading, before calibration
   - id: raw_power
     type: float
@@ -221,54 +129,13 @@ globals:
     type: bool
     restore_value: true
     initial_value: "false"
-  # The energy totals (Wh), counted from the meter's pulses. Doubles: a float
-  # would drop a small load's few mWh once a total is large.
-  - id: energy_daily_wh
-    type: double
-    restore_value: true
-    initial_value: "0.0"
-  - id: energy_monthly_wh
-    type: double
-    restore_value: true
-    initial_value: "0.0"
-  - id: energy_yearly_wh
-    type: double
-    restore_value: true
-    initial_value: "0.0"
-  - id: energy_total_wh
-    type: double
-    restore_value: true
-    initial_value: "0.0"
-
 bk72xx:
   board: generic-bk7238
   framework:
     version: recommended
 
-# What is saved without a sync() of its own, such as the energy totals,
-# reaches flash at most this often (ESPHome's default).
-preferences:
-  flash_write_interval: 60s
-
-logger:
-
 api:
-  # Not restarting when Home Assistant is away: a device without it would cut
-  # the power to what it runs every 15 minutes (the default).
-  reboot_timeout: 0s
   actions:
-    # The Wi-Fi the device is on, name and password, for the conversion tool to
-    # hand to the next firmware when the device leaves ESPHome: ESPHome says
-    # neither otherwise. Anything that can use this API can ask - anything on
-    # the network, while the API has no encryption key. Give the API a key to
-    # close it; the tool then asks for the details instead.
-    - action: autoflash_wifi
-      supports_response: only
-      then:
-        - api.respond:
-            data: !lambda |-
-              root["ssid"] = wifi::global_wifi_component->get_sta().get_ssid();
-              root["password"] = wifi::global_wifi_component->get_sta().get_password();
     # The device's factory calibration (a, b, c for current, voltage and power,
     # as the stock firmware stores it), which the conversion tool gives from
     # the device's Sonoff backup: saved, and used when the stock store has none.
@@ -293,46 +160,6 @@ api:
         - delay: 1s
         - lambda: global_preferences->sync();
 
-ota:
-  - platform: esphome
-
-web_server:
-  version: 3
-  # The page's code from the device itself, so it works where the device has no internet.
-  local: true
-
-wifi:
-  reboot_timeout: 0s
-  ap: {}
-
-captive_portal:
-
-time:
-  - platform: sntp
-    id: time_sntp
-    on_time:
-      - seconds: 0
-        minutes: 0
-        hours: 0
-        then:
-          - lambda: id(energy_daily_wh) = 0;
-          - component.update: energy_daily
-      - seconds: 0
-        minutes: 0
-        hours: 0
-        days_of_month: 1
-        then:
-          - lambda: id(energy_monthly_wh) = 0;
-          - component.update: energy_monthly
-      - seconds: 0
-        minutes: 0
-        hours: 0
-        days_of_month: 1
-        months: 1
-        then:
-          - lambda: id(energy_yearly_wh) = 0;
-          - component.update: energy_yearly
-
 # The Wi-Fi LED, lit low
 status_led:
   pin:
@@ -347,9 +174,13 @@ output:
       number: P0
       inverted: true
 
-# Each relay's power-on state: off, on, or as it was last switched.
+# What every device has (devices/shared-esphome/README.md), then this one's own.
 packages:
-  power_on: !include {file: ../power-on-state.yaml, vars: {relay: relay, name: "Relay", default: "true"}}
+  base: !include ../shared-esphome/base.yaml
+  wifi: !include ../shared-esphome/wifi-bk72xx.yaml
+  relay: !include {file: ../shared-esphome/relay.yaml, vars: {relay: relay, name: "Relay", default: "true", countdown: "Countdown"}}
+  energy: !include {file: ../shared-esphome/energy-totals.yaml, vars: {energy: energy, id_end: "", name_end: ""}}
+  overload: !include {file: ../shared-esphome/overload.yaml, vars: {relay: relay, power: power, id_end: "", name_end: "", max: "4000", default: "3500"}}
 
 switch:
   - id: relay
@@ -360,55 +191,6 @@ switch:
       - output.turn_on: relay_led
     on_turn_off:
       - output.turn_off: relay_led
-
-number:
-  - platform: template
-    name: "Overload threshold"
-    id: overload_threshold
-    icon: mdi:flash-alert
-    unit_of_measurement: "W"
-    min_value: 100
-    max_value: 4000
-    step: 10
-    initial_value: 3500
-    optimistic: true
-    restore_value: true
-    mode: box
-  - platform: template
-    name: Countdown
-    id: countdown_seconds
-    icon: mdi:timer-outline
-    unit_of_measurement: "s"
-    min_value: 0
-    max_value: 86400
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: false
-    mode: box
-    on_value:
-      then:
-        - if:
-            condition:
-              lambda: 'return x > 0;'
-            then:
-              - script.execute: countdown_script
-            else:
-              - script.stop: countdown_script
-
-script:
-  - id: countdown_script
-    mode: restart
-    then:
-      - logger.log:
-          format: "Toggling in %.0f seconds"
-          args: [id(countdown_seconds).state]
-      - delay: !lambda "return id(countdown_seconds).state * 1000;"
-      - switch.toggle: relay
-      - number.set:
-          id: countdown_seconds
-          value: 0
-      - logger.log: "Countdown finished – toggling the relay"
 
 binary_sensor:
   - platform: gpio
@@ -423,28 +205,6 @@ binary_sensor:
     filters:
       - delayed_on: 10ms
       - delayed_off: 10ms
-  - platform: template
-    name: "Overload"
-    id: overload
-    device_class: problem
-    lambda: |-
-      return id(power).state > id(overload_threshold).state;
-  - platform: template
-    id: overload_delayed
-    internal: true
-    lambda: |-
-      return id(power).state > id(overload_threshold).state;
-    filters:
-      - delayed_on: 5s
-      - delayed_off: 1s
-    on_press:
-      then:
-        - switch.turn_off: relay
-        - logger.log:
-            level: WARN
-            format: "Overload > 5s (%.0f W > %.0f W) – turning off"
-            args: [id(power).state, id(overload_threshold).state]
-
 text_sensor:
   # Where the calibration came from: stock store, from backup or missing
   - platform: template
@@ -500,9 +260,11 @@ sensor:
             return y < 0.0f ? 0.0f : y;
     # Energy since boot (Wh), from the meter's own pulses, which stay right at
     # loads too small for the power reading. Each increase is calibrated as
-    # the power it was drawn at, and added to the totals below.
+    # the power it was drawn at; the energy totals add each
+    # (devices/shared-esphome/energy-totals.yaml).
     energy:
       name: "Energy"
+      id: energy
       filters:
         - lambda: |-
             static float last = NAN;
@@ -515,61 +277,8 @@ sensor:
               if (p > 0.0f) scale = std::max(0.0, c[6] * p * p / 1e7 + c[7] * p / 1e6 + c[8] / 1e6) / p;
               double wh = (x - last) * scale;
               since_boot += wh;
-              id(energy_daily_wh) += wh;
-              id(energy_monthly_wh) += wh;
-              id(energy_yearly_wh) += wh;
-              id(energy_total_wh) += wh;
             }
             last = x;
             return (float) since_boot;
         - throttle: 5s
 
-  # The energy totals, kept through restarts and updates. Named as the S60's,
-  # so the two devices look alike in Home Assistant.
-  - platform: template
-    name: "Daily energy"
-    id: energy_daily
-    lambda: return id(energy_daily_wh) / 1000.0;
-    update_interval: 5s
-    unit_of_measurement: kWh
-    accuracy_decimals: 3
-    device_class: energy
-    state_class: total_increasing
-
-  - platform: template
-    name: "Monthly energy"
-    id: energy_monthly
-    lambda: return id(energy_monthly_wh) / 1000.0;
-    update_interval: 5s
-    unit_of_measurement: kWh
-    accuracy_decimals: 3
-    device_class: energy
-    state_class: total_increasing
-
-  - platform: template
-    name: "Yearly energy"
-    id: energy_yearly
-    lambda: return id(energy_yearly_wh) / 1000.0;
-    update_interval: 5s
-    unit_of_measurement: kWh
-    accuracy_decimals: 3
-    device_class: energy
-    state_class: total_increasing
-
-  - platform: template
-    name: "Total energy"
-    id: energy_total
-    lambda: return id(energy_total_wh) / 1000.0;
-    update_interval: 5s
-    unit_of_measurement: kWh
-    accuracy_decimals: 3
-    device_class: energy
-    state_class: total_increasing
-
-  # The Wi-Fi signal where the device is, in dBm. The conversion tool reads it
-  # (/sensor/WiFi Signal) before it changes the device's firmware, to suggest
-  # moving a device whose signal is weak; keep its name for that.
-  - platform: wifi_signal
-    name: "WiFi Signal"
-    entity_category: diagnostic
-    update_interval: 60s

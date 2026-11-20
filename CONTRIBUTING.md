@@ -167,6 +167,17 @@ eWeLink accounts and devices' identities.
   name rather than a copy of its words (the attended scenarios' common
   answers are `SHARED_ANSWERS`). Keep two only where they truly differ, and
   say why beside them.
+- The devices behave alike too. What a device's firmware offers that others
+  could - a relay's power-on state and countdown, a meter's energy totals and
+  overload - is given to every device it applies to, in the same change, from
+  one shared place: for ESPHome a file in `devices/shared-esphome/` that each
+  device's config includes ([its README](devices/shared-esphome/README.md)); for
+  Tasmota and OpenBeken the route's code, with only the device's own data (its
+  template, its pins) in `tools/autoflash/kinds.py` or its driver table. A
+  device a feature does not apply to says why beside its includes, as the
+  POWCT's for overload, whose clamp measures a circuit of its own.
+  `tests/repo/test_esphome_shared.py` fails on a device config that keeps a copy
+  of what is shared.
 - Docs, comments and commit messages match the existing ones: plain,
   compact sentences saying what something does and why.
 

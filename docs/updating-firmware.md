@@ -199,11 +199,11 @@ It needs Docker: the firmware is built in ESPHome's own image for that release
 (`ghcr.io/esphome/esphome:<release>`), pinned by its digest, so the build does
 not depend on the computer building it. In turn, the command:
 
-- checks the parts of ESPHome that `devices/sonoff-s60/esphome.yaml` reaches
-  into beyond its options - the fixed key its last `on_boot` lambda saves the
-  Wi-Fi under, and the layout of what it saves
-  ([devices/sonoff-s60/esphome.md](../devices/sonoff-s60/esphome.md) says
-  why) - are as they were; if not, the lambda must be checked first;
+- checks the parts of ESPHome that every device's config reaches into beyond its
+  options - the fixed key the last `on_boot` lambda of
+  [`devices/shared-esphome/base.yaml`](../devices/shared-esphome/base.yaml)
+  saves the Wi-Fi under, and the layout of what it saves (that file says why) -
+  are as they were; if not, the lambda must be checked first;
 - raises the config's `project` version (`2026.10.0-2` is this project's
   second build on ESPHome 2026.10.0, the number starting again at 1 on a new
   release), sets its `package_import_url` to the release it will come out in
