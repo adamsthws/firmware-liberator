@@ -12,7 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[3] / "tools" / "espressif" / "emulator" / "emu.sh"
+from tools.autoflash import kinds
+
+ROOT = Path(__file__).resolve().parents[3]
+SCRIPT = ROOT / "tools" / "espressif" / "emulator" / "emu.sh"
 
 
 def pick(taken: str) -> str:
@@ -31,7 +34,7 @@ def product_seen(folder: Path, before: str = "", key: str = "product_model") -> 
     states under `folder`, for device 12-34-56-ab-cd-ef; `before` runs first."""
     program = re.search(r"record_seen\(\) \{\n.*?<<'EOF'\n(.*?)\nEOF\n", SCRIPT.read_text(encoding="utf-8"),
                         re.S).group(1)
-    arguments = [str(folder / "captures"), str(folder / "saved"), str(folder / "emulation"), "12-34-56-ab-cd-ef", key]
+    arguments = [str(ROOT), str(folder / "captures"), str(folder / "saved"), str(folder / "emulation"), "12-34-56-ab-cd-ef", key]
     return subprocess.run([sys.executable, "-I", "-c", before + program, *arguments],
                           capture_output=True, text=True, timeout=60)
 
@@ -55,6 +58,71 @@ class ProductModelTests(unittest.TestCase):
         done = product_seen(self.folder, gone)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), "S60TPG")
+
+
+class KindTests(unittest.TestCase):
+    """emu.sh's kind_of: the kind whose wiring the board takes its meter from,
+    and the PSRAM and ADC readings it asks for."""
+
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+
+    def flash(self, stock_model: str | None) -> Path:
+        """A dump whose Sonoff settings (frame_params) call it `stock_model`;
+        with None, one with no Sonoff settings at all, as a public device's."""
+        from tests.espressif.test_flashmap import flash_with
+        from tests.espressif.test_inspect_stock_nvs import entry, page, variable
+        data = flash_with(0, 5)
+        if stock_model is not None:
+            content = json.dumps({"deviceid": "1000000001", "model": stock_model}).encode()
+            data += page([entry(0, 0x01, "frame_params", data=b"\x01"), *variable(1, 0x21, "content", content)])
+        path = self.folder / f"flash-{stock_model}.bin"
+        path.write_bytes(data)
+        return path
+
+    def kind_of(self, model: str, flash: Path, recorded: str = "") -> list[str]:
+        program = re.search(r"kind_of\(\) \{\n.*?<<'EOF'\n(.*?)\nEOF\n", SCRIPT.read_text(encoding="utf-8"),
+                            re.S).group(1)
+        done = subprocess.run([sys.executable, "-I", "-c", program, str(ROOT), model, str(flash), recorded],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout.split("\n")[:3]
+
+    def test_a_device_with_no_product_model_is_known_by_its_dump(self):
+        # An S60's test copy records none: without this its board had no meter,
+        # and ESPHome found "No readings", Tasmota 0 V.
+        self.assertEqual(self.kind_of("", self.flash(kinds.SONOFF_S60.stock_model)), ["sonoff-s60", "", ""])
+
+    def test_its_dump_alone_does_not_say_what_only_the_product_model_does(self):
+        kind = next(kind for kind in kinds.EVERY if kind.product_model_decides)
+        self.assertEqual(self.kind_of("", self.flash(kind.stock_model)), ["", "", ""])
+        self.assertEqual(self.kind_of(kind.example_product_model, self.flash(kind.stock_model))[0], kind.key)
+
+    def test_a_public_device_is_known_by_the_kind_its_run_recorded(self):
+        # Its flash holds nothing of Sonoff's.
+        self.assertEqual(self.kind_of("", self.flash(None), "sonoff-s60"), ["sonoff-s60", "", ""])
+        self.assertEqual(self.kind_of("", self.flash(None)), ["", "", ""])
+
+    def test_the_kind_gives_its_psram_and_adc_readings(self):
+        self.assertEqual(self.kind_of("BASICR4", self.flash(None)), ["sonoff-basicr4", "", "adc1_ch3=2700"])
+        kind = next(kind for kind in kinds.EVERY if kind.psram_mb)
+        self.assertEqual(self.kind_of(kind.example_product_model, self.flash(None))[:2],
+                         [kind.key, str(kind.psram_mb)])
+
+    def test_a_run_from_before_3_0_0_gives_its_kind_under_its_earlier_name(self):
+        run = self.folder / "emulation/state-2/work/captures/plugs/12-34-56-ab-cd-ef/runs/20261022-120000"
+        run.mkdir(parents=True)
+        (run / "autoflash-state.json").write_text(json.dumps({"inputs": {"plug_kind": "sonoff-s60"}}),
+                                                  encoding="utf-8")
+        self.assertEqual(product_seen(self.folder, key="device_kind").stdout.strip(), "sonoff-s60")
+
+    def test_the_container_is_given_them(self):
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('{ read -r kind; read -r psram; read -r adc; } < <(kind_of "${product:-$(record_seen product_model)}" \\\n'
+                      '    "$SRC/flash.bin" "$(record_seen device_kind)")', text)
+        self.assertIn('-e PSRAM="$psram" -e ADC="$adc"', text)
+        self.assertIn('-e DEVICE_KIND="$kind"', text)
 
 
 class StockVersionTests(unittest.TestCase):

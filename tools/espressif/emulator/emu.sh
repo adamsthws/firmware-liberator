@@ -172,13 +172,17 @@ fi
 # conversion's, a kept device's, an instance's), or
 # AUTOFLASH_EMU_STUB_PRODUCT_MODEL; with neither, none - and the run's report
 # leaves it blank rather than guess. record_seen KEY gives any such record's
-# newest value: the stock version is read so too, below.
+# newest value: the stock version and the kind are read so too, below.
 record_seen() {
-    "$PY" -I - "$ROOT/captures" "$EMU/saved" "$(dirname "$STATE")" "${mac//:/-}" "$1" <<'EOF'
+    "$PY" -I - "$ROOT" "$ROOT/captures" "$EMU/saved" "$(dirname "$STATE")" "${mac//:/-}" "$1" <<'EOF'
 import glob, json, os, re, sys
-captures, saved, states, device, key = sys.argv[1:]
+root, captures, saved, states, device, key = sys.argv[1:]
+sys.path.insert(0, root)
+from tools.autoflash.state import EARLIER_INPUTS
+# A run begun before 3.0.0 has some under another name (plug_kind).
+earlier = next((then for then, now in EARLIER_INPUTS.items() if now == key), None)
 def value(record):
-    found = str((record or {}).get(key) or "").strip()
+    found = str((record or {}).get(key) or (record or {}).get(earlier) or "").strip()
     return found.upper() if key == "product_model" else found
 seen = []
 # A test copy of a public dump says what it is a copy of (public_dump.py).
@@ -363,20 +367,34 @@ for candidate in ("198.18.60.0/24", "172.31.60.0/24", "10.231.60.0/24"):
     docker network create --subnet "$subnet" --label autoflash.emulator=1 "$NETWORK" >/dev/null 2>&1 ||
         docker network inspect "$NETWORK" >/dev/null
 fi
-model=${product:-$(record_seen product_model)}
-# Some stock firmware stops at start-up without the external RAM its device has.
-psram=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
+# Its kind, by the product model eWeLink gave it, or, with none recorded (an
+# S60's test copy, a public device), by what its stock dump calls itself where
+# that alone says (kinds.for_account, as the stub's device_identity.py takes
+# it), else as a run of it recorded it: a public device's flash holds nothing
+# of Sonoff's. The device's board (board.py) takes its meter from the kind's
+# wiring; some stock firmware stops at start-up without the external RAM its
+# device has (PSRAM), and some read a sensor on the board that the emulated ADC
+# would read as 0 (ADC). kind_of MODEL FLASH RECORDED prints the three, a line each.
+kind_of() {
+    "$PY" -I - "$ROOT" "$@" <<'EOF'
+import sys
+sys.path.insert(0, sys.argv[1])
 from tools.autoflash import kinds
-print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.argv[1])), ""))' "$model")
-# Its kind, whose wiring the device's board (board.py) takes its meter from.
-kind=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
-from tools.autoflash import kinds
-print(next((k.key for k in kinds.EVERY if k.product_of(sys.argv[1])), ""))' "$model")
-# And some read a sensor on the board that the emulated ADC would read as 0.
-adc=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
-from tools.autoflash import kinds
-kind = next((k for k in kinds.EVERY if k.adc_readings and k.product_of(sys.argv[1])), None)
-print(" ".join(f"{name}={value}" for name, value in kind.adc_readings) if kind else "")' "$model")
+from tools.ewelink.stub_cloud.device_identity import frame_params
+model, flash, recorded = sys.argv[2:]
+try:
+    with open(flash, "rb") as f:
+        stock = frame_params(f.read()).get("model")
+except (OSError, ValueError, SystemExit):
+    stock = None
+kind = kinds.for_account(model, stock, among=kinds.EVERY) or kinds.find(recorded)
+print(kind.key if kind else "")
+print(kind.psram_mb or "" if kind else "")
+print(" ".join(f"{name}={value}" for name, value in kind.adc_readings) if kind else "")
+EOF
+}
+{ read -r kind; read -r psram; read -r adc; } < <(kind_of "${product:-$(record_seen product_model)}" \
+    "$SRC/flash.bin" "$(record_seen device_kind)")
 # QEMU for the dual-core ESP32 takes more than the 256 MB the ESP32-C3's stays
 # in: over it, the kernel kills QEMU part way through a download, which looks
 # like the device restarting. Measured through every classic ESP32's conversions it

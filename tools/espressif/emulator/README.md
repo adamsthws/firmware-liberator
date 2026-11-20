@@ -320,8 +320,9 @@ the output and output-enable registers every 100 ms, the GPIO matrix's routing
 every second.
 
 - **The wiring is the kind's Tasmota template** (`kinds.py`; `emu.sh` passes
-  the kind it finds by the device's product model as `DEVICE_KIND`): Relay1 and
-  Relay2, and the meter's pins, CSE7766 RX or CSE7761 TX and RX. A UART hears
+  the kind as `DEVICE_KIND`, found
+  [as the PSRAM's is](../../../docs/emulator.md#classic-esp32-devices)): Relay1
+  and Relay2, and the meter's pins, CSE7766 RX or CSE7761 TX and RX. A UART hears
   the meter when its RX signal takes the meter's output pin, through the matrix
   or that pin's IOMUX function (U2RXD's is GPIO16, the POW Elite's meter), and
   the meter hears a UART when the matrix routes that UART's TX to the meter's

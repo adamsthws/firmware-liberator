@@ -402,7 +402,12 @@ firmware stops at start-up without its device's external RAM (PSRAM), which
 the kind's `psram_mb` in [kinds.py](../tools/autoflash/kinds.py) gives as
 QEMU's `-m` (4 MB on the NSPanel, 2 on the MINIR4). The kind is found by the
 device's eWeLink product model: a test copy's own (`device.json`), the one an
-earlier run recorded, or `AUTOFLASH_EMU_STUB_PRODUCT_MODEL`.
+earlier run recorded, or `AUTOFLASH_EMU_STUB_PRODUCT_MODEL`. With none, as for
+a test copy of an S60, it is found by the model its stock firmware calls
+itself in the dump, where that alone tells the kind (`product_model_decides`
+in kinds.py), and otherwise, as for the public devices, whose flash holds
+nothing of Sonoff's, by the kind an earlier run of the device recorded.
+Without a kind the board has no meter: the run's end finds no readings.
 
 For a device you do not own, make a test copy from a public dump, or from
 eWeLink's update file on another device's flash, and run it by the made-up MAC
