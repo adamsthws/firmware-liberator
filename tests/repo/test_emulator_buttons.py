@@ -46,6 +46,22 @@ class ButtonsTests(unittest.TestCase):
         self.assertGreater(slept.call_args.args[0], buttons.POLL)
 
 
+    def test_a_press_as_the_firmware_sees_it_is_a_short_one_on_every_esphome(self):
+        # Held 0.4 s, and seen up to 0.1 s longer, a press was always the POW
+        # Elite ESPHome's long press. SHORT_HELD was measured against its
+        # 350 ms click: a config with a shorter one needs measuring again.
+        import re
+        root = Path(__file__).resolve().parents[2]
+        clicks = {}
+        for config in sorted(root.glob("devices/*/esphome*.yaml")):
+            text = config.read_text(encoding="utf-8")
+            for click in re.finditer(r"on_click:\n\s+(?:#.*\n\s+)*- max_length: (\d+)ms", text):
+                clicks[config.parent.name] = int(click.group(1))
+        self.assertIn("sonoff-pow-elite", clicks)
+        for device, longest in clicks.items():
+            self.assertGreaterEqual(longest, 350, device)
+        self.assertLessEqual(max(buttons.PRESS, 2 * buttons.POLL) + buttons.POLL, buttons.SHORT_HELD)
+
 class FollowerTests(unittest.TestCase):
     def test_each_change_once_and_no_look_before_its_time(self):
         with tempfile.TemporaryDirectory() as folder:

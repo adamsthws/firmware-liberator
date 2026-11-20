@@ -22,11 +22,16 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 FILE = "buttons"
-# How often a board looks at the file (seconds): a press must be held longer.
-POLL = 0.1
-# How long a press is held (seconds): a person's quick press, well inside
-# every firmware's long press (Tasmota's and OpenBeken's take a second or more).
-PRESS = 0.4
+# How often a board looks at the file (seconds): a press must be held longer,
+# and is seen held up to this much longer than it was.
+POLL = 0.02
+# How long a press is held (seconds): a person's quick press, seen held up to
+# POLL longer, which must stay a short press on every firmware. The POW Elite's
+# ESPHome switches its relay on a click of 350 ms at most, and in the emulator
+# takes a press for about twice as long as it is held: held up to SHORT_HELD it
+# switched every time, held 0.2 s never.
+PRESS = 0.1
+SHORT_HELD = 0.15
 
 
 def pins_of(text: str) -> frozenset[int]:

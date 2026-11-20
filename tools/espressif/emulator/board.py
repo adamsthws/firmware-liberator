@@ -550,12 +550,12 @@ class Board:
         try:
             with self.lock:
                 self.qmp = Qmp(conn)
+            threading.Thread(target=self.press, daemon=True).start()
             routed, said = 0.0, set()
             while True:
                 try:
                     with self.lock:
                         self.outputs = relay_outputs(self.soc, self.qmp.read)
-                    self.follow_buttons()
                     if self.motor is not None:
                         self.motor.moved(self.outputs, self.motor_relays(), time.monotonic())
                     if time.monotonic() - routed >= self.ROUTING_POLL:
@@ -584,6 +584,20 @@ class Board:
     def follow_buttons(self) -> None:
         """The pins the buttons file holds now, pressed and let go as it changed."""
         self.buttons.follow(time.monotonic(), self.hold, self.release)
+
+    def press(self) -> None:
+        """The buttons file followed every POLL until QEMU goes, in a loop of
+        its own: followed in the relays' slower loop, a press lasted longer
+        than it was held, as the firmware saw it, which a firmware timing a
+        short click (the POW Elite's ESPHome) took for a long one."""
+        while self.qmp is not None:
+            try:
+                self.follow_buttons()
+            except (OSError, AttributeError):
+                return   # QEMU has gone, and its monitor with it
+            except (ValueError, RuntimeError):
+                pass     # the monitor's answer, which watch reports
+            time.sleep(emulator_buttons.POLL)
 
     def motor_relays(self) -> tuple[int, int] | None:
         """The two relay pins a motor would be on: none for a board without two."""

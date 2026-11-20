@@ -434,6 +434,27 @@ class ButtonTests(unittest.TestCase):
         self.assertEqual({command["execute"] for command in sent}, {"qom-set"})
         self.assertEqual({command["arguments"]["path"] for command in sent}, {"/machine/soc/gpio"})
 
+    def test_the_file_is_followed_every_poll_in_a_loop_of_its_own_until_qemu_goes(self):
+        # Followed in the relays' 0.1 s loop, a press lasted longer than held,
+        # and the POW Elite's ESPHome took a quick press for a long one.
+        the_board = self.board("esp32", POW_ELITE)
+        the_board.qmp = mock.Mock()
+        looks, slept = [], []
+        def slept_then(seconds):
+            slept.append(seconds)
+            if len(slept) == 3:
+                the_board.qmp = None
+        with mock.patch.object(the_board, "follow_buttons", side_effect=lambda: looks.append(1)), \
+                mock.patch.object(board.time, "sleep", side_effect=slept_then):
+            the_board.press()
+        self.assertEqual((len(looks), slept), (3, [board.emulator_buttons.POLL] * 3))
+        self.assertLessEqual(board.emulator_buttons.POLL, 0.02)
+        the_board.qmp = mock.Mock()
+        with mock.patch.object(the_board, "follow_buttons", side_effect=OSError), \
+                mock.patch.object(board.time, "sleep") as sleep:
+            the_board.press()
+        sleep.assert_not_called()
+
     def test_a_check_presses_them_through_the_containers_run_folder(self):
         with mock.patch.object(board.subprocess, "run") as ran:
             ran.return_value.stdout = "32\n"
