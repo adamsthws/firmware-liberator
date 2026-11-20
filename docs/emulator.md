@@ -461,7 +461,11 @@ motor is moving that way: Tasmota's shutter by its `Direction` (`Status 10`),
 ESPHome's cover by its `current_operation`. A look taken once the motor has
 stopped would find both outputs off, so it is not counted. The close is given
 twice the open's travel (`TRAVEL_OPEN`, `TRAVEL_CLOSE`), so the move back
-lasts past every look. Each look is logged with its time in
+lasts past every look. The first firmware of each way is then set, through
+its own settings, to `MOVED_TRAVEL` and the other direction from the copy's.
+It is seen to keep them through a power cut and kept so. The next firmware
+must have exactly those settings, which it can only have taken from the
+firmware before, not from the backup. Each look is logged with its time in
 `captures/emulation/device-check/sonoff-dualr3-COPY/N-FIRMWARE-motor.log`.
 
 Before that, the check read Tasmota's relays five times, a second apart,

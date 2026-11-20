@@ -98,8 +98,11 @@ In the emulator a test copy set up in motor mode (`deviceMode` 2) went from
 Sonoff's firmware to Tasmota and to ESPHome, and from each to the other
 (`emulator_check.py sonoff-dualr3 --motor`), and so did one calibrated at 8
 seconds with its outputs reversed (`--motor calibrated`). On each firmware the
-travel times and direction were what was carried across; the outputs came on
-one at a time, each way - asked to close while opening, the first went off
+travel times and direction were what was carried across: from Sonoff's
+backup, and on the move from Tasmota to ESPHome and from ESPHome to Tasmota,
+the travel time and direction the first firmware had been set to, unlike the
+backup's (the check's `MOVED_TRAVEL`, the other way round). The outputs came
+on one at a time, each way - asked to close while opening, the first went off
 before the second came on - never both, even asked for both at once on
 Tasmota, and both were off after a power cut: on ESPHome as the emulated meter
 read each channel, on Tasmota as it said it drove its relays, each read while

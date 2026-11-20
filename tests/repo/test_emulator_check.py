@@ -211,6 +211,51 @@ class MotorCheckTests(unittest.TestCase):
             self.assertEqual(check.main(["sonoff-dualr3", "--motor", "calibrated"]), 0)
             self.assertEqual(ran.call_args.args[2], "calibrated")
 
+    def test_each_ways_second_firmware_must_carry_what_its_first_was_set_to(self):
+        from types import SimpleNamespace
+
+        from tools.espressif.emulator import public_devices, public_dump
+        calls = []
+
+        def checked(instance, saved, firmware, stub, log, wanted, then=None):
+            calls.append((instance, firmware, wanted, then))
+        copy = SimpleNamespace(mac="12:34:56:ab:cd:ef", settings='{"deviceMode":2}')
+        with mock.patch.object(public_dump, "make"), mock.patch.object(public_dump, "recipe", return_value=copy), \
+                mock.patch.object(public_devices, "run", return_value=(True, "Converted")), \
+                mock.patch.object(public_devices, "side_by_side", lambda jobs: [job() for job in jobs]), \
+                mock.patch.object(check, "emulator_stats"), mock.patch.object(check.subprocess, "run"), \
+                mock.patch.object(check, "motor_problem", side_effect=checked), mock.patch("builtins.print"):
+            self.assertEqual(check.check_public_dump(kinds.find("sonoff-dualr3"), [81, 82], "motor"), 0)
+        default, moved = check.motor_setup.DEFAULT, check.motor_setup.Setup(check.MOVED_TRAVEL, check.MOVED_TRAVEL, True)
+        self.assertEqual(calls, [(81, "tasmota", default, moved), (81, "esphome", moved, None),
+                                 (82, "esphome", default, moved), (82, "tasmota", moved, None)])
+
+    def test_what_a_first_firmware_is_set_to_is_unlike_the_copys(self):
+        for carried in (check.motor_setup.DEFAULT, check.motor_setup.Setup(8.0, 8.0, True)):
+            moved = check.moved_setup(carried)
+            self.assertNotEqual((moved.open, moved.reversed), (carried.open, carried.reversed))
+            self.assertNotEqual(moved.reversed, carried.reversed)
+
+    def test_a_setting_the_firmware_does_not_keep_through_a_power_cut_fails(self):
+        moved = check.motor_setup.Setup(7.0, 7.0, True)
+        device = check.MotorDevice("127.0.0.1:8081", "esphome")
+        device.get = lambda path, post=False: "{}"
+        setups = iter([moved] + [check.motor_setup.DEFAULT] * 1000)
+        device.setup = lambda: next(setups)
+        clock = iter(range(0, 10000, 10))
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", lambda: next(clock)):
+            self.assertIn("after a power cut the motor is set to Setup(open=3.0", device.set_to(moved, lambda: None))
+
+    def test_tasmota_is_set_through_its_template_and_travel_times(self):
+        moved = check.motor_setup.Setup(7.0, 7.0, True)
+        device, sent = check.MotorDevice("127.0.0.1:8081", "tasmota"), []
+        device.tasmota = lambda command: sent.append(command) or {}
+        device.setup = lambda: moved
+        self.assertIsNone(device.set_to(moved, lambda: None))
+        self.assertEqual(json.loads(sent[0].split(" ", 1)[1])["GPIO"],
+                         check.motor_setup.tasmota_gpio(kinds.find("sonoff-dualr3"), True))
+        self.assertEqual(sent[1], "Backlog ShutterOpenDuration1 7; ShutterCloseDuration1 7; Module 0")
+
     def device(self, firmware, answers, setup=check.motor_setup.DEFAULT):
         device = check.MotorDevice("127.0.0.1:8081", firmware)
         readings = iter(answers)

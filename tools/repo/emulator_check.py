@@ -22,7 +22,8 @@ for every device the tool converts, so a new one has it by being added.
         and its outputs reversed): each firmware it ends on then shown set to
         the travel and direction carried across, driving the motor that way,
         its outputs never on together and both off after a power cut
-        (motor_problem)
+        (motor_problem); the first firmware of each way then set to another
+        travel and direction (moved_setup), which the next must carry across
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -116,7 +118,7 @@ def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -
                          workers=len(instances))
 
     def way(instance: int, firmwares: tuple[str, ...]) -> int:
-        saved = None
+        saved, wanted = None, carried
         for firmware in firmwares:
             keep = f"check-{kind.key}-{instance}-{firmware}"
             log = folder / f"{instance}-{firmware}.log"
@@ -131,16 +133,20 @@ def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -
             if not converted:
                 return 1
             if motor:
-                # From the firmware before too: the next conversion starts
-                # from where this run left the device (`keep`), which
-                # motor_problem's changes do not reach, so it is carried the
-                # same from that firmware.
+                # Where another firmware follows, this one is then set to
+                # moved_setup and kept so, for the next to carry across from
+                # it rather than from the backup.
+                then = moved_setup(wanted) if firmware != firmwares[-1] else None
                 problem = motor_problem(instance, keep, firmware, stub, folder / f"{instance}-{firmware}-motor.log",
-                                        carried)
+                                        wanted, then)
+                done = f"set to {wanted.open:g} s and {wanted.close:g} s, {'' if wanted.reversed else 'not '}" \
+                       "reversed, its outputs interlocked, both off after a power cut" + \
+                       (f"; then set to {then.open:g} s, {'' if then.reversed else 'not '}reversed" if then else "")
                 print(f"{'FAIL' if problem else 'PASS'}  {kind.key} on {firmware} drives its motor: "
-                      f"{problem or 'outputs interlocked, both off after a power cut'}", flush=True)
+                      f"{problem or done}", flush=True)
                 if problem:
                     return 1
+                wanted = then or wanted
             saved = keep
         return 0
 
@@ -173,10 +179,21 @@ STARTS_WITHIN = 10.0
 # at the same speed ended within them once, the check reading its outputs
 # after the motor had stopped (docs/emulator.md#a-motor).
 TRAVEL_OPEN, TRAVEL_CLOSE = 60, 120
+# What the check sets the first firmware of a way to once it has checked it,
+# for the next to carry across (moved_setup): a travel time no test copy has.
+MOVED_TRAVEL = 7.0
+
+
+def moved_setup(carried: motor_setup.Setup) -> motor_setup.Setup:
+    """What the first firmware of a way is set to, as a person would set
+    theirs, before the device is taken to the other: MOVED_TRAVEL each way,
+    and the other way round from `carried`, so that the next firmware having
+    it can only have come from the firmware before, not from the backup."""
+    return motor_setup.Setup(MOVED_TRAVEL, MOVED_TRAVEL, not carried.reversed)
 
 
 def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...], log: Path,
-                  wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
+                  wanted: motor_setup.Setup = motor_setup.DEFAULT, then: motor_setup.Setup | None = None) -> str | None:
     """What is wrong with how the device kept as `saved`, on `firmware`, drives
     its motor; None if nothing. It is started again from where the run left
     it, left running (--keep) for this, and stopped after: it is set to the
@@ -184,9 +201,14 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
     one way (the emulated meter shows that output's load, and no other) -
     output 2 opening where reversed; asked the other way while moving, the
     first is off before the second is on; and, one on, a power cut leaves
-    both off. What it saw is in `log`, after the run's own output."""
+    both off. With `then`, the firmware is then set to it through its own
+    settings, seen to keep it through a power cut, and the device kept as
+    `saved` again so, for the next conversion to start from. What it saw is
+    in `log`, after the run's own output."""
     from tools.espressif.emulator import fault_suite, public_devices
     container = fault_suite.name(instance)
+    power_cut = lambda: subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD, "restart"],  # noqa: E731
+                                       capture_output=True, check=False)
     try:
         with open(log, "w", encoding="utf-8") as out:
             subprocess.run([str(public_devices.UNATTENDED), f"--instance={instance}", f"--from={saved}", *stub,
@@ -200,8 +222,19 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
             device = MotorDevice(f"127.0.0.1:{8080 + instance}", firmware, note)
             if not device.answers():
                 return "the device did not answer after its run"
-            return device.problem(lambda: subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD,
-                                                          "restart"], capture_output=True, check=False), wanted)
+            problem = device.problem(power_cut, wanted)
+            if problem or then is None:
+                return problem
+            problem = device.set_to(then, power_cut)
+            if problem:
+                return problem
+            # Kept as unattended-test.sh --save keeps a device: switched off,
+            # its flash as it was.
+            subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD, "off"], capture_output=True,
+                           check=False)
+            shutil.copyfile(fault_suite.EMU / f"state-{instance}" / "flash.bin",
+                            public_devices.SAVED / saved / "flash.bin")
+            return None
     finally:
         subprocess.run(["docker", "stop", container], capture_output=True, check=False)
 
@@ -348,6 +381,43 @@ class MotorDevice:
             asked = SimpleNamespace(command=lambda text, timeout=None: self.tasmota(text))
             return motor_setup.tasmota_setup(asked, kinds.find("sonoff-dualr3"))
         return motor_setup.esphome_setup(self.address)
+
+    def set_to(self, setup: motor_setup.Setup, power_cut) -> str | None:
+        """The firmware set to `setup` through its own settings, as a person
+        would set theirs: Tasmota's travel times and its template's relays
+        (motor_setup.tasmota_template), which it restarts for; ESPHome's
+        Open duration, Close duration and Reverse direction. What is wrong
+        where it has not got them, before or after a power cut; None if
+        nothing."""
+        self.note(f"set to {setup}")
+        if self.firmware == "tasmota":
+            template = motor_setup.tasmota_template(kinds.find("sonoff-dualr3"), bool(setup.reversed))
+            self.tasmota(f"Template {template}")
+            self.tasmota(f"Backlog {motor_setup.TASMOTA_OPEN} {setup.open:g}; "
+                         f"{motor_setup.TASMOTA_CLOSE} {setup.close:g}; Module 0")
+        else:
+            for name, seconds in ((motor_setup.ESPHOME_OPEN, setup.open), (motor_setup.ESPHOME_CLOSE, setup.close)):
+                self.get(f"/number/{urllib.parse.quote(name)}/set?value={seconds:g}", post=True)
+            self.get(f"/switch/{urllib.parse.quote(motor_setup.ESPHOME_REVERSE)}/"
+                     f"{'turn_on' if setup.reversed else 'turn_off'}", post=True)
+        found = self.until_set(setup)
+        if found != setup:
+            return f"set to {setup}, the motor is set to {found}"
+        power_cut()
+        found = self.until_set(setup)
+        self.note(f"after a power cut, set to {found}")
+        return None if found == setup else f"set to {setup}, after a power cut the motor is set to {found}"
+
+    def until_set(self, setup: motor_setup.Setup) -> motor_setup.Setup:
+        """What the firmware says the motor is set to, asked until it says
+        `setup` or BACK_WITHIN has passed: through a restart it answers
+        nothing, then some settings before others."""
+        started = time.monotonic()
+        found = self.setup()
+        while found != setup and time.monotonic() - started < BACK_WITHIN:
+            time.sleep(3)
+            found = self.setup()
+        return found
 
     def problem(self, power_cut, wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
         if self.firmware == "tasmota":
