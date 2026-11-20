@@ -16,11 +16,13 @@ for every device the tool converts, so a new one has it by being added.
         upstream's public dump, and a Beken device with no public dump from a
         flash rebuilt from the S61's and its official update file
         (rebuilt_flash).
-    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [--instances 1,2]
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [calibrated] [--instances 1,2]
         the same for a device with a motor mode, from its test copy set up to
-        drive a motor (public_dump.MOTOR_COPIES): each firmware it ends on
-        then shown to drive the motor, its outputs never on together and
-        both off after a power cut (motor_problem)
+        drive a motor (public_dump.MOTOR_COPIES; calibrated: its travel timed
+        and its outputs reversed): each firmware it ends on then shown set to
+        the travel and direction carried across, driving the motor that way,
+        its outputs never on together and both off after a power cut
+        (motor_problem)
 """
 
 from __future__ import annotations
@@ -34,11 +36,12 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import kinds  # noqa: E402
+from tools.autoflash import kinds, motor as motor_setup  # noqa: E402
 from tools.repo import emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
@@ -94,17 +97,20 @@ def jobs(changed: list[str] | None) -> list[dict[str, str]]:
             for kind in kinds.READY if kind.key not in NOTHING_TO_RUN and (changed is None or affected(kind, changed))]
 
 
-def check_public_dump(kind: kinds.Kind, instances: list[int], motor: bool = False) -> int:
+def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:
     """An Espressif device from its public dump, on the cloud stub: with
-    `motor`, its test copy that drives a motor, each firmware then put to
-    motor_problem."""
+    `motor`, that test copy of it that drives a motor, each firmware then put
+    to motor_problem."""
     from tools.espressif.emulator import public_dump, public_devices
 
     public_dump.make(kind.key, motor)
     dump = public_dump.recipe(kind.key, motor)
     stub = ("--stub-cloud", f"--device={dump.mac}")
 
-    folder = LOGS / (f"{kind.key}-motor" if motor else kind.key)
+    folder = LOGS / (f"{kind.key}-{motor}" if motor else kind.key)
+    # What each firmware is to be set to: what the copy's Sonoff settings say.
+    carried = motor_setup.sonoff_setup(json.loads(getattr(dump, "settings", None) or "{}")).over(
+        motor_setup.DEFAULT)
     emulator_stats.began(folder, family=kind.family, suite="check", device=kind.key,
                          total=sum(map(len, ESPRESSIF_WAYS)), planned=sum(map(len, ESPRESSIF_WAYS)), cloud="stub",
                          workers=len(instances))
@@ -125,7 +131,12 @@ def check_public_dump(kind: kinds.Kind, instances: list[int], motor: bool = Fals
             if not converted:
                 return 1
             if motor:
-                problem = motor_problem(instance, keep, firmware, stub, folder / f"{instance}-{firmware}-motor.log")
+                # From the firmware before too: the next conversion starts
+                # from where this run left the device (`keep`), which
+                # motor_problem's changes do not reach, so it is carried the
+                # same from that firmware.
+                problem = motor_problem(instance, keep, firmware, stub, folder / f"{instance}-{firmware}-motor.log",
+                                        carried)
                 print(f"{'FAIL' if problem else 'PASS'}  {kind.key} on {firmware} drives its motor: "
                       f"{problem or 'outputs interlocked, both off after a power cut'}", flush=True)
                 if problem:
@@ -158,13 +169,16 @@ BACK_WITHIN = 240.0
 TRAVEL = 60
 
 
-def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...], log: Path) -> str | None:
+def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...], log: Path,
+                  wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
     """What is wrong with how the device kept as `saved`, on `firmware`, drives
     its motor; None if nothing. It is started again from where the run left
-    it, left running (--keep) for this, and stopped after: each output on
-    alone moves the motor one way (the emulated meter shows that output's
-    load, and no other); asked the other way while moving, the first is off
-    before the second is on; and, one on, a power cut leaves both off."""
+    it, left running (--keep) for this, and stopped after: it is set to the
+    travel times and direction `wanted`; each output on alone moves the motor
+    one way (the emulated meter shows that output's load, and no other) -
+    output 2 opening where reversed; asked the other way while moving, the
+    first is off before the second is on; and, one on, a power cut leaves
+    both off."""
     from tools.espressif.emulator import fault_suite, public_devices
     container = fault_suite.name(instance)
     try:
@@ -175,7 +189,7 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
         if not device.answers():
             return "the device did not answer after its run"
         return device.problem(lambda: subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD, "restart"],
-                                                     capture_output=True, check=False))
+                                                     capture_output=True, check=False), wanted)
     finally:
         subprocess.run(["docker", "stop", container], capture_output=True, check=False)
 
@@ -210,7 +224,7 @@ class MotorDevice:
     def answers(self, within: float = BACK_WITHIN) -> bool:
         started = time.monotonic()
         while time.monotonic() - started < within:
-            if self.get("/cm?cmnd=Power" if self.firmware == "tasmota" else "/cover/Curtain"):
+            if self.get("/cm?cmnd=Power" if self.firmware == "tasmota" else "/cover/Motor"):
                 return True
             time.sleep(3)
         return False
@@ -229,7 +243,7 @@ class MotorDevice:
         if self.firmware == "tasmota":
             self.tasmota({"open": "Power1 ON", "close": "Power2 ON"}[way])
         else:
-            self.get(f"/cover/Curtain/{way}", post=True)
+            self.get(f"/cover/Motor/{way}", post=True)
 
     def outputs(self) -> tuple[bool, bool] | None:
         """Whether each output is on, once it has had time to settle: on
@@ -259,21 +273,35 @@ class MotorDevice:
                 return None
         return found[0], found[1]
 
-    def problem(self, power_cut) -> str | None:
+    def setup(self) -> motor_setup.Setup:
+        """The travel times and direction the firmware is set to."""
+        if self.firmware == "tasmota":
+            asked = SimpleNamespace(command=lambda text, timeout=None: self.tasmota(text))
+            return motor_setup.tasmota_setup(asked, kinds.find("sonoff-dualr3"))
+        return motor_setup.esphome_setup(self.address)
+
+    def problem(self, power_cut, wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
         if self.firmware == "tasmota":
             settings = {name: self.tasmota(name).get(name)
                         for name in ("Interlock", "ShutterRelay1", "ShutterMode", "PowerOnState")}
             if settings != {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}:
                 return f"Tasmota is not set up for its motor: {settings}"
-        elif not self.get("/cover/Curtain"):
+        elif not self.get("/cover/Motor"):
             return "ESPHome has no cover"
+        found = self.setup()
+        if found != wanted:
+            return f"the motor is set to {found}, not {wanted}"
         self.set_travel()
-        for way, wanted in (("open", (True, False)), ("close", (False, True))):
+        # Tasmota's relays by their numbers, which its template swaps over a
+        # reversed motor's outputs; ESPHome's outputs by their pins, as metered.
+        swapped = bool(wanted.reversed) and self.firmware == "esphome"
+        for way, wanted_on in (("open", (True, False)), ("close", (False, True))):
+            wanted_on = wanted_on[::-1] if swapped else wanted_on
             self.move(way)   # closing while it opens: the second while the first is on
             found = self.outputs()
             if found is None:
                 return "the outputs could not be read"
-            if found != wanted:
+            if found != wanted_on:
                 return f"asked to {way}, output 1 is {'on' if found[0] else 'off'} and output 2 " \
                        f"{'on' if found[1] else 'off'}"
         if self.firmware == "tasmota":
@@ -342,7 +370,7 @@ def check_beken(kind: kinds.Kind, instances: list[int]) -> int:
                             "--instances", ",".join(map(str, instances))], env=env)
 
 
-def check_device(kind: kinds.Kind, instances: list[int], motor: bool = False) -> int:
+def check_device(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:
     if family_of(kind) == "beken":
         return check_beken(kind, instances)
     from tools.espressif.emulator import public_dump
@@ -361,7 +389,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("device", help="list, or a device's key")
     parser.add_argument("--changed-since", help="list: only what a change since this commit could affect")
     parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
-    parser.add_argument("--motor", action="store_true", help="the device's test copy that drives a motor")
+    parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated"),
+                        help="a test copy of the device that drives a motor (public_dump.MOTOR_COPIES)")
     args = parser.parse_args(argv)
     if args.device == "list":
         print(json.dumps(jobs(changed_since(args.changed_since) if args.changed_since else None)))

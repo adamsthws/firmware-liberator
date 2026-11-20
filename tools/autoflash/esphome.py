@@ -152,7 +152,21 @@ def switch_relay(host: str, on: bool) -> bool:
 
 
 # The motor's build's cover, by its name in devices/sonoff-dualr3/esphome-motor.yaml.
-COVER = "Curtain"
+COVER = "Motor"
+
+
+def entity(host: str, domain: str, name: str) -> object:
+    """The state of the entity `name` ("number", "Open duration"), as its
+    web server gives it: None from one that does not answer, or has none."""
+    return _state(host, f"/{domain}/" + urllib.parse.quote(name))
+
+
+def set_number(host: str, name: str, value: float) -> None:
+    _request(host, f"/number/{urllib.parse.quote(name)}/set?value={value:g}", post=True)
+
+
+def set_switch(host: str, name: str, on: bool) -> None:
+    _request(host, f"/switch/{urllib.parse.quote(name)}/{'turn_on' if on else 'turn_off'}", post=True)
 
 
 def cover(host: str) -> dict | None:

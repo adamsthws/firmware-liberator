@@ -96,7 +96,7 @@ def relay_state(params: dict[str, Any]) -> bool | None:
 
 
 def motor_mode(params: dict[str, Any]) -> bool:
-    """Whether a device's params say it drives a curtain motor (a DualR3's
+    """Whether a device's params say it drives a motor (a DualR3's
     workMode 2): it then reports no relay, and refuses a switch with 400."""
     return params.get("workMode") == 2
 

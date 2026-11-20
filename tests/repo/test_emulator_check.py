@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import tempfile
+import json
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -206,21 +207,42 @@ class MotorCheckTests(unittest.TestCase):
         with mock.patch.object(check, "missing_packages", return_value=None), \
                 mock.patch.object(check, "check_public_dump", return_value=0) as ran:
             self.assertEqual(check.main(["sonoff-dualr3", "--motor"]), 0)
-        self.assertTrue(ran.call_args.args[2])
+            self.assertEqual(ran.call_args.args[2], "motor")
+            self.assertEqual(check.main(["sonoff-dualr3", "--motor", "calibrated"]), 0)
+            self.assertEqual(ran.call_args.args[2], "calibrated")
 
-    def device(self, firmware, answers):
+    def device(self, firmware, answers, setup=check.motor_setup.DEFAULT):
         device = check.MotorDevice("127.0.0.1:8081", firmware)
         readings = iter(answers)
         device.outputs = lambda: next(readings)
         device.answers = lambda within=None: True
         device.get = lambda path, post=False: '{"state": "OPEN"}'
+        device.setup = lambda: setup
         settings = {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}
         device.tasmota = lambda command: {command: settings[command]} if command in settings else {}
         return device
 
-    def problem(self, firmware, answers):
+    def problem(self, firmware, answers, setup=check.motor_setup.DEFAULT, wanted=check.motor_setup.DEFAULT):
         with mock.patch.object(check.time, "sleep"):
-            return self.device(firmware, answers).problem(lambda: None)
+            return self.device(firmware, answers, setup).problem(lambda: None, wanted)
+
+    def test_a_motor_set_to_other_than_what_was_carried_fails_before_anything_moves(self):
+        wanted = check.motor_setup.Setup(8.0, 8.0, True)
+        self.assertIn("not Setup(open=8.0", self.problem("esphome", [], wanted=wanted))
+
+    def test_a_reversed_motors_esphome_opens_with_output_2(self):
+        reversed_motor = check.motor_setup.Setup(8.0, 8.0, True)
+        self.assertIsNone(self.problem("esphome", [(False, True), (True, False), (False, False)],
+                                       reversed_motor, reversed_motor))
+        self.assertIn("asked to open", self.problem("esphome", [(True, False)], reversed_motor, reversed_motor))
+
+    def test_the_setup_is_read_from_each_firmwares_settings(self):
+        device = check.MotorDevice("127.0.0.1:8081", "tasmota")
+        template = json.loads(check.motor_setup.tasmota_template(kinds.find("sonoff-dualr3"), True))
+        answers = {"ShutterOpenDuration1": {"ShutterOpenDuration1": 60.0},
+                   "ShutterCloseDuration1": {"ShutterCloseDuration1": 60.0}, "Template": template}
+        device.tasmota = lambda command: answers.get(command, {})
+        self.assertEqual(device.setup(), check.motor_setup.Setup(60.0, 60.0, True))
 
     def test_one_output_at_a_time_and_both_off_after_a_power_cut_passes(self):
         self.assertIsNone(self.problem("tasmota", [(True, False), (False, True), (False, True), (False, False)]))

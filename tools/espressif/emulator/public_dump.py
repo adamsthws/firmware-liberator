@@ -3,11 +3,12 @@
 device no one here owns.
 
     python tools/espressif/emulator/public_dump.py KIND
-    python tools/espressif/emulator/public_dump.py --motor KIND
+    python tools/espressif/emulator/public_dump.py --motor [calibrated] KIND
     python tools/espressif/emulator/public_dump.py --remove KIND
 
 --motor makes, for a kind with a motor mode, a second test copy set up to
-drive a motor (MOTOR_COPIES), beside the first, under a MAC of its own.
+drive a motor (MOTOR_COPIES), beside the first, under a MAC of its own;
+--motor calibrated a third, its motor's travel timed and its outputs reversed.
 
 The dump is fetched from where it is published, checked against its hash and
 filed as a test copy's backup (copy_device.py), under a MAC made up for the kind:
@@ -137,7 +138,7 @@ UPDATES = {
                             "c881ddd667bc9d8c6905acf30051a1f2e4270c4be2dcfcfa39a5bfdd137c6ec0", 6,
                             "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01", 138, ais_sdk=True),
     # The DualR3's firmware keeps its work mode as deviceMode in user_usual (1
-    # its two relays, 2 a curtain motor) and, finding none, starts as a motor,
+    # its two relays, 2 a motor) and, finding none, starts as a motor,
     # refusing every switch. Its own settings in relay mode, as a DualR3 out of
     # the box is taken to be, in place of the TH Elite's; the firmware writes the
     # rest of its defaults itself. uiid 126 is eWeLink's DualR3.
@@ -152,11 +153,19 @@ UPDATES = {
 }
 
 
-# A test copy of each kind with a motor mode (kinds.Kind.motor_mode) set up for
-# a curtain motor as Sonoff's app sets it (deviceMode 2), beside the one in
-# relay mode: tools/repo/emulator_check.py --motor converts it.
-MOTOR_COPIES = {"sonoff-dualr3": dataclasses.replace(UPDATES["sonoff-dualr3"], number=11,
-                                                     settings='{"init":"true","deviceMode":2}')}
+# Test copies of each kind with a motor mode (kinds.Kind.motor_mode), beside
+# the one in relay mode, which tools/repo/emulator_check.py --motor [calibrated]
+# converts: "motor" set up as Sonoff's app sets a motor (deviceMode 2), not yet
+# calibrated; "calibrated" as its firmware keeps one it timed at 8 s each way
+# (calibrate_time, in ms, as seen in the emulator), its outputs reversed in the
+# app (motorDriverReverse).
+MOTOR_COPIES = {"sonoff-dualr3": {
+    "motor": dataclasses.replace(UPDATES["sonoff-dualr3"], number=11, settings='{"init":"true","deviceMode":2}'),
+    "calibrated": dataclasses.replace(
+        UPDATES["sonoff-dualr3"], number=12,
+        settings='{"init":"true","deviceMode":2,"motorCalibrate":true,"calibrate_time":8000,'
+                 '"motorDriverReverse":true}'),
+}}
 
 
 def identities(frame: dict, dump: Dump) -> dict[bytes, bytes]:
@@ -346,13 +355,13 @@ def built(dump: "Dump | Update") -> tuple[bytes, bytes]:
     return flash, efuse
 
 
-def recipe(key: str, motor: bool = False) -> "Dump | Update":
-    """What the kind's test copy is made from: with `motor`, its motor's (MOTOR_COPIES)."""
-    return MOTOR_COPIES[key] if motor else DUMPS.get(key) or UPDATES[key]
+def recipe(key: str, motor: str = "") -> "Dump | Update":
+    """What the kind's test copy is made from: with `motor`, that motor's (MOTOR_COPIES)."""
+    return MOTOR_COPIES[key][motor] if motor else DUMPS.get(key) or UPDATES[key]
 
 
-def make(key: str, motor: bool = False) -> Path:
-    """The kind's test copy - with `motor`, the one that drives a motor - made
+def make(key: str, motor: str = "") -> Path:
+    """The kind's test copy - with `motor`, that one that drives a motor - made
     again where one made before differs from what this makes now: an earlier
     recipe's, which its firmware may not start on."""
     dump = recipe(key, motor)
@@ -388,7 +397,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("kind", choices=sorted({*DUMPS, *UPDATES}))
     parser.add_argument("--remove", action="store_true", help="delete the test copy")
-    parser.add_argument("--motor", action="store_true", help="the copy that drives a motor (MOTOR_COPIES)")
+    parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated"),
+                        help="a copy that drives a motor (MOTOR_COPIES)")
     args = parser.parse_args(argv)
     try:
         records.take_over_earlier_names()

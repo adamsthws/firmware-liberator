@@ -1,5 +1,6 @@
-# ESPHome for a Sonoff Dual R3 that drives a curtain motor (Sonoff's motor
-# mode), in place of esphome.yaml's two relays.
+# ESPHome for a Sonoff Dual R3 that drives a motor - a curtain's, a blind's,
+# an awning's or a gate's (Sonoff's motor mode) - in place of esphome.yaml's
+# two relays.
 #
 # The conversion tool installs this pre-built in place of esphome.yaml on a
 # Dual R3 it finds in motor mode (tools/autoflash/motor.py), with no Wi-Fi and
@@ -9,9 +10,10 @@
 # held to esphome.yaml's by tests/repo/test_esphome_shared.py.
 #
 # Output 1 (GPIO27) opens and output 2 (GPIO14) closes, as Sonoff's firmware
-# drives them unless set to reverse. They are never on together: each is
-# interlocked with the other, a reversal waits for the motor to stop, and both
-# are off at every start, whatever they were before.
+# drives them, or the other way round with Reverse direction on, as Sonoff's
+# is with its outputs reversed: the tool carries that across. They are never
+# on together: each is interlocked with the other, a reversal waits for the
+# motor to stop, and both are off at every start, whatever they were before.
 
 esphome:
   # Named as every firmware the conversion installs is, whatever the device.
@@ -36,8 +38,8 @@ esphome:
     - priority: 700
       then:
         - lambda: |-
-            id(curtain).set_open_duration(id(open_duration).state * 1000);
-            id(curtain).set_close_duration(id(close_duration).state * 1000);
+            id(motor).set_open_duration(id(open_duration).state * 1000);
+            id(motor).set_close_duration(id(close_duration).state * 1000);
 
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
@@ -99,27 +101,59 @@ switch:
     interlock: [relay]
     interlock_wait_time: 500ms
 
+  # Which output opens: output 1 while off, output 2 while on. Changed, the
+  # motor stops first. Written to flash at once, as the travel times are, not
+  # at the next flash_write_interval: the tool sets them as it converts, and a
+  # power cut in the minute after would lose them.
+  - id: reverse_direction
+    platform: template
+    name: "Reverse direction"
+    icon: mdi:swap-vertical
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - cover.stop: motor
+      - lambda: global_preferences->sync();
+    on_turn_off:
+      - cover.stop: motor
+      - lambda: global_preferences->sync();
+
 # Its position is worked out from how long the motor has run, so it is only as
-# right as its travel times (Open duration, Close duration).
+# right as its travel times (Open duration, Close duration). No device class:
+# whatever the motor moves, Home Assistant shows a cover.
 cover:
   - platform: time_based
-    id: curtain
-    name: "Curtain"
-    device_class: curtain
+    id: motor
+    name: "Motor"
     open_action:
-      - switch.turn_on: relay
-    open_duration: 10s
+      - if:
+          condition:
+            switch.is_on: reverse_direction
+          then:
+            - switch.turn_on: relay_2
+          else:
+            - switch.turn_on: relay
+    open_duration: 3s
     close_action:
-      - switch.turn_on: relay_2
-    close_duration: 10s
+      - if:
+          condition:
+            switch.is_on: reverse_direction
+          then:
+            - switch.turn_on: relay
+          else:
+            - switch.turn_on: relay_2
+    close_duration: 3s
     stop_action:
       - switch.turn_off: relay
       - switch.turn_off: relay_2
 
 number:
-  # Seconds the motor takes to open the curtain fully, and to close it: 10 s,
-  # Tasmota's own default, until you time yours. Sonoff's firmware times its
-  # own travel by the motor's current, which is not carried across.
+  # Seconds the motor takes to open fully, and to close: what Sonoff's
+  # firmware timed by the motor's current, carried across by the tool, else
+  # 3 s (tools/autoflash/motor.py's DEFAULT_TRAVEL) until you time yours.
+  # Short is the safe side: a motor with no limit switches stops early,
+  # rather than being driven past its end.
   - platform: template
     id: open_duration
     name: "Open duration"
@@ -129,12 +163,16 @@ number:
     min_value: 1
     max_value: 600
     step: 0.1
-    initial_value: 10
+    initial_value: 3
     optimistic: true
     restore_value: true
     mode: box
     on_value:
-      - lambda: id(curtain).set_open_duration(x * 1000);
+      - lambda: id(motor).set_open_duration(x * 1000);
+      # The number saves its value once on_value has run, so the write waits
+      # for the next loop.
+      - delay: 0s
+      - lambda: global_preferences->sync();
   - platform: template
     id: close_duration
     name: "Close duration"
@@ -144,12 +182,16 @@ number:
     min_value: 1
     max_value: 600
     step: 0.1
-    initial_value: 10
+    initial_value: 3
     optimistic: true
     restore_value: true
     mode: box
     on_value:
-      - lambda: id(curtain).set_close_duration(x * 1000);
+      - lambda: id(motor).set_close_duration(x * 1000);
+      # The number saves its value once on_value has run, so the write waits
+      # for the next loop.
+      - delay: 0s
+      - lambda: global_preferences->sync();
 
 # The button opens, stops and closes in turn; wall switch 1 opens and wall
 # switch 2 closes, each stopping the motor if it is moving that way already.
@@ -165,7 +207,7 @@ binary_sensor:
       - delayed_on: 10ms
       - delayed_off: 10ms
     on_press:
-      - cover.toggle: curtain
+      - cover.toggle: motor
   - platform: gpio
     id: wall_switch_1
     internal: true
@@ -177,8 +219,8 @@ binary_sensor:
       - delayed_on_off: 50ms
     on_state:
       - lambda: |-
-          auto call = id(curtain).make_call();
-          if (id(curtain).current_operation == cover::COVER_OPERATION_OPENING) {
+          auto call = id(motor).make_call();
+          if (id(motor).current_operation == cover::COVER_OPERATION_OPENING) {
             call.set_command_stop();
           } else {
             call.set_command_open();
@@ -195,8 +237,8 @@ binary_sensor:
       - delayed_on_off: 50ms
     on_state:
       - lambda: |-
-          auto call = id(curtain).make_call();
-          if (id(curtain).current_operation == cover::COVER_OPERATION_CLOSING) {
+          auto call = id(motor).make_call();
+          if (id(motor).current_operation == cover::COVER_OPERATION_CLOSING) {
             call.set_command_stop();
           } else {
             call.set_command_close();

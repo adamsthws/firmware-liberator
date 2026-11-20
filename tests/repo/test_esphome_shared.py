@@ -7,6 +7,7 @@ import re
 import unittest
 from pathlib import Path
 
+from tools.autoflash import motor
 from tools.autoflash.esphome import COVER
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -285,14 +286,16 @@ class MotorBuildTests(unittest.TestCase):
         self.assertRegex(self.motor, r"(?m)^  wifi: !include \.\./shared-esphome/wifi-esp32\.yaml$")
         self.assertEqual(RELAY.findall(self.motor), [])
         self.assertEqual(OVERLOAD.findall(self.motor), [])
+        # The direction is a setting, restored as one; the outputs are not.
+        reverse = next(item for item in switches(self.motor) if "id: reverse_direction" in item)
         for shared, patterns in SHARED_ONLY.items():
             for pattern in patterns:
                 with self.subTest(shared=shared, pattern=pattern):
-                    self.assertNotRegex(self.motor, re.compile(pattern, re.M))
+                    self.assertNotRegex(self.motor.replace(reverse, ""), re.compile(pattern, re.M))
 
     def test_neither_output_is_switched_on_its_own_nor_on_with_the_other_nor_at_a_start(self):
         items = {re.search(r"id: (\w+)", item).group(1): item for item in switches(self.motor)}
-        self.assertEqual(set(items), {"relay", "relay_2"})
+        self.assertEqual(set(items), {"relay", "relay_2", "reverse_direction"})
         self.assertEqual(relays(self.motor), {})
         for ident, other in (("relay", "relay_2"), ("relay_2", "relay")):
             with self.subTest(ident):
@@ -303,12 +306,50 @@ class MotorBuildTests(unittest.TestCase):
 
     def test_its_cover_drives_one_output_each_way_and_stops_both(self):
         cover = section(self.motor, "cover")
-        self.assertIn("    open_action:\n      - switch.turn_on: relay\n", cover)
-        self.assertIn("    close_action:\n      - switch.turn_on: relay_2\n", cover)
+
+        def way(action, reversed_on, otherwise):
+            return (f"    {action}:\n      - if:\n          condition:\n            switch.is_on: reverse_direction\n"
+                    f"          then:\n            - switch.turn_on: {reversed_on}\n"
+                    f"          else:\n            - switch.turn_on: {otherwise}\n")
+        self.assertIn(way("open_action", "relay_2", "relay"), cover)
+        self.assertIn(way("close_action", "relay", "relay_2"), cover)
         self.assertIn("    stop_action:\n      - switch.turn_off: relay\n      - switch.turn_off: relay_2\n", cover)
         self.assertIn(f'    name: "{COVER}"\n', cover)
-        for name in ("Open duration", "Close duration"):
+        # A motor may move anything: Home Assistant shows a cover of no class.
+        self.assertNotIn("device_class", cover)
+        for name in (motor.ESPHOME_OPEN, motor.ESPHOME_CLOSE):
             self.assertIn(f'    name: "{name}"\n', section(self.motor, "number"))
+
+    def test_its_direction_is_a_restored_setting_that_stops_the_motor_when_changed(self):
+        reverse = next(item for item in switches(self.motor) if "id: reverse_direction" in item)
+        self.assertIn(f'    name: "{motor.ESPHOME_REVERSE}"\n', reverse)
+        self.assertIn("    platform: template\n", reverse)
+        self.assertIn("    entity_category: config\n", reverse)
+        self.assertIn("    restore_mode: RESTORE_DEFAULT_OFF\n", reverse)
+        self.assertNotIn("pin:", reverse)
+        for change in ("on_turn_on", "on_turn_off"):
+            self.assertIn(f"    {change}:\n      - cover.stop: motor\n      - lambda: global_preferences->sync();\n",
+                          reverse)
+
+    def test_its_settings_are_written_to_flash_as_they_change(self):
+        # The tool sets them as it converts: left to flash_write_interval, a
+        # restart in the minute after lost them (seen in the emulator).
+        numbers = section(self.motor, "number")
+        self.assertEqual(numbers.count("    restore_value: true\n"), 2)
+        # A number saves its value only once on_value has run: synced in it,
+        # the value just set waited for flash_write_interval still, and Close
+        # duration, set last, was lost to a power cut at the end of a
+        # conversion (seen in the emulator check).
+        self.assertEqual(numbers.count("      - delay: 0s\n      - lambda: global_preferences->sync();\n"), 2)
+
+    def test_its_travel_times_start_at_the_tools_default(self):
+        default = f"{motor.DEFAULT_TRAVEL:g}"
+        self.assertEqual(re.findall(r"(?m)^    initial_value: (\S+)$", section(self.motor, "number")), [default] * 2)
+        self.assertEqual(re.findall(r"(?m)^    (?:open|close)_duration: (\S+)$", section(self.motor, "cover")),
+                         [f"{default}s"] * 2)
+        low, high = motor.TRAVEL_RANGE
+        self.assertEqual(re.findall(r"(?m)^    min_value: (\S+)$", section(self.motor, "number")), [f"{low:g}"] * 2)
+        self.assertEqual(re.findall(r"(?m)^    max_value: (\S+)$", section(self.motor, "number")), [f"{high:g}"] * 2)
 
 
 if __name__ == "__main__":

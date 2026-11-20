@@ -308,11 +308,11 @@ ESPHome, or eWeLink for Sonoff's own. On a device with a power meter, the meter
 is read after each switch. Whatever is plugged in is switched for a few
 seconds, and the device ends as it started.
 
-A Dual R3 that drives a curtain motor is not switched: over and back, the motor
+A Dual R3 that drives a motor is not switched: over and back, the motor
 would run one way, then the other. Its Relay line says `Motor mode` instead,
 on Sonoff's firmware as on the others, once the tool has seen Tasmota or
 ESPHome set up for the motor; one found with its two outputs free to be on
-together fails the check ([its motor mode](../devices/sonoff-dualr3/README.md#a-curtain-motor)).
+together fails the check ([its motor mode](../devices/sonoff-dualr3/README.md#a-motor)).
 
 On Tasmota, ESPHome or OpenBeken the tool then asks the device which release it
 runs, and checks it is the one this version installs, as this project built it.
@@ -373,9 +373,9 @@ instead, as Sonoff's own firmware does:
 - **OpenBeken**: `SetStartValue <channel> 0` (off) or `1` (on), for each relay;
   `-1` is the last state.
 
-A Dual R3 that drives a curtain motor comes back with both outputs off, on
+A Dual R3 that drives a motor comes back with both outputs off, on
 either firmware, whatever they were before
-([its motor mode](../devices/sonoff-dualr3/README.md#a-curtain-motor)).
+([its motor mode](../devices/sonoff-dualr3/README.md#a-motor)).
 
 A meter's energy totals are kept less closely:
 

@@ -341,8 +341,7 @@ def esphome_motor(ctx: Context) -> dict[str, Any]:
     if not motor.esphome_motor(ctx.state.input("device_ip")):
         raise Abort("the device did not take ESPHome's build for its motor, and could have both its outputs on: "
                     "run the tool again before the motor is used")
-    motor.tell_set_up("ESPHome", motor.ESPHOME_TRAVEL)
-    return {"motor": "set up"}
+    return motor.set_up_esphome(ctx)
 
 
 def calibrate_esphome_meter(ctx: Context) -> dict[str, Any]:

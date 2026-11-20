@@ -57,7 +57,12 @@ class MotorTests(RouteTestCase):
 
     def check(self, drives, cover):
         ctx = self.ctx(firmware="esphome", device_kind="sonoff-dualr3")
-        with mock.patch.object(esphome, "is_esphome", return_value=True), \
+        self.given = {}
+        with mock.patch.object(esphome, "set_number", side_effect=lambda h, n, v: self.given.__setitem__(n, v)), \
+                mock.patch.object(esphome, "set_switch", side_effect=lambda h, n, v: self.given.__setitem__(n, v)), \
+                mock.patch.object(esphome, "entity", side_effect=lambda h, d, n: (
+                    f"{self.given[n]:.1f}" if d == "number" and n in self.given else self.given.get(n))), \
+                mock.patch.object(esphome, "is_esphome", return_value=True), \
                 mock.patch.object(mover, "calibrate_esphome_meter", return_value={}), \
                 mock.patch.object(mover.motor, "drives", return_value=drives), \
                 mock.patch.object(mover.motor, "backup_settings", return_value={}), \
@@ -69,6 +74,9 @@ class MotorTests(RouteTestCase):
         result, told = self.check(True, cover=True)
         self.assertEqual(result["motor"], "set up")
         self.assertIn(mover.motor.ESPHOME_TRAVEL, told.call_args_list[-1].args[0])
+        # Nothing known of the motor: the short default each way, the right way round.
+        default = mover.motor.DEFAULT_TRAVEL
+        self.assertEqual(self.given, {"Open duration": default, "Close duration": default, "Reverse direction": False})
 
     def test_esphome_not_the_motors_build_stops_the_run(self):
         with self.assertRaisesRegex(errors.Abort, "did not take ESPHome's build for its motor"):

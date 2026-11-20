@@ -162,7 +162,7 @@ class Kind:
     # (QEMU property, raw 12-bit sample), where stock firmware acts on one: only
     # the emulator asks.
     adc_readings: tuple[tuple[str, int], ...] = ()
-    # Whether Sonoff's firmware can drive a curtain motor with it, in place of
+    # Whether Sonoff's firmware can drive a motor with it, in place of
     # its relays (the Dual R3's motor mode): the mode is carried across
     # (tools/autoflash/motor.py), and its ESPHome has a build of its own for it.
     motor_mode: bool = False

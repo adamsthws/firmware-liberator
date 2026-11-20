@@ -80,7 +80,7 @@ Lite.
 
 ### The Dual R3's work mode
 
-The Dual R3 drives two relays or a curtain motor, which its firmware (1.6.1)
+The Dual R3 drives two relays or a motor (Sonoff's curtain motor mode), which its firmware (1.6.1)
 keeps as `deviceMode` in its user settings (the JSON in NVS namespace
 `user_usual`, key `content`) and reports it to eWeLink as `workMode`: 1 is
 relays (it then loads each relay's saved state), 2 is a motor, and 3 is a third
@@ -93,17 +93,48 @@ Dual R3 (uiid 126) as a cover. The firmware resets all its user settings,
 `deviceMode` 2 among them, when it registers with an account other than the
 one its `user_unusual` settings name (`finalUserApikey`).
 
-Beside `deviceMode`, the user settings' keys, as the firmware's strings list
-them, include the motor's own: `calibrate_time`, `motorCalibrate`,
-`calibrateWay`, `motorLocation`, `limitCurrent`, `motorDriverReverse` and
-`motorKeyReverse` (read from the 1.6.1 image's strings, not from a real one's
-settings). Its motor task calibrates by the motor's current
-(`MOTOR_AUTO_GET_CURRENT_TO_END`) or by hand; what unit `calibrate_time` is
-kept in was not found, so the tool carries no travel time across and logs
-what a device's backup holds of these
-([the device's page](../devices/sonoff-dualr3/README.md#a-curtain-motor)).
+Beside `deviceMode`, the user settings' keys include the motor's own:
+`calibrate_time`, `motorCalibrate`, `calibrateWay`, `motorLocation`,
+`limitCurrent`, `motorDriverReverse`, `motorKeyReverse` and `motorSwMode`.
 eWeLink's `motorTurn` (0 stop, 1 open, 2 close), `location` and `currLocation`
-(0 closed, 100 open) are how SonoffLAN drives it.
+(0 closed, 100 open) are how SonoffLAN drives it; the firmware also takes
+`outputReverse`, `motorSwReverse`, `motorSwMode` and `calibration`, and
+reports `calibState`. What they mean was seen in the emulator, driving the
+stock firmware through the cloud stub and reading its output pins through
+QEMU's monitor:
+
+- **`outputReverse`, kept as `motorDriverReverse`, swaps the outputs.** Not
+  reversed, `motorTurn` 1 (open) drove GPIO27 (output 1) and 2 (close) GPIO14
+  (output 2); after `outputReverse` 1, which the firmware saved at once as
+  `motorDriverReverse` true, open drove GPIO14 and close GPIO27. An
+  uncalibrated motor ran until stopped.
+- **`calibrate_time` is the travel in milliseconds**, one time for both ways.
+  `calibration` 1 starts the firmware's own calibration by the motor's current:
+  it runs the motor open for 2 s, measures its current and keeps half of it as
+  `limitCurrent`, then closes until the current falls below that - the motor's
+  limit switch has opened - opens fully and closes fully, timing each full
+  travel. With [the emulator's motor](emulator.md#a-motor) at 8 s each way it
+  kept `calibrate_time` 8000; at 13 s, 12000; both with `motorCalibrate` true,
+  `calibrateWay` false and `calibState` 1 reported. It notices the end a second
+  or two late and takes that off, so its time is a little short of the real
+  one, never long. Its start-up code takes `calibrate_time` as the travel only
+  with `motorCalibrate` true, and moves the motor by 10000/`calibrate_time`
+  hundredths of a percent each millisecond (FreeRTOS ticks, 1 kHz, read in its
+  calibration handler).
+- **`motorSwReverse`, kept as `motorKeyReverse`, changes how the wall switches
+  are read** in `motorSwMode` 2 and 3: its handler sets the flag the switch
+  handlers of those two modes take, read in the disassembly. What either mode
+  is, and what the flag does to a switch, could not be seen: the emulator
+  cannot switch an input pin once QEMU has started (`gpio_in` is fixed at
+  start), so neither is carried across.
+
+So the tool carries `calibrate_time` as both travel times, only with
+`motorCalibrate` true and the time in `TRAVEL_RANGE`, and `motorDriverReverse`
+as the direction, and logs the rest
+([the device's page](../devices/sonoff-dualr3/README.md#a-motor)). Until it
+answers the chip ID at register `0x7F` (`0x776110`), the firmware reads
+nothing else of the CSE7761: the emulated meter answers it, and only then did
+the firmware measure at all.
 
 The emulator's Dual R3 runs on the TH Elite's settings, which have no
 `deviceMode`, so [public_dump.py](../tools/espressif/emulator/public_dump.py)
@@ -114,7 +145,8 @@ known. A second test copy is given `{"init":"true","deviceMode":2}`, a
 motor's (`public_dump.py --motor`); started on it, the firmware wrote the
 motor's own keys as `calibrate_time` 0, `motorCalibrate` false,
 `motorLocation` 0, `limitCurrent` 0 and both reverses false: an uncalibrated
-motor's, seen in the emulator.
+motor's, seen in the emulator. A third (`--motor calibrated`) is given a
+motor calibrated at 8 s with its outputs reversed, as the firmware keeps one.
 
 ### Leaving Tasmota on a TH-style layout
 

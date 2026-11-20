@@ -39,15 +39,16 @@ Pins from [Blakadder's template](https://templates.blakadder.com/sonoff_DUALR3.h
 whose warning stands: **its GPIOs are connected to AC power. Never connect
 anything to its pins with it on the mains.**
 
-## A curtain motor
+## A motor
 
-Sonoff's firmware runs a Dual R3 either as two relays or as a curtain motor, as
-you set it in the eWeLink app. In motor mode its two outputs drive the motor's
-two windings, one to open and one to close, and both on at once can burn the
-motor out. So the tool carries the mode across: a Dual R3 it finds in motor
-mode comes out of the conversion as a cover, whichever firmware you choose, and
-its two outputs are never on together - not from Home Assistant, the button,
-the wall switches, nor at a start.
+Sonoff's firmware runs a Dual R3 either as two relays or as a motor - Sonoff's
+curtain motor mode, which drives a blind, an awning or a gate as well - as you
+set it in the eWeLink app. In motor mode its two outputs drive the motor's two
+windings, one to open and one to close, and both on at once can burn the motor
+out. So the tool carries the mode across: a Dual R3 it finds in motor mode
+comes out of the conversion as a cover, whichever firmware you choose, and its
+two outputs are never on together - not from Home Assistant, the button, the
+wall switches, nor at a start.
 
 - **Where the mode comes from**: your device's Sonoff backup, which the tool
   takes before it writes anything over Sonoff's firmware (Sonoff keeps the mode
@@ -59,24 +60,34 @@ the wall switches, nor at a start.
 - **Tasmota**: its shutter, on both relays (`SetOption80 1`, `ShutterRelay1 1`),
   one to open and one to close (`ShutterMode 1`), the two relays interlocked
   (`Interlock 1,2`, `Interlock 1`), so that one switched on turns the other off
-  first, and both off at power-on (`PowerOnState 0`). Output 1 opens and output
-  2 closes. `TASMOTA_COMMANDS` in
+  first, and both off at power-on (`PowerOnState 0`). `TASMOTA_COMMANDS` in
   [`tools/autoflash/motor.py`](../../tools/autoflash/motor.py) is the list, and
   says why its order matters.
 - **ESPHome**: its own build for a motor, [`esphome-motor.yaml`](esphome-motor.yaml),
-  with a `Curtain` cover in place of the two relays
-  ([what it reports](esphome.md#a-curtain-motor)).
-- **The travel times**: Sonoff's firmware times the motor's travel itself, from
-  the motor's current, and keeps it in a form the tool does not read, so it is
-  not carried across. Both firmware start at 10 seconds each way, which the
-  tool tells you to change: time your curtain and set Tasmota's
-  `ShutterOpenDuration1` and `ShutterCloseDuration1`, or ESPHome's `Open
-  duration` and `Close duration` in Home Assistant. Until then the cover's
-  position is only a guess.
-- **Direction**: output 1 (L1) opens, as Sonoff's firmware has it unless you
-  set it to reverse. A reversal set in Sonoff's firmware is not carried across:
-  if Open closes your curtain, swap the motor's two direction wires, with the
-  device off at the mains.
+  with a `Motor` cover in place of the two relays
+  ([what it reports](esphome.md#a-motor)).
+- **The travel times**: Sonoff's firmware times the motor's travel itself, by
+  the motor's current, when you calibrate it in the app. A device calibrated
+  there has its time carried across, the same each way, as Sonoff's firmware
+  uses it. Otherwise both firmware start at `DEFAULT_TRAVEL` in `motor.py`, a
+  few seconds each way, and the tool tells you to time your motor and set
+  Tasmota's `ShutterOpenDuration1` and `ShutterCloseDuration1`, or ESPHome's
+  `Open duration` and `Close duration` in Home Assistant. The default is short
+  on purpose: too short only stops the motor early, where too long could drive
+  a motor with no limit switches past its end. Until the times are right the
+  cover's position is only a guess.
+- **Direction**: output 1 (L1) opens and output 2 (L2) closes, unless you set
+  the outputs to reverse in the app; then output 2 opens, and that is carried
+  across too: on Tasmota as its template's two relays swapped (relay 1, which
+  its shutter opens with, on output 2), on ESPHome as its `Reverse direction`
+  setting, on. The interlock and both off at a start hold either way.
+- **From one of these firmware to the other**, the travel times and direction
+  it is set to go with the device, as its mode does.
+- **Not carried across**: how Sonoff's firmware is set to treat the wall
+  switches in motor mode (`motorSwMode`, and its switch reversal,
+  `motorKeyReverse`); the converted firmware use them as
+  [ESPHome's build says](esphome.md#a-motor) or as Tasmota's shutter does. The
+  tool logs what your backup holds of these.
 - **The end-of-run check** does not switch the outputs, which would run the
   motor both ways; it checks the firmware is set up for the motor
   ([At the end](../../docs/what-happens.md#at-the-end)).
@@ -85,13 +96,17 @@ the wall switches, nor at a start.
 
 In the emulator a test copy set up in motor mode (`deviceMode` 2) went from
 Sonoff's firmware to Tasmota and to ESPHome, and from each to the other
-(`emulator_check.py sonoff-dualr3 --motor`). On each firmware the outputs came
-on one at a time, each way - asked to close while opening, the first went off
+(`emulator_check.py sonoff-dualr3 --motor`), and so did one calibrated at 8
+seconds with its outputs reversed (`--motor calibrated`). On each firmware the
+travel times and direction were what was carried across; the outputs came on
+one at a time, each way - asked to close while opening, the first went off
 before the second came on - never both, even asked for both at once on
 Tasmota, and both were off after a power cut: on ESPHome as the emulated meter
-read each channel, on Tasmota as it said it drove its relays. The emulator has
-no motor, so how the travel times and the direction suit a real curtain is for
-its owner to set.
+read each channel, on Tasmota as it said it drove its relays. What the
+calibration and the reversal mean was seen in the emulator's Sonoff firmware
+([research](../../docs/espressif-research.md#the-dual-r3s-work-mode)); how the
+times suit a real motor, with its own limit switches, is for its owner to
+check.
 
 ## Files
 

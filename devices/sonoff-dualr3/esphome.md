@@ -37,22 +37,29 @@ their boards alike: `tests/repo/test_esphome_shared.py` holds the motor's to
 and the two `AUTOFLASH-IMPRINT-` placeholders: the tool uses each
 ([how](../sonoff-s60/esphome.md#changing-it)).
 
-## A curtain motor
+## A motor
 
-A Dual R3 set up in Sonoff's firmware to drive a curtain motor is given
+A Dual R3 set up in Sonoff's firmware to drive a motor is given
 [`esphome-motor.yaml`](esphome-motor.yaml) instead
-([why](README.md#a-curtain-motor)). Its board is the same, and it reports the
+([why](README.md#a-motor)). Its board is the same, and it reports the
 same voltage, currents, power and energy, each channel's now the motor's each
-way. In place of the two relays it has a `Curtain` cover, which Home Assistant
-opens, closes, stops and sets to a position:
+way. In place of the two relays it has a `Motor` cover, which Home Assistant
+opens, closes, stops and sets to a position. It has no device class, as the
+motor may move a curtain, a blind, an awning or a gate: Home Assistant shows
+a plain cover, and you can give it a class there.
 
-- Output 1 opens and output 2 closes. Each is interlocked with the other in
-  the build itself: switching one on turns the other off and waits half a
-  second for the motor to stop. Both are off at every start, whatever they were
-  before, so the cover has no power-on state, nor countdown, nor overload
-  threshold (the motor draws far less than an output's rating).
+- Output 1 opens and output 2 closes, or the other way round with `Reverse
+  direction` on, a setting in Home Assistant that the tool turns on for a
+  device whose outputs Sonoff's app had reversed; changing it stops the motor.
+  Each output is interlocked with the other in the build itself: switching one
+  on turns the other off and waits half a second for the motor to stop. Both
+  are off at every start, whatever they were before, so the cover has no
+  power-on state, nor countdown, nor overload threshold (the motor draws far
+  less than an output's rating).
 - The button opens, stops and closes in turn; wall switch 1 opens and wall
   switch 2 closes, each stopping the motor if it is moving that way already.
 - `Open duration` and `Close duration`, settings in Home Assistant, are how
-  long your motor takes each way: 10 seconds until you set them. The cover's
+  long your motor takes each way: the time Sonoff's calibration found, which
+  the tool carries across, or a few seconds (`DEFAULT_TRAVEL` in
+  [`motor.py`](../../tools/autoflash/motor.py)) until you set them. The cover's
   position is worked out from them.

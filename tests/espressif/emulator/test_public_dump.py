@@ -170,7 +170,7 @@ class OwnSettings(unittest.TestCase):
         self.assertIn('"uiid":181', rows["frame_params", "content"])
 
     def test_the_dualr3_starts_as_a_dualr3_in_relay_mode(self):
-        # Its firmware runs as a curtain motor (deviceMode 2) when it finds no
+        # Its firmware runs as a motor (deviceMode 2) when it finds no
         # deviceMode, as on the TH Elite's settings, and refuses every switch.
         dualr3 = public_dump.UPDATES["sonoff-dualr3"]
         rows = donor_rows(dualr3)
@@ -179,13 +179,23 @@ class OwnSettings(unittest.TestCase):
 
     def test_the_dualr3_has_a_second_copy_that_drives_a_motor(self):
         # Sonoff's app's motor mode, beside the copy in relay mode, under a MAC of its own.
-        relays, motor = public_dump.recipe("sonoff-dualr3"), public_dump.recipe("sonoff-dualr3", motor=True)
+        relays, motor = public_dump.recipe("sonoff-dualr3"), public_dump.recipe("sonoff-dualr3", "motor")
         self.assertEqual(json.loads(donor_rows(motor)["user_usual", "content"]).get("deviceMode"), 2)
         self.assertNotEqual(motor.mac, relays.mac)
         self.assertEqual((motor.file, motor.uiid), (relays.file, relays.uiid))
         macs = [dump.mac for dump in (*public_dump.DUMPS.values(), *public_dump.UPDATES.values())]
         self.assertNotIn(motor.mac, macs)
         self.assertEqual(set(public_dump.MOTOR_COPIES), {kind.key for kind in kinds.EVERY if kind.motor_mode})
+
+    def test_and_a_third_whose_motor_is_calibrated_and_reversed(self):
+        # As Sonoff's firmware keeps a motor it timed (calibrate_time in ms)
+        # with its outputs reversed in the app, under a MAC of its own again.
+        calibrated = public_dump.recipe("sonoff-dualr3", "calibrated")
+        settings = json.loads(donor_rows(calibrated)["user_usual", "content"])
+        self.assertEqual((settings["deviceMode"], settings["motorCalibrate"], settings["calibrate_time"],
+                          settings["motorDriverReverse"]), (2, True, 8000, True))
+        self.assertNotIn(calibrated.mac, {public_dump.recipe("sonoff-dualr3", "motor").mac,
+                                          public_dump.recipe("sonoff-dualr3").mac})
 
 
 
