@@ -293,6 +293,51 @@ test("a held report deleted goes, with its device's record if nothing else of it
   assert.deepEqual(rows(db, "SELECT * FROM folded"), [{ day: "2026-11-09" }], "nothing to count again");
 });
 
+// Reports of `device` on `day` held for `why`, as the nightly job holds a spike's.
+async function heldAs(db, device, day, why, count, model = "S60TPF") {
+  for (let n = 0; n < count; n += 1) {
+    const report = { ...structuredClone(FIXTURE), id: randomBytes(8).toString("hex"), device, model };
+    await db.batch(writes(db, report, `${device}-${day}-${n}`, day));
+    db.db.prepare("INSERT INTO held_reports (id, day, why) VALUES (?, ?, ?)").run(report.id, day, why);
+    db.db.prepare("UPDATE reports SET quarantined = 1 WHERE id = ?").run(report.id);
+  }
+}
+
+test("all of one device's held on one day for one reason are released at once, and no others", async () => {
+  const { bindings, db, junk } = await held();
+  const spike = "a day far above usual for its device";
+  await heldAs(db, "sonoff-s60", "2026-11-09", spike, 3);
+  await heldAs(db, "sonoff-s61", "2026-11-09", spike, 2);
+  await heldAs(db, "sonoff-s60", "2026-11-08", spike, 1);
+  // One of no kind is counted by its model, as the nightly job counts it.
+  await heldAs(db, null, "2026-11-09", spike, 2, "NEWTHING");
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.ok(html.includes("<button>Release all 3</button>"), "a button for each");
+  assert.ok(html.includes('<input type="hidden" name="named" value="NEWTHING">'));
+  assert.match(html, /Held for review<\/div><div class="tile-value">9</);
+  const post = async (fields, headers = { Origin: admin.ORIGIN, "Sec-Fetch-Site": "same-origin" }) =>
+    admin.handle(new Request("https://admin.firmwareliberator.com/held", { method: "POST",
+      body: new URLSearchParams(fields), headers: { "Cf-Access-Jwt-Assertion": await token(), ...headers } }),
+    bindings, NOW, keys);
+  const all = { action: "release-all", day: "2026-11-09", why: spike, named: "sonoff-s60" };
+  assert.equal((await post(all, { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await post({ ...all, day: "yesterday" })).status, 400);
+  const done = await post(all);
+  assert.deepEqual([done.status, done.headers.get("Location")], [303, "/#held"]);
+  const left = rows(db, `SELECT reports.device, reports.model, held_reports.day FROM held_reports
+    JOIN reports ON reports.id = held_reports.id ORDER BY 1, 2, 3`);
+  assert.deepEqual(left.map((row) => `${row.device}/${row.model}/${row.day}`), ["null/NEWTHING/2026-11-09",
+    "null/NEWTHING/2026-11-09", "sonoff-s60/S60TPG/2026-11-09", "sonoff-s60/S60TPF/2026-11-08",
+    "sonoff-s61/S60TPF/2026-11-09", "sonoff-s61/S60TPF/2026-11-09"].sort(),
+  "the junk report held for another reason, the other day's, the other device's and the model's stay");
+  assert.deepEqual(rows(db, `SELECT count(*) AS n FROM reports WHERE device = 'sonoff-s60' AND day = '2026-11-09'
+    AND model = 'S60TPF' AND quarantined = 0`), [{ n: 3 }], "counted again");
+  assert.deepEqual(rows(db, "SELECT * FROM folded"), [], "their day counted again tonight");
+  assert.ok(rows(db, `SELECT id FROM held_reports WHERE id = '${junk.id}'`).length);
+  await post({ action: "release-all", day: "2026-11-09", why: spike, named: "NEWTHING" });
+  assert.deepEqual(rows(db, "SELECT count(*) AS n FROM held_reports WHERE day = '2026-11-09'"), [{ n: 3 }]);
+});
+
 test("only a report held can be released or deleted from here", async () => {
   const { db } = await held();
   const [{ id }] = rows(db, "SELECT id FROM reports WHERE quarantined = 0");

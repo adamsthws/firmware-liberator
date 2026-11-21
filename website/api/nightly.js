@@ -50,8 +50,9 @@ export const SPIKE_SMALLEST = 25;
 // At most this many devices' days held a night, so a night's queries stay few.
 export const SPIKE_MOST = 10;
 export const SPIKE_WHY = "a day far above usual for its device";
-// What a spike is counted by: a report's kind, else its model.
-const NAMED = "coalesce(device, model)";
+// What a spike is counted by: a report's kind, else its model (and the admin
+// view's releasing all of one held, admin/index.js releaseAll).
+export const NAMED = "coalesce(device, model)";
 // The count of every readout kept, as index.js names it (READOUTS_EVER; a
 // test holds the two alike).
 export const READOUTS_EVER = "readouts:all";

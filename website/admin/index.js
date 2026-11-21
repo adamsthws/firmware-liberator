@@ -13,7 +13,7 @@ import { downloadDays, DOWNLOADS } from "../api/downloads.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, READOUT_ID, STAGES,
   TOTAL_BYTES } from "../api/index.js";
 import { CLOUD_ASNS } from "../api/networks.js";
-import { COUNTER_DAYS } from "../api/nightly.js";
+import { COUNTER_DAYS, NAMED } from "../api/nightly.js";
 import { approveLink, everyLink, fetchedFrom, fetchesOn, FIRST_SIGHT_DAILY, firstSightsOn, linkFigures, linksNotKeptOn,
   linksToReview, OFFER_FETCHES_DAILY, PEEK_BYTES, PENDING_LINK_DAYS, PENDING_LINKS_MOST, PENDING_LINKS_PER_SENDER,
   PENDING_LINKS_RENTED,
@@ -219,27 +219,42 @@ async function review(request, env, now, files) {
   return new Response(null, { status: 303, headers: { Location: "/#review", "Cache-Control": "no-store" } });
 }
 
-// A held report released or deleted: only from a form on this view.
+// A held report released or deleted, or every one held of one device on one
+// day for one reason released: only from a form on this view.
 async function held(request, env) {
   if (!ownForm(request)) {
     return notOwn();
   }
   const form = await request.formData();
-  const id = String(form.get("id") ?? "");
-  const action = String(form.get("action") ?? "");
-  if (!ID.test(id) || !["release", "delete"].includes(action)) {
+  const field = (name) => String(form.get(name) ?? "");
+  const action = field("action");
+  let writes;
+  if (action === "release-all" && /^\d{4}-\d\d-\d\d$/.test(field("day")) && SHORT_FIELD.test(field("why"))
+      && SHORT_FIELD.test(field("named"))) {
+    writes = releaseAll(env.DB, field("day"), field("why"), field("named"));
+  } else if (ID.test(field("id")) && ["release", "delete"].includes(action)) {
+    writes = action === "release" ? release(env.DB, field("id")) : remove(env.DB, field("id"));
+  } else {
     return reply(400, "Not a held report and an action.", { "Content-Type": "text/plain" });
   }
-  await env.DB.batch(action === "release" ? release(env.DB, id) : remove(env.DB, id));
+  await env.DB.batch(writes);
   return new Response(null, { status: 303, headers: { Location: "/#held", "Cache-Control": "no-store" } });
 }
+const SHORT_FIELD = /^[\x20-\x7e]{1,200}$/;
 
-// Released: counted again, its day folded afresh the next night.
-export const release = (db, id) => [
-  db.prepare("DELETE FROM folded WHERE day = (SELECT day FROM held_reports WHERE id = ?)").bind(id),
-  db.prepare("UPDATE reports SET quarantined = 0 WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
-  db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
+// Released: counted again, its day folded afresh the next night - the
+// reports `which` selects of those held, in three statements however many.
+const releasing = (db, which, ...values) => [
+  db.prepare(`DELETE FROM folded WHERE day IN (SELECT day FROM held_reports WHERE id IN (${which}))`).bind(...values),
+  db.prepare(`UPDATE reports SET quarantined = 0 WHERE id IN (${which})`).bind(...values),
+  db.prepare(`DELETE FROM held_reports WHERE id IN (${which})`).bind(...values),
 ];
+export const release = (db, id) => releasing(db, "SELECT id FROM held_reports WHERE id = ?1", id);
+// Every one held for `why` on `day` of one device, as the nightly job counts
+// a spike's (NAMED: its kind, else its model).
+export const releaseAll = (db, day, why, named) => releasing(db, `SELECT held_reports.id FROM held_reports
+  JOIN reports ON reports.id = held_reports.id WHERE held_reports.day = ?1 AND why = ?2 AND ${NAMED} = ?3`,
+day, why, named);
 
 // Deleted, with its device's record where no other report of it is left.
 export const remove = (db, id) => [
@@ -336,6 +351,9 @@ export async function gather(env, now) {
     today, counters, devices, lastFolded: folded?.day ?? null,
     held: await all(`SELECT held_reports.id, held_reports.day, why, device, model, tool, result, step, error, text, tag
       FROM held_reports JOIN reports ON reports.id = held_reports.id ORDER BY held_reports.day DESC LIMIT 100`),
+    heldGroups: await all(`SELECT held_reports.day, why, ${NAMED} AS named, max(device) AS device, count(*) AS n
+      FROM held_reports JOIN reports ON reports.id = held_reports.id GROUP BY held_reports.day, why, named
+      ORDER BY held_reports.day DESC, n DESC`),
     recent: await all(`SELECT day, tag, tool, result, step, error, text, device, model, firmware, source, os_family, seconds, quarantined,
         crash_site, firmware_name, firmware_name_expected AS name_expected
       FROM reports ORDER BY day DESC LIMIT 40`),
@@ -475,6 +493,11 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
   const action = (id, name, label, danger = false) => `<form class="inline" method="post" action="/held">`
     + `<input type="hidden" name="id" value="${esc(id)}"><input type="hidden" name="action" value="${name}">`
     + `<button${danger ? ' class="danger"' : ""}>${label}</button></form>`;
+  const releaseAll = (row) => `<form class="inline" method="post" action="/held">`
+    + `<input type="hidden" name="action" value="release-all"><input type="hidden" name="day" value="${esc(row.day)}">`
+    + `<input type="hidden" name="why" value="${esc(row.why)}"><input type="hidden" name="named" value="${esc(row.named)}">`
+    + `<button>Release all ${number(row.n)}</button></form>`;
+  const heldCount = data.heldGroups.reduce((sum, row) => sum + row.n, 0);
   // Each copy field's id, the page's own.
   let copies = 0;
   const copy = (value) => copyField(`copy-${(copies += 1)}`, value);
@@ -499,7 +522,7 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
         .filter(Boolean).join(" · "))
       + tile("Devices seen, by system", number(data.systems[0]?.seen), data.systems.slice(1)
         .map((row) => `${SYSTEM_NAMES[row.os] ?? row.os} ${number(row.seen)}`).join(" · ") || "no runs yet")
-      + tile("Held for review", number(data.held.length))
+      + tile("Held for review", number(heldCount))
       + tile("Last night's job counted to", data.lastFolded ?? "not yet run")
       + `</div></section>`,
     `<section class="card"><h2>Reports, the last fortnight</h2><p class="sub">Every run's report that came in, by day and
@@ -532,7 +555,11 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
         ["Power cycled", "cycled", "number"], ["Power cycles", "cycles", "number"]], data.needed, "None needed either.")
       + `</section>`,
     `<section class="card" id="held"><h2>Held for review</h2><p class="sub">Reports no run of the tool's would write, or a day far
-      above a device's usual. Release one to count it (its day is counted again tonight), or delete it.</p>`
+      above a device's usual. Release one to count it (its day is counted again tonight), or delete it; or release
+      all of one device's held on one day for one reason at once. The newest 100 are listed.</p>`
+      + (data.heldGroups.length > 1 || data.heldGroups[0]?.n > 1 ? table([["Day", "day"], ["Why", "why"],
+        ["Device", (row) => deviceName(row) || row.named], ["Held", "n", "number"], ["", releaseAll, "html"]],
+      data.heldGroups, "") : "")
       + table([["Day", "day"], ["Why", "why"], ["Device", deviceName], ["Model", "model"], ["Result", "result"], ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")],
         ["Words", "text", "text"], ["", (row) => action(row.id, "release", "Release") + " " + action(row.id, "delete", "Delete", true), "html"]],
       data.held, "Nothing held.")
