@@ -111,7 +111,14 @@ def upload_or_prompt_by_hand(ctx: "Context", path: Path, what: str, exc: Excepti
     output.tell(f"        http://{device.host}/ -> Firmware Upgrade -> choose file:")
     output.tell(f"        {path}")
     if not prompts.confirm("Uploaded through its web page"):
-        raise Abort(f"{what} was not uploaded")
+        # What it ended on, and that nothing is lost: an upload switches the
+        # device over only once it is whole, so it keeps the firmware it runs.
+        carry_on = "The device keeps the firmware it runs; try again"
+        if isinstance(exc, UploadRefused):
+            raise Abort(f"{what} was not uploaded: the device refused it ({exc.reason}). {carry_on}")
+        if isinstance(exc, errors.NETWORK_ERRORS):
+            raise errors.CutOff(f"{what} was not uploaded: the upload was cut off part way. {carry_on}")
+        raise Abort(f"{what} was not uploaded ({exc}). {carry_on}")
     output.transient_end()
     return "manual"
 

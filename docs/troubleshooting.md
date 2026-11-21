@@ -320,6 +320,15 @@ between them, which drops traffic to the device.
 
 The tool says which applies when it stops.
 
+**"Official Tasmota was not uploaded"** (or "Berry Tasmota was not uploaded")
+
+The upload failed after the tool's own tries, and you chose not to upload the
+file through the device's web page. The message says why: the upload was cut
+off part way, as in the entry before, or the device refused it, as in
+"the device refused the upload" above.
+An upload switches the device over only once it is whole, so the device keeps
+the firmware it runs, and running the tool again carries on from there.
+
 ## When a migration stage stops
 
 On an Espressif device going to Tasmota, the stages that check, stage and

@@ -25,6 +25,9 @@ check.
   the device on the main one. Such a failure of the upload to the bridge is
   now counted as an upload cut off in the run's report, where before it was
   unclassed.
+- "Official Tasmota was not uploaded", and the same for Berry Tasmota, now
+  says why - the upload was cut off part way, or the device refused it - and
+  that the device keeps the firmware it runs, so you can run the tool again.
 - A Dual R3 that drives a motor keeps how its wall switches work through the
   conversion: as push-buttons, acting as one is let go (S1 opens, S2 closes,
   either stops a motor that runs, the eWeLink app's default), hold to run, or

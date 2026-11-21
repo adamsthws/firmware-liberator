@@ -195,5 +195,37 @@ class RefusedUploadTests(unittest.TestCase):
         self.assertEqual((result, sent, by_hand), ("manual", 1, True))
 
 
+class ByHandTests(unittest.TestCase):
+    """An upload left to the person and not made: the run stops saying why,
+    and that the device keeps what it runs (F2 said only "Official Tasmota
+    was not uploaded")."""
+
+    def declined(self, exc):
+        from types import SimpleNamespace
+        from tools.autoflash import errors, prompts
+        ctx = SimpleNamespace(device=SimpleNamespace(host="192.0.2.50"))
+        with mock.patch.object(prompts, "confirm", return_value=False), mock.patch.object(output, "tell"), \
+                self.assertRaises(errors.Abort) as stopped:
+            hub.upload_or_prompt_by_hand(ctx, Path("tasmota32c3.bin"), "Official Tasmota", exc)
+        return stopped.exception
+
+    def test_each_says_what_happened_and_that_the_device_keeps_its_firmware(self):
+        from tools.autoflash import errors, failures
+        from tools.autoflash.device import DeviceError, UploadRefused
+        for exc, why, cut_off in (
+                (TimeoutError("timed out"), "the upload was cut off part way", True),
+                (ConnectionResetError(104, "reset"), "the upload was cut off part way", True),
+                (UploadRefused("Not enough space"), "the device refused it (Not enough space)", False),
+                (DeviceError("did not restart within 180s"), "(did not restart within 180s)", False)):
+            with self.subTest(exc=repr(exc)):
+                stopped = self.declined(exc)
+                self.assertIn("Official Tasmota was not uploaded", str(stopped))
+                self.assertIn(why, str(stopped))
+                self.assertTrue(str(stopped).endswith("The device keeps the firmware it runs; try again"))
+                # A cut-off ends the run naming its likely cause (runner.cut_off_hint).
+                self.assertIs(isinstance(stopped, errors.CutOff), cut_off)
+                self.assertEqual(failures.class_of(stopped), "upload-cut")
+
+
 if __name__ == "__main__":
     unittest.main()
