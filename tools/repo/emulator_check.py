@@ -186,6 +186,10 @@ METER_SHOWS = 8.0
 # How many times Tasmota is asked its relays' states, a second apart, after
 # each move.
 TASMOTA_LOOKS = 5
+# How long Tasmota is given to run a Backlog of a few commands before the next
+# command restarts it (s), as it runs one each 200 ms (SetOption34), and to
+# begin a restart it was given a template for, about 2 s after.
+TASMOTA_BACKLOG = 5.0
 # How long a device switched off and on is given to answer again.
 BACK_WITHIN = 240.0
 # How long a firmware asked to move the motor is given to start it: Tasmota's
@@ -607,10 +611,20 @@ class MotorDevice(Device):
         nothing."""
         self.note(f"set to {setup}")
         if self.firmware == "tasmota":
+            # The template last: a new one on a Tasmota that runs its template
+            # restarts it about a second later (CmndTemplate), and a Backlog
+            # given after it lost all but its first commands (seen in the
+            # emulator). Tasmota runs a Backlog on its own, a command at a time.
+            self.tasmota(f"Backlog {motor_setup.TASMOTA_OPEN} {setup.open:g}; "
+                         f"{motor_setup.TASMOTA_CLOSE} {setup.close:g}")
+            time.sleep(TASMOTA_BACKLOG)
             template = motor_setup.tasmota_template(kinds.find("sonoff-dualr3"), bool(setup.reversed))
             self.tasmota(f"Template {template}")
-            self.tasmota(f"Backlog {motor_setup.TASMOTA_OPEN} {setup.open:g}; "
-                         f"{motor_setup.TASMOTA_CLOSE} {setup.close:g}; Module 0")
+            self.tasmota("Module 0")
+            # Its restart saves what it was given: a power cut before it, as
+            # the template answered as taken, lost the template (seen).
+            time.sleep(TASMOTA_BACKLOG)
+            self.answers()
         else:
             for name, seconds in ((motor_setup.ESPHOME_OPEN, setup.open), (motor_setup.ESPHOME_CLOSE, setup.close)):
                 self.get(f"/number/{urllib.parse.quote(name)}/set?value={seconds:g}", post=True)

@@ -254,10 +254,16 @@ class MotorCheckTests(unittest.TestCase):
         device, sent = check.MotorDevice("127.0.0.1:8081", "tasmota"), []
         device.tasmota = lambda command: sent.append(command) or {}
         device.setup = lambda: moved
-        self.assertIsNone(device.set_to(moved, lambda: None))
-        self.assertEqual(json.loads(sent[0].split(" ", 1)[1])["GPIO"],
+        device.answers = lambda within=None: sent.append("answers?") or True
+        with mock.patch.object(check.time, "sleep"):
+            self.assertIsNone(device.set_to(moved, lambda: None))
+        # The template last: Tasmota restarts for it, and a Backlog after it was lost.
+        self.assertEqual(sent[0], "Backlog ShutterOpenDuration1 7; ShutterCloseDuration1 7")
+        self.assertEqual(json.loads(sent[1].split(" ", 1)[1])["GPIO"],
                          check.motor_setup.tasmota_gpio(kinds.find("sonoff-dualr3"), True))
-        self.assertEqual(sent[1], "Backlog ShutterOpenDuration1 7; ShutterCloseDuration1 7; Module 0")
+        self.assertEqual(sent[2], "Module 0")
+        # Its restart for the template waited for, which saves what it was given, before a power cut.
+        self.assertEqual(sent[3], "answers?")
 
     def device(self, firmware, answers, setup=check.motor_setup.DEFAULT):
         device = check.MotorDevice("127.0.0.1:8081", firmware)
