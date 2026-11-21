@@ -286,16 +286,20 @@ class MotorBuildTests(unittest.TestCase):
         self.assertRegex(self.motor, r"(?m)^  wifi: !include \.\./shared-esphome/wifi-esp32\.yaml$")
         self.assertEqual(RELAY.findall(self.motor), [])
         self.assertEqual(OVERLOAD.findall(self.motor), [])
-        # The direction is a setting, restored as one; the outputs are not.
-        reverse = next(item for item in switches(self.motor) if "id: reverse_direction" in item)
+        # The direction and the wall switches' way round are settings, restored
+        # as such; the outputs are not.
+        settings = self.motor
+        for item in switches(self.motor):
+            if re.search(r"id: (reverse_direction|swap_wall_switches)\n", item):
+                settings = settings.replace(item, "")
         for shared, patterns in SHARED_ONLY.items():
             for pattern in patterns:
                 with self.subTest(shared=shared, pattern=pattern):
-                    self.assertNotRegex(self.motor.replace(reverse, ""), re.compile(pattern, re.M))
+                    self.assertNotRegex(settings, re.compile(pattern, re.M))
 
     def test_neither_output_is_switched_on_its_own_nor_on_with_the_other_nor_at_a_start(self):
         items = {re.search(r"id: (\w+)", item).group(1): item for item in switches(self.motor)}
-        self.assertEqual(set(items), {"relay", "relay_2", "reverse_direction"})
+        self.assertEqual(set(items), {"relay", "relay_2", "reverse_direction", "swap_wall_switches"})
         self.assertEqual(relays(self.motor), {})
         for ident, other in (("relay", "relay_2"), ("relay_2", "relay")):
             with self.subTest(ident):
@@ -330,6 +334,34 @@ class MotorBuildTests(unittest.TestCase):
         for change in ("on_turn_on", "on_turn_off"):
             self.assertIn(f"    {change}:\n      - cover.stop: motor\n      - lambda: global_preferences->sync();\n",
                           reverse)
+
+    def test_its_wall_switches_are_restored_settings_named_as_the_tool_sets_them(self):
+        swap = next(item for item in switches(self.motor) if "id: swap_wall_switches" in item)
+        self.assertIn(f'    name: "{motor.ESPHOME_SWAP}"\n', swap)
+        self.assertIn("    restore_mode: RESTORE_DEFAULT_OFF\n", swap)
+        self.assertIn("    entity_category: config\n", swap)
+        for change in ("on_turn_on", "on_turn_off"):
+            self.assertIn("lambda: global_preferences->sync();", actions(swap, change))
+        select = section(self.motor, "select")
+        self.assertIn(f'    name: "{motor.ESPHOME_SWITCHES}"\n', select)
+        self.assertEqual(re.findall(r'(?m)^      - "(.+)"$', select), list(motor.ESPHOME_SWITCH_MODES.values()))
+        # Sonoff's own default, as a backup or firmware that says nothing leaves it.
+        default = motor.ESPHOME_SWITCH_MODES[motor.DEFAULT.switches]
+        self.assertIn(f'    initial_option: "{default}"\n', select)
+        self.assertIn("    restore_value: true\n", select)
+        # The select saves its option once on_value has run, as a number does.
+        self.assertIn("      - delay: 0s\n      - lambda: global_preferences->sync();\n", actions(select, "on_value"))
+
+    def test_both_wall_switches_go_through_one_script_that_reads_each_mode(self):
+        script = section(self.motor, "script")
+        for name in motor.ESPHOME_SWITCH_MODES.values():
+            if name != motor.ESPHOME_SWITCH_MODES[motor.PUSH_BUTTONS]:   # the one left when neither matches
+                self.assertIn(f'mode == "{name}"', script)
+        self.assertIn("id(swap_wall_switches).state", script)
+        sensors = section(self.motor, "binary_sensor")
+        for ident, first in (("wall_switch_1", "true"), ("wall_switch_2", "false")):
+            item = sensors[sensors.index(f"id: {ident}\n"):]
+            self.assertIn(f"          id: wall_switch\n          first: {first}\n", item[:item.find("  - platform")])
 
     def test_its_settings_are_written_to_flash_as_they_change(self):
         # The tool sets them as it converts: left to flash_write_interval, a

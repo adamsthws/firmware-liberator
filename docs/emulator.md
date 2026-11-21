@@ -453,20 +453,36 @@ needs no new image.
 
 The motor check, `tools/repo/emulator_check.py sonoff-dualr3 --motor`
 (`--motor calibrated` for the copy calibrated at 8 s with its outputs
-reversed), takes a test copy in motor mode from Sonoff's firmware to each
-firmware and on to the other. On each it reads that the travel times and
-direction are what was carried across, then asks it to open, and to close
+reversed and its wall switches hold to run and swapped, `--motor one-button`
+for one whose wall switches are each one push-button), takes a test copy in
+motor mode from Sonoff's firmware to each firmware and on to the other. On
+each it reads that the travel times, direction and wall switches are what
+was carried across, then asks it to open, and to close
 while it opens, and reads which output is on while the firmware says the
 motor is moving that way: Tasmota's shutter by its `Direction` (`Status 10`),
 ESPHome's cover by its `current_operation`. A look taken once the motor has
 stopped would find both outputs off, so it is not counted. The close is given
 twice the open's travel (`TRAVEL_OPEN`, `TRAVEL_CLOSE`), so the move back
-lasts past every look. The first firmware of each way is then set, through
-its own settings, to `MOVED_TRAVEL` and the other direction from the copy's.
-It is seen to keep them through a power cut and kept so. The next firmware
-must have exactly those settings, which it can only have taken from the
-firmware before, not from the backup. Each look is logged with its time in
-`captures/emulation/device-check/sonoff-dualr3-COPY/N-FIRMWARE-motor.log`.
+lasts past every look. Then it works the wall switches as they are set
+(`switches_problem`): held and let go under hold to run; under push-buttons
+pressed, held a second first to see the motor wait for the let-go, one to
+start it and the other to stop it; under one push-button each press going
+on from the last. The first firmware of each way is then set, through its
+own settings, to `MOVED_TRAVEL`, the other direction from the copy's, the
+next wall-switch mode and the switches swapped the other way
+(`moved_setup`). It is seen to keep them through a power cut and kept so.
+The next firmware must have exactly those settings, which it can only have taken from the
+firmware before, not from the backup. Where that first firmware is Tasmota,
+it is then given a rule of its owner's in `Rule1`, over the tool's where
+it was there (`owner_rule_problem`), and the tool is run on it again: its
+wall switches, no longer reading as any of the tool's modes, come from the
+backup again, or stay hold to run, which needs no rule; the owner's rule
+must still be in `Rule1`, on, and have run at the
+start, the tool's rule in `Rule2` where the mode needs one, and the
+switches must move the motor so; ESPHome then reads them from there. Each
+look is logged with its time in
+`captures/emulation/device-check/sonoff-dualr3-COPY/N-FIRMWARE-motor.log`,
+the owner's rule's in `N-tasmota-owner.log`.
 
 Before that, the check read Tasmota's relays five times, a second apart,
 after each move, and took the last look. The close then ran back from where

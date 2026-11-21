@@ -3,12 +3,14 @@
 device no one here owns.
 
     python tools/espressif/emulator/public_dump.py KIND
-    python tools/espressif/emulator/public_dump.py --motor [calibrated] KIND
+    python tools/espressif/emulator/public_dump.py --motor [COPY] KIND
     python tools/espressif/emulator/public_dump.py --remove KIND
 
 --motor makes, for a kind with a motor mode, a second test copy set up to
 drive a motor (MOTOR_COPIES), beside the first, under a MAC of its own;
---motor calibrated a third, its motor's travel timed and its outputs reversed.
+--motor COPY another of them: calibrated, its motor's travel timed, its
+outputs reversed and its wall switches hold to run and swapped; one-button,
+each wall switch one push-button.
 
 The dump is fetched from where it is published, checked against its hash and
 filed as a test copy's backup (copy_device.py), under a MAC made up for the kind:
@@ -154,17 +156,22 @@ UPDATES = {
 
 
 # Test copies of each kind with a motor mode (kinds.Kind.motor_mode), beside
-# the one in relay mode, which tools/repo/emulator_check.py --motor [calibrated]
+# the one in relay mode, which tools/repo/emulator_check.py --motor [COPY]
 # converts: "motor" set up as Sonoff's app sets a motor (deviceMode 2), not yet
-# calibrated; "calibrated" as its firmware keeps one it timed at 8 s each way
+# calibrated, its wall switches as its firmware starts them (push-buttons);
+# "calibrated" as its firmware keeps one it timed at 8 s each way
 # (calibrate_time, in ms, as seen in the emulator), its outputs reversed in the
-# app (motorDriverReverse).
+# app (motorDriverReverse), its wall switches hold to run (motorSwMode 3) and
+# swapped (motorKeyReverse); "one-button" with each wall switch one
+# push-button (motorSwMode 1).
 MOTOR_COPIES = {"sonoff-dualr3": {
     "motor": dataclasses.replace(UPDATES["sonoff-dualr3"], number=11, settings='{"init":"true","deviceMode":2}'),
     "calibrated": dataclasses.replace(
         UPDATES["sonoff-dualr3"], number=12,
         settings='{"init":"true","deviceMode":2,"motorCalibrate":true,"calibrate_time":8000,'
-                 '"motorDriverReverse":true}'),
+                 '"motorDriverReverse":true,"motorSwMode":3,"motorKeyReverse":true}'),
+    "one-button": dataclasses.replace(UPDATES["sonoff-dualr3"], number=13,
+                                      settings='{"init":"true","deviceMode":2,"motorSwMode":1}'),
 }}
 
 
@@ -397,7 +404,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("kind", choices=sorted({*DUMPS, *UPDATES}))
     parser.add_argument("--remove", action="store_true", help="delete the test copy")
-    parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated"),
+    parser.add_argument("--motor", nargs="?", const="motor", default="",
+                        choices=sorted({copy for copies in MOTOR_COPIES.values() for copy in copies}),
                         help="a copy that drives a motor (MOTOR_COPIES)")
     args = parser.parse_args(argv)
     try:

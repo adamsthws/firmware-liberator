@@ -84,18 +84,28 @@ wall switches, nor at a start.
   across too: on Tasmota as its template's two relays swapped (relay 1, which
   its shutter opens with, on output 2), on ESPHome as its `Reverse direction`
   setting, on. The interlock and both off at a start hold either way.
-- **From one of these firmware to the other**, the travel times and direction
-  it is set to go with the device, as its mode does.
-- **Not carried across**: how Sonoff's firmware is set to read the wall
-  switches in motor mode (`motorSwMode`: push-buttons, the default; hold to
-  run; or one push-button on either input) and whether it swaps them
-  (`motorKeyReverse`), [as seen in the emulator](../../docs/espressif-research.md#the-dual-r3s-work-mode).
-  Both converted firmware take wall switch 1 closed as open and 2 as close,
-  and either opened again as stop ([ESPHome's build](esphome.md#a-motor);
-  Tasmota's switches toggling its shutter's relays), as Sonoff's hold to run
-  does. So a push-button that ran the motor to its end under Sonoff's default
-  runs it only while held, and a rocker switch starts it turned one way and
-  stops it turned back. The tool logs what your backup holds of these.
+- **The wall switches**: they work as you set them in the app
+  (`motorSwMode`, [as seen in the emulator](../../docs/espressif-research.md#the-dual-r3s-work-mode)),
+  and that is carried across: push-buttons, the default, acting as one is
+  let go - S1 opens, S2 closes, either stops the motor while it runs; hold
+  to run, the motor moving while S1 or S2 alone is held; or one push-button
+  on either input, opening, stopping, closing and stopping in turn. S1 and
+  S2 swapped in the app (`motorKeyReverse`) stay swapped. On Tasmota the
+  mode is its two switches' `SwitchMode` and a rule that has them give its
+  shutter's own commands, and swapped switches are its template's two
+  switches swapped; `TASMOTA_SWITCHES` in `motor.py` says which and why.
+  The rule goes in the first of `Rule1` to `Rule3` that is free, or where the
+  tool put it before; a rule of your own in any of them is never changed.
+  With all three holding rules of yours, the tool sets up the rest and leaves
+  the switches as hold to run, says so and waits a few seconds before it
+  carries on so you can read it (`RULE_WANTED_SHOWN`); its `run.log` says
+  why. Empty one of them and run the tool again.
+  Held together under hold to run, Tasmota runs the motor the way of the
+  switch closed last, where Sonoff's firmware stops it. On ESPHome they are
+  its `Wall switches` and `Swap wall switches` settings
+  ([ESPHome's build](esphome.md#a-motor)).
+- **From one of these firmware to the other**, the travel times, direction
+  and wall switches it is set to go with the device, as its mode does.
 - **The end-of-run check** does not switch the outputs, which would run the
   motor both ways; it checks the firmware is set up for the motor
   ([At the end](../../docs/what-happens.md#at-the-end)).
@@ -106,19 +116,25 @@ In the emulator a test copy set up in motor mode (`deviceMode` 2) went from
 Sonoff's firmware to Tasmota and to ESPHome, and from each to the other
 (`emulator_check.py sonoff-dualr3 --motor`), and so did one calibrated at 8
 seconds with its outputs reversed (`--motor calibrated`). On each firmware the
-travel times and direction were what was carried across: from Sonoff's
-backup, and on the move from Tasmota to ESPHome and from ESPHome to Tasmota,
-the travel time and direction the first firmware had been set to, unlike the
-backup's (the check's `MOVED_TRAVEL`, the other way round). The outputs came
+travel times, direction and wall switches were what was carried across: from
+Sonoff's backup, and on the move from Tasmota to ESPHome and from ESPHome to
+Tasmota, the travel time, direction and wall switches the first firmware had
+been set to, unlike the backup's (the check's `MOVED_TRAVEL`, the other way
+round, the next mode). The outputs came
 on one at a time, each way - asked to close while opening, the first went off
 before the second came on - never both, even asked for both at once on
 Tasmota, and both were off after a power cut: on ESPHome as the emulated meter
 read each channel, on Tasmota as it said it drove its relays, each read while
 the firmware said the motor was moving
-([the check](../../docs/emulator.md#a-motor)). Wall switch 1 closed opened
-the motor and wall switch 2 closed it, each opened again stopped it, and the
-button started it one way and stopped it, on both firmware. What the
-calibration and the reversal mean was seen in the emulator's Sonoff firmware
+([the check](../../docs/emulator.md#a-motor)). The wall switches worked as
+Sonoff's firmware had them, on both firmware, in each mode, carried from the
+backup and from the other firmware alike, swapped too: the calibrated copy
+has them hold to run and swapped, a third copy one push-button
+(`--motor one-button`). As push-buttons, each moved the motor only once let
+go, S1 opening, S2 closing and either stopping it; held to run, each moved it
+while held; as one push-button, each press went on from the last. The button
+started the motor one way and stopped it. What the calibration, the
+reversal and the wall-switch modes mean was seen in the emulator's Sonoff firmware
 ([research](../../docs/espressif-research.md#the-dual-r3s-work-mode)); how the
 times suit a real motor, with its own limit switches, is for its owner to
 check.

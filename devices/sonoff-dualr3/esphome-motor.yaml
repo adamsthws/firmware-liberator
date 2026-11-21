@@ -24,7 +24,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-dualr3
-    version: "2026.10.0-3"
+    version: "2026.10.0-4"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
     # ends with one: release them before anything drives them.
@@ -44,7 +44,7 @@ esphome:
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome-motor.yaml@v3.1.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome-motor.yaml@v3.2.0
   import_full_config: false
 
 esp32:
@@ -118,6 +118,82 @@ switch:
     on_turn_off:
       - cover.stop: motor
       - lambda: global_preferences->sync();
+
+  # Which wall switch opens: S1 while off, S2 while on, as Sonoff's
+  # motorKeyReverse has them. Carried across by the tool, and written to
+  # flash at once, as Reverse direction is.
+  - id: swap_wall_switches
+    platform: template
+    name: "Swap wall switches"
+    icon: mdi:swap-horizontal
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - lambda: global_preferences->sync();
+    on_turn_off:
+      - lambda: global_preferences->sync();
+
+# How the wall switches move the motor, as Sonoff's firmware reads them
+# (motorSwMode), carried across by the tool: Push-buttons, its default, act
+# as one is let go - S1 opens, S2 closes, either stops a motor that runs;
+# Hold to run runs it while one alone is held; One push-button has either
+# open, stop, close and stop in turn.
+select:
+  - platform: template
+    id: wall_switches
+    name: "Wall switches"
+    icon: mdi:light-switch
+    entity_category: config
+    options:
+      - "Push-buttons"
+      - "Hold to run"
+      - "One push-button"
+    initial_option: "Push-buttons"
+    optimistic: true
+    restore_value: true
+    on_value:
+      # The select saves its option once on_value has run, so the write
+      # waits for the next loop.
+      - delay: 0s
+      - lambda: global_preferences->sync();
+
+# A wall switch closed or opened: S1 (`first`) or S2, as Wall switches and
+# Swap wall switches say.
+script:
+  - id: wall_switch
+    parameters:
+      first: bool
+      closed: bool
+    then:
+      - lambda: |-
+          bool swapped = id(swap_wall_switches).state;
+          bool opens = first != swapped;
+          auto mode = id(wall_switches).current_option();
+          auto call = id(motor).make_call();
+          if (mode == "Hold to run") {
+            // Each change: the way of the one held alone, else stop.
+            bool open_held = (swapped ? id(wall_switch_2) : id(wall_switch_1))->state;
+            bool close_held = (swapped ? id(wall_switch_1) : id(wall_switch_2))->state;
+            if (open_held == close_held) {
+              call.set_command_stop();
+            } else if (open_held) {
+              call.set_command_open();
+            } else {
+              call.set_command_close();
+            }
+          } else if (closed) {
+            return;   // a push-button acts as it is let go
+          } else if (mode == "One push-button") {
+            call.set_command_toggle();   // stops a motor that runs, else the other way from the last
+          } else if (id(motor).current_operation != cover::COVER_OPERATION_IDLE) {
+            call.set_command_stop();
+          } else if (opens) {
+            call.set_command_open();
+          } else {
+            call.set_command_close();
+          }
+          call.perform();
 
 # Its position is worked out from how long the motor has run, so it is only as
 # right as its travel times (Open duration, Close duration). No device class:
@@ -193,8 +269,8 @@ number:
       - delay: 0s
       - lambda: global_preferences->sync();
 
-# The button opens, stops and closes in turn; wall switch 1 opens and wall
-# switch 2 closes, each stopping the motor if it is moving that way already.
+# The button opens, stops and closes in turn; the wall switches move the
+# motor as Wall switches says (script wall_switch).
 binary_sensor:
   - platform: gpio
     id: button_1
@@ -218,14 +294,10 @@ binary_sensor:
     filters:
       - delayed_on_off: 50ms
     on_state:
-      - lambda: |-
-          auto call = id(motor).make_call();
-          if (id(motor).current_operation == cover::COVER_OPERATION_OPENING) {
-            call.set_command_stop();
-          } else {
-            call.set_command_open();
-          }
-          call.perform();
+      - script.execute:
+          id: wall_switch
+          first: true
+          closed: !lambda "return x;"
   - platform: gpio
     id: wall_switch_2
     internal: true
@@ -236,14 +308,10 @@ binary_sensor:
     filters:
       - delayed_on_off: 50ms
     on_state:
-      - lambda: |-
-          auto call = id(motor).make_call();
-          if (id(motor).current_operation == cover::COVER_OPERATION_CLOSING) {
-            call.set_command_stop();
-          } else {
-            call.set_command_close();
-          }
-          call.perform();
+      - script.execute:
+          id: wall_switch
+          first: false
+          closed: !lambda "return x;"
 
 sensor:
   # Units since September 2021 have a BL0930 instead, which this does not read.

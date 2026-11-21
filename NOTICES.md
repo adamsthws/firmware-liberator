@@ -47,9 +47,9 @@ and that config.
 `artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin`,
 `artifacts/esphome-sonoff-powct-imprintable-2026.10.0-4.bin`,
 `artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin` and
-`artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin` are built the
+`artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin` are built the
 same way, from the same release, each from its device's `esphome.yaml`, and
-`artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-3.bin` from the
+`artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin` from the
 Dual R3's `esphome-motor.yaml`.
 
 `artifacts/autoflash-mover-esp32c3-1.2.0.bin`,

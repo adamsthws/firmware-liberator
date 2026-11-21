@@ -194,8 +194,17 @@ class OwnSettings(unittest.TestCase):
         settings = json.loads(donor_rows(calibrated)["user_usual", "content"])
         self.assertEqual((settings["deviceMode"], settings["motorCalibrate"], settings["calibrate_time"],
                           settings["motorDriverReverse"]), (2, True, 8000, True))
+        # Its wall switches hold to run and swapped, unlike Sonoff's default.
+        self.assertEqual((settings["motorSwMode"], settings["motorKeyReverse"]), (3, True))
         self.assertNotIn(calibrated.mac, {public_dump.recipe("sonoff-dualr3", "motor").mac,
                                           public_dump.recipe("sonoff-dualr3").mac})
+
+    def test_and_a_fourth_whose_wall_switches_are_each_one_push_button(self):
+        one_button = public_dump.recipe("sonoff-dualr3", "one-button")
+        settings = json.loads(donor_rows(one_button)["user_usual", "content"])
+        self.assertEqual((settings["deviceMode"], settings["motorSwMode"]), (2, 1))
+        macs = {public_dump.recipe("sonoff-dualr3", copy).mac for copy in ("motor", "calibrated")}
+        self.assertNotIn(one_button.mac, macs | {public_dump.recipe("sonoff-dualr3").mac})
 
 
 

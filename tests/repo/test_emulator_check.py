@@ -1,5 +1,6 @@
 """Which devices a change checks, and what each device's check runs."""
 
+import dataclasses
 import hashlib
 import io
 import os
@@ -210,8 +211,16 @@ class MotorCheckTests(unittest.TestCase):
                 mock.patch.object(check, "check_public_dump", return_value=0) as ran:
             self.assertEqual(check.main(["sonoff-dualr3", "--motor"]), 0)
             self.assertEqual(ran.call_args.args[2], "motor")
-            self.assertEqual(check.main(["sonoff-dualr3", "--motor", "calibrated"]), 0)
-            self.assertEqual(ran.call_args.args[2], "calibrated")
+            for copy in ("calibrated", "one-button"):
+                self.assertEqual(check.main(["sonoff-dualr3", "--motor", copy]), 0)
+                self.assertEqual(ran.call_args.args[2], copy)
+
+    def test_every_motor_copy_can_be_checked(self):
+        from tools.espressif.emulator import public_dump
+        for copy in public_dump.MOTOR_COPIES["sonoff-dualr3"]:
+            with self.subTest(copy), mock.patch.object(check, "missing_packages", return_value=None), \
+                    mock.patch.object(check, "check_public_dump", return_value=0):
+                self.assertEqual(check.main(["sonoff-dualr3", "--motor", copy]), 0)
 
     def test_each_ways_second_firmware_must_carry_what_its_first_was_set_to(self):
         from types import SimpleNamespace
@@ -227,43 +236,101 @@ class MotorCheckTests(unittest.TestCase):
                 mock.patch.object(public_devices, "run", return_value=(True, "Converted")), \
                 mock.patch.object(public_devices, "side_by_side", lambda jobs: [job() for job in jobs]), \
                 mock.patch.object(check, "emulator_stats"), mock.patch.object(check.subprocess, "run"), \
-                mock.patch.object(check, "motor_problem", side_effect=checked), mock.patch("builtins.print"):
+                mock.patch.object(check, "motor_problem", side_effect=checked), \
+                mock.patch.object(check, "owner_rule_problem",
+                                  side_effect=lambda instance, saved, stub, log, wanted, pins:
+                                  calls.append((instance, "owner's rule", wanted))), \
+                mock.patch("builtins.print"):
             self.assertEqual(check.check_public_dump(kinds.find("sonoff-dualr3"), [81, 82], "motor"), 0)
-        default, moved = check.motor_setup.DEFAULT, check.motor_setup.Setup(check.MOVED_TRAVEL, check.MOVED_TRAVEL, True)
-        self.assertEqual(calls, [(81, "tasmota", default, moved), (81, "esphome", moved, None),
+        default = check.motor_setup.DEFAULT
+        moved = check.motor_setup.Setup(check.MOVED_TRAVEL, check.MOVED_TRAVEL, True, check.motor_setup.HOLD_TO_RUN,
+                                        True)
+        # Tasmota, first, then given the owner's rule in Rule1 and run again:
+        # hold to run, with no rule of the tool's to write over, as it was.
+        self.assertEqual(calls, [(81, "tasmota", default, moved), (81, "owner's rule", moved),
+                                 (81, "esphome", moved, None),
                                  (82, "esphome", default, moved), (82, "tasmota", moved, None)])
 
+    def test_the_owners_rule_over_the_tools_has_the_switches_from_the_backup_again(self):
+        from types import SimpleNamespace
+
+        from tools.espressif.emulator import public_devices, public_dump
+        calls = []
+        copy = SimpleNamespace(mac="12:34:56:ab:cd:ef", settings='{"deviceMode":2,"motorSwMode":3}')
+        with mock.patch.object(public_dump, "make"), mock.patch.object(public_dump, "recipe", return_value=copy), \
+                mock.patch.object(public_devices, "run", return_value=(True, "Converted")), \
+                mock.patch.object(public_devices, "side_by_side", lambda jobs: [job() for job in jobs]), \
+                mock.patch.object(check, "emulator_stats"), mock.patch.object(check.subprocess, "run"), \
+                mock.patch.object(check, "motor_problem",
+                                  side_effect=lambda instance, saved, firmware, stub, log, wanted, then=None, pins=None:
+                                  calls.append((instance, firmware, wanted))), \
+                mock.patch.object(check, "owner_rule_problem",
+                                  side_effect=lambda instance, saved, stub, log, wanted, pins:
+                                  calls.append((instance, "owner's rule", wanted))), \
+                mock.patch("builtins.print"):
+            self.assertEqual(check.check_public_dump(kinds.find("sonoff-dualr3"), [81, 82], "motor"), 0)
+        # Moved from hold to run to one push-button, its rule written over: hold to run again.
+        owned = check.motor_setup.Setup(check.MOVED_TRAVEL, check.MOVED_TRAVEL, True, check.motor_setup.HOLD_TO_RUN,
+                                        True)
+        self.assertEqual(calls[1:3], [(81, "owner's rule", owned), (81, "esphome", owned)])
+
     def test_what_a_first_firmware_is_set_to_is_unlike_the_copys(self):
-        for carried in (check.motor_setup.DEFAULT, check.motor_setup.Setup(8.0, 8.0, True)):
+        setup = check.motor_setup
+        for carried in (setup.DEFAULT, setup.Setup(8.0, 8.0, True, setup.HOLD_TO_RUN, True),
+                        setup.Setup(3.0, 3.0, False, setup.ONE_BUTTON, False)):
             moved = check.moved_setup(carried)
-            self.assertNotEqual((moved.open, moved.reversed), (carried.open, carried.reversed))
-            self.assertNotEqual(moved.reversed, carried.reversed)
+            for part in ("open", "reversed", "switches", "swapped"):
+                self.assertNotEqual(getattr(moved, part), getattr(carried, part), part)
+        # Across the copies, each mode is moved to once.
+        copies = [setup.PUSH_BUTTONS, setup.HOLD_TO_RUN, setup.ONE_BUTTON]
+        self.assertEqual(sorted(check.moved_setup(setup.Setup(switches=mode)).switches for mode in copies),
+                         sorted(copies))
 
     def test_a_setting_the_firmware_does_not_keep_through_a_power_cut_fails(self):
-        moved = check.motor_setup.Setup(7.0, 7.0, True)
+        moved = check.moved_setup(check.motor_setup.DEFAULT)
         device = check.MotorDevice("127.0.0.1:8081", "esphome")
         device.get = lambda path, post=False: "{}"
         setups = iter([moved] + [check.motor_setup.DEFAULT] * 1000)
-        device.setup = lambda: next(setups)
+        device.setup = lambda known=None: next(setups)
         clock = iter(range(0, 10000, 10))
         with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", lambda: next(clock)):
             self.assertIn("after a power cut the motor is set to Setup(open=3.0", device.set_to(moved, lambda: None))
 
-    def test_tasmota_is_set_through_its_template_and_travel_times(self):
-        moved = check.motor_setup.Setup(7.0, 7.0, True)
+    def test_tasmota_is_set_through_its_template_travel_times_and_switches(self):
+        moved = check.motor_setup.Setup(7.0, 7.0, True, check.motor_setup.ONE_BUTTON, True)
         device, sent = check.MotorDevice("127.0.0.1:8081", "tasmota"), []
-        device.tasmota = lambda command: sent.append(command) or {}
-        device.setup = lambda: moved
+        # Rule1 the owner's: the switches' rule where the tool would put it, in Rule2.
+        rules = {name: {"State": "ON" if name == "Rule1" else "OFF", "Rules": "ON System#Boot DO Var1 1 ENDON"
+                        if name == "Rule1" else ""} for name in check.motor_setup.TASMOTA_RULES}
+        device.tasmota = lambda command: {command: rules[command]} if command in rules else sent.append(command) or {}
+        device.setup = lambda known=None: moved
         device.answers = lambda within=None: sent.append("answers?") or True
         with mock.patch.object(check.time, "sleep"):
             self.assertIsNone(device.set_to(moved, lambda: None))
-        # The template last: Tasmota restarts for it, and a Backlog after it was lost.
-        self.assertEqual(sent[0], "Backlog ShutterOpenDuration1 7; ShutterCloseDuration1 7")
-        self.assertEqual(json.loads(sent[1].split(" ", 1)[1])["GPIO"],
-                         check.motor_setup.tasmota_gpio(kinds.find("sonoff-dualr3"), True))
-        self.assertEqual(sent[2], "Module 0")
         # Its restart for the template waited for, which saves what it was given, before a power cut.
         self.assertEqual(sent[3], "answers?")
+        # The template last: Tasmota restarts for it, and a Backlog after it was lost.
+        self.assertEqual(sent[0], "Backlog ShutterOpenDuration1 7; ShutterCloseDuration1 7; "
+                         + "; ".join(check.motor_setup.tasmota_switch_commands(check.motor_setup.ONE_BUTTON, rules)))
+        self.assertIn(f"Rule2 {check.motor_setup.TASMOTA_SWITCHES[check.motor_setup.ONE_BUTTON][1]}", sent[0])
+        self.assertEqual(json.loads(sent[1].split(" ", 1)[1])["GPIO"],
+                         check.motor_setup.tasmota_gpio(kinds.find("sonoff-dualr3"), True, True))
+        self.assertEqual(sent[2], "Module 0")
+        # With no rule set free, nothing is set and the check says so.
+        rules["Rule2"] = rules["Rule3"] = rules["Rule1"]
+        sent.clear()
+        self.assertIn("no rule set free", device.set_to(moved, lambda: None))
+        self.assertEqual(sent, [])
+
+    def test_esphome_is_set_through_its_settings(self):
+        moved = check.motor_setup.Setup(7.0, 7.0, True, check.motor_setup.HOLD_TO_RUN, True)
+        device, sent = check.MotorDevice("127.0.0.1:8081", "esphome"), []
+        device.get = lambda path, post=False: sent.append(path) or "{}"
+        device.setup = lambda known=None: moved
+        self.assertIsNone(device.set_to(moved, lambda: None))
+        self.assertIn("/select/Wall%20switches/set?option=Hold%20to%20run", sent)
+        self.assertIn("/switch/Swap%20wall%20switches/turn_on", sent)
+        self.assertIn("/switch/Reverse%20direction/turn_on", sent)
 
     def device(self, firmware, answers, setup=check.motor_setup.DEFAULT):
         device = check.MotorDevice("127.0.0.1:8081", firmware)
@@ -272,8 +339,8 @@ class MotorCheckTests(unittest.TestCase):
         device.settled = lambda: next(readings)
         device.answers = lambda within=None: True
         device.get = lambda path, post=False: '{"state": "OPEN"}'
-        device.setup = lambda: setup
-        device.set_travel = lambda reversed: None
+        device.setup = lambda known=None: setup
+        device.set_travel = lambda wanted: None
         settings = {"Interlock": "ON", "ShutterRelay1": 1, "ShutterMode": 1, "PowerOnState": 0}
         device.tasmota = lambda command: {command: settings[command]} if command in settings else {}
         return device
@@ -298,7 +365,8 @@ class MotorCheckTests(unittest.TestCase):
         answers = {"ShutterOpenDuration1": {"ShutterOpenDuration1": 60.0},
                    "ShutterCloseDuration1": {"ShutterCloseDuration1": 60.0}, "Template": template}
         device.tasmota = lambda command: answers.get(command, {})
-        self.assertEqual(device.setup(), check.motor_setup.Setup(60.0, 60.0, True))
+        # Its template says how its wall switches are wired, not how they are read.
+        self.assertEqual(device.setup(), check.motor_setup.Setup(60.0, 60.0, True, None, False))
 
     def test_one_output_at_a_time_and_both_off_after_a_power_cut_passes(self):
         self.assertIsNone(self.problem("tasmota", [(True, False), (False, True), (False, True), (False, False)]))
@@ -342,26 +410,47 @@ class MotorCheckTests(unittest.TestCase):
         device = check.MotorDevice("127.0.0.1:8081", "tasmota")
         rounds = iter([check.motor_setup.Setup(8.0, None, None), check.motor_setup.Setup(None, 8.0, None),
                        check.motor_setup.Setup(None, None, True)])
-        device.setup = lambda: next(rounds, check.motor_setup.Setup())
+        device.setup = lambda known=None: next(rounds, check.motor_setup.Setup())
         with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
             self.assertEqual(device.until_set(setup), setup)
 
+    def test_what_tasmota_has_answered_as_wanted_is_not_asked_again(self):
+        # Seen: a slow emulated Tasmota answering a request a minute, its
+        # settings set, but too few rounds of all of them to read each once.
+        setup = check.motor_setup.Setup(7.0, 7.0, True, check.motor_setup.ONE_BUTTON, True)
+        template = {"GPIO": check.motor_setup.tasmota_gpio(kinds.find("sonoff-dualr3"), True, True)}
+        answers = {"ShutterOpenDuration1": {"ShutterOpenDuration1": 7.0}, "Template": template,
+                   "SwitchMode1": {"SwitchMode1": 4}, "SwitchMode2": {"SwitchMode2": 4},
+                   "Rule1": {"Rule1": {"State": "ON", "Rules": check.motor_setup.TASMOTA_SWITCHES[1][1]}},
+                   "Rule2": {"Rule2": {"State": "OFF", "Rules": ""}}, "Rule3": {"Rule3": {"State": "OFF", "Rules": ""}}}
+        device, asked = check.MotorDevice("127.0.0.1:8081", "tasmota"), []
+        # Every setting but the close's travel answers, and only once.
+        device.tasmota = lambda command: asked.append(command) or (answers.pop(command, {})
+                                                                   if len(asked) < 10 else
+                                                                   {"ShutterCloseDuration1": 7.0})
+        with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
+            self.assertEqual(device.until_set(setup), setup)
+        self.assertEqual(asked[8:], ["ShutterOpenDuration1", "ShutterCloseDuration1"])
+
     def test_travel_times_not_taken_at_once_are_set_again_until_seen(self):
         device = check.MotorDevice("127.0.0.1:8081", "tasmota")
-        sent, travel = [], check.motor_setup.Setup(float(check.TRAVEL_OPEN), float(check.TRAVEL_CLOSE), True)
+        # The rest of the setup as carried, its wall switches among it.
+        carried = check.motor_setup.Setup(8.0, 8.0, True, check.motor_setup.HOLD_TO_RUN, True)
+        travel = dataclasses.replace(carried, open=float(check.TRAVEL_OPEN), close=float(check.TRAVEL_CLOSE))
+        sent = []
         device.tasmota = lambda command: sent.append(command) or {}
-        device.setup = lambda: travel if len(sent) > 1 else check.motor_setup.Setup(8.0, 8.0, True)
+        device.setup = lambda known=None: travel if len(sent) > 1 else carried
         with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
-            self.assertIsNone(device.set_travel(True))
+            self.assertIsNone(device.set_travel(carried))
         self.assertEqual(len(sent), 2)
-        device.setup = lambda: check.motor_setup.Setup(8.0, 8.0, True)
+        device.setup = lambda known=None: carried
         with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
-            self.assertIn("the motor is set to Setup(open=8.0", device.set_travel(True))
+            self.assertIn("the motor is set to Setup(open=8.0", device.set_travel(carried))
 
     def test_a_setup_read_while_the_firmware_does_not_answer_is_read_again(self):
         device = self.device("esphome", [(True, False), (False, True), (False, False)])
         setups = iter([check.motor_setup.Setup(), check.motor_setup.DEFAULT])
-        device.setup = lambda: next(setups, check.motor_setup.DEFAULT)
+        device.setup = lambda known=None: next(setups, check.motor_setup.DEFAULT)
         with mock.patch.object(check.time, "sleep"), mock.patch.object(check.time, "monotonic", ticking()):
             self.assertIsNone(device.problem(lambda: None))
 
@@ -621,54 +710,104 @@ class PublicDumpInputsTests(unittest.TestCase):
         self.assertIn("FAIL  sonoff-dualr3 on esphome follows its button and wall switches: relay 2 stayed off", said)
 
 
+class SwitchedMotor:
+    """A firmware's motor as its wall switches S1 (GPIO32) and S2 (GPIO33)
+    move it, in `mode`, one of Sonoff's (motor_setup.SWITCH_MODES), S1
+    opening unless `swapped`, as Sonoff's firmware was seen to; a push-button
+    acting as it is pressed where `on_press`, and never stopped where
+    `latched`. Its button (GPIO0) starts it one way and stops it."""
+
+    def __init__(self, mode, swapped=False, on_press=False, latched=False, button=True):
+        self.mode, self.swapped, self.on_press, self.latched, self.button = mode, swapped, on_press, latched, button
+        self.moving, self.last, self.held = None, "close", set()
+
+    def react(self, pin, held):
+        (self.held.add if held else self.held.discard)(pin)
+        if pin == 0:
+            if held and self.button:
+                self.moving = "open" if self.moving is None else None
+            return None
+        opener = 33 if self.swapped else 32
+        if self.mode == check.motor_setup.HOLD_TO_RUN:
+            opening, closing = opener in self.held, (65 - opener) in self.held
+            self.moving = None if opening == closing else "open" if opening else "close"
+        elif held != self.on_press:
+            return None
+        elif self.moving:
+            self.moving = self.moving if self.latched else None
+        elif self.mode == check.motor_setup.PUSH_BUTTONS:
+            self.moving = "open" if pin == opener else "close"
+        else:
+            self.moving = "open" if self.last == "close" else "close"
+        self.last = self.moving or self.last
+        return None
+
+
 class MotorInputsTests(unittest.TestCase):
     """A motor's wall switches and button, as MotorDevice.inputs_problem moves
-    it: a firmware that moves the motor as `moves` says - (pin, now held,
-    which way it moved) -> which way it moves now - each way driving the
-    outputs `drives` gives."""
+    it: a firmware that moves the motor as `motor` (a SwitchedMotor) does,
+    each way driving the outputs `drives` gives."""
 
     OUTPUTS = {"open": (True, False), "close": (False, True)}
+    PUSH, HOLD, ONE = check.motor_setup.PUSH_BUTTONS, check.motor_setup.HOLD_TO_RUN, check.motor_setup.ONE_BUTTON
 
-    @staticmethod
-    def moves(pin, held, moving):
-        if pin == 0:
-            return ("open" if moving is None else None) if held else moving
-        return {32: "open", 33: "close"}[pin] if held else None
-
-    def problem(self, moves=None, drives=None, wanted=check.motor_setup.DEFAULT, firmware="esphome"):
+    def problem(self, motor, drives=None, wanted=check.motor_setup.DEFAULT, firmware="esphome"):
         device = check.MotorDevice("127.0.0.1:8081", firmware)
-        motor = {"moving": None}
         drives = drives or self.OUTPUTS
-        device.moving = lambda: motor["moving"]
-        device.driving = lambda way: drives[way] if motor["moving"] == way else f"the motor did not start to {way}"
-        device.settled = lambda: (False, False) if motor["moving"] is None else drives[motor["moving"]]
-
-        def react(pin, held):
-            motor["moving"] = (moves or self.moves)(pin, held, motor["moving"])
-        board = Board(react)
+        device.moving = lambda: motor.moving
+        device.driving = lambda way: drives[way] if motor.moving == way else f"the motor did not start to {way}"
+        device.settled = lambda: (False, False) if motor.moving is None else drives[motor.moving]
+        board = Board(motor.react)
         with mock.patch.object(check.time, "sleep"), mock.patch.object(check, "STARTS_WITHIN", 0):
             return device.inputs_problem(board.buttons, {"buttons": (0,), "switches": (32, 33)}, wanted)
 
-    def test_each_switch_moves_it_its_way_and_the_button_moves_and_stops_it(self):
-        self.assertIsNone(self.problem())
-        self.assertIsNone(self.problem(firmware="tasmota"))
+    def setup(self, mode, swapped=False, reversed=False):
+        return dataclasses.replace(check.motor_setup.DEFAULT, switches=mode, swapped=swapped, reversed=reversed)
+
+    def test_each_mode_its_switches_move_it_and_the_button_moves_and_stops_it(self):
+        for mode in check.motor_setup.SWITCH_MODES:
+            for firmware in ("esphome", "tasmota"):
+                for swapped in (False, True):
+                    with self.subTest(mode=mode, firmware=firmware, swapped=swapped):
+                        self.assertIsNone(self.problem(SwitchedMotor(mode, swapped),
+                                                       wanted=self.setup(mode, swapped), firmware=firmware))
+
+    def test_switches_swapped_or_not_as_wanted_fail(self):
+        for mode in (self.PUSH, self.HOLD):
+            with self.subTest(mode):
+                self.assertIn("to open: the motor did not start to open",
+                              self.problem(SwitchedMotor(mode, swapped=True), wanted=self.setup(mode)))
+                self.assertIn("S2 (GPIO33)",
+                              self.problem(SwitchedMotor(mode), wanted=self.setup(mode, swapped=True)))
 
     def test_a_reversed_motors_esphome_opens_with_output_2(self):
-        reversed_motor = check.motor_setup.Setup(8.0, 8.0, True)
-        self.assertIsNone(self.problem(drives={"open": (False, True), "close": (True, False)}, wanted=reversed_motor))
-        self.assertIn("closed to open", self.problem(wanted=reversed_motor))
+        reversed_motor = self.setup(self.HOLD, reversed=True)
+        self.assertIsNone(self.problem(SwitchedMotor(self.HOLD), drives={"open": (False, True), "close": (True, False)},
+                                       wanted=reversed_motor))
+        self.assertIn("S1 (GPIO32) held to open", self.problem(SwitchedMotor(self.HOLD), wanted=reversed_motor))
 
-    def test_a_switch_that_moves_it_the_wrong_way_or_not_at_all_fails(self):
-        swapped = lambda pin, held, moving: {32: "close", 33: "open"}.get(pin) if held and pin else None  # noqa: E731
-        self.assertEqual(self.problem(swapped), "wall switch 1 (GPIO32) closed to open: the motor did not start to open")
+    def test_push_buttons_acting_as_they_are_pressed_fail(self):
+        self.assertEqual(self.problem(SwitchedMotor(self.PUSH, on_press=True), wanted=self.setup(self.PUSH)),
+                         "S1 (GPIO32) pressed: the motor started to open while it was held, not as it was let go")
 
-    def test_one_that_does_not_stop_it_when_opened_again_fails(self):
-        latched = lambda pin, held, moving: {32: "open", 33: "close"}.get(pin, moving) if held else moving  # noqa: E731
-        self.assertEqual(self.problem(latched), "wall switch 1 opened again: the motor did not stop")
+    def test_hold_to_run_where_push_buttons_are_wanted_fails(self):
+        self.assertIn("S1 (GPIO32) pressed", self.problem(SwitchedMotor(self.HOLD), wanted=self.setup(self.PUSH)))
+
+    def test_push_buttons_where_hold_to_run_is_wanted_fail(self):
+        self.assertEqual(self.problem(SwitchedMotor(self.PUSH), wanted=self.setup(self.HOLD)),
+                         "S1 (GPIO32) held to open: the motor did not start to open")
+
+    def test_a_switch_that_does_not_stop_it_fails(self):
+        self.assertEqual(self.problem(SwitchedMotor(self.PUSH, latched=True), wanted=self.setup(self.PUSH)),
+                         "S2 (GPIO33) pressed: the motor did not stop")
+
+    def test_one_push_button_that_does_not_go_the_other_way_fails(self):
+        self.assertEqual(self.problem(SwitchedMotor(self.PUSH), wanted=self.setup(self.ONE)),
+                         "S1 (GPIO32) pressed: the motor started to open again, not the other way")
 
     def test_a_button_that_does_nothing_fails(self):
-        switches_only = lambda pin, held, moving: self.moves(pin, held, moving) if pin else moving  # noqa: E731
-        self.assertEqual(self.problem(switches_only), "its button (GPIO0) pressed: the motor did not start")
+        self.assertEqual(self.problem(SwitchedMotor(self.PUSH, button=False), wanted=self.setup(self.PUSH)),
+                         "its button (GPIO0) pressed: the motor did not start")
 
     def test_they_are_pressed_once_the_motor_checks_have_passed(self):
         # The travel the motor checks set first, for their reads while it moves.
@@ -681,6 +820,32 @@ class MotorInputsTests(unittest.TestCase):
             found = check.motor_problem(1, "kept", "esphome", (), Path(tmp) / "motor.log",
                                         pins={"buttons": (0,), "switches": (32, 33)})
         self.assertEqual((order, found), (["motor", "inputs"], "stayed off"))
+
+    def test_the_owners_rule_must_be_left_as_given_and_running(self):
+        setup = check.motor_setup
+        wanted = setup.Setup(7.0, 7.0, False, setup.ONE_BUTTON, False)
+        theirs = {"State": "ON", "Once": "OFF", "StopOnError": "OFF", "Rules": check.OWNER_RULE}
+        ours = {"State": "ON", "Once": "OFF", "StopOnError": "OFF", "Rules": setup.TASMOTA_SWITCHES[setup.ONE_BUTTON][1]}
+        for rule1, var1, problem in ((theirs, "1", None), (ours, "1", "the owner's rule in Rule1 is now"),
+                                     (dict(theirs, State="OFF"), "1", "the owner's rule in Rule1 is now"),
+                                     (theirs, "", "the owner's rule did not run")):
+            with self.subTest(rule1=rule1, var1=var1), tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(check.subprocess, "run"), mock.patch.object(check, "keep_as"), \
+                    mock.patch.object(check.time, "sleep"), \
+                    mock.patch.object(check.MotorDevice, "answers", return_value=True), \
+                    mock.patch.object(check.MotorDevice, "until_set", return_value=wanted), \
+                    mock.patch.object(check.MotorDevice, "set_travel", return_value=None), \
+                    mock.patch.object(check.MotorDevice, "inputs_problem", return_value=None), \
+                    mock.patch.object(check.MotorDevice, "settings",
+                                      return_value={"Rule1": rule1, "Rule2": ours, "Rule3": {"Rules": ""}}), \
+                    mock.patch.object(check.MotorDevice, "tasmota", return_value={"Var1": var1}), \
+                    mock.patch("tools.espressif.emulator.board.buttons"):
+                found = check.owner_rule_problem(1, "kept", (), Path(tmp) / "owner.log", wanted,
+                                                 {"buttons": (0,), "switches": (32, 33)})
+                if problem is None:
+                    self.assertIsNone(found)
+                else:
+                    self.assertIn(problem, found)
 
 
 class SideBySideTests(unittest.TestCase):

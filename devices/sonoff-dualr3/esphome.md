@@ -56,8 +56,13 @@ a plain cover, and you can give it a class there.
   are off at every start, whatever they were before, so the cover has no
   power-on state, nor countdown, nor overload threshold (the motor draws far
   less than an output's rating).
-- The button opens, stops and closes in turn; wall switch 1 opens and wall
-  switch 2 closes, each stopping the motor if it is moving that way already.
+- The button opens, stops and closes in turn. The wall switches work as
+  `Wall switches` says, a setting in Home Assistant that the tool sets as
+  Sonoff's app had them: `Push-buttons` (Sonoff's default), acting as one is
+  let go - S1 opens, S2 closes, either stops the motor while it runs; `Hold
+  to run`, the motor moving while S1 or S2 alone is held; or `One
+  push-button`, either one opening, stopping, closing and stopping in turn.
+  `Swap wall switches` on has S2 open and S1 close.
 - `Open duration` and `Close duration`, settings in Home Assistant, are how
   long your motor takes each way: the time Sonoff's calibration found, which
   the tool carries across, or a few seconds (`DEFAULT_TRAVEL` in

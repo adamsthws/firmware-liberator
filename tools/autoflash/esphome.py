@@ -169,6 +169,10 @@ def set_switch(host: str, name: str, on: bool) -> None:
     _request(host, f"/switch/{urllib.parse.quote(name)}/{'turn_on' if on else 'turn_off'}", post=True)
 
 
+def set_select(host: str, name: str, option: str) -> None:
+    _request(host, f"/select/{urllib.parse.quote(name)}/set?option={urllib.parse.quote(option)}", post=True)
+
+
 def cover(host: str) -> dict | None:
     """The cover's state (its "state", "position"...), from a device that
     drives a motor; None from one with no cover, or that does not answer."""

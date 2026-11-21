@@ -33,19 +33,21 @@ the tool converts has one.
 
 What the motor is set to is carried across the same way (motor_setup): the
 firmware the device ran as the run begins, which has the person's latest,
-else Sonoff's own from the backup - its calibrated travel time and whether
-its outputs are reversed (docs/espressif-research.md#the-dual-r3s-work-mode)
-- else DEFAULT_TRAVEL, the right way round.
+else Sonoff's own from the backup - its calibrated travel time, whether its
+outputs are reversed, and how its wall switches move it
+(docs/espressif-research.md#the-dual-r3s-work-mode) - else DEFAULT: the
+short DEFAULT_TRAVEL, the right way round, the switches as push-buttons.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from tools.autoflash import esphome, kinds, output, records
+from tools.autoflash import esphome, kinds, output, prompts, records
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.espressif import flashmap, inspect_stock_nvs
@@ -60,14 +62,23 @@ SONOFF_RELAYS = 1
 # What else of the motor Sonoff's firmware keeps there, all logged. Carried
 # across: calibrate_time, the travel its calibration timed by the motor's
 # current, in milliseconds, one time for both ways, once motorCalibrate says
-# it is calibrated; and motorDriverReverse, its outputs swapped - output 2
-# opens and output 1 closes (eWeLink's outputReverse). Not carried:
-# motorKeyReverse and motorSwMode, which change how its wall switches work in
-# a way not seen (the emulator cannot switch them), and the rest, which only
-# its own timing uses.
+# it is calibrated; motorDriverReverse, its outputs swapped - output 2 opens
+# and output 1 closes (eWeLink's outputReverse); motorSwMode, how it reads
+# its wall switches (SWITCH_MODES); and motorKeyReverse (eWeLink's
+# motorSwReverse), S1 and S2 swapped. Not carried: the rest, which only its
+# own timing uses.
 SONOFF_MOTOR_KEYS = ("calibrate_time", "motorCalibrate", "calibrateWay", "motorLocation", "limitCurrent",
                      "motorDriverReverse", "motorKeyReverse", "motorSwMode")
 SONOFF_TRAVEL_UNIT = 0.001   # calibrate_time's, in seconds
+# motorSwMode's values, as seen in the emulator: 2, its default for a motor,
+# reads S1 and S2 as push-buttons, acted on as one is let go - S1 opens, S2
+# closes, either stops a motor that runs; 3 runs the motor while S1 or S2
+# alone is held, stopped as it is let go or with both held; 1 reads either
+# as one push-button that opens, stops, closes and stops in turn, on from the
+# way it last ran. motorKeyReverse swaps S1 and S2, which changes nothing
+# seen in 1.
+ONE_BUTTON, PUSH_BUTTONS, HOLD_TO_RUN = 1, 2, 3
+SWITCH_MODES = (ONE_BUTTON, PUSH_BUTTONS, HOLD_TO_RUN)
 
 # The travel time, each way, either firmware is given where nothing better is
 # known (seconds), and the person told to time theirs. Short is the safe side:
@@ -89,36 +100,95 @@ TASMOTA_COMMANDS = ("Interlock 1,2", "Interlock 1", "SetOption80 1", "ShutterRel
 # Tasmota's commands for the travel times, which it would start at 10 s.
 TASMOTA_OPEN, TASMOTA_CLOSE = "ShutterOpenDuration1", "ShutterCloseDuration1"
 TASMOTA_TRAVEL = f"{TASMOTA_OPEN} and {TASMOTA_CLOSE}"
-# The ESPHome build's settings, by their names in devices/sonoff-dualr3/esphome-motor.yaml.
+# How Tasmota reads the wall switches for each of SWITCH_MODES: both
+# switches' SwitchMode, and the rule that takes them over from the relays,
+# its text as Tasmota is given it. Push-buttons are SwitchMode 4,
+# which acts as a switch is let go; a rule matching it keeps the relay from
+# following the switch (SendKey) and gives the shutter's own commands
+# instead: ShutterStopOpen1 stops a moving shutter and opens a still one,
+# ShutterStopClose1 the same closing, ShutterStopToggleDir1 a still one the
+# other way from the one it last moved (Tasmota 16.0.0's
+# xdrv_27_esp32_shutter.ino) - not ShutterStopToggle1, which goes by where
+# the shutter is, and opened again a motor stopped part way up (seen in the
+# emulator).
+# Hold to run needs no rule: SwitchMode 2 has the relay on while its switch
+# is held and off as it is let go, the interlock turning the other off
+# first. Both held, it runs the motor the way of the one closed last, where
+# Sonoff's stops it: nothing in Tasmota's switches says both are held.
+# The rule goes in one of Tasmota's three rule sets, any of which may hold a
+# rule of the person's own. The tool's is known by its text alone, which
+# Tasmota 16.0.0 gives back as it was given, case and spacing too, beside
+# its State, Once and StopOnError (seen in the emulator); Tasmota keeps no
+# mark of who wrote a rule. It goes where the tool's is already,
+# else in the first set with no rule, never over another
+# (tasmota_switch_commands).
+TASMOTA_RULES = ("Rule1", "Rule2", "Rule3")
+# Seconds the run counts down once it has said the wall switches are hold to
+# run for want of a rule set (tell_set_up), so the line can be read before the
+# stage passes and takes it off the screen. The log keeps it.
+RULE_WANTED_SHOWN = 10.0
+TASMOTA_SWITCHES = {
+    PUSH_BUTTONS: (4, "ON Switch1#State=2 DO ShutterStopOpen1 ENDON ON Switch2#State=2 DO ShutterStopClose1 ENDON"),
+    HOLD_TO_RUN: (2, ""),
+    ONE_BUTTON: (4, "ON Switch1#State=2 DO ShutterStopToggleDir1 ENDON "
+                    "ON Switch2#State=2 DO ShutterStopToggleDir1 ENDON"),
+}
+# The ESPHome build's settings, by their names in devices/sonoff-dualr3/esphome-motor.yaml,
+# and its Wall switches' option for each of SWITCH_MODES.
 ESPHOME_OPEN, ESPHOME_CLOSE, ESPHOME_REVERSE = "Open duration", "Close duration", "Reverse direction"
 ESPHOME_TRAVEL = f"{ESPHOME_OPEN} and {ESPHOME_CLOSE}"
+ESPHOME_SWITCHES, ESPHOME_SWAP = "Wall switches", "Swap wall switches"
+ESPHOME_SWITCH_MODES = {PUSH_BUTTONS: "Push-buttons", HOLD_TO_RUN: "Hold to run", ONE_BUTTON: "One push-button"}
 # Tasmota's codes for relays 1 and 2 in a template. Its shutter opens with
 # relay 1 and closes with relay 2, and has no setting of its own to swap them:
-# a motor whose outputs are reversed has them swapped in its template.
+# a motor whose outputs are reversed has them swapped in its template. Its
+# switches 1 and 2 are swapped there too, for wall switches swapped.
 TASMOTA_RELAY1, TASMOTA_RELAY2 = 224, 225
-# How long Tasmota is given to have taken the commands, asked again meanwhile.
-TASMOTA_TAKES = 10.0
+TASMOTA_SWITCH1, TASMOTA_SWITCH2 = 160, 161
+# How long Tasmota is given to have taken the commands, asked again meanwhile:
+# it runs a Backlog a command each 200 ms, and each round asks it a dozen
+# settings. With three emulators at once, a rule's setup took 12 s, and
+# another ran out at 10 s.
+TASMOTA_TAKES = 30.0
 
 
 @dataclass(frozen=True)
 class Setup:
-    """What a motor is set to: its travel times (seconds) and whether its
-    outputs are reversed, output 2 opening. None where it is not known."""
+    """What a motor is set to: its travel times (seconds), whether its
+    outputs are reversed, output 2 opening, how its wall switches move it
+    (one of SWITCH_MODES) and whether they are swapped, S2 opening. None
+    where it is not known."""
     open: float | None = None
     close: float | None = None
     reversed: bool | None = None
+    switches: int | None = None
+    swapped: bool | None = None
 
     def over(self, other: Setup) -> Setup:
         """This setup, `other`'s where this does not know."""
-        pick = lambda mine, theirs: theirs if mine is None else mine   # noqa: E731
-        return Setup(pick(self.open, other.open), pick(self.close, other.close),
-                     pick(self.reversed, other.reversed))
+        return Setup(*(theirs if mine is None else mine
+                       for mine, theirs in zip(dataclasses.astuple(self), dataclasses.astuple(other))))
 
     def timed(self) -> bool:
         return self.open is not None and self.close is not None
 
+    @classmethod
+    def of(cls, noted: dict[str, Any]) -> Setup:
+        """A setup as the run noted it (note_running), each part checked."""
+        return cls(travel(noted.get("open")), travel(noted.get("close")), flag(noted.get("reversed")),
+                   switch_mode(noted.get("switches")), flag(noted.get("swapped")))
 
-DEFAULT = Setup(DEFAULT_TRAVEL, DEFAULT_TRAVEL, False)
+
+DEFAULT = Setup(DEFAULT_TRAVEL, DEFAULT_TRAVEL, False, PUSH_BUTTONS, False)
+
+
+def flag(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def switch_mode(value: Any) -> int | None:
+    """`value` as one of SWITCH_MODES; None for anything else."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value in SWITCH_MODES else None
 
 
 def travel(seconds: Any) -> float | None:
@@ -132,13 +202,13 @@ def travel(seconds: Any) -> float | None:
 
 def sonoff_setup(settings: dict[str, Any] | None) -> Setup:
     """What Sonoff's user settings set the motor to: the travel its
-    calibration timed, only once it says it is calibrated, and its outputs'
-    way round."""
+    calibration timed, only once it says it is calibrated, its outputs' way
+    round, and its wall switches' mode and way round."""
     settings = settings or {}
     timed = travel(settings.get("calibrate_time", 0) * SONOFF_TRAVEL_UNIT) \
         if settings.get("motorCalibrate") is True and isinstance(settings.get("calibrate_time"), int) else None
-    reverse = settings.get("motorDriverReverse")
-    return Setup(timed, timed, reverse if isinstance(reverse, bool) else None)
+    return Setup(timed, timed, flag(settings.get("motorDriverReverse")), switch_mode(settings.get("motorSwMode")),
+                 flag(settings.get("motorKeyReverse")))
 
 
 def sonoff_settings(flash: bytes) -> dict[str, Any] | None:
@@ -193,31 +263,112 @@ def interlocked(answer: Any) -> bool:
     return any({"1", "2"} <= set(group.split(",")) for group in str(answer.get("Groups", "")).split())
 
 
-def tasmota_gpio(kind: kinds.Kind, reversed: bool) -> list[int]:
-    """The kind's template's pins, relays 1 and 2 swapped where `reversed`."""
-    swap = {TASMOTA_RELAY1: TASMOTA_RELAY2, TASMOTA_RELAY2: TASMOTA_RELAY1} if reversed else {}
+def tasmota_gpio(kind: kinds.Kind, reversed: bool, swapped: bool = False) -> list[int]:
+    """The kind's template's pins, relays 1 and 2 swapped where `reversed`,
+    switches 1 and 2 where `swapped`."""
+    swap = {**({TASMOTA_RELAY1: TASMOTA_RELAY2, TASMOTA_RELAY2: TASMOTA_RELAY1} if reversed else {}),
+            **({TASMOTA_SWITCH1: TASMOTA_SWITCH2, TASMOTA_SWITCH2: TASMOTA_SWITCH1} if swapped else {})}
     return [swap.get(code, code) for code in kind.tasmota_gpio]
 
 
-def tasmota_template(kind: kinds.Kind, reversed: bool) -> str:
+def tasmota_template(kind: kinds.Kind, reversed: bool, swapped: bool = False) -> str:
     """The kind's template, as the Template command takes it, for a motor
-    whose outputs are `reversed` or not."""
+    whose outputs are `reversed` or not, and its wall switches `swapped`."""
     template = json.loads(kind.tasmota_template())
-    template["GPIO"] = tasmota_gpio(kind, reversed)
+    template["GPIO"] = tasmota_gpio(kind, reversed, swapped)
     return json.dumps(template, separators=(",", ":"))
 
 
-def tasmota_reversed(device: Any, kind: kinds.Kind) -> bool | None:
-    """Whether a Tasmota's template has the kind's relays swapped: None for
-    one that does not answer, or whose template is neither way round."""
+def tasmota_wiring(device: Any, kind: kinds.Kind) -> tuple[bool, bool] | None:
+    """Whether a Tasmota's template has the kind's relays swapped, and its
+    switches: None for one that does not answer, or whose template is none
+    of the kind's."""
     try:
         gpio = (device.command("Template") or {}).get("GPIO")
     except (DeviceError, OSError, AttributeError):
         return None
-    for reversed in (False, True):
-        if gpio == tasmota_gpio(kind, reversed):
-            return reversed
+    for wiring in ((False, False), (True, False), (False, True), (True, True)):
+        if gpio == tasmota_gpio(kind, *wiring):
+            return wiring
     return None
+
+
+def rule_text(text: str) -> str:
+    """A rule's text as Tasmota's rules compare it: case and spacing aside."""
+    return " ".join(text.split()).upper()
+
+
+def tasmota_rules(device: Any) -> dict[str, dict[str, Any] | None]:
+    """Each of a Tasmota's TASMOTA_RULES as it answers for it: its State,
+    Once and StopOnError ("ON" or "OFF") and Rules, its text; None for one it
+    did not answer for."""
+    found: dict[str, dict[str, Any] | None] = {}
+    for name in TASMOTA_RULES:
+        try:
+            answer = device.command(name).get(name)
+        except (DeviceError, OSError, AttributeError):
+            answer = None
+        found[name] = answer if isinstance(answer, dict) else None
+    return found
+
+
+def own_rule(rule: dict[str, Any] | None) -> int | None:
+    """Which of SWITCH_MODES a rule set holds the tool's rule for, on or off;
+    None for one holding any other rule, or none."""
+    text = rule_text(str(rule.get("Rules", ""))) if rule else ""
+    return next((mode for mode, (_, wanted) in TASMOTA_SWITCHES.items() if wanted and text == rule_text(wanted)),
+                None)
+
+
+def rule_free(rule: dict[str, Any] | None) -> bool:
+    """Whether a rule set holds no rule; one that did not answer is not free."""
+    return rule is not None and not str(rule.get("Rules", "")).strip()
+
+
+def holds(rule: dict[str, Any] | None) -> str:
+    """What a rule set holds, as the log says it."""
+    if rule is None:
+        return "did not answer"
+    what = "nothing" if rule_free(rule) else "the tool's rule" if own_rule(rule) else "another rule"
+    return f"{what} ({', '.join(f'{key} {rule.get(key)}' for key in ('State', 'Once', 'StopOnError'))})"
+
+
+def tasmota_switches(device: Any) -> int | None:
+    """Which of SWITCH_MODES a Tasmota's wall switches are set to
+    (TASMOTA_SWITCHES), the tool's rule in whichever rule set, on and run
+    each time, not once; None for one that does not answer, or is set to
+    none of them - as an earlier release left it, or a person."""
+    try:
+        modes = {device.command(f"SwitchMode{n}").get(f"SwitchMode{n}") for n in (1, 2)}
+    except (DeviceError, OSError, AttributeError):
+        return None
+    rules = tasmota_rules(device)
+    if len(modes) != 1 or None in rules.values():
+        return None
+    on = {own_rule(rule) for rule in rules.values() if own_rule(rule) and str(rule.get("State")).upper() == "ON"
+          and str(rule.get("Once")).upper() != "ON"}
+    found = HOLD_TO_RUN if not on else on.pop() if len(on) == 1 else None
+    return found if found and modes == {TASMOTA_SWITCHES[found][0]} else None
+
+
+def tasmota_switch_commands(mode: int, rules: dict[str, dict[str, Any] | None]) -> list[str] | None:
+    """The commands that set a Tasmota whose rule sets are `rules`
+    (tasmota_rules) to `mode`: each switch's SwitchMode, then the tool's
+    rule in the set that holds it already, else in the first free one, and
+    that set on, Once and StopOnError off (4, 8), which an earlier rule there
+    may have left on; the tool's rule cleared (") and off in any other set.
+    None where `mode` needs a rule and every set holds another: no rule the
+    tool did not write is written over."""
+    switch, rule = TASMOTA_SWITCHES[mode]
+    own = [name for name, found in rules.items() if own_rule(found)]
+    commands = [f"SwitchMode1 {switch}", f"SwitchMode2 {switch}"]
+    if rule:
+        into = (own or [name for name, found in rules.items() if rule_free(found)] or [None])[0]
+        if into is None:
+            return None
+        commands += [f"{into} {rule}", f"{into} 4", f"{into} 8", f"{into} 1"]
+        own = [name for name in own if name != into]
+    return commands + [command for name in own for command in (f'{name} "', f"{name} 0")]
 
 
 def tasmota_travel(device: Any) -> tuple[float | None, float | None]:
@@ -233,8 +384,9 @@ def tasmota_travel(device: Any) -> tuple[float | None, float | None]:
 
 
 def tasmota_setup(device: Any, kind: kinds.Kind) -> Setup:
-    """What a Tasmota sets its shutter to."""
-    return Setup(*tasmota_travel(device), tasmota_reversed(device, kind))
+    """What a Tasmota sets its shutter and wall switches to."""
+    reversed, swapped = tasmota_wiring(device, kind) or (None, None)
+    return Setup(*tasmota_travel(device), reversed, tasmota_switches(device), swapped)
 
 
 def tasmota_in_force(device: Any) -> bool:
@@ -260,16 +412,19 @@ def esphome_motor(host: str | None) -> bool | None:
 
 
 def esphome_setup(host: str) -> Setup:
-    """What the motor's ESPHome build sets its cover to. Its web server gives
-    a number's value as text ("3.0"), a switch's as true or false."""
+    """What the motor's ESPHome build sets its cover and wall switches to.
+    Its web server gives a number's value as text ("3.0"), a switch's as
+    true or false, a select's as its option."""
     def seconds(name: str) -> float | None:
         value = esphome.entity(host, "number", name)
         try:
             return travel(float(value)) if isinstance(value, (str, int, float)) else None
         except ValueError:
             return None
-    reverse = esphome.entity(host, "switch", ESPHOME_REVERSE)
-    return Setup(seconds(ESPHOME_OPEN), seconds(ESPHOME_CLOSE), reverse if isinstance(reverse, bool) else None)
+    option = esphome.entity(host, "select", ESPHOME_SWITCHES)
+    return Setup(seconds(ESPHOME_OPEN), seconds(ESPHOME_CLOSE), flag(esphome.entity(host, "switch", ESPHOME_REVERSE)),
+                 next((mode for mode, name in ESPHOME_SWITCH_MODES.items() if name == option), None),
+                 flag(esphome.entity(host, "switch", ESPHOME_SWAP)))
 
 
 def running_setup(ctx: Context, firmware: str) -> Setup:
@@ -299,8 +454,7 @@ def note_running(ctx: Context, firmware: str) -> None:
         if found:
             ctx.state.set_input("motor_running", firmware)
             setup = running_setup(ctx, firmware)
-            ctx.state.set_input("motor_setup", {"open": setup.open, "close": setup.close,
-                                                "reversed": setup.reversed})
+            ctx.state.set_input("motor_setup", dataclasses.asdict(setup))
             output.log_only(f"    {firmware} sets the motor to {setup}")
 
 
@@ -316,9 +470,7 @@ def motor_setup(ctx: Context) -> Setup:
     """What the motor is to be set to, wherever the device goes: the firmware
     it ran as the run began (note_running), else its Sonoff backup, else
     DEFAULT."""
-    noted = ctx.state.input("motor_setup") or {}
-    running = Setup(travel(noted.get("open")), travel(noted.get("close")),
-                    noted.get("reversed") if isinstance(noted.get("reversed"), bool) else None)
+    running = Setup.of(ctx.state.input("motor_setup") or {})
     return running.over(sonoff_setup(backup_settings(ctx))).over(DEFAULT)
 
 
@@ -337,55 +489,74 @@ def log_sonoff_motor(ctx: Context) -> None:
                     f"{json.dumps(kept) if kept else 'none'}")
 
 
-def tell_set_up(firmware: str, travel_names: str, setup: Setup, timed: bool) -> None:
-    """What the person is told of a device set up for its motor: its travel
-    times, and to time them where they were not known (`timed`)."""
-    output.tell(f"    Motor mode carried across: {firmware} drives the motor, its two outputs never on together "
-                "and both off at every start" + (", output 2 opening as before." if setup.reversed else "."))
+def tell_set_up(travel_names: str, setup: Setup, timed: bool, rule_wanted: bool = False) -> None:
+    """What the person is told of a device set up for its motor: its wall
+    switches as before, or, `rule_wanted`, that they are hold to run, why and
+    what to do in the log (Tasmota had no rule set free for their rule); then
+    its travel times, or to time them where they were not known (`timed`)."""
+    said = ESPHOME_SWITCH_MODES[HOLD_TO_RUN if rule_wanted else setup.switches].lower()
+    if rule_wanted:
+        said += f", not {ESPHOME_SWITCH_MODES[setup.switches].lower()}"
+    output.tell(f"    Motor mode carried across: Switches are {said}.")
+    if rule_wanted:
+        output.log_only(f"    That needs one of Tasmota's rules, and {', '.join(TASMOTA_RULES[:-1])} and "
+                        f"{TASMOTA_RULES[-1]} hold rules of the person's own: empty one, then run the tool again.")
     if timed:
-        output.tell(f"    Its travel times carried across: {setup.open:g} s to open, {setup.close:g} s to close "
-                    f"({travel_names}).")
+        output.tell(f"    Its travel times carried across: {setup.open:g} s to open, {setup.close:g} s to close.")
     else:
         output.tell(f"    Time the motor's travel and set {travel_names}: {DEFAULT_TRAVEL:g} s until you do.")
+    if rule_wanted and not prompts.countdown_carry_on("Carrying on", seconds=RULE_WANTED_SHOWN):
+        raise prompts.QuitRun("stopped at an operator prompt")
 
 
 def timed(ctx: Context) -> bool:
     """Whether the run knows the motor's travel times: not DEFAULT_TRAVEL's."""
-    noted = ctx.state.input("motor_setup") or {}
-    return (Setup(travel(noted.get("open")), travel(noted.get("close"))).timed()
-            or sonoff_setup(backup_settings(ctx)).timed())
+    return Setup.of(ctx.state.input("motor_setup") or {}).timed() or sonoff_setup(backup_settings(ctx)).timed()
 
 
 def set_up_tasmota(ctx: Context) -> dict[str, Any]:
     """A Tasmota on a device that drives a motor set up for it, once its
     template is in place: its relays swapped there for a motor whose outputs
-    are reversed (motor_setup), then TASMOTA_COMMANDS and its travel times,
-    each seen taken; nothing for one in relay mode. One that has every
-    setting already is left as it is, the person's travel times with it."""
+    are reversed, its switches for wall switches swapped (motor_setup), then
+    TASMOTA_COMMANDS, its travel times and its wall switches' mode, each seen
+    taken - hold to run where their mode needs a rule and no rule set is free
+    of the person's (tasmota_switch_commands), the person told; nothing for
+    one in relay mode. One that has every setting already,
+    its wall switches' among them, is left as it is, the person's travel
+    times with it."""
     if not drives(ctx):
         return {}
     log_sonoff_motor(ctx)
     device = ctx.device
-    if tasmota_in_force(device):
+    setup, kind = motor_setup(ctx), kinds.of_run(ctx.state)
+    wiring = (bool(setup.reversed), bool(setup.swapped))
+    # A template that is none of the kind's is the person's, and left so.
+    if tasmota_in_force(device) and tasmota_switches(device) == setup.switches \
+            and tasmota_wiring(device, kind) in (None, wiring):
         output.say("    Tasmota drives the motor already: its outputs interlocked, both off at every start.")
         return {"motor": "in place"}
-    setup, kind = motor_setup(ctx), kinds.of_run(ctx.state)
-    if tasmota_reversed(device, kind) is (not setup.reversed):
+    if tasmota_wiring(device, kind) not in (None, wiring):
         from tools.autoflash.routes.espressif import tasmota   # which imports this
-        tasmota.give_template(device, tasmota_template(kind, bool(setup.reversed)), None)
+        tasmota.give_template(device, tasmota_template(kind, *wiring), None)
         device = ctx.device
-        if tasmota_reversed(device, kind) is not setup.reversed:
+        if tasmota_wiring(device, kind) != wiring:
             raise Abort("Tasmota did not take the template that drives the motor the right way round; "
                         "it is safe to do this step again")
+    rules = tasmota_rules(device)
+    output.log_only("    Tasmota's rule sets: " + ", ".join(f"{name} {holds(rule)}" for name, rule in rules.items()))
+    switches, commands = setup.switches, tasmota_switch_commands(setup.switches, rules)
+    if commands is None:
+        switches, commands = HOLD_TO_RUN, tasmota_switch_commands(HOLD_TO_RUN, rules)
     device.command("Backlog " + "; ".join([*TASMOTA_COMMANDS, f"{TASMOTA_OPEN} {setup.open:g}",
-                                           f"{TASMOTA_CLOSE} {setup.close:g}"]), timeout=30.0)
+                                           f"{TASMOTA_CLOSE} {setup.close:g}", *commands]), timeout=30.0)
     started = time.monotonic()
-    while not (tasmota_in_force(device) and tasmota_travel(device) == (setup.open, setup.close)):
+    while not (tasmota_in_force(device) and tasmota_travel(device) == (setup.open, setup.close)
+               and tasmota_switches(device) == switches):
         if time.monotonic() - started > TASMOTA_TAKES:
             raise Abort("Tasmota did not take the settings that keep the motor's two outputs from both being "
                         "on; it is safe to do this step again")
         time.sleep(1)
-    tell_set_up("Tasmota", TASMOTA_TRAVEL, setup, timed(ctx))
+    tell_set_up(TASMOTA_TRAVEL, setup, timed(ctx), rule_wanted=switches != setup.switches)
     return {"motor": "set up"}
 
 
@@ -397,9 +568,11 @@ def set_up_esphome(ctx: Context) -> dict[str, Any]:
         esphome.set_number(host, ESPHOME_OPEN, setup.open)
         esphome.set_number(host, ESPHOME_CLOSE, setup.close)
         esphome.set_switch(host, ESPHOME_REVERSE, bool(setup.reversed))
+        esphome.set_select(host, ESPHOME_SWITCHES, ESPHOME_SWITCH_MODES[setup.switches])
+        esphome.set_switch(host, ESPHOME_SWAP, bool(setup.swapped))
         if esphome_setup(host) == setup:
-            tell_set_up("ESPHome", ESPHOME_TRAVEL, setup, timed(ctx))
+            tell_set_up(ESPHOME_TRAVEL, setup, timed(ctx))
             return {"motor": "set up"}
         time.sleep(2)
-    raise Abort("ESPHome did not take the motor's travel times and direction; run the tool again before the "
-                "motor is used")
+    raise Abort("ESPHome did not take the motor's travel times, direction and wall switches; run the tool again "
+                "before the motor is used")

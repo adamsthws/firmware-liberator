@@ -140,13 +140,12 @@ QEMU's monitor:
     handler's flag, read in the disassembly, suggested. In mode 1, where
     either switch does the same, it changes nothing.
 
-  The button (GPIO0), pressed briefly, did nothing in motor mode. Neither
-  setting is carried across: the converted firmware treat a wall switch as
-  [the device's page says](../devices/sonoff-dualr3/README.md#a-motor).
+  The button (GPIO0), pressed briefly, did nothing in motor mode.
 
 So the tool carries `calibrate_time` as both travel times, only with
-`motorCalibrate` true and the time in `TRAVEL_RANGE`, and `motorDriverReverse`
-as the direction, and logs the rest
+`motorCalibrate` true and the time in `TRAVEL_RANGE`, `motorDriverReverse`
+as the direction, and `motorSwMode` and `motorKeyReverse` as the wall
+switches' mode and way round, and logs the rest
 ([the device's page](../devices/sonoff-dualr3/README.md#a-motor)). Until it
 answers the chip ID at register `0x7F` (`0x776110`), the firmware reads
 nothing else of the CSE7761: the emulated meter answers it, and only then did
@@ -162,7 +161,9 @@ motor's (`public_dump.py --motor`); started on it, the firmware wrote the
 motor's own keys as `calibrate_time` 0, `motorCalibrate` false,
 `motorLocation` 0, `limitCurrent` 0 and both reverses false: an uncalibrated
 motor's, seen in the emulator. A third (`--motor calibrated`) is given a
-motor calibrated at 8 s with its outputs reversed, as the firmware keeps one.
+motor calibrated at 8 s with its outputs reversed, as the firmware keeps one,
+its wall switches hold to run (`motorSwMode` 3) and swapped
+(`motorKeyReverse` true); a fourth (`--motor one-button`) `motorSwMode` 1.
 
 ### Leaving Tasmota on a TH-style layout
 

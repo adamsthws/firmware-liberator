@@ -13,7 +13,7 @@ f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c  autoflash-reco
 36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6  sonoff-th-elite-partition-table.bin
 79e9a36182a87ee358c13ec4961bac89333d97abc2dffe2b156baaacd828c0d0  esphome-sonoff-powct-imprintable-2026.10.0-4.bin
 e7256acd04630418058473508d712dc506c2de4ed840b55e33ce42d962447a92  esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin
-4aaa5337f9a50af53445f209bca5a54442658081f787dbd1cc5f95fff95655d0  esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin
+3bb811c953e96d8d86f939ed0aec355ccc0ac08a555a20a0c0a2c2f99b082a6c  esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin
 5129951d1e89b06f4c5c7e39a0d01b081010d338c562d78c6e422f7175965952  openbeken-sonoff-basic-1gs-1.18.320-1.rbl
 7de065a559b8814d9d064764040c4ff97d8e415e881b828f7fa5cee1f35abcc9  esphome-sonoff-basic-1gs-2026.10.0-3.rbl
 811a8437129eea92b4c29c60e5c56e623fd32ca7b1629625d91e295a901bd572  openbeken-readout-1.18.320-1.rbl
@@ -22,4 +22,4 @@ e7256acd04630418058473508d712dc506c2de4ed840b55e33ce42d962447a92  esphome-sonoff
 b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f  esphome-esp32-bootloader-1.1.0.bin
 3f1a871231bcec9cb78a5222f4eb46bca0c8ab9726987a9927c0bdd241be3a38  autoflash-bridge-esp32c3-4.4.6.ota
 3e27f0f649bac9b7ba4df98d5487bb0953d34fbab7a398d223a6468847bd8b09  autoflash-bridge-esp32-4.4.6.bin
-46fb2db3db39a5389c20c0ca84c2461aa62d29f795509610f75285bf38522bfd  esphome-sonoff-dualr3-motor-imprintable-2026.10.0-3.bin
+34a2a29ef47e79f5609f9290f880ed46a6dca1af8866bfbb60ce6f390dd9e8cf  esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin

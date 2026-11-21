@@ -18,20 +18,26 @@ for every device the tool converts, so a new one has it by being added.
         (rebuilt_flash). On the firmware each way ends on, the device's
         button and wall switches are pressed, each to switch its relay
         (Device.inputs_problem).
-    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [calibrated] [--instances 1,2]
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [COPY] [--instances 1,2]
         the same for a device with a motor mode, from its test copy set up to
-        drive a motor (public_dump.MOTOR_COPIES; calibrated: its travel timed
-        and its outputs reversed): each firmware it ends on then shown set to
-        the travel and direction carried across, driving the motor that way,
-        its outputs never on together and both off after a power cut
+        drive a motor (public_dump.MOTOR_COPIES: calibrated, its travel timed,
+        its outputs reversed and its wall switches hold to run and swapped;
+        one-button, its wall switches each one push-button): each firmware it
+        ends on then shown set to the travel, direction and wall switches
+        carried across, driving the motor that way, its outputs never on
+        together and both off after a power cut, and the motor moved and
+        stopped by its wall switches, as they are set, and its button
         (motor_problem); the first firmware of each way then set to another
-        travel and direction (moved_setup), which the next must carry across, and the motor
-        moved and stopped by its wall switches and button
+        travel, direction and wall switches (moved_setup), which the next must
+        carry across; Tasmota there then given a rule of its owner's in Rule1
+        and the tool run on it again, which must leave the rule as it is
+        (owner_rule_problem)
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shutil
@@ -157,15 +163,26 @@ def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -
                 then = moved_setup(wanted) if firmware != firmwares[-1] else None
                 problem = motor_problem(instance, keep, firmware, stub, folder / f"{instance}-{firmware}-motor.log",
                                         wanted, then, board_inputs(kind))
-                done = f"set to {wanted.open:g} s and {wanted.close:g} s, {'' if wanted.reversed else 'not '}" \
-                       "reversed, its outputs interlocked, both off after a power cut, moved and stopped by its wall " \
-                       "switches and button" + \
-                       (f"; then set to {then.open:g} s, {'' if then.reversed else 'not '}reversed" if then else "")
+                done = f"set to {described(wanted)}, its outputs interlocked, both off after a power cut, moved " \
+                       "and stopped by its wall switches so and its button" + \
+                       (f"; then set to {described(then)}" if then else "")
                 print(f"{'FAIL' if problem else 'PASS'}  {kind.key} on {firmware} drives its motor: "
                       f"{problem or done}", flush=True)
                 if problem:
                     return 1
                 wanted = then or wanted
+                if firmware == "tasmota" and then:
+                    # The tool's rule written over, its wall switches from the
+                    # backup, as they were carried first; hold to run has none.
+                    if then.switches != motor_setup.HOLD_TO_RUN:
+                        wanted = dataclasses.replace(wanted, switches=carried.switches)
+                    problem = owner_rule_problem(instance, keep, stub, folder / f"{instance}-{firmware}-owner.log",
+                                                 wanted, board_inputs(kind))
+                    print(f"{'FAIL' if problem else 'PASS'}  {kind.key} on tasmota keeps a rule of its owner's in "
+                          f"Rule1, run again: {problem or 'set to ' + described(wanted) + ', moved by its switches'}",
+                          flush=True)
+                    if problem:
+                        return 1
             saved = keep
         return 0
 
@@ -212,9 +229,18 @@ MOVED_TRAVEL = 7.0
 def moved_setup(carried: motor_setup.Setup) -> motor_setup.Setup:
     """What the first firmware of a way is set to, as a person would set
     theirs, before the device is taken to the other: MOVED_TRAVEL each way,
-    and the other way round from `carried`, so that the next firmware having
+    the other way round from `carried`, its wall switches the next of
+    SWITCH_MODES and swapped the other way, so that the next firmware having
     it can only have come from the firmware before, not from the backup."""
-    return motor_setup.Setup(MOVED_TRAVEL, MOVED_TRAVEL, not carried.reversed)
+    modes = motor_setup.SWITCH_MODES
+    return motor_setup.Setup(MOVED_TRAVEL, MOVED_TRAVEL, not carried.reversed,
+                             modes[(modes.index(carried.switches) + 1) % len(modes)], not carried.swapped)
+
+
+def described(setup: motor_setup.Setup) -> str:
+    """A setup as a check's line says it."""
+    return (f"{setup.open:g} s and {setup.close:g} s, {'' if setup.reversed else 'not '}reversed, wall switches "
+            f"{motor_setup.ESPHOME_SWITCH_MODES[setup.switches].lower()}{', swapped' if setup.swapped else ''}")
 
 
 def board_inputs(kind: kinds.Kind) -> dict[str, tuple[int, ...]]:
@@ -287,12 +313,84 @@ def motor_problem(instance: int, saved: str, firmware: str, stub: tuple[str, ...
             problem = device.set_to(then, power_cut)
             if problem:
                 return problem
-            # Kept as unattended-test.sh --save keeps a device: switched off,
-            # its flash as it was.
-            subprocess.run(["docker", "exec", container, fault_suite.DEVICE_CMD, "off"], capture_output=True,
-                           check=False)
-            shutil.copyfile(fault_suite.EMU / f"state-{instance}" / "flash.bin",
-                            public_devices.SAVED / saved / "flash.bin")
+            keep_as(instance, saved)
+            return None
+    finally:
+        subprocess.run(["docker", "stop", container], capture_output=True, check=False)
+
+
+def keep_as(instance: int, saved: str) -> None:
+    """The device on emulator `instance` kept as `saved`, as
+    unattended-test.sh --save keeps a device: switched off, its flash as it
+    was."""
+    from tools.espressif.emulator import fault_suite, public_devices
+    subprocess.run(["docker", "exec", fault_suite.name(instance), fault_suite.DEVICE_CMD, "off"],
+                   capture_output=True, check=False)
+    shutil.copyfile(fault_suite.EMU / f"state-{instance}" / "flash.bin", public_devices.SAVED / saved / "flash.bin")
+
+
+# A rule of the owner's own, which the tool must leave as it is: one that
+# shows it ran, Var1 set at each start.
+OWNER_RULE = "ON System#Boot DO Var1 1 ENDON"
+
+
+def owner_rule_problem(instance: int, saved: str, stub: tuple[str, ...], log: Path, wanted: motor_setup.Setup,
+                       pins: dict[str, tuple[int, ...]]) -> str | None:
+    """What is wrong where the device kept as `saved`, on Tasmota, is given a
+    rule of the owner's (OWNER_RULE) in Rule1, over the tool's if it was
+    there, and the tool run again on it; None if nothing. Its wall switches
+    then read as none of the tool's modes, so it carries them across from
+    the Sonoff backup, or, hold to run, as they are, the rest from Tasmota:
+    `wanted`. It is to set them so, a rule they need in
+    another rule set, leaving Rule1 as the owner wrote it, running; the
+    switches on `pins` then move the motor as `wanted`. The device is kept as
+    `saved` again, for the next conversion to read its rule where the tool
+    put it. What it saw is in `log`."""
+    from tools.espressif.emulator import board, fault_suite, public_devices
+    container = fault_suite.name(instance)
+    run = [str(public_devices.UNATTENDED), f"--instance={instance}", f"--from={saved}", *stub, "--keep", "--",
+           "--firmware", "tasmota"]
+    try:
+        with open(log, "w", encoding="utf-8") as out:
+            began = time.monotonic()
+
+            def note(text: str) -> None:
+                out.write(f"{time.monotonic() - began:7.1f} s  {text}\n")
+                out.flush()
+            device = MotorDevice(f"127.0.0.1:{8080 + instance}", "tasmota", note)
+            subprocess.run(run, stdout=out, stderr=subprocess.STDOUT, check=False)
+            if not device.answers():
+                return "the device did not answer after its run"
+            device.tasmota(f"Backlog Rule1 {OWNER_RULE}; Rule1 1")
+            time.sleep(TASMOTA_BACKLOG)
+            note(f"the owner's rule given: {device.settings(*motor_setup.TASMOTA_RULES)}")
+            keep_as(instance, saved)
+            subprocess.run(["docker", "stop", container], capture_output=True, check=False)
+            subprocess.run(run, stdout=out, stderr=subprocess.STDOUT, check=False)
+            if not device.answers():
+                return "the device did not answer after the run again"
+            rules = device.settings(*motor_setup.TASMOTA_RULES)
+            note(f"after the run again: {rules}, Var1 {device.tasmota('Var1')}")
+            owner = rules["Rule1"] or {}
+            if motor_setup.rule_text(str(owner.get("Rules", ""))) != motor_setup.rule_text(OWNER_RULE) \
+                    or owner.get("State") != "ON":
+                return f"the owner's rule in Rule1 is now {owner}"
+            if device.tasmota("Var1").get("Var1") != "1":
+                return "the owner's rule did not run"
+            found = device.until_set(wanted)
+            if found != wanted:
+                return f"with the owner's rule in Rule1, the motor is set to {found}, not {wanted}"
+            # Pressed with the travel the motor checks set, a move outlasting
+            # the presses, then set back for the next to carry across.
+            problem = device.set_travel(wanted) or device.inputs_problem(board.buttons(container), pins, wanted)
+            if problem:
+                return problem
+            device.tasmota(f"Backlog {motor_setup.TASMOTA_OPEN} {wanted.open:g}; "
+                           f"{motor_setup.TASMOTA_CLOSE} {wanted.close:g}")
+            found = device.until_set(wanted)
+            if found != wanted:
+                return f"set back to {wanted}, the motor is set to {found}"
+            keep_as(instance, saved)
             return None
     finally:
         subprocess.run(["docker", "stop", container], capture_output=True, check=False)
@@ -311,6 +409,9 @@ BETWEEN_PRESSES = 1.5
 # did not, so a 0.1 s press, a little shorter in the device's time while it
 # is busy, now and then went unseen. Its long press starts at 1 s.
 HELD = {"openbeken": 0.3}
+# How long a wall switch pressed as a push-button is held before it is let go
+# (s): long enough to see that the motor waits for it to be let go.
+SWITCH_HELD = 1.0
 
 
 class Device:
@@ -410,12 +511,12 @@ class MotorDevice(Device):
 
     PAGES = {"esphome": "/cover/Motor"}
 
-    def set_travel(self, reversed: bool | None) -> str | None:
+    def set_travel(self, wanted: motor_setup.Setup) -> str | None:
         """The travel times set to TRAVEL_OPEN and TRAVEL_CLOSE, and seen set,
-        asked again while they are not: what is wrong where they never are.
-        Taken as set unseen, an 8 s motor once opened fully before the first
-        look Tasmota answered, and was still."""
-        travel = motor_setup.Setup(float(TRAVEL_OPEN), float(TRAVEL_CLOSE), reversed)
+        the rest of `wanted` as it was, asked again while they are not: what
+        is wrong where they never are. Taken as set unseen, an 8 s motor once
+        opened fully before the first look Tasmota answered, and was still."""
+        travel = dataclasses.replace(wanted, open=float(TRAVEL_OPEN), close=float(TRAVEL_CLOSE))
         started = time.monotonic()
         while True:
             if self.firmware == "tasmota":
@@ -542,24 +643,15 @@ class MotorDevice(Device):
     def inputs_problem(self, buttons: emulator_buttons.Buttons, pins: dict[str, tuple[int, ...]],
                        wanted: motor_setup.Setup = motor_setup.DEFAULT) -> str | None:
         """What is wrong with how the motor follows the board's inputs, the
-        travel as `problem` left it; None if nothing: wall switch 1 closed
-        opens it and opened again stops it, wall switch 2 the same closing it -
-        output 2 opening where reversed, as in `problem` - and the button
-        pressed sets it moving one way and pressed again stops it; never both
-        outputs on. The outputs are read while the firmware says the motor
-        moves (driving), the close twice the open's travel (TRAVEL_CLOSE)."""
-        swapped = bool(wanted.reversed) and self.firmware == "esphome"
-        for n, (pin, way, on) in enumerate(zip(pins["switches"], ("open", "close"), ((True, False), (False, True))), 1):
-            self.note(f"wall switch {n} closed")
-            buttons.hold(pin)
-            found = self.driving(way)
-            if isinstance(found, str) or found != (on[::-1] if swapped else on):
-                return f"wall switch {n} (GPIO{pin}) closed to {way}: {found}"
-            self.note(f"wall switch {n} opened")
-            buttons.release(pin)
-            problem = self.stops()
-            if problem:
-                return f"wall switch {n} opened again: {problem}"
+        travel as `problem` left it; None if nothing: its wall switches as
+        `wanted` has them (switches_problem) - output 2 opening where
+        reversed, as in `problem` - and the button pressed sets it moving one
+        way and pressed again stops it; never both outputs on. The outputs
+        are read while the firmware says the motor moves (driving), the close
+        twice the open's travel (TRAVEL_CLOSE)."""
+        problem = self.switches_problem(buttons, pins["switches"], wanted)
+        if problem:
+            return problem
         pin = pins["buttons"][0]
         self.note("the button pressed")
         buttons.press(pin)
@@ -572,6 +664,58 @@ class MotorDevice(Device):
         buttons.press(pin)
         problem = self.stops()
         return f"its button pressed again: {problem}" if problem else None
+
+    def switches_problem(self, buttons: emulator_buttons.Buttons, switches: tuple[int, ...],
+                         wanted: motor_setup.Setup) -> str | None:
+        """What is wrong with how the wall switches S1 and S2 on `switches`
+        move the motor, as `wanted` sets them and as Sonoff's firmware was
+        seen to (motor_setup.SWITCH_MODES), S1 opening and S2 closing, the
+        other way round where swapped; None if nothing. Hold to run: each
+        moves it its way while held and stops it let go. Push-buttons: each
+        pressed - held SWITCH_HELD first, the motor still meanwhile, and let
+        go - starts it its way, and either stops it. One push-button: each
+        press goes on from the last - one way, stop, the other way, stop."""
+        flip = bool(wanted.reversed) and self.firmware == "esphome"   # outputs by their pins, as in problem
+        on = {"open": (not flip, flip), "close": (flip, not flip)}
+        opener, closer = (switches[1], switches[0]) if wanted.swapped else (switches[0], switches[1])
+        if wanted.switches == motor_setup.HOLD_TO_RUN:
+            steps = [("hold", opener, "open"), ("release", opener, "stop"), ("hold", closer, "close"),
+                     ("release", closer, "stop")]
+        elif wanted.switches == motor_setup.PUSH_BUTTONS:
+            steps = [("press", opener, "open"), ("press", closer, "stop"), ("press", closer, "close"),
+                     ("press", opener, "stop")]
+        else:
+            steps = [("press", opener, "either"), ("press", closer, "stop"), ("press", opener, "other"),
+                     ("press", closer, "stop")]
+        last = None
+        for how, pin, expect in steps:
+            what = f"S{switches.index(pin) + 1} (GPIO{pin}) " + {"hold": "held", "release": "let go",
+                                                                  "press": "pressed"}[how]
+            self.note(what)
+            if how == "press":
+                buttons.hold(pin)
+                time.sleep(SWITCH_HELD)
+                early = self.moving() if expect != "stop" else None
+                buttons.release(pin)
+                if early in ("open", "close"):
+                    return f"{what}: the motor started to {early} while it was held, not as it was let go"
+            else:
+                getattr(buttons, how)(pin)
+            if expect == "stop":
+                problem = self.stops()
+                if problem:
+                    return f"{what}: {problem}"
+                continue
+            way = self.starts() if expect in ("either", "other") else expect
+            if way is None:
+                return f"{what}: the motor did not start"
+            if expect == "other" and way == last:
+                return f"{what}: the motor started to {way} again, not the other way"
+            found = self.driving(way)
+            if isinstance(found, str) or found != on[way]:
+                return f"{what} to {way}: {found}"
+            last = way
+        return None
 
     def starts(self) -> str | None:
         """Which way the motor starts to move within STARTS_WITHIN, as the
@@ -595,30 +739,49 @@ class MotorDevice(Device):
         found = self.settled()
         return None if found == (False, False) else f"the outputs read {found}, not both off"
 
-    def setup(self) -> motor_setup.Setup:
-        """The travel times and direction the firmware is set to."""
-        if self.firmware == "tasmota":
-            asked = SimpleNamespace(command=lambda text, timeout=None: self.tasmota(text))
-            return motor_setup.tasmota_setup(asked, kinds.find("sonoff-dualr3"))
-        return motor_setup.esphome_setup(self.address)
+    def asked(self) -> SimpleNamespace:
+        """This Tasmota as motor_setup's functions ask a device."""
+        return SimpleNamespace(command=lambda text, timeout=None: self.tasmota(text))
+
+    def setup(self, known: motor_setup.Setup | None = None) -> motor_setup.Setup:
+        """The travel times, direction and wall switches the firmware is set
+        to. On Tasmota, what `known` has already is not asked again, and left
+        None: a slow emulated Tasmota was seen answering a request a minute,
+        past each one's wait, and ten requests a round left too few rounds."""
+        if self.firmware != "tasmota":
+            return motor_setup.esphome_setup(self.address)
+        asked = self.asked()
+        kind = kinds.find("sonoff-dualr3")
+        lacks = lambda *parts: known is None or any(getattr(known, part) is None for part in parts)   # noqa: E731
+        travel = motor_setup.tasmota_travel(asked) if lacks("open", "close") else (None, None)
+        reversed, swapped = (motor_setup.tasmota_wiring(asked, kind) if lacks("reversed", "swapped") else None) \
+            or (None, None)
+        return motor_setup.Setup(*travel, reversed, motor_setup.tasmota_switches(asked) if lacks("switches") else None,
+                                 swapped)
 
     def set_to(self, setup: motor_setup.Setup, power_cut) -> str | None:
         """The firmware set to `setup` through its own settings, as a person
-        would set theirs: Tasmota's travel times and its template's relays
-        (motor_setup.tasmota_template), which it restarts for; ESPHome's
-        Open duration, Close duration and Reverse direction. What is wrong
-        where it has not got them, before or after a power cut; None if
-        nothing."""
+        would set theirs: Tasmota's travel times, wall switches' mode and its
+        template's relays and switches (motor_setup.tasmota_template), which
+        it restarts for; ESPHome's Open duration, Close duration, Reverse
+        direction, Wall switches and Swap wall switches. What is wrong where
+        it has not got them, before or after a power cut; None if nothing."""
         self.note(f"set to {setup}")
         if self.firmware == "tasmota":
+            # Its wall switches' rule where the tool would put it.
+            switches = motor_setup.tasmota_switch_commands(setup.switches,
+                                                           self.settings(*motor_setup.TASMOTA_RULES))
+            if switches is None:
+                return "Tasmota has no rule set free for its wall switches"
             # The template last: a new one on a Tasmota that runs its template
             # restarts it about a second later (CmndTemplate), and a Backlog
             # given after it lost all but its first commands (seen in the
             # emulator). Tasmota runs a Backlog on its own, a command at a time.
-            self.tasmota(f"Backlog {motor_setup.TASMOTA_OPEN} {setup.open:g}; "
-                         f"{motor_setup.TASMOTA_CLOSE} {setup.close:g}")
+            self.tasmota("Backlog " + "; ".join([f"{motor_setup.TASMOTA_OPEN} {setup.open:g}",
+                                                 f"{motor_setup.TASMOTA_CLOSE} {setup.close:g}", *switches]))
             time.sleep(TASMOTA_BACKLOG)
-            template = motor_setup.tasmota_template(kinds.find("sonoff-dualr3"), bool(setup.reversed))
+            template = motor_setup.tasmota_template(kinds.find("sonoff-dualr3"), bool(setup.reversed),
+                                                    bool(setup.swapped))
             self.tasmota(f"Template {template}")
             self.tasmota("Module 0")
             # Its restart saves what it was given: a power cut before it, as
@@ -628,8 +791,10 @@ class MotorDevice(Device):
         else:
             for name, seconds in ((motor_setup.ESPHOME_OPEN, setup.open), (motor_setup.ESPHOME_CLOSE, setup.close)):
                 self.get(f"/number/{urllib.parse.quote(name)}/set?value={seconds:g}", post=True)
-            self.get(f"/switch/{urllib.parse.quote(motor_setup.ESPHOME_REVERSE)}/"
-                     f"{'turn_on' if setup.reversed else 'turn_off'}", post=True)
+            for name, on in ((motor_setup.ESPHOME_REVERSE, setup.reversed), (motor_setup.ESPHOME_SWAP, setup.swapped)):
+                self.get(f"/switch/{urllib.parse.quote(name)}/{'turn_on' if on else 'turn_off'}", post=True)
+            self.get(f"/select/{urllib.parse.quote(motor_setup.ESPHOME_SWITCHES)}/set?option="
+                     f"{urllib.parse.quote(motor_setup.ESPHOME_SWITCH_MODES[setup.switches])}", post=True)
         found = self.until_set(setup)
         if found != setup:
             return f"set to {setup}, the motor is set to {found}"
@@ -648,7 +813,10 @@ class MotorDevice(Device):
         found = self.setup()
         while found != setup and time.monotonic() - started < within:
             time.sleep(3)
-            found = self.setup().over(found)
+            # What already reads as `setup` is not asked again.
+            right = motor_setup.Setup(*(mine if mine == wanted else None for mine, wanted
+                                        in zip(dataclasses.astuple(found), dataclasses.astuple(setup))))
+            found = self.setup(right).over(found)
         return found
 
     def settings(self, *names: str) -> dict:
@@ -676,7 +844,7 @@ class MotorDevice(Device):
         found = self.until_set(wanted)
         if found != wanted:
             return f"the motor is set to {found}, not {wanted}"
-        problem = self.set_travel(wanted.reversed)
+        problem = self.set_travel(wanted)
         if problem:
             return problem
         # Tasmota's relays by their numbers, which its template swaps over a
@@ -779,7 +947,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("device", help="list, or a device's key")
     parser.add_argument("--changed-since", help="list: only what a change since this commit could affect")
     parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
-    parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated"),
+    parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated", "one-button"),
                         help="a test copy of the device that drives a motor (public_dump.MOTOR_COPIES)")
     args = parser.parse_args(argv)
     if args.device == "list":

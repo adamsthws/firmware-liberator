@@ -27,8 +27,8 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 | `esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin` | ESPHome for the POW Elite, the same way | `668fd7526e5a579e831866fdb30a88e96f0e28633068c4ae49375050b7964320` |
 | `esphome-sonoff-powct-imprintable-2026.10.0-4.bin` | ESPHome for the POW Ring (POWCT), the same way | `79e9a36182a87ee358c13ec4961bac89333d97abc2dffe2b156baaacd828c0d0` |
 | `esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin` | ESPHome for the TH Elite, the same way | `e7256acd04630418058473508d712dc506c2de4ed840b55e33ce42d962447a92` |
-| `esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin` | ESPHome for the Dual R3, the same way | `4aaa5337f9a50af53445f209bca5a54442658081f787dbd1cc5f95fff95655d0` |
-| `esphome-sonoff-dualr3-motor-imprintable-2026.10.0-3.bin` | ESPHome for a Dual R3 that drives a motor, from its `esphome-motor.yaml` | `46fb2db3db39a5389c20c0ca84c2461aa62d29f795509610f75285bf38522bfd` |
+| `esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin` | ESPHome for the Dual R3, the same way | `3bb811c953e96d8d86f939ed0aec355ccc0ac08a555a20a0c0a2c2f99b082a6c` |
+| `esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin` | ESPHome for a Dual R3 that drives a motor, from its `esphome-motor.yaml` | `34a2a29ef47e79f5609f9290f880ed46a6dca1af8866bfbb60ce6f390dd9e8cf` |
 | `sonoff-s60-partition-table.bin` | [Sonoff's partition table](#sonoffs-partition-tables) of the S60, and of every device on its layout | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
 | `sonoff-nspanel-partition-table.bin` | Sonoff's partition table of the NSPanel: the S60's without its unused `reserve` entry | `3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70` |
 | `sonoff-th-elite-partition-table.bin` | Sonoff's partition table of the TH Elite, with a larger NVS and smaller app slots | `36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6` |

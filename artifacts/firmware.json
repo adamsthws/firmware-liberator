@@ -224,32 +224,35 @@
     },
     "sonoff-dualr3": {
       "esphome": {
-        "file": "artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-3.bin",
+        "file": "artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin",
         "config": "devices/sonoff-dualr3/esphome.yaml",
-        "version": "2026.10.0-3",
+        "version": "2026.10.0-4",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-20 20:19:59 +0000",
+        "built": "2026-11-21 12:22:44 +0000",
         "earlier_builds": [
           "2026-11-06 01:27:40 +0000",
           "2026-11-06 22:26:08 +0000",
-          "2026-11-10 15:58:52 +0000"
+          "2026-11-10 15:58:52 +0000",
+          "2026-11-20 20:19:59 +0000"
         ],
         "size": 906224,
-        "sha256": "4aaa5337f9a50af53445f209bca5a54442658081f787dbd1cc5f95fff95655d0"
+        "sha256": "3bb811c953e96d8d86f939ed0aec355ccc0ac08a555a20a0c0a2c2f99b082a6c"
       },
       "esphome-motor": {
-        "file": "artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-3.bin",
+        "file": "artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin",
         "config": "devices/sonoff-dualr3/esphome-motor.yaml",
-        "version": "2026.10.0-3",
+        "version": "2026.10.0-4",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-20 20:22:24 +0000",
-        "earlier_builds": [],
-        "size": 905168,
-        "sha256": "46fb2db3db39a5389c20c0ca84c2461aa62d29f795509610f75285bf38522bfd"
+        "built": "2026-11-21 12:23:01 +0000",
+        "earlier_builds": [
+          "2026-11-20 20:22:24 +0000"
+        ],
+        "size": 910208,
+        "sha256": "34a2a29ef47e79f5609f9290f880ed46a6dca1af8866bfbb60ce6f390dd9e8cf"
       }
     },
     "sonoff-nspanel": {

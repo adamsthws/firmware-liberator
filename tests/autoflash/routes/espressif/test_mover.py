@@ -60,6 +60,7 @@ class MotorTests(RouteTestCase):
         self.given = {}
         with mock.patch.object(esphome, "set_number", side_effect=lambda h, n, v: self.given.__setitem__(n, v)), \
                 mock.patch.object(esphome, "set_switch", side_effect=lambda h, n, v: self.given.__setitem__(n, v)), \
+                mock.patch.object(esphome, "set_select", side_effect=lambda h, n, v: self.given.__setitem__(n, v)), \
                 mock.patch.object(esphome, "entity", side_effect=lambda h, d, n: (
                     f"{self.given[n]:.1f}" if d == "number" and n in self.given else self.given.get(n))), \
                 mock.patch.object(esphome, "is_esphome", return_value=True), \
@@ -74,9 +75,11 @@ class MotorTests(RouteTestCase):
         result, told = self.check(True, cover=True)
         self.assertEqual(result["motor"], "set up")
         self.assertIn(mover.motor.ESPHOME_TRAVEL, told.call_args_list[-1].args[0])
-        # Nothing known of the motor: the short default each way, the right way round.
+        # Nothing known of the motor: the short default each way, the right way
+        # round, its wall switches Sonoff's push-buttons.
         default = mover.motor.DEFAULT_TRAVEL
-        self.assertEqual(self.given, {"Open duration": default, "Close duration": default, "Reverse direction": False})
+        self.assertEqual(self.given, {"Open duration": default, "Close duration": default, "Reverse direction": False,
+                                      "Wall switches": "Push-buttons", "Swap wall switches": False})
 
     def test_esphome_not_the_motors_build_stops_the_run(self):
         with self.assertRaisesRegex(errors.Abort, "did not take ESPHome's build for its motor"):

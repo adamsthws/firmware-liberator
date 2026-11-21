@@ -14,6 +14,23 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
+## 3.2.0
+
+- A Dual R3 that drives a motor keeps how its wall switches work through the
+  conversion: as push-buttons, acting as one is let go (S1 opens, S2 closes,
+  either stops a motor that runs, the eWeLink app's default), hold to run, or
+  one push-button on either input, and S1 and S2 swapped where the app swaps
+  them. Before, both Tasmota and ESPHome took them as hold to run, so a
+  push-button that ran the motor to its end ran it only while held. On
+  Tasmota they are its switch modes and a rule giving its shutter's own
+  commands, on ESPHome its new `Wall switches` and `Swap wall switches`
+  settings, carried across as the travel times and direction are, from
+  Sonoff's backup or from one firmware to the other
+  ([its motor mode](devices/sonoff-dualr3/README.md#a-motor)). The rule goes
+  in a free one of Tasmota's `Rule1` to `Rule3`, never over a rule of your
+  own; with all three in use, the tool says so and the switches are hold to
+  run until you free one and run it again.
+
 ## 3.1.0
 
 - Once you have signed in to eWeLink, the tool sends the project what eWeLink
