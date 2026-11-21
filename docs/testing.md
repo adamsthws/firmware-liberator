@@ -1485,7 +1485,8 @@ Assistant finds the device and adds it with no key, and the power reading
 follows the relay switched from there; the builder offers to adopt an S60,
 and not an S61 (`NOT_OFFERED` says why, and the step fails if one is ever
 offered, so the page is corrected); adopting it writes the config
-`devices/sonoff-s61/esphome.md` shows; the builder builds it and installs it
+`devices/sonoff-s61/esphome.md` shows, at the release the device's config
+names; the builder builds it and installs it
 over the air; the tool then leaves the device alone, as a build of its own,
 and `--replace-own-build` puts this project's back. Home Assistant has to
 carry on with the device after each install. It stops at the first FAIL, and

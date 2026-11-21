@@ -214,7 +214,8 @@ not depend on the computer building it. In turn, the command:
   until its owner names a newer one, and the release workflow refuses a
   version whose configs name a release that is not out, so the command sets
   every device's config to it, one not ready yet too; rebuild them if the
-  version changes first;
+  version changes first. Only the configs name that release: a page's
+  example names one already out, which the command leaves as it is;
 - checks the app is one for the device's chip that fits Sonoff's slot, says it
   is that ESPHome release, holds each Wi-Fi placeholder once and untouched,
   takes a Wi-Fi written in, and holds no path from the computer that built it;

@@ -1,11 +1,12 @@
 """tools/repo/update_firmware.py: what an ESPHome build is given besides its config."""
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.repo import update_firmware as uf
+from tools.repo import release_notes, update_firmware as uf
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -292,6 +293,28 @@ class ESPHomeRebuildTests(unittest.TestCase):
         for key in (*self.BUILDS, "sonoff-nspanel"):
             config = (self.root / "devices" / key / "esphome.yaml").read_text(encoding="utf-8")
             self.assertIn(f"devices/{key}/esphome.yaml@v3.0.0\n", config, key)
+
+
+class AdoptionReleaseTests(unittest.TestCase):
+    def test_only_the_configs_name_the_release_they_are_adopted_from(self):
+        # Each ESPHome build moves every config's package_import_url, and
+        # nothing else, to the release to come: a page or test naming that
+        # release would be left behind by the next. One shows a release
+        # already out, as an example; an image keeps the release it was built at.
+        tags = release_notes.adoption_tags()
+        self.assertTrue(tags)
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True,
+                                 check=True).stdout.splitlines()
+        left = []
+        for name in tracked:
+            if name.startswith("artifacts/") or Path(name).match(uf.kinds.ESPHOME_CONFIGS):
+                continue
+            try:
+                text = (ROOT / name).read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue   # a picture, a file deleted and not yet committed
+            left += [f"{name}: @{tag}" for tag in tags if f"@{tag}" in text]
+        self.assertEqual(left, [])
 
 
 class RaiseVersionTests(unittest.TestCase):

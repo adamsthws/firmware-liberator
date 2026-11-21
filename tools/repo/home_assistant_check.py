@@ -109,14 +109,17 @@ def builder_image(family: str, device: str) -> str:
 
 def documented_config(device: str, name: str) -> str:
     """The config devices/sonoff-s61/esphome.md shows the builder writing on
-    adopting a device ("Adding it by hand"), for this device and name: the
-    same for every device but its folder."""
+    adopting a device ("Adding it by hand"), for this device and name, at the
+    release its config names: the same for every device but its folder. The
+    page names a release already out, as an example: only the configs follow
+    the release to come (update_firmware.py moves them)."""
     page = (ROOT / "devices/sonoff-s61/esphome.md").read_text(encoding="utf-8")
     found = re.search(r"\*\*Adding it by hand\.\*\*.*?```yaml\n(.*?)```", page, re.S)
     if not found:
         raise SystemExit("devices/sonoff-s61/esphome.md shows no config under 'Adding it by hand'")
     example = re.search(r"name: (esphome-\w+)", found.group(1)).group(1)
     text = found.group(1).replace("sonoff-s61", device).replace(example, name)
+    text = re.sub(r"github://[^\s\"']+@v\d+\.\d+\.\d+", lambda _: import_url(device), text)
     return text.replace(example.replace("-", " "), name.replace("-", " "))
 
 

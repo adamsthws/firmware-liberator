@@ -36,6 +36,14 @@ class ExpectedTests(unittest.TestCase):
         self.assertNotIn("abcdef", text)
         self.assertNotIn("sonoff-s61", text)
 
+    def test_the_documented_config_is_at_the_release_the_devices_config_names(self):
+        # The page's release is an example; the builder writes the one the
+        # device's config names, which each ESPHome build moves on.
+        url = "github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v9.9.9"
+        with mock.patch.object(check, "import_url", return_value=url):
+            text = check.documented_config("sonoff-s60", "esphome-123456")
+        self.assertIn(f'  liberator.sonoff-s60: "{url}"\n', text)
+
     def test_a_config_written_as_documented_differs_in_nothing(self):
         shown = check.documented_config("sonoff-s61", "esphome-123456")
         written = shown.replace('"', "")   # unquoted, as the builder writes it
