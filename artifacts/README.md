@@ -12,8 +12,8 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 
 | File | Purpose | SHA-256 |
 |---|---|---|
-| `autoflash-bridge-esp32c3-4.4.6.ota` | [The bridge](#the-bridge) for an ESP32-C3, wrapped for the stock updater with the S60's model | `3f1a871231bcec9cb78a5222f4eb46bca0c8ab9726987a9927c0bdd241be3a38` |
-| `autoflash-bridge-esp32-4.4.6.bin` | The bridge for a classic ESP32, as a plain app the run wraps for each device's model | `3e27f0f649bac9b7ba4df98d5487bb0953d34fbab7a398d223a6468847bd8b09` |
+| `autoflash-bridge-esp32c3-4.4.7.ota` | [The bridge](#the-bridge) for an ESP32-C3, wrapped for the stock updater with the S60's model | `76ea60e27969f2c56c98976344b9a733f68dde43c4a98d2bf350bc401fb2f4c9` |
+| `autoflash-bridge-esp32-4.4.7.bin` | The bridge for a classic ESP32, as a plain app the run wraps for each device's model | `3806d575a6049a08726495fa09006a65f79f15c2147287acb437099af234c334` |
 | `tasmota32c3-bluetooth.bin` | [The Berry-capable Tasmota](#the-interim-tasmota-and-its-settings-templates) an ESP32-C3 runs for a while on its original partition layout: the exact file the successful migrations used, from Tasmota's moving `install/firmware` branch ([source](../NOTICES.md#tasmota-derived-firmware)) | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 on an ESP32-C3 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |
 | `tasmota-settings-template-esp32-15.6.0.0.bin` | The same for a classic ESP32 | `7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49` |
@@ -50,13 +50,13 @@ the device's Wi-Fi MAC), and tries the home one again every three minutes
 while nobody is joined to it. On a device whose partition table is at 0xC000
 (the BASICR4's) it only reads, as nothing but Sonoff's firmware starts there
 yet. [`../archive/bridge/README.md`](../archive/bridge/README.md) has its
-source and endpoints. 4.4.6 has been tested in the emulator, and bridges up to
-4.4.5 on real devices too.
+source and endpoints. 4.4.6 and 4.4.7 have been tested in the emulator, and
+bridges up to 4.4.5 on real devices too.
 
 Its code is the same for every device; the wrapper names the model. A bridge
 has one version, in its wrapper, its app description and its status page
-(`bridge 4.4.6`); `tools/espressif/build_vendor_ota.py` refuses any other. The
-next is 4.4.7. The stock updater is told 9.9.9 (`ANNOUNCED_VERSION`), as the
+(`bridge 4.4.7`); `tools/espressif/build_vendor_ota.py` refuses any other. The
+next is 4.4.8. The stock updater is told 9.9.9 (`ANNOUNCED_VERSION`), as the
 S61's images are sent. The stock 1.2.0 updater does not compare versions (a
 device on 1.2.0 took bridge v5 wrapped as `9.9.9`), but a later Sonoff
 firmware might refuse anything older than itself, so the version must stay

@@ -20,6 +20,6 @@ e7256acd04630418058473508d712dc506c2de4ed840b55e33ce42d962447a92  esphome-sonoff
 111de916da3c43845938d10f0bd348def91ba5acf7d72d90a6d13fb526baf776  autoflash-mover-esp32c3-1.2.0.bin
 5a4ae1ff9c0d1052ff7aab8965252749eac395fb4a1ae6b3b6f1c379513ccbcf  autoflash-mover-esp32-1.1.0.bin
 b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f  esphome-esp32-bootloader-1.1.0.bin
-3f1a871231bcec9cb78a5222f4eb46bca0c8ab9726987a9927c0bdd241be3a38  autoflash-bridge-esp32c3-4.4.6.ota
-3e27f0f649bac9b7ba4df98d5487bb0953d34fbab7a398d223a6468847bd8b09  autoflash-bridge-esp32-4.4.6.bin
+76ea60e27969f2c56c98976344b9a733f68dde43c4a98d2bf350bc401fb2f4c9  autoflash-bridge-esp32c3-4.4.7.ota
+3806d575a6049a08726495fa09006a65f79f15c2147287acb437099af234c334  autoflash-bridge-esp32-4.4.7.bin
 34a2a29ef47e79f5609f9290f880ed46a6dca1af8866bfbb60ce6f390dd9e8cf  esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin

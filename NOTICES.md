@@ -105,8 +105,8 @@ pins, [`tools/beken/openbeken/drv_autoflash_readout.c`](tools/beken/openbeken/dr
 
 ## OTA bridge
 
-`artifacts/autoflash-bridge-esp32c3-4.4.6.ota` and
-`artifacts/autoflash-bridge-esp32-4.4.6.bin` are this project's own firmware,
+`artifacts/autoflash-bridge-esp32c3-4.4.7.ota` and
+`artifacts/autoflash-bridge-esp32-4.4.7.bin` are this project's own firmware,
 under its [`LICENSE`](LICENSE), built from `archive/bridge/` with ESP-IDF
 through PlatformIO, as `archive/bridge/platformio.ini` pins it, and wrapped
 for the stock updater by `tools/espressif/build_vendor_ota.py`.

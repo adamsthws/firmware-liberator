@@ -33,7 +33,7 @@ Where stock saved no Wi-Fi it raises its own network at once, as v3 did.
 From 4.4.1 on, a bridge is named by one version: `BRIDGE_VERSION` in
 `main/main.c` and `PROJECT_VER` in `CMakeLists.txt` (a test keeps them equal)
 are the version its file is wrapped with and the one `/status` reports.
-Change both for the next bridge, 4.4.7. The stock updater is told 9.9.9
+Change both for the next bridge, 4.4.8. The stock updater is told 9.9.9
 instead: the sender wraps the app again as that, above any Sonoff release.
 
 Bridge 4.4.3 starts even when Sonoff's slot is no longer bootable - an upload
@@ -102,6 +102,18 @@ refuses `/update` and `/tasmota-settings` (409), as Tasmota and ESPHome look
 for the table at 0x8000. `/info` says where the table is. ESP-IDF's own MD5
 check is off (`sdkconfig.defaults`), as with it a blank 0x8000 fails every
 partition lookup; the bridge checks the 0xC000 table's MD5 itself.
+
+Bridge 4.4.7 keeps its radio awake on the home network
+(`esp_wifi_set_ps(WIFI_PS_NONE)` in `start_station`). Before, it ran
+ESP-IDF's default modem sleep: the radio slept between the router's beacons,
+and the router held its frames meanwhile. A router that does that badly
+stalls long transfers - the backup through `GET /flash`, Tasmota's upload -
+until they are cut off part way, while short requests go through, as
+[issue #15](https://github.com/adamsthws/firmware-liberator/issues/15) saw.
+ESP-IDF has no sdkconfig setting for it, so the bridge sets it each time it
+starts the station. The bridge runs on mains for one conversion, so sleeping
+saves nothing. The emulator does not model power saving, so it shows only
+that nothing else changed.
 
 From 4.4.2 every build has the read-only `GET /flash` (the whole chip, with
 its size in `X-Flash-Size`), `GET /flash-sha256` (the SHA-256 of the whole

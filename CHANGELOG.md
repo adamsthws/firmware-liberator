@@ -42,6 +42,9 @@ check.
   in a free one of Tasmota's `Rule1` to `Rule3`, never over a rule of your
   own; with all three in use, the tool says so and the switches are hold to
   run until you free one and run it again.
+- The installer (bridge 4.4.7) keeps its Wi-Fi awake, where it used to doze
+  between the router's beacons, so on some routers the backup or Tasmota's
+  upload is no longer cut off part way.
 
 ## 3.1.0
 

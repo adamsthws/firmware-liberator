@@ -67,6 +67,9 @@
  * 4.4.5: GET /info says what a backup cannot: the chip's exact revision, the
  * flash chip's id and real size, whether PSRAM is in the chip's package, the
  * slots, and the input pins' levels.  All read-only.
+ *
+ * 4.4.7: the station keeps its radio awake, with no modem sleep:
+ * start_station.
  */
 
 #include <stdarg.h>
@@ -119,7 +122,7 @@
 #define STA_WINDOW_MS 45000
 /* The one version: the wrapper the updater is given and the app description
  * (PROJECT_VER in ../CMakeLists.txt) carry the same; a test keeps them equal. */
-#define BRIDGE_VERSION "4.4.6"
+#define BRIDGE_VERSION "4.4.7"
 #define BRIDGE_NAME "bridge " BRIDGE_VERSION
 
 static const char *TAG = "autoflash_bridge";
@@ -762,6 +765,20 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
     }
 }
 
+/* Wi-Fi started with the station on, its radio kept awake.  ESP-IDF's default
+ * modem sleep has the station sleep between beacons, its frames held by the
+ * router meanwhile; some routers do that badly, and long transfers - the
+ * backup, Tasmota's upload - stall and are cut off.  The bridge runs on mains
+ * for one conversion, so sleeping saves nothing. */
+static esp_err_t start_station(void)
+{
+    esp_err_t err = esp_wifi_start();
+    if (err == ESP_OK && esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK) {
+        ESP_LOGW(TAG, "modem sleep stays on");  /* the bridge still works, as 4.4.6 did */
+    }
+    return err;
+}
+
 /* Raise the bridge's own network once the home network has given the bridge
  * no address for STA_WINDOW_MS - at start-up, or after losing it - so there
  * is always a way in.  On its own network, it tries the home network again
@@ -788,7 +805,7 @@ static void home_network(void)
     s_sta_trying = true;  /* STA_START, as Wi-Fi starts, connects (on_wifi_event) */
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_config(WIFI_IF_STA, &s_sta_config);
-    esp_wifi_start();
+    start_station();
 }
 
 static void station_watch(void *unused)
@@ -872,7 +889,7 @@ static esp_err_t start_access_point(void)
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, config));
     }
     memset(&station, 0, sizeof(station));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(sta_netif != NULL ? start_station() : esp_wifi_start());
     if (sta_netif != NULL) {
         ESP_LOGI(TAG, "joining the home network; own network only if that fails");
         xTaskCreate(station_watch, "sta_watch", 2048, NULL, 5, NULL);
