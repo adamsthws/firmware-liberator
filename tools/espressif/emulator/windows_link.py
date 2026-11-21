@@ -24,12 +24,18 @@ from __future__ import annotations
 import argparse
 import ctypes
 import ctypes.wintypes as wt
+import os
 import socket
 import struct
 import sys
 import threading
 import time
 import winreg
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from tools.autoflash.hostsys import EMULATOR_LINKED  # noqa: E402
 
 ADAPTER = "Autoflash emulator"
 HOST, PORT = "127.0.0.1", 7860
@@ -213,6 +219,8 @@ def main() -> int:
     link = Link(tap)
     tap.set_connected(False)
     waiting = False
+    # For as long as this runs, the tool's runs on this computer are the emulator's.
+    EMULATOR_LINKED.write_text(f"{os.getpid()}\n", encoding="utf-8")
     try:
         while True:
             conn = connect(host)
@@ -237,6 +245,7 @@ def main() -> int:
         pass
     finally:
         tap.set_connected(False)
+        EMULATOR_LINKED.unlink(missing_ok=True)
     return 0
 
 

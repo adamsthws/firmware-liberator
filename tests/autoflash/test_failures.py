@@ -24,6 +24,7 @@ CAUGHT = {
     ("openbeken.py", "short read of the device's flash"): "arrived._back_up; readout_beken.read_whole_flash",
     ("readout.py", "not from a test run"): "readout.light_post's callers (OSError, ValueError)",
     ("readout.py", "the website answered"): "readout.send's callers (OSError, ValueError)",
+    ("report_upload.py", "nowhere to send reports from here"): "report_upload.sending (OSError), kept to send",
     ("hostsys.py", "the download was cut off"): "public_copies.fetch, sonoff_firmware's sources",
     ("hostsys.py", "GetAdaptersAddresses failed"): "hostsys.lan_networks",
     ("hostsys.py", "sudo could not be run"): "firewall.ensure_firewall, as the rule not added",

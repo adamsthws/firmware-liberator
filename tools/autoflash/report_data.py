@@ -200,6 +200,13 @@ def converted_to_another(ctx: Context) -> bool:
             and routes.recorded_firmware(state) not in (None, "sonoff"))
 
 
+def tag() -> str:
+    """A report's tag: "dev" for the maintainer's own testing, left out of the
+    figures - an emulator's run (hostsys.emulated) always, else
+    AUTOFLASH_REPORT_TAG=dev - and "user" for everyone else's."""
+    return "dev" if hostsys.emulated() or os.environ.get("AUTOFLASH_REPORT_TAG") == "dev" else "user"
+
+
 def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str, Any]:
     """One device's readout's report as the API takes it, but its proof: one
     report a readout, sent as it ends (readout.run). Nothing of the device's
@@ -213,7 +220,7 @@ def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str,
     return {
         "format": FORMAT,
         "id": report_id,
-        "tag": "dev" if os.environ.get("AUTOFLASH_REPORT_TAG") == "dev" else "user",
+        "tag": tag(),
         "tool": __version__,
         "kind": "readout",
         "result": became.outcome,
@@ -295,7 +302,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     return {
         "format": FORMAT,
         "id": report_id,
-        "tag": "dev" if os.environ.get("AUTOFLASH_REPORT_TAG") == "dev" else "user",
+        "tag": tag(),
         "tool": __version__,
         "kind": "run",
         "result": result,

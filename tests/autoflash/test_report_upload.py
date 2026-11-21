@@ -66,10 +66,28 @@ class EnabledTests(Case):
             with mock.patch.dict(os.environ, {"AUTOFLASH_NO_REPORT": value}):
                 self.assertFalse(upload.enabled(SimpleNamespace(args=SimpleNamespace())), value)
         # Either chip family's: the Beken one's computer has only its device's power switch.
-        for name, value in (("AUTOFLASH_EMULATOR_URL", "http://127.0.0.1:8100"),
+        for name, value in (("AUTOFLASH_EMULATED", "1"), ("AUTOFLASH_EMULATOR_URL", "http://127.0.0.1:8100"),
                             ("AUTOFLASH_EMULATOR_POWER", "/device/power")):
             with mock.patch.dict(os.environ, {name: value}):
                 self.assertFalse(upload.enabled(SimpleNamespace(args=SimpleNamespace())), name)
+
+    def test_from_an_emulator_only_to_its_suites_own_api(self):
+        ctx = SimpleNamespace(args=SimpleNamespace())
+        for given, sent in (("http://192.0.2.9:8080/v1/reports", True), ("", False),
+                            (upload.UPLOAD_URL, False), ("https://api.firmwareliberator.com/other", False)):
+            with self.subTest(given=given), mock.patch.dict(os.environ, {"AUTOFLASH_EMULATED": "1",
+                                                                       "AUTOFLASH_REPORTS_URL": given}):
+                self.assertEqual(upload.enabled(ctx), sent)
+                self.assertEqual(upload.upload_url(), given if sent else None)
+
+    def test_nothing_is_posted_with_nowhere_to_send_it(self):
+        with mock.patch.dict(os.environ, {"AUTOFLASH_EMULATED": "1", "AUTOFLASH_REPORTS_URL": ""}), \
+                mock.patch.object(hostsys.urllib.request, "urlopen") as opened:
+            with self.assertRaises(OSError):
+                upload.post([{"id": "a"}])
+            with self.assertRaises(hostsys.FromAnEmulator):
+                upload.post([{"id": "a"}], url=upload.UPLOAD_URL.replace("api.", "API."))
+        opened.assert_not_called()
 
     def test_the_tests_themselves_send_none(self):
         # tests/no_network.py, which every test package installs, says so.

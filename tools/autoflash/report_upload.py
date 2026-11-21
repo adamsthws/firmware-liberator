@@ -65,9 +65,11 @@ NOTICE_TEXT = ("Anonymous reports of each run, and the firmware eWeLink offers y
                "the tool; --no-report stops them.")
 
 
-def upload_url() -> str:
-    """Where reports go: the API, but for a local one a test gives."""
-    return os.environ.get("AUTOFLASH_REPORTS_URL") or UPLOAD_URL
+def upload_url() -> str | None:
+    """Where reports go: the API, but for a local one a test or an emulator's
+    suite gives (AUTOFLASH_REPORTS_URL); from an emulator only that one, and
+    None without it (hostsys.site_url)."""
+    return hostsys.site_url(os.environ.get("AUTOFLASH_REPORTS_URL"), UPLOAD_URL)
 
 
 def chosen(ctx: Context) -> bool:
@@ -83,8 +85,9 @@ def chosen(ctx: Context) -> bool:
 
 
 def enabled(ctx: Context) -> bool:
-    """Whether this run sends its report: never from the emulator."""
-    return chosen(ctx) and not hostsys.emulated()
+    """Whether this run sends its report: chosen, and somewhere to send it -
+    from an emulator, only to its suite's own API (upload_url)."""
+    return chosen(ctx) and upload_url() is not None
 
 
 def start_work(report_id: str) -> subprocess.Popen[str]:
@@ -169,7 +172,10 @@ def post(reports: list[dict[str, Any]], url: str | None = None) -> dict[str, Any
     way (hostsys.SEND_WAITS; one sent twice is a duplicate it says so of): its
     answer."""
     body = json.dumps({"reports": reports}).encode()
-    request = urllib.request.Request(url or upload_url(), data=body, method="POST", headers={
+    url = url or upload_url()
+    if url is None:
+        raise OSError("nowhere to send reports from here (upload_url)")
+    request = urllib.request.Request(url, data=body, method="POST", headers={
         "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}"})
 
     def attempt() -> dict[str, Any]:

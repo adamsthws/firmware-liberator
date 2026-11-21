@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -1073,6 +1074,78 @@ class ClipboardTests(unittest.TestCase):
                 mock.patch.object(hostsys.subprocess, "run") as ran:
             self.assertFalse(hostsys.copy_to_clipboard("the report"))
         ran.assert_not_called()
+
+
+
+class EmulatedTests(unittest.TestCase):
+    """Nothing from an emulator reaches the project's website, however it was started."""
+
+    LIVE = ("https://api.firmwareliberator.com/v1/reports", "https://API.FirmwareLiberator.com./v1/readout",
+            "https://firmwareliberator.com/notify", "http://admin.firmwareliberator.com:8080/x")
+    ELSEWHERE = ("http://192.0.2.9:8080/v1/reports", "https://firmwareliberator.com.example.org/v1/reports",
+                 "https://notfirmwareliberator.com/v1/reports")
+    MARKS = {"AUTOFLASH_EMULATED": "1", "AUTOFLASH_EMULATOR_URL": "http://localhost:8100",
+             "AUTOFLASH_EMULATOR_POWER": "/device/power"}
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        linked = mock.patch.object(hostsys, "EMULATOR_LINKED", Path(folder.name) / "autoflash-emulator-linked")
+        linked.start()
+        self.addCleanup(linked.stop)
+
+    def environment(self, **marks):
+        return mock.patch.dict(os.environ, {**{name: "" for name in hostsys.EMULATOR_MARKS}, **marks})
+
+    def test_a_windows_computer_while_linked_to_an_emulator(self):
+        with self.environment():
+            hostsys.EMULATOR_LINKED.write_text("4321\n", encoding="utf-8")
+            self.assertTrue(hostsys.emulated())
+            self.assertIsNone(hostsys.site_url(None, "https://api.firmwareliberator.com/v1/reports"))
+            hostsys.EMULATOR_LINKED.unlink()
+            self.assertFalse(hostsys.emulated())
+
+    def test_each_mark_says_emulated(self):
+        self.assertEqual(set(hostsys.EMULATOR_MARKS), set(self.MARKS))
+        with self.environment():
+            self.assertFalse(hostsys.emulated())
+        for name, value in self.MARKS.items():
+            with self.subTest(name=name), self.environment(**{name: value}):
+                self.assertTrue(hostsys.emulated())
+
+    def test_the_website_is_told_by_its_address(self):
+        for url in self.LIVE:
+            self.assertTrue(hostsys.live(url), url)
+        for url in self.ELSEWHERE:
+            self.assertFalse(hostsys.live(url), url)
+
+    def test_from_an_emulator_only_a_server_of_its_own(self):
+        default = "https://api.firmwareliberator.com/v1/reports"
+        with self.environment():
+            self.assertEqual(hostsys.site_url(None, default), default)
+            self.assertEqual(hostsys.site_url(self.ELSEWHERE[0], default), self.ELSEWHERE[0])
+        for name, value in self.MARKS.items():
+            with self.subTest(name=name), self.environment(**{name: value}):
+                self.assertIsNone(hostsys.site_url(None, default))
+                self.assertIsNone(hostsys.site_url("", default))
+                self.assertEqual(hostsys.site_url(self.ELSEWHERE[0], default), self.ELSEWHERE[0])
+                for url in self.LIVE:
+                    self.assertIsNone(hostsys.site_url(url, default), url)
+
+    def test_a_request_to_the_website_from_an_emulator_is_never_sent(self):
+        opened = mock.Mock(return_value="answer")
+        with mock.patch.object(urllib.request, "urlopen", opened):
+            for name, value in self.MARKS.items():
+                for url in self.LIVE:
+                    with self.subTest(name=name, url=url), self.environment(**{name: value}):
+                        with self.assertRaises(hostsys.FromAnEmulator) as raised:
+                            hostsys.urlopen(urllib.request.Request(url, data=b"{}", method="POST"), 5)
+                        self.assertIsInstance(raised.exception, OSError)   # kept, as any failure to send
+                with self.environment(**{name: value}):
+                    self.assertEqual(hostsys.urlopen(urllib.request.Request(self.ELSEWHERE[0]), 5), "answer")
+            self.assertEqual(opened.call_count, len(self.MARKS))
+            with self.environment():
+                self.assertEqual(hostsys.urlopen(urllib.request.Request(self.LIVE[0]), 5), "answer")
 
 
 if __name__ == "__main__":

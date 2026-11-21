@@ -261,6 +261,9 @@ class PayloadTests(RouteTestCase):
             self.assertEqual(self.payload(ctx)["tag"], "dev")
         with mock.patch.dict("os.environ", {"AUTOFLASH_REPORT_TAG": "anything else"}):
             self.assertEqual(self.payload(ctx)["tag"], "user")
+        # An emulator's run is always the maintainer's testing, however it was started.
+        with mock.patch.dict("os.environ", {"AUTOFLASH_REPORT_TAG": "", "AUTOFLASH_EMULATED": "1"}):
+            self.assertEqual(self.payload(ctx)["tag"], "dev")
 
 
 class OutcomeTests(unittest.TestCase):

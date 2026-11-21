@@ -221,6 +221,16 @@ Each chip family's emulator runs a conversion with nobody at the keyboard
 ([unattended.md](unattended.md)) on an emulated device of its own, set up as
 [emulator.md](emulator.md) says.
 
+Nothing a run in an emulator says reaches the project's website: its report,
+readouts, offers and sign-up are no one's. Each emulator's image sets
+`AUTOFLASH_EMULATED`, so a run there is marked however it was started; a
+Windows computer is marked while `windows_link.py` links it to one
+(`EMULATOR_LINKED` in `tools/autoflash/hostsys.py`). A marked run sends only
+to a server a test names (`AUTOFLASH_REPORTS_URL`, `AUTOFLASH_READOUT_URL`),
+never the website: `hostsys.urlopen` refuses the website's address from it,
+whoever asks. What each run came to goes to the admin view's own figures
+instead ([Emulator stats](#emulator-stats)).
+
 ### The Espressif emulator
 
 ```sh

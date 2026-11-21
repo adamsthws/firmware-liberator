@@ -46,5 +46,7 @@ RUN chmod 0755 /opt/autoflash-emu/bin/* /opt/autoflash-emu/entrypoint.sh /opt/au
     && ln -s /opt/autoflash-emu/bin/* /usr/local/bin/
 # A UTF-8 locale: without one the tmux client takes the terminal for ASCII
 # and draws every other character as _, the tool's spinner among them.
-ENV PATH=/opt/venv/bin:$PATH LANG=C.UTF-8
+# AUTOFLASH_EMULATED: every run in the emulator is one, however it was
+# started, so none ever reaches the project's website (hostsys.emulated).
+ENV PATH=/opt/venv/bin:$PATH LANG=C.UTF-8 AUTOFLASH_EMULATED=1
 ENTRYPOINT ["/opt/autoflash-emu/entrypoint.sh"]

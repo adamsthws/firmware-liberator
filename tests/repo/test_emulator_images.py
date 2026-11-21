@@ -80,6 +80,27 @@ class NextImageTests(unittest.TestCase):
         dockerfile = (EMULATORS["espressif"] / "emu.Dockerfile").read_text(encoding="utf-8")
         self.assertRegex(dockerfile, r"(?m)^ENV .*\bLANG=C\.UTF-8\b")
 
+    def test_every_run_in_either_image_is_marked_as_the_emulators(self):
+        """AUTOFLASH_EMULATED in the image itself, not only in what starts it:
+        a run started any way there - docker exec, a second window, by hand -
+        never reaches the project's website (hostsys.emulated, urlopen)."""
+        from tools.autoflash import hostsys
+        self.assertIn("AUTOFLASH_EMULATED", hostsys.EMULATOR_MARKS)
+        for dockerfile in (EMULATORS["espressif"] / "emu.Dockerfile", EMULATORS["beken"] / "beken-emu.Dockerfile"):
+            with self.subTest(dockerfile=dockerfile.name):
+                text = dockerfile.read_text(encoding="utf-8")
+                final = text[text.rindex("\nFROM "):]   # the image's own stage, not a build stage before it
+                self.assertRegex(final, r"(?m)^ENV .*\bAUTOFLASH_EMULATED=1\b")
+
+    def test_a_windows_computer_on_an_emulator_is_marked_while_linked(self):
+        """windows_link.py, the only way Windows reaches an emulated device, keeps
+        hostsys.EMULATOR_LINKED for as long as it runs."""
+        link = (EMULATORS["espressif"] / "windows_link.py").read_text(encoding="utf-8")
+        self.assertIn("from tools.autoflash.hostsys import EMULATOR_LINKED", link)
+        written, carried = link.index("EMULATOR_LINKED.write_text("), link.index("link.carry(conn)")
+        self.assertLess(written, carried)
+        self.assertRegex(link[carried:], r"finally:\n(?:.*\n)*?\s+EMULATOR_LINKED\.unlink\(missing_ok=True\)")
+
     def test_each_patch_is_named_alike(self):
         """NNNN-what-it-does.patch, numbered in the order they are applied."""
         for family, folder in EMULATORS.items():

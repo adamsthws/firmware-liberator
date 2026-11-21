@@ -26,9 +26,11 @@ import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,16 +47,48 @@ IS_LINUX = SYSTEM == "Linux"
 
 MAC_RE = re.compile(r"([0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2}")
 
-# What each chip family's emulator gives the computer the tool runs on there:
-# the Espressif one, where your browser reaches the device's page (emu.sh); the
-# Beken one, the device's power switch (beken-emu.sh computer).
-EMULATOR_MARKS = ("AUTOFLASH_EMULATOR_URL", "AUTOFLASH_EMULATOR_POWER")
+# What marks a run as in an emulator: AUTOFLASH_EMULATED, set by each
+# emulator's own image (emu.Dockerfile, beken-emu.Dockerfile), so every run in
+# one is marked however it was started; and what each chip family's emulator
+# gives the computer the tool runs on there: the Espressif one, where your
+# browser reaches the device's page (emu.sh); the Beken one, the device's
+# power switch (beken-emu.sh computer).
+EMULATOR_MARKS = ("AUTOFLASH_EMULATED", "AUTOFLASH_EMULATOR_URL", "AUTOFLASH_EMULATOR_POWER")
+# A Windows computer is on an emulator's network while
+# tools/espressif/emulator/windows_link.py runs, which keeps this file for as
+# long: a run there is the emulator's, from whatever window it was started.
+# One a link left behind, cut off, stops reports from this computer alone,
+# until the next link removes it.
+EMULATOR_LINKED = Path(tempfile.gettempdir()) / "autoflash-emulator-linked"
+# The project's website, its API's address among it, which nothing from an
+# emulator ever reaches (urlopen).
+LIVE_SITE = "firmwareliberator.com"
 
 
 def emulated() -> bool:
     """Whether this run is in an emulator, either chip family's: its device is
     no one's, so nothing it says may reach the project's website as if it were."""
-    return any(os.environ.get(name) for name in EMULATOR_MARKS)
+    return any(os.environ.get(name) for name in EMULATOR_MARKS) or EMULATOR_LINKED.exists()
+
+
+def live(url: str) -> bool:
+    """Whether `url` is on the project's website (LIVE_SITE)."""
+    host = (urllib.parse.urlsplit(url).hostname or "").lower().rstrip(".")
+    return host == LIVE_SITE or host.endswith("." + LIVE_SITE)
+
+
+def site_url(given: str | None, default: str) -> str | None:
+    """Where a run sends something to the project's API: `given`, a test's
+    own server (from the environment), else `default`, the website. From an
+    emulator, only a `given` that is not the website: None otherwise."""
+    if emulated():
+        return given if given and not live(given) else None
+    return given or default
+
+
+class FromAnEmulator(OSError):
+    """A request to the project's website from an emulator, refused before it
+    is sent (urlopen): its senders keep what they had, as for any failure."""
 
 Runner = Callable[..., subprocess.CompletedProcess]
 
@@ -218,7 +252,12 @@ def with_trusted_roots(connect: Callable[[ssl.SSLContext], Any]) -> Any:
 
 
 def urlopen(request: urllib.request.Request, timeout: float):
-    """urllib's urlopen, with with_trusted_roots()'s second try."""
+    """urllib's urlopen, with with_trusted_roots()'s second try. Never to the
+    project's website from an emulator, whoever asks: its runs are no one's,
+    and every send to the website comes through here (site_url chooses where
+    each goes; this holds wherever it is told)."""
+    if emulated() and live(request.full_url):
+        raise FromAnEmulator(f"{request.full_url}: not sent, as this run is in an emulator")
     return with_trusted_roots(lambda context: urllib.request.urlopen(request, timeout=timeout, context=context))
 
 

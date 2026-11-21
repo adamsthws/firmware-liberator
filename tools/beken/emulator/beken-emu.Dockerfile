@@ -25,6 +25,8 @@ RUN cd /opt/beken-emulator && for p in /patches/*.patch; do patch -s -p1 < "$p";
 COPY requirements.txt /tmp/
 RUN python3 -m venv /opt/venv && /opt/venv/bin/python -m pip install -q -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
-ENV PATH=/opt/venv/bin:$PATH BK_EMU_ROOT=/opt/beken-emulator PYTHONDONTWRITEBYTECODE=1
+# AUTOFLASH_EMULATED: every run on the emulator's computer is one, however it
+# was started, so none ever reaches the project's website (hostsys.emulated).
+ENV PATH=/opt/venv/bin:$PATH BK_EMU_ROOT=/opt/beken-emulator PYTHONDONTWRITEBYTECODE=1 AUTOFLASH_EMULATED=1
 WORKDIR /work
 ENTRYPOINT ["python"]

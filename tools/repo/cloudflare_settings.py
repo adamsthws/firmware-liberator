@@ -64,10 +64,10 @@ sys.path.insert(0, str(ROOT))
 # know.
 ENV_FILE = ROOT / "tools" / "repo" / ".env.infra"
 
-from tools.autoflash import credentials  # noqa: E402
+from tools.autoflash import credentials, hostsys  # noqa: E402
 from tools.repo import emulator_stats  # noqa: E402
 
-ZONE = "firmwareliberator.com"
+ZONE = hostsys.LIVE_SITE   # the tool's own name for it, which no emulator's run reaches
 API = "https://api.cloudflare.com/client/v4"
 
 # Email addresses in the site's pages are hidden from scrapers, shown to a

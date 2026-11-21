@@ -207,6 +207,10 @@ class WhereTests(unittest.TestCase):
                                           "AUTOFLASH_EMULATOR_URL": "x"}):
             self.assertEqual(readout.upload_url(), "http://127.0.0.1:9/readout")
 
+    def test_never_the_website_from_an_emulator_even_given_it(self):
+        with mock.patch.dict(os.environ, {"AUTOFLASH_READOUT_URL": readout.UPLOAD_URL, "AUTOFLASH_EMULATED": "1"}):
+            self.assertIsNone(readout.upload_url())
+
 
 class ProofTests(unittest.TestCase):
     def test_it_is_the_work_the_worker_checks(self):

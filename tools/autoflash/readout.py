@@ -344,14 +344,13 @@ def became(ctx: Context) -> Became:
 
 def upload_url() -> str | None:
     """Where to send it: AUTOFLASH_READOUT_URL when set (a test's own server),
-    else the website - but never from the emulator or an unattended run, which
-    would send a test's flash as a device's."""
+    else the website - but never from an unattended run, nor the website from
+    an emulator (hostsys.site_url), which would send a test's flash as a
+    device's."""
     given = os.environ.get("AUTOFLASH_READOUT_URL")
-    if given:
-        return given
-    if hostsys.emulated() or prompts.UNATTENDED:
+    if not given and prompts.UNATTENDED:
         return None
-    return UPLOAD_URL
+    return hostsys.site_url(given, UPLOAD_URL)
 
 
 def describe(device: dict[str, Any]) -> str:
