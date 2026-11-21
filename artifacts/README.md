@@ -21,16 +21,16 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 | `autoflash-recovery-safeboot-esp32-imprintable.bin` | The same for a classic ESP32 | `b6398e14d9d81155763fc61f5d2464f9e8f4c204e917fd47fff27161181edf4d` |
 | `autoflash-recovery-safeboot-esp32c3-imprintable-ece36fd964c1.bin` | The ESP32-C3's recovery Safeboot before this one, as releases up to 3.1.0 published it ([kept](#the-recovery-safeboot) for runs they began) | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
 | `autoflash-recovery-safeboot-esp32-imprintable-f1a25251f775.bin` | The same for a classic ESP32 | `f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c` |
-| `autoflash-mover-esp32c3-1.2.0.bin` | [The mover](#the-mover) for an ESP32-C3, a small ESPHome the run uses for a minute or two when a device leaves Tasmota | `111de916da3c43845938d10f0bd348def91ba5acf7d72d90a6d13fb526baf776` |
-| `autoflash-mover-esp32-1.1.0.bin` | The mover for a classic ESP32 | `5a4ae1ff9c0d1052ff7aab8965252749eac395fb4a1ae6b3b6f1c379513ccbcf` |
+| `autoflash-mover-esp32c3-1.3.0.bin` | [The mover](#the-mover) for an ESP32-C3, a small ESPHome the run uses for a minute or two when a device leaves Tasmota | `d0b85963917624053a8a529ee42cccce54a0a2542c562274693a2f554f5e3243` |
+| `autoflash-mover-esp32-1.2.0.bin` | The mover for a classic ESP32 | `9ae262cb5bb0d1b8669f9864322882d0f1b198d943c862c415b9af0661428c52` |
 | `esphome-sonoff-s60-bootloader-1.2.0.bin` | [ESPHome's bootloader](#esphome-for-espressif-devices) for an ESP32-C3: it replaces Sonoff's when ESPHome is installed, so ESPHome can roll back an update that fails to start | `3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433` |
-| `esphome-esp32-bootloader-1.1.0.bin` | ESPHome's bootloader for a classic ESP32 | `b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f` |
-| `esphome-sonoff-s60-imprintable-2026.10.0-3.bin` | [ESPHome for the S60](#esphome-for-espressif-devices), installed instead of the final Tasmota when ESPHome is chosen, with placeholders for the device's Wi-Fi | `4be41ac3bd7a734ae6a58cbe673f1efd6faffbd309ec45ffe02c6d39af874ee4` |
-| `esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin` | ESPHome for the POW Elite, the same way | `668fd7526e5a579e831866fdb30a88e96f0e28633068c4ae49375050b7964320` |
-| `esphome-sonoff-powct-imprintable-2026.10.0-4.bin` | ESPHome for the POW Ring (POWCT), the same way | `79e9a36182a87ee358c13ec4961bac89333d97abc2dffe2b156baaacd828c0d0` |
-| `esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin` | ESPHome for the TH Elite, the same way | `e7256acd04630418058473508d712dc506c2de4ed840b55e33ce42d962447a92` |
-| `esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin` | ESPHome for the Dual R3, the same way | `3bb811c953e96d8d86f939ed0aec355ccc0ac08a555a20a0c0a2c2f99b082a6c` |
-| `esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin` | ESPHome for a Dual R3 that drives a motor, from its `esphome-motor.yaml` | `34a2a29ef47e79f5609f9290f880ed46a6dca1af8866bfbb60ce6f390dd9e8cf` |
+| `esphome-esp32-bootloader-1.2.0.bin` | ESPHome's bootloader for a classic ESP32 | `b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f` |
+| `esphome-sonoff-s60-imprintable-2026.10.0-4.bin` | [ESPHome for the S60](#esphome-for-espressif-devices), installed instead of the final Tasmota when ESPHome is chosen, with placeholders for the device's Wi-Fi | `5472c9da167bb962778b1e1e1dda7459f98ff96b7fe0349b06d8c566ca003259` |
+| `esphome-sonoff-pow-elite-imprintable-2026.10.0-4.bin` | ESPHome for the POW Elite, the same way | `c5f0069823b8f5fa686856afcd9b89c0fa5ceb6f28d31512d0c6e2f4403b9471` |
+| `esphome-sonoff-powct-imprintable-2026.10.0-5.bin` | ESPHome for the POW Ring (POWCT), the same way | `561bb066b6c9bd6eb3415b67076753722a0f3f7a1d64974be2c613e13fec6cad` |
+| `esphome-sonoff-th-elite-imprintable-2026.10.0-4.bin` | ESPHome for the TH Elite, the same way | `8a8b11574c041d057e66a788de94cc42d2628abf25695fcf4879f94ab9a3ccdf` |
+| `esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin` | ESPHome for the Dual R3, the same way | `bbb99356be084f6a7e93f55aa2e92cd71c942f1f8ac8fbb4cd8b7ffa101dc5bb` |
+| `esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin` | ESPHome for a Dual R3 that drives a motor, from its `esphome-motor.yaml` | `7c21392de73225300a62400bf119330df0c19c012c0e63222d7bf79e3f38be53` |
 | `sonoff-s60-partition-table.bin` | [Sonoff's partition table](#sonoffs-partition-tables) of the S60, and of every device on its layout | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
 | `sonoff-nspanel-partition-table.bin` | Sonoff's partition table of the NSPanel: the S60's without its unused `reserve` entry | `3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70` |
 | `sonoff-th-elite-partition-table.bin` | Sonoff's partition table of the TH Elite, with a larger NVS and smaller app slots | `36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6` |

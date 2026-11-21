@@ -40,24 +40,24 @@ ESP-IDF, under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-
 its bundled components keep their own notices and licences, listed in the
 ESP-IDF source for the version each build names.
 
-`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-3.bin` is built with ESPHome
+`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-4.bin` is built with ESPHome
 2026.10.0 and ESP-IDF 5.5.6 from this project's config
 [`devices/sonoff-s60/esphome.yaml`](devices/sonoff-s60/esphome.yaml), with `esphome compile`.
 Its corresponding source is the
 [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tree/2026.10.0)
 and that config.
 
-`artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin`,
-`artifacts/esphome-sonoff-powct-imprintable-2026.10.0-4.bin`,
-`artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-3.bin` and
+`artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-4.bin`,
+`artifacts/esphome-sonoff-powct-imprintable-2026.10.0-5.bin`,
+`artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-4.bin` and
 `artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-4.bin` are built the
 same way, from the same release, each from its device's `esphome.yaml`, and
 `artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin` from the
 Dual R3's `esphome-motor.yaml`.
 
-`artifacts/autoflash-mover-esp32c3-1.2.0.bin`,
-`artifacts/autoflash-mover-esp32-1.1.0.bin` and the latter's bootloader,
-`artifacts/esphome-esp32-bootloader-1.1.0.bin`, are built the same way with
+`artifacts/autoflash-mover-esp32c3-1.3.0.bin`,
+`artifacts/autoflash-mover-esp32-1.2.0.bin` and the latter's bootloader,
+`artifacts/esphome-esp32-bootloader-1.2.0.bin`, are built the same way with
 ESPHome 2026.10.0 and ESP-IDF 5.5.6 from
 [`devices/esp32c3/mover.yaml`](devices/esp32c3/mover.yaml) and
 [`devices/esp32/mover.yaml`](devices/esp32/mover.yaml), each with

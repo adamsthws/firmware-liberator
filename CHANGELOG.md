@@ -54,6 +54,11 @@ check.
   with Bluetooth off, and nothing turns that off
   ([why](docs/technical-details.md#the-wi-fi-radio-kept-awake)). A device
   converted before keeps sleeping until you give it `SetOption127 1`.
+- ESPHome keeps its Wi-Fi awake (`power_save_mode: none`), where on an
+  Espressif device it used to doze between the router's beacons, the
+  default; so does the mover the run uses leaving Tasmota. A Beken device's
+  ESPHome never dozed. A device adopted into Home Assistant has it once its
+  package names this release.
 
 ## 3.1.0
 
@@ -214,8 +219,11 @@ check.
 - When the device never reaches this computer, the message names a guest
   network or client isolation on the router as a likely cause, beside this
   computer's firewall.
-- ESPHome for the S60 rebuilt with
-  [2026.10.0](https://github.com/esphome/esphome/releases/tag/2026.10.0).
+- ESPHome keeps its Wi-Fi awake (`power_save_mode: none`), where on an
+  Espressif device it used to doze between the router's beacons, the
+  default; so does the mover the run uses leaving Tasmota. A Beken device's
+  ESPHome never dozed. A device adopted into Home Assistant has it once its
+  package names this release.
 - ESPHome for the Sonoff S61 rebuilt with
   [2026.10.0](https://github.com/esphome/esphome/releases/tag/2026.10.0).
 - ESPHome for the Sonoff Basic Gen5 rebuilt with

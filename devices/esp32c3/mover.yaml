@@ -21,7 +21,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.mover
-    version: "1.2.0"
+    version: "1.3.0"
   # GET /mover, so the tool knows the mover, and POST /restart, so it can
   # restart one that still answers (devices/mover_routes.h).
   includes:
@@ -76,6 +76,9 @@ esp32:
 
 wifi:
   reboot_timeout: 0s
+  # The radio kept awake for the firmware it takes, as on every device's
+  # ESPHome (shared-esphome/base.yaml says why).
+  power_save_mode: none
   # Two minutes away from the home network, and it raises its own, where the
   # captive portal's page takes new Wi-Fi details - the home network changed
   # since the device last joined it, say - while it goes on trying the home one.

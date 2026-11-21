@@ -18,7 +18,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-s60
-    version: "2026.10.0-3"
+    version: "2026.10.0-4"
   includes:
     - <nvs.h>
     - <soc/usb_serial_jtag_reg.h>

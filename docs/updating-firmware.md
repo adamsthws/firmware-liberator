@@ -72,7 +72,7 @@ releases. Replacing it is a decision of its own: `--new-bootloader`, then the
 whole fault suite and real devices.
 
 **A file's name says what it belongs to.** A chip's file names the chip
-(`autoflash-mover-esp32-1.1.0.bin`), and a device's own names the device
+(`autoflash-mover-esp32-1.2.0.bin`), and a device's own names the device
 (`esphome-sonoff-s60-imprintable-*.bin`). The ESP32-C3's bootloader and
 settings template were published before the rule, and published
 files never change, so each keeps its name until it is next built

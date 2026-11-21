@@ -166,6 +166,9 @@ each firmware it installs keeps the radio awake:
 - **Official Tasmota** is given `SetOption127 1` with its template and name
   as its settings are reset (F4). A Tasmota you installed yourself, given only
   its template, keeps the setting you chose.
+- **The mover and ESPHome** set `power_save_mode: none`
+  ([`base.yaml`](../devices/shared-esphome/base.yaml)): ESPHome's default on
+  an ESP32 is light sleep. On a Beken device its default is none already.
 - **OpenBeken** saves no power unless its `PowerSave` command is given, and
   neither the tool nor its driver gives it.
 

@@ -306,7 +306,9 @@ not complete", or "the connection to the device was lost" while it read the
 backup. The device keeps what it had, so running again is safe. A strong
 signal does not rule this out. Most often the cause is the link between your
 router and the device, or a mesh node, Wi-Fi extender or powerline adapter
-between them, which drops traffic to the device.
+between them, which drops traffic to the device. Each firmware the tool
+installs keeps its Wi-Fi awake for this, but for the ESP32-C3's Berry Tasmota,
+which cannot ([why](technical-details.md#the-wi-fi-radio-kept-awake)).
 
 - **If your computer has Wi-Fi** and the device is still on the installer
   (backing up, or installing the interim firmware), go around the router.

@@ -8,7 +8,7 @@ a device added later gets all of it by including the same files.
 
 | File | What it gives | Included |
 |---|---|---|
-| [`base.yaml`](base.yaml) | The API (with `autoflash_wifi`), updates, the web page, Wi-Fi and the device's own network, the clock, the `WiFi Signal` sensor, and the network it started on saved so that it stays | by every device |
+| [`base.yaml`](base.yaml) | The API (with `autoflash_wifi`), updates, the web page, Wi-Fi (kept awake: `power_save_mode: none`) and the device's own network, the clock, the `WiFi Signal` sensor, and the network it started on saved so that it stays | by every device |
 | [`wifi-esp32.yaml`](wifi-esp32.yaml) | The network to start on, from the placeholders the conversion tool writes into the image | by every Espressif device |
 | [`wifi-bk72xx.yaml`](wifi-bk72xx.yaml) | The network to start on, from the stock firmware's store, read with [`ef40.h`](ef40.h) | by every Beken device |
 | [`relay.yaml`](relay.yaml) | A relay's power-on state (`Off`, `On`, `Last state`), its state written to flash as it switches, and its countdown | once for each relay |
