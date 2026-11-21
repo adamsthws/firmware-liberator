@@ -104,10 +104,10 @@ are lost ([Tasmota's own names](#tasmotas-own-names)).
   stored hostname that has a `%` in it with its own compiled default
   (`tasmota.ino`).
 - Published as [`artifacts/README.md`](../artifacts/README.md) says: the
-  header from `configure_imprintable_safeboot.py`, the build from
-  [`tools/espressif/safeboot/build_recovery_safeboot.sh`](../tools/espressif/safeboot/build_recovery_safeboot.sh),
-  then `tools/espressif/safeboot/sanitise_safeboot.py` and `tools/espressif/safeboot/validate_imprintable_safeboot.py`,
-  into `artifacts/autoflash-recovery-safeboot-imprintable.bin` (an
+  header from `configure_imprintable_safeboot.py`, built and checked with
+  `tools/espressif/safeboot/validate_imprintable_safeboot.py` by
+  `tools/repo/update_firmware.py`, into
+  `artifacts/autoflash-recovery-safeboot-esp32c3-imprintable.bin` (an
   ESP32-C3's) and `artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin`
   (a classic ESP32's); a test checks
   the pattern is in the image (`tests/repo/test_published_artifacts.py`).

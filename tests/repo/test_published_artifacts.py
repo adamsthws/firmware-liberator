@@ -107,17 +107,19 @@ class PublishedArtifactTests(unittest.TestCase):
         self.assertLessEqual(handlers, int(re.search(r"config\.max_uri_handlers = (\d+);", source)[1]))
 
     def test_the_published_startup_firmware_saves_the_wifi(self):
-        from tools.espressif.safeboot.safeboot_migration import PUBLISHED_RECOVERY_FILE, PUBLISHED_RECOVERY_SHA256
-        image = PUBLISHED_RECOVERY_FILE.read_bytes()
-        self.assertEqual(sha256_bytes(image), PUBLISHED_RECOVERY_SHA256)
-        self.assertIn(b"Autoflash recovery Wi-Fi defaults active", image)
-        self.assertIn(b"Autoflash recovery: Wi-Fi settings saved for the next firmware", image)
-        # The version that wipes NVS and reads the record back before saying so.
-        self.assertIn(b"Autoflash recovery: settings not saved, read-back failed", image)
-        # Named as the tool, not one device, on the network and in its log.
-        self.assertIn(b"autoflash-recovery-%4X", image)
-        self.assertNotIn(b"S60 recovery", image)
-        self.assertNotIn(b"s60-recovery", image)
+        from tools.espressif import chips
+        from tools.espressif.safeboot.safeboot_migration import published_recovery_file, published_recovery_sha256
+        for chip in chips.ALL:
+            image = published_recovery_file(chip).read_bytes()
+            self.assertEqual(sha256_bytes(image), published_recovery_sha256(chip))
+            self.assertIn(b"Autoflash recovery Wi-Fi defaults active", image)
+            self.assertIn(b"Autoflash recovery: Wi-Fi settings saved for the next firmware", image)
+            # The version that wipes NVS and reads the record back before saying so.
+            self.assertIn(b"Autoflash recovery: settings not saved, read-back failed", image)
+            # Named as the tool, not one device, on the network and in its log.
+            self.assertIn(b"autoflash-recovery-%4X", image)
+            self.assertNotIn(b"S60 recovery", image)
+            self.assertNotIn(b"s60-recovery", image)
 
 
 class PublishedESPHomeTests(unittest.TestCase):

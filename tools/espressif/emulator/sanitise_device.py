@@ -53,12 +53,13 @@ from tools.autoflash.routes.espressif import images  # noqa: E402
 from tools.espressif.emulator.copy_device import MAC_AT  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse as parse_nvs  # noqa: E402
 from tools.autoflash.sonoff_secrets import PUBLIC_FIELDS, sonoff_values  # noqa: E402,F401
+from tools.espressif import chips  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     PUBLISHED_BLUETOOTH_FILE,
-    PUBLISHED_RECOVERY_FILE,
     SOURCE_TABLE_SHA256,
     OFFICIAL_TABLE_SHA256,
     TARGET_TABLE_SHA256,
+    published_recovery_file,
     parse_partition_sector,
     sha256_bytes,
 )
@@ -191,12 +192,13 @@ def sanitise_flash(flash: bytes) -> tuple[bytes, dict[str, str]]:
         for label in ("reserve", "phy_init"):
             proof[label] = "left out (erased): Sonoff's"
     else:
-        startup = imprint.imprint(PUBLISHED_RECOVERY_FILE.read_bytes(), EMULATOR_WIFI, "")
+        published = published_recovery_file(chips.ESP32C3)  # the S60's: the public devices are S60s
+        startup = imprint.imprint(published.read_bytes(), EMULATOR_WIFI, "")
         if region("safeboot")[:len(startup)] != startup:
             raise Refused("its Safeboot partition is not the published startup firmware "
                           "with the emulator's network written in")
         place("safeboot", startup)
-        proof["safeboot"] = (f"{PUBLISHED_RECOVERY_FILE.relative_to(ROOT)} with '{EMULATOR_WIFI}' "
+        proof["safeboot"] = (f"{published.relative_to(ROOT)} with '{EMULATOR_WIFI}' "
                              "written in, byte for byte")
         # Before F2: what is left of Sonoff's slots, and the copy of its
         # settings the repartition keeps, until the official app is written.

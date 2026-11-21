@@ -47,8 +47,9 @@ check.
   upload is no longer cut off part way.
 - Tasmota keeps its Wi-Fi awake, where it used to doze between the router's
   beacons, so on some routers a long transfer to it is no longer cut off part
-  way: a converted device's Tasmota has `SetOption127 1`, and the classic
-  ESP32's Berry Tasmota runs with it during the conversion. The ESP32-C3's
+  way: a converted device's Tasmota has `SetOption127 1`, and the startup
+  firmware that takes its upload and the classic ESP32's Berry Tasmota run
+  with it during the conversion. The ESP32-C3's
   Berry Tasmota still dozes: its Bluetooth driver keeps the Wi-Fi asleep, even
   with Bluetooth off, and nothing turns that off
   ([why](docs/technical-details.md#the-wi-fi-radio-kept-awake)). A device

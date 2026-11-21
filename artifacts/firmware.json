@@ -73,6 +73,19 @@
         "version": "4.4.7",
         "size": 880772,
         "sha256": "76ea60e27969f2c56c98976344b9a733f68dde43c4a98d2bf350bc401fb2f4c9"
+      },
+      "recovery": {
+        "file": "artifacts/autoflash-recovery-safeboot-esp32c3-imprintable.bin",
+        "tasmota_commit": "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892",
+        "earlier": [
+          {
+            "file": "artifacts/autoflash-recovery-safeboot-esp32c3-imprintable-ece36fd964c1.bin",
+            "size": 811952,
+            "sha256": "ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd"
+          }
+        ],
+        "size": 811888,
+        "sha256": "2fd4a50c58ed5619f788613cf89b894487059683df40b9f86d5b5c68666f1207"
       }
     },
     "esp32": {
@@ -132,8 +145,15 @@
       "recovery": {
         "file": "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
         "tasmota_commit": "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892",
-        "size": 801568,
-        "sha256": "f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c"
+        "earlier": [
+          {
+            "file": "artifacts/autoflash-recovery-safeboot-esp32-imprintable-f1a25251f775.bin",
+            "size": 801568,
+            "sha256": "f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c"
+          }
+        ],
+        "size": 801584,
+        "sha256": "b6398e14d9d81155763fc61f5d2464f9e8f4c204e917fd47fff27161181edf4d"
       },
       "settings_template": {
         "file": "artifacts/tasmota-settings-template-esp32-15.6.0.0.bin",

@@ -1,4 +1,4 @@
-ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd  autoflash-recovery-safeboot-imprintable.bin
+2fd4a50c58ed5619f788613cf89b894487059683df40b9f86d5b5c68666f1207  autoflash-recovery-safeboot-esp32c3-imprintable.bin
 a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708  tasmota32c3-bluetooth.bin
 d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5  tasmota-settings-template-15.6.0.0.bin
 3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433  esphome-sonoff-s60-bootloader-1.2.0.bin
@@ -7,7 +7,7 @@ f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf  sonoff-s60-par
 4be41ac3bd7a734ae6a58cbe673f1efd6faffbd309ec45ffe02c6d39af874ee4  esphome-sonoff-s60-imprintable-2026.10.0-3.bin
 583ce81572f81be40882765bcdf07be0f03dbaa1f0c81dfa9f130861d05ed091  esphome-sonoff-s61-2026.10.0-4.rbl
 668fd7526e5a579e831866fdb30a88e96f0e28633068c4ae49375050b7964320  esphome-sonoff-pow-elite-imprintable-2026.10.0-3.bin
-f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c  autoflash-recovery-safeboot-esp32-imprintable.bin
+b6398e14d9d81155763fc61f5d2464f9e8f4c204e917fd47fff27161181edf4d  autoflash-recovery-safeboot-esp32-imprintable.bin
 7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49  tasmota-settings-template-esp32-15.6.0.0.bin
 3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70  sonoff-nspanel-partition-table.bin
 36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6  sonoff-th-elite-partition-table.bin
@@ -23,3 +23,5 @@ b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f  esphome-esp32-
 76ea60e27969f2c56c98976344b9a733f68dde43c4a98d2bf350bc401fb2f4c9  autoflash-bridge-esp32c3-4.4.7.ota
 3806d575a6049a08726495fa09006a65f79f15c2147287acb437099af234c334  autoflash-bridge-esp32-4.4.7.bin
 34a2a29ef47e79f5609f9290f880ed46a6dca1af8866bfbb60ce6f390dd9e8cf  esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin
+ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd  autoflash-recovery-safeboot-esp32c3-imprintable-ece36fd964c1.bin
+f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c  autoflash-recovery-safeboot-esp32-imprintable-f1a25251f775.bin

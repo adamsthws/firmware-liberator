@@ -263,6 +263,13 @@ class RecoverySafebootHeaderTests(unittest.TestCase):
     def test_settings_saving_is_asked_for_explicitly(self):
         self.assertIn("AUTOFLASH_RECOVERY_PERSIST_SETTINGS", self.header(True))
 
+    def test_its_wifi_is_kept_out_of_modem_sleep(self):
+        # SetOption127's default, for the upload of official Tasmota it takes,
+        # and in the record it saves for that; the private build's alike.
+        from tools.espressif.safeboot.configure_recovery_safeboot import render_header
+        for header in (self.header(True), self.header(False), render_header("Home", "password1").decode()):
+            self.assertIn("#undef WIFI_NO_SLEEP\n#define WIFI_NO_SLEEP true\n", header)
+
     def test_the_patch_guards_against_being_used_alone(self):
         patch = (Path(__file__).resolve().parents[2]
                  / "tools/espressif/safeboot/repartition/recovery-safeboot/persist-settings.patch").read_text()

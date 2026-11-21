@@ -79,7 +79,6 @@ class FileNameTests(unittest.TestCase):
 
     UNTIL_REBUILT = {
         "esphome-sonoff-s60-bootloader-1.2.0.bin": "3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433",
-        "autoflash-recovery-safeboot-imprintable.bin": "ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd",
         "tasmota-settings-template-15.6.0.0.bin": "d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5",
     }
     # Tasmota's own build, under Tasmota's own name for it.
@@ -101,6 +100,8 @@ class FileNameTests(unittest.TestCase):
                  for owner, section in PINS[family].items() for pin in section.values() if "file" in pin}
         for chip in chips.ALL:
             found.setdefault(safeboot_migration.published_recovery_file(chip).name, chip.key)
+            for path in safeboot_migration.earlier_recovery_files(chip):
+                found.setdefault(path.name, chip.key)
             found.setdefault(tasmota_settings.template_path(ROOT, chip).name, chip.key)
         found.setdefault(images.SONOFF_TABLE.name, kinds.SONOFF_S60.key)
         return found
@@ -127,7 +128,7 @@ class FileNameTests(unittest.TestCase):
     def test_update_firmware_names_each_chips_files_by_the_rule(self):
         for chip in chips.ALL:
             for name in uf.CHIP_FILES:
-                file = uf.chip_file(chip, name, version="1.0.0", suffix=".bin")
+                file = uf.chip_file(chip, name, version="1.0.0", suffix=".bin", sha="0123456789ab")
                 self.assertTrue(self.named_by(file, chip.key), file)
                 self.assertFalse(any(self.named_by(file, other.key) for other in chips.ALL if other is not chip), file)
         self.assertEqual(uf.ESPHOME_BUILDS["mover"][1], uf.chip_file(chips.ESP32C3, "mover"))
@@ -1108,8 +1109,32 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertFalse((self.root / "artifacts" / "old.bin").exists())
         self.assertEqual(section["bridge"]["file"], "artifacts/new.bin")
 
+    def test_a_recovery_safeboot_a_release_published_is_kept_once_replaced(self):
+        # A run that release began put it on at E3, and G1 proves its Wi-Fi by it.
+        from unittest import mock
+        name = "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin"
+        (self.root / name).write_bytes(b"released")
+        pin = {"file": name, "earlier": [{"file": "artifacts/before.bin", "size": 1, "sha256": "0" * 64}]}
+        with mock.patch.object(uf, "released_file", return_value=True):
+            earlier = uf.kept_recoveries(chips.ESP32, pin)
+        digest = sha256_bytes(b"released")
+        kept = f"artifacts/autoflash-recovery-safeboot-esp32-imprintable-{digest[:12]}.bin"
+        self.assertEqual(earlier, [*pin["earlier"], {"file": kept, "size": 8, "sha256": digest}])
+        self.assertEqual((self.root / kept).read_bytes(), b"released")
+        self.assertIn(f"{digest}  {Path(kept).name}\n", (self.root / "artifacts" / "SHA256SUMS").read_text(encoding="utf-8"))
+        self.assertIn(f"!{kept}\n", (self.root / ".gitignore").read_text(encoding="utf-8"))
+
+    def test_a_recovery_safeboot_no_release_published_is_not_kept(self):
+        from unittest import mock
+        name = "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin"
+        (self.root / name).write_bytes(b"built since")
+        with mock.patch.object(uf, "released_file", return_value=False):
+            self.assertEqual(uf.kept_recoveries(chips.ESP32, {"file": name}), [])
+        self.assertEqual(sorted(p.name for p in (self.root / "artifacts").glob("autoflash-recovery-*")),
+                         ["autoflash-recovery-safeboot-esp32-imprintable.bin"])
+
     def test_a_part_of_a_chip_that_does_not_exist_is_refused(self):
-        code, errors = self.run_main("esp32c3", "recovery")
+        code, errors = self.run_main("esp32c3", "tables")
         self.assertEqual(code, 1)
         self.assertIn("no such part", errors)
 

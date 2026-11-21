@@ -36,7 +36,7 @@ ordinary release download lacks:
   memory for Bluetooth that Berry runs out while holding a bootloader to
   write.
 - **The small temporary startup firmware**,
-  [`artifacts/autoflash-recovery-safeboot-imprintable.bin`](../artifacts/autoflash-recovery-safeboot-imprintable.bin)
+  [`artifacts/autoflash-recovery-safeboot-esp32c3-imprintable.bin`](../artifacts/autoflash-recovery-safeboot-esp32c3-imprintable.bin)
   (`-esp32-imprintable.bin` for the classic ESP32). It holds placeholders,
   not a real network name or password, so the published copy is safe to
   share. It also saves the Wi-Fi where Tasmota reads it, so the official
@@ -160,6 +160,9 @@ each firmware it installs keeps the radio awake:
   puts the Wi-Fi into modem sleep as it joins and keeps it there, whether or
   not Bluetooth is turned on (it is not: `SetOption115` is off, so the
   Bluetooth radio never starts), and no setting or command undoes that.
+- **The startup firmware** (the recovery Safeboot) is built with
+  `SetOption127` on by default, for the upload of official Tasmota it takes,
+  and the settings it saves for official Tasmota carry it.
 - **Official Tasmota** is given `SetOption127 1` with its template and name
   as its settings are reset (F4). A Tasmota you installed yourself, given only
   its template, keeps the setting you chose.

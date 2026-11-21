@@ -16,15 +16,18 @@ corresponding source is upstream commit
 build environment `tasmota32c3-bluetooth` in
 [`platformio_tasmota_cenv_sample.ini`](https://github.com/arendst/Tasmota/blob/f5b34a26be51be2469737d2c43a62acb237c264f/platformio_tasmota_cenv_sample.ini).
 
-`artifacts/autoflash-recovery-safeboot-imprintable.bin` (ESP32-C3) and
-`artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin` (classic ESP32)
+`artifacts/autoflash-recovery-safeboot-esp32c3-imprintable.bin` (ESP32-C3) and
+`artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin` (classic ESP32),
+and the earlier builds kept beside them
+(`artifacts/autoflash-recovery-safeboot-esp32c3-imprintable-ece36fd964c1.bin`,
+`artifacts/autoflash-recovery-safeboot-esp32-imprintable-f1a25251f775.bin`),
 are a custom Safeboot built from upstream Tasmota commit
 [`db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892`](https://github.com/arendst/Tasmota/tree/db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892).
 This project's changes and build tooling are, in `tools/espressif/safeboot/`,
 `repartition/recovery-safeboot/volatile-wifi-defaults.patch`,
 `repartition/recovery-safeboot/persist-settings.patch`,
 `configure_imprintable_safeboot.py` and `build_recovery_safeboot.sh`, and
-`tools/repo/update_firmware.py` for the classic ESP32's.
+`tools/repo/update_firmware.py`, which builds both.
 
 The older custom `s60-tasmota-15.6.0-*.bin` builds, with their configuration,
 patch, documentation and helper, are kept together under `archive/`.

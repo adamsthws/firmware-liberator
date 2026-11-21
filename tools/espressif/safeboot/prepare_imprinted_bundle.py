@@ -42,7 +42,6 @@ try:
         IMPRINTED_MODE,
         OFFICIAL_URLS,
         PUBLISHED_BLUETOOTH_FILE,
-        PUBLISHED_RECOVERY_FILE,
         RECOVERY_ARTIFACT,
         SAFEBOOT_OFFSET,
         SAFEBOOT_SIZE,
@@ -54,6 +53,7 @@ try:
         load_manifest,
         manifest_chip,
         official_release,
+        earlier_recovery_files,
         published_recovery_file,
         published_recovery_sha256,
         release_urls,
@@ -79,7 +79,6 @@ except ModuleNotFoundError:  # running from inside tools/
         IMPRINTED_MODE,
         OFFICIAL_URLS,
         PUBLISHED_BLUETOOTH_FILE,
-        PUBLISHED_RECOVERY_FILE,
         RECOVERY_ARTIFACT,
         SAFEBOOT_OFFSET,
         SAFEBOOT_SIZE,
@@ -91,6 +90,7 @@ except ModuleNotFoundError:  # running from inside tools/
         load_manifest,
         manifest_chip,
         official_release,
+        earlier_recovery_files,
         published_recovery_file,
         published_recovery_sha256,
         release_urls,
@@ -366,7 +366,7 @@ def bundle_ssid(manifest_path: Path) -> str | None:
         return str(recorded)
     # A bundle from before the image was kept only in memory.
     image = artifact_bytes(manifest_path, manifest, RECOVERY_ARTIFACT)
-    return imprinted_ssid(image, PUBLISHED_RECOVERY_FILE.read_bytes())
+    return imprinted_ssid(image, published_recovery_file(manifest_chip(manifest)).read_bytes())
 
 
 def startup_image(ssid: str, password: str, chip: chips.Chip = chips.ESP32C3) -> bytes:
@@ -379,6 +379,19 @@ def startup_image(ssid: str, password: str, chip: chips.Chip = chips.ESP32C3) ->
         return imprint(published_recovery_file(chip).read_bytes(), ssid, password)
     except (OSError, ImprintError) as exc:
         raise BundleError(str(exc)) from exc
+
+
+def earlier_startup_images(ssid: str, password: str, chip: chips.Chip = chips.ESP32C3) -> list[bytes]:
+    """The startup firmware as each earlier release published it, with these
+    Wi-Fi details written in, in memory only: for a record of the image a run
+    begun by that release gave the device."""
+    found = []
+    for path in earlier_recovery_files(chip):
+        try:
+            found.append(imprint(path.read_bytes(), ssid, password))
+        except (OSError, ImprintError):
+            continue
+    return found
 
 
 def recovery_image(manifest_path: Path, ssid: str, password: str) -> bytes:

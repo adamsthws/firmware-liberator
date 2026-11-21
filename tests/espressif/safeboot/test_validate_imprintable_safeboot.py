@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tools.espressif import chips
 from tools.espressif.safeboot import validate_imprintable_safeboot
 from tools.autoflash.imprint import imprint, repair_image
 from tools.espressif.safeboot.safeboot_migration import RECOVERY_MARKER
@@ -17,7 +18,7 @@ from tools.espressif.safeboot.safeboot_migration import RECOVERY_MARKER
 ROOT = Path(__file__).resolve().parents[3]
 
 
-PUBLISHED = (ROOT / "artifacts/autoflash-recovery-safeboot-imprintable.bin").read_bytes()
+PUBLISHED = chips.ESP32C3.file("recovery").read_bytes()
 
 
 def with_marker_replaced(image, replacement):

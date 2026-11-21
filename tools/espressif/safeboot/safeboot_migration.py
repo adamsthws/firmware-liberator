@@ -157,10 +157,6 @@ RECOVERY_KIND = "volatile-wifi-recovery-safeboot"
 # The published recovery image, with placeholders where credentials go. A user's
 # copy is that file with their own network details written in - no local build.
 IMPRINTED_MODE = "public-imprinted-safeboot-v1"
-PUBLISHED_RECOVERY_FILE = (
-    Path(__file__).resolve().parents[3] / "artifacts" / "autoflash-recovery-safeboot-imprintable.bin"
-)
-PUBLISHED_RECOVERY_SHA256 = "ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd"
 RECOVERY_ARTIFACT = "recovery_safeboot"
 RECOVERY_MARKER = b"Autoflash recovery Wi-Fi defaults active"
 RECOVERY_PATCH = (
@@ -354,11 +350,20 @@ def pinned_artifacts(chip: chips.Chip) -> dict[str, dict[str, Any]]:
 
 
 def published_recovery_file(chip: chips.Chip) -> Path:
-    return PUBLISHED_RECOVERY_FILE if chip is chips.ESP32C3 else chip.file("recovery")
+    """As firmware.json pins each chip's (update_firmware.py esp32c3 recovery)."""
+    return chip.file("recovery")
 
 
 def published_recovery_sha256(chip: chips.Chip) -> str:
-    return PUBLISHED_RECOVERY_SHA256 if chip is chips.ESP32C3 else chip.pin("recovery")["sha256"]
+    return chip.pin("recovery")["sha256"]
+
+
+def earlier_recovery_files(chip: chips.Chip) -> list[Path]:
+    """Each startup firmware an earlier release published for `chip`, kept
+    (firmware.json's recovery "earlier") so that G1 can prove the Wi-Fi of a
+    run whose commit one of them put on the device."""
+    root = Path(__file__).resolve().parents[3]
+    return [root / entry["file"] for entry in chip.pin("recovery").get("earlier", [])]
 
 
 def official_release(release: dict[str, Any] | None = None, chip: chips.Chip = chips.ESP32C3) -> dict[str, str]:

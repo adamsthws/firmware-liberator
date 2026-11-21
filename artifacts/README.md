@@ -17,8 +17,10 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 | `tasmota32c3-bluetooth.bin` | [The Berry-capable Tasmota](#the-interim-tasmota-and-its-settings-templates) an ESP32-C3 runs for a while on its original partition layout: the exact file the successful migrations used, from Tasmota's moving `install/firmware` branch ([source](../NOTICES.md#tasmota-derived-firmware)) | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 on an ESP32-C3 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |
 | `tasmota-settings-template-esp32-15.6.0.0.bin` | The same for a classic ESP32 | `7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49` |
-| `autoflash-recovery-safeboot-imprintable.bin` | [The recovery Safeboot](#the-recovery-safeboot) for an ESP32-C3, with no credentials in it; it saves the Wi-Fi for the official Tasmota installed after it | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
-| `autoflash-recovery-safeboot-esp32-imprintable.bin` | The same for a classic ESP32 | `f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c` |
+| `autoflash-recovery-safeboot-esp32c3-imprintable.bin` | [The recovery Safeboot](#the-recovery-safeboot) for an ESP32-C3, with no credentials in it; it saves the Wi-Fi for the official Tasmota installed after it | `2fd4a50c58ed5619f788613cf89b894487059683df40b9f86d5b5c68666f1207` |
+| `autoflash-recovery-safeboot-esp32-imprintable.bin` | The same for a classic ESP32 | `b6398e14d9d81155763fc61f5d2464f9e8f4c204e917fd47fff27161181edf4d` |
+| `autoflash-recovery-safeboot-esp32c3-imprintable-ece36fd964c1.bin` | The ESP32-C3's recovery Safeboot before this one, as releases up to 3.1.0 published it ([kept](#the-recovery-safeboot) for runs they began) | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
+| `autoflash-recovery-safeboot-esp32-imprintable-f1a25251f775.bin` | The same for a classic ESP32 | `f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c` |
 | `autoflash-mover-esp32c3-1.2.0.bin` | [The mover](#the-mover) for an ESP32-C3, a small ESPHome the run uses for a minute or two when a device leaves Tasmota | `111de916da3c43845938d10f0bd348def91ba5acf7d72d90a6d13fb526baf776` |
 | `autoflash-mover-esp32-1.1.0.bin` | The mover for a classic ESP32 | `5a4ae1ff9c0d1052ff7aab8965252749eac395fb4a1ae6b3b6f1c379513ccbcf` |
 | `esphome-sonoff-s60-bootloader-1.2.0.bin` | [ESPHome's bootloader](#esphome-for-espressif-devices) for an ESP32-C3: it replaces Sonoff's when ESPHome is installed, so ESPHome can roll back an update that fails to start | `3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433` |
@@ -100,17 +102,22 @@ It holds placeholder bytes instead of real Wi-Fi credentials and **must not be
 flashed as published**: the private bundle-preparation path must imprint and
 validate a per-device copy first.
 
-In `tools/espressif/safeboot/`, `configure_imprintable_safeboot.py` writes the
-ESP32-C3's header with the placeholders, `build_recovery_safeboot.sh` builds
-it, `sanitise_safeboot.py` blanks the build machine's paths, and
-`validate_imprintable_safeboot.py` must say it is publishable. It is then
-published as `autoflash-recovery-safeboot-esp32c3-imprintable.bin`, with
-`PUBLISHED_RECOVERY_FILE` in `safeboot_migration.py` and its row here changed;
-`tests/repo/test_firmware_pins.py` fails until they are.
-`update_firmware.py esp32 recovery` builds the classic ESP32's. A rebuild
-matches the published file but for its build date and time; built in a
-directory whose path is not 38 characters long, everything after the first
-such path is a few bytes along.
+Its Wi-Fi is kept out of modem sleep (`WIFI_NO_SLEEP`, `SetOption127`'s
+default, in its header), for the upload of official Tasmota it takes, and the
+record it saves carries that to official Tasmota
+([why](../docs/technical-details.md#the-wi-fi-radio-kept-awake)).
+
+`update_firmware.py esp32c3 recovery` and `esp32 recovery` build and publish
+each chip's, pinned in `firmware.json`: the header with the placeholders from
+`tools/espressif/safeboot/configure_imprintable_safeboot.py`, the build's paths
+blanked, and `validate_imprintable_safeboot.py` saying it is publishable. A
+rebuild matches the published file but for its build date and time; built in
+a directory whose path is not 38 characters long, everything after the first
+such path is a few bytes along. The one a build replaces, if a release
+published it, is kept as `autoflash-recovery-safeboot-<chip>-imprintable-<sha>.bin`
+under the chip's `recovery` `earlier` in `firmware.json`: a run that release
+began has it on the device, and G1 proves the run's Wi-Fi by it before the
+official Safeboot goes over it.
 
 ## The mover
 

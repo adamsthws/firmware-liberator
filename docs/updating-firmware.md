@@ -50,6 +50,12 @@ both, which the update checks. A Beken device's interim firmware is its
 OpenBeken image itself, with a marker sent after it, so it changes with every
 OpenBeken update ([below](#3-openbeken)).
 
+**The recovery Safeboot** changes only when its patches or header
+(`tools/espressif/safeboot/`) do: `python3 tools/repo/update_firmware.py esp32c3
+recovery` and `esp32 recovery` build and publish each chip's, in Docker, from
+`INTERIM_TASMOTA_COMMIT`, keeping the one before if a release published it
+(`kept_recoveries`): a run that release began finishes with it.
+
 **The bridge** changes only when its source in `archive/bridge` does, as a new
 version. `python3 tools/repo/update_firmware.py esp32c3 bridge` publishes the
 ESP32-C3's, wrapped for the S60's stock updater, and `esp32 bridge` the
@@ -67,8 +73,8 @@ whole fault suite and real devices.
 
 **A file's name says what it belongs to.** A chip's file names the chip
 (`autoflash-mover-esp32-1.1.0.bin`), and a device's own names the device
-(`esphome-sonoff-s60-imprintable-*.bin`). The ESP32-C3's bootloader, recovery
-Safeboot and settings template were published before the rule, and published
+(`esphome-sonoff-s60-imprintable-*.bin`). The ESP32-C3's bootloader and
+settings template were published before the rule, and published
 files never change, so each keeps its name until it is next built
 ([`artifacts/README.md`](../artifacts/README.md)); `update_firmware.py` names
 the next by the rule (`esphome-esp32c3-bootloader-*`). Built again, take the

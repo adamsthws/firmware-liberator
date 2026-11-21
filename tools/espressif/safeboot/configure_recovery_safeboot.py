@@ -41,6 +41,15 @@ def validate_credentials(ssid: str, password: str) -> None:
         raise ValueError("password must be empty, 8..63 UTF-8 bytes, or a 64-digit hexadecimal PSK")
 
 
+# Its Wi-Fi kept out of modem sleep (SetOption127's default), for the upload
+# of official Tasmota it takes: otherwise the radio sleeps between the router's
+# beacons, and a router that holds the device's frames badly meanwhile stalls
+# the upload until it is cut off. The devices are on mains, so the sleep saves
+# nothing. The record the Safeboot saves for official Tasmota carries it until
+# F4's reset, after which the tool sets it again.
+WIFI_AWAKE = "#undef WIFI_NO_SLEEP\n#define WIFI_NO_SLEEP true\n"
+
+
 def render_header(ssid: str, password: str) -> bytes:
     validate_credentials(ssid, password)
     return (
@@ -55,7 +64,8 @@ def render_header(ssid: str, password: str) -> bytes:
         "#undef WIFI_CONFIG_TOOL\n"
         "#define WIFI_CONFIG_TOOL WIFI_RETRY\n"
         "#undef WIFI_DEFAULT_HOSTNAME\n"
-        "#define WIFI_DEFAULT_HOSTNAME \"autoflash-recovery-%4X\"\n\n"
+        "#define WIFI_DEFAULT_HOSTNAME \"autoflash-recovery-%4X\"\n"
+        + WIFI_AWAKE + "\n"
         "#endif  // _USER_CONFIG_OVERRIDE_H_\n"
     ).encode("ascii")
 

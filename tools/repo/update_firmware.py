@@ -34,9 +34,10 @@
         ESP32-C3's are, the bridge and the recovery Safeboot built from this
         repository's sources, the mover and its bootloader with ESPHome
 
-    python3 tools/repo/update_firmware.py esp32c3 [bridge] [mover]
+    python3 tools/repo/update_firmware.py esp32c3 [bridge] [recovery] [mover]
         the same for the ESP32-C3: its bridge, built from this repository's
-        sources and wrapped for the S60's stock updater, and its mover
+        sources and wrapped for the S60's stock updater, its recovery Safeboot
+        and its mover
 
     python3 tools/repo/update_firmware.py openbeken [VERSION] [--device sonoff-s61] [--every-device]
         build OpenBeken for a Beken device - upstream at that stable release (default:
@@ -116,6 +117,8 @@ CHIP_FILES = {
     "bootloader": "artifacts/esphome-{chip}-bootloader-{version}.bin",
     "bridge": "artifacts/autoflash-bridge-{chip}-{version}{suffix}",
     "recovery": "artifacts/autoflash-recovery-safeboot-{chip}-imprintable.bin",
+    # One a release published, kept once replaced (kept_recoveries).
+    "recovery_earlier": "artifacts/autoflash-recovery-safeboot-{chip}-imprintable-{sha}.bin",
 }
 
 
@@ -1138,7 +1141,7 @@ ESP32_INTERIM = chips.ESP32.interim_name  # small enough for the smallest stock 
 BRIDGE_SOURCE = ROOT / "archive" / "bridge"
 FIRMWARE_BUILDER = "autoflash-firmware-build"
 FIRMWARE_BUILD_CACHE = records.CAPTURES / "firmware-build"
-SAFEBOOT_ENV = "tasmota32-safeboot"
+SAFEBOOT_ENV = "tasmota{arch}-safeboot"  # Tasmota's PlatformIO env for a chip's Safeboot: tasmota32c3-safeboot
 
 
 def firmware_builder() -> str:
@@ -1214,9 +1217,12 @@ def esp32c3_bridge(pins: dict[str, Any]) -> None:
             chip_file(chips.ESP32C3, "bridge", version=version, suffix=".ota"), wrapped, {"version": version})
 
 
-def esp32_recovery(pins: dict[str, Any]) -> None:
+def recovery(pins: dict[str, Any], chip: chips.Chip) -> None:
+    """A chip's recovery Safeboot, from the interim Tasmota's source with this
+    project's patches and the header with the Wi-Fi placeholders."""
     from tools.espressif.safeboot import configure_imprintable_safeboot as configure
     from tools.espressif.safeboot.safeboot_migration import INTERIM_TASMOTA_COMMIT
+    environment = SAFEBOOT_ENV.format(arch=chip.key.removeprefix("esp"))
     work = FIRMWARE_BUILD_CACHE / "safeboot"
     work.mkdir(parents=True, exist_ok=True)
     (work / "user_config_override.h").write_bytes(configure.render_header(persist_settings=True))
@@ -1225,18 +1231,63 @@ def esp32_recovery(pins: dict[str, Any]) -> None:
         "https://github.com/arendst/Tasmota.git; }; } && cd t && "
         f"git fetch -q --depth 1 origin {INTERIM_TASMOTA_COMMIT} && git reset -q --hard FETCH_HEAD && git clean -qfdx -e .pio && "
         "git apply /patches/volatile-wifi-defaults.patch && git apply /patches/persist-settings.patch && "
-        f"cp /work/user_config_override.h tasmota/ && pio run -e {SAFEBOOT_ENV} && chmod -R a+rwX /work",
+        f"cp /work/user_config_override.h tasmota/ && pio run -e {environment} && chmod -R a+rwX /work",
         f"{work}:/work", f"{ROOT}/tools/espressif/safeboot/repartition/recovery-safeboot:/patches:ro")
-    image = imprint.redact_build_paths((work / "t/.pio/build" / SAFEBOOT_ENV / "firmware.bin").read_bytes())
+    image = imprint.redact_build_paths((work / "t/.pio/build" / environment / "firmware.bin").read_bytes())
     check = work / "recovery.bin"
     check.write_bytes(image)
     code = subprocess.call([sys.executable, str(ROOT / "tools/espressif/safeboot/validate_imprintable_safeboot.py"),
-                            str(check), "--chip-id", str(chips.ESP32.chip_id)],
+                            str(check), "--chip-id", str(chip.chip_id)],
                            env={**os.environ, "PYTHONPATH": str(ROOT)})
     if code:
         raise UpdateError("the recovery Safeboot is not publishable")
-    publish(espressif_section(pins, chips.ESP32.key), "recovery", chip_file(chips.ESP32, "recovery"), image,
-            {"tasmota_commit": INTERIM_TASMOTA_COMMIT})
+    section = espressif_section(pins, chip.key)
+    if "recovery" not in section and chip.key in UNPINNED_RECOVERY:
+        section["recovery"] = {"file": UNPINNED_RECOVERY[chip.key]}
+    earlier = kept_recoveries(chip, section.get("recovery", {}))
+    publish(section, "recovery", chip_file(chip, "recovery"), image,
+            {"tasmota_commit": INTERIM_TASMOTA_COMMIT, "earlier": earlier})
+
+
+# The ESP32-C3's first, pinned in the code before firmware.json pinned it.
+UNPINNED_RECOVERY = {chips.ESP32C3.key: "artifacts/autoflash-recovery-safeboot-imprintable.bin"}
+
+
+def kept_recoveries(chip: chips.Chip, old: dict[str, Any]) -> list[dict[str, Any]]:
+    """The startup firmware earlier releases published, kept with the one this
+    build replaces if a release published it: a run one of them began put it
+    on the device, and G1 proves the run's Wi-Fi by it (tasmota.conversion_wifi)."""
+    earlier = list(old.get("earlier", []))
+    path = ROOT / old["file"] if old.get("file") else None
+    if path is None or not path.exists():
+        return earlier
+    data = path.read_bytes()
+    if not released_file(sha256_bytes(data)):
+        return earlier  # never published by a release: no run has it
+    file = chip_file(chip, "recovery_earlier", sha=sha256_bytes(data)[:12])
+    (ROOT / file).write_bytes(data)
+    SHA256SUMS.write_text(replace_sums_line(SHA256SUMS.read_text(encoding="utf-8"), None, Path(file).name, data),
+                          encoding="utf-8")
+    GITIGNORE.write_text(with_ignore_exception(GITIGNORE.read_text(encoding="utf-8"), "", file), encoding="utf-8")
+    print(f"  kept {file}, which a release published: G1 proves the runs it began by it")
+    return [*earlier, {"file": file, "size": len(data), "sha256": sha256_bytes(data)}]
+
+
+def released_file(sha256: str) -> bool:
+    """Whether a release of the tool published a file of this SHA-256: its
+    tag's SHA256SUMS lists it. With no release tags to look in, it may have been."""
+    tags = git("tag", "--list", "v*", cwd=ROOT).split()
+    return not tags or any(sha256 in subprocess.run(["git", "-C", str(ROOT), "show", f"{tag}:artifacts/SHA256SUMS"],
+                                                   capture_output=True, text=True, encoding="utf-8").stdout
+                           for tag in tags)
+
+
+def esp32_recovery(pins: dict[str, Any]) -> None:
+    recovery(pins, chips.ESP32)
+
+
+def esp32c3_recovery(pins: dict[str, Any]) -> None:
+    recovery(pins, chips.ESP32C3)
 
 
 def mover(pins: dict[str, Any], chip: chips.Chip, *, with_bootloader: bool) -> None:
@@ -1297,7 +1348,7 @@ def esp32_tables(pins: dict[str, Any]) -> None:
 
 
 ESP32_PARTS = {"tables": esp32_tables, "template": esp32_template, "tasmota": esp32_tasmota, "bridge": esp32_bridge, "recovery": esp32_recovery, "mover": esp32_mover}
-ESP32C3_PARTS = {"bridge": esp32c3_bridge, "mover": esp32c3_mover}
+ESP32C3_PARTS = {"bridge": esp32c3_bridge, "recovery": esp32c3_recovery, "mover": esp32c3_mover}
 CHIP_PARTS = {"esp32": ESP32_PARTS, "esp32c3": ESP32C3_PARTS}
 
 

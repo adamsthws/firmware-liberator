@@ -25,7 +25,7 @@ try:
         SSID_FIELD_BYTES,
         SSID_MARKER,
     )
-    from tools.espressif.safeboot.configure_recovery_safeboot import atomic_private_write
+    from tools.espressif.safeboot.configure_recovery_safeboot import WIFI_AWAKE, atomic_private_write
 except ModuleNotFoundError:  # running from inside tools/
     from autoflash.imprint import (
         FILLER,
@@ -34,7 +34,7 @@ except ModuleNotFoundError:  # running from inside tools/
         SSID_FIELD_BYTES,
         SSID_MARKER,
     )
-    from configure_recovery_safeboot import atomic_private_write
+    from configure_recovery_safeboot import WIFI_AWAKE, atomic_private_write
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUTPUT = ROOT / "captures" / "safeboot-imprintable" / "user_config_override.h"
@@ -68,7 +68,8 @@ def render_header(persist_settings: bool = False) -> bytes:
         "#undef WIFI_CONFIG_TOOL\n"
         "#define WIFI_CONFIG_TOOL WIFI_RETRY\n"
         "#undef WIFI_DEFAULT_HOSTNAME\n"
-        '#define WIFI_DEFAULT_HOSTNAME "autoflash-recovery-%4X"\n\n'
+        '#define WIFI_DEFAULT_HOSTNAME "autoflash-recovery-%4X"\n'
+        + WIFI_AWAKE + "\n"
         "#endif  // _USER_CONFIG_OVERRIDE_H_\n"
     ).encode("ascii")
 

@@ -37,6 +37,7 @@ from tools.autoflash.runs import ROOT
 from tools.autoflash.state import DONE, FAILED
 from tools.espressif.safeboot.prepare_imprinted_bundle import (
     BundleError,
+    earlier_startup_images,
     pin_wifi,
     recovery_image,
     startup_image,
@@ -796,7 +797,7 @@ def recovery_image_record(ctx: Context) -> str:
     raise Abort("this run has no record of the startup firmware it put on the device")
 
 
-def conversion_wifi(ctx: Context) -> None:
+def conversion_wifi(ctx: Context) -> bool:
     """Hold the Wi-Fi details the device was converted with, for G1.
 
     G1 needs the exact startup firmware on the device, and only those details
@@ -804,6 +805,11 @@ def conversion_wifi(ctx: Context) -> None:
     put in place, not against the bundle: the bundle may have been set up for
     other Wi-Fi since, and the device's own Wi-Fi may have changed.  Only proven
     details are pinned back into the bundle, which the migration server needs.
+
+    False when they prove instead the startup firmware an earlier release
+    published, which a run begun by it put on before this version replaced
+    it: the bundle cannot hold that one, so G1 goes without it, as for a run
+    begun by 1.2.0 (step_restore).
     """
     wanted = recovery_image_record(ctx)
 
@@ -814,16 +820,23 @@ def conversion_wifi(ctx: Context) -> None:
             return None
         return image if sha256_bytes(image) == wanted else None
 
+    def earlier(details: tuple[str, str] | None) -> bool:
+        return details is not None and any(
+            sha256_bytes(image) == wanted
+            for image in earlier_startup_images(*details, images.chip_of(kinds.of_run(ctx.state))))
+
     # Those this run holds first - typed earlier in it (--wifi), say, as the
     # startup firmware was built: asked for again, seen in the emulator. Then,
     # unless they are to be typed, those on the device.
     details = ctx.held_wifi()
     image = proven(*details) if details else None
+    old = image is None and earlier(details)
     on_device = None
-    if image is None and not getattr(ctx.args, "wifi", False):
+    if image is None and not old and not getattr(ctx.args, "wifi", False):
         on_device = details = wifi.read_wifi_from_device(ctx)
         image = proven(*details) if details else None
-    if image is None:
+        old = image is None and earlier(details)
+    if image is None and not old:
         output.transient_begin()  # until details that match are given
         prompts.section("The Wi-Fi details the device was converted with are needed", [
             *(["The device is on different Wi-Fi details now."] if on_device else []),
@@ -832,15 +845,18 @@ def conversion_wifi(ctx: Context) -> None:
         output.log_only("The startup firmware holds the Wi-Fi details used in the conversion: rebuilt "
                         "exactly, it can be swapped for the official one. They are checked against the "
                         "device's record before anything is used.")
-        while image is None:
+        while image is None and not old:
             ssid = prompts.ask_text("Wi-Fi network name used during the conversion", private="wifi-name")
             password = prompts.ask_secret(f"Wi-Fi password for '{ssid}' at the time: ")
             output.private(password, "wifi-password")
             details = (ssid, password)
             image = proven(ssid, password)
-            if image is None:
+            old = image is None and earlier(details)
+            if image is None and not old:
                 output.tell("    Those are not the details the device was converted with - try again.")
         output.transient_end()
+    if old:
+        return False
     ssid, password = details
     try:
         recovery_image(ctx.manifest_path, ssid, password)
@@ -851,6 +867,7 @@ def conversion_wifi(ctx: Context) -> None:
         except BundleError as exc:
             raise Abort(f"the startup firmware could not be set up for '{ssid}': {exc}") from exc
     ctx.remember_wifi(ssid, password, image)
+    return True
 
 
 # How many times G1 asks the device whether it runs official Tasmota, when the
@@ -866,10 +883,15 @@ def step_restore(ctx: Context) -> dict[str, Any]:
     Wi-Fi details prove it: the restore goes without it, writing over
     whatever follows the official sectors, once the device shows the official
     table and official app0 running (the device's own checks, and the gate
-    below) - the factory partition is unused then, and H1 checks the result."""
+    below) - the factory partition is unused then, and H1 checks the result.
+    So does a run whose commit put on the startup firmware an earlier release
+    published, which the bundle cannot hold (conversion_wifi)."""
     unproven = bool(ctx.state.input("startup_unproven"))
     if not unproven:
-        conversion_wifi(ctx)  # before the runner, which would otherwise pin the device's own
+        # Before the runner, which would otherwise pin the device's own. A
+        # startup firmware an earlier release published, put on by a run it
+        # began, is proven but not one the bundle can hold: as unproven.
+        unproven = not conversion_wifi(ctx)
     runner = ctx.phase_runner(with_recovery=not unproven)
     output.say("== Restore official Safeboot")
     if unproven:

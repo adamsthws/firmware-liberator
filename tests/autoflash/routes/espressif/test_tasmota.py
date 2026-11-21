@@ -198,8 +198,13 @@ class ConversionWifiTests(unittest.TestCase):
                 raise prepare_imprinted_bundle.BundleError("not the pinned one")
             return image(ssid, password)
 
+        # The startup firmware an earlier release published, with details in.
+        self.earlier = []
         for patch in (
             mock.patch.object(tasmota, "startup_image", side_effect=image),
+            mock.patch.object(tasmota, "earlier_startup_images",
+                              side_effect=lambda ssid, password, chip=None: [
+                                  f"{ssid}/{password} {before}".encode() for before in self.earlier]),
             mock.patch.object(tasmota, "recovery_image", side_effect=recovery),
             mock.patch.object(tasmota, "pin_wifi", self.pin),
             mock.patch.object(prompts, "section"),
@@ -215,8 +220,37 @@ class ConversionWifiTests(unittest.TestCase):
         with mock.patch.object(wifi, "read_wifi_from_device", return_value=on_device), \
              mock.patch.object(prompts, "ask_text", side_effect=lambda *_, **__: next(answers)), \
              mock.patch.object(prompts, "ask_secret", side_effect=lambda *_: next(answers)) as asked:
-            tasmota.conversion_wifi(self.ctx)
+            self.proven = tasmota.conversion_wifi(self.ctx)
         return asked
+
+    def committed_by_an_earlier_release(self):
+        import hashlib
+        import json
+        self.earlier = ["3.1.0"]
+        (self.ctx.evidence / "commit-report.json").write_text(json.dumps({
+            "phase": "commit", "status": "PASS",
+            "safeboot_sha256": hashlib.sha256(b"Home/right 3.1.0").hexdigest()}))
+
+    def test_the_startup_firmware_of_an_earlier_release_is_proven_and_not_pinned(self):
+        # A run begun by a release whose startup firmware this one replaced,
+        # carried on past its commit: the bundle cannot hold that one.
+        self.committed_by_an_earlier_release()
+        asked = self.run_with(("Home", "right"))
+        asked.assert_not_called()
+        self.assertIs(self.proven, False)
+        self.pin.assert_not_called()
+        self.ctx.remember_wifi.assert_not_called()
+
+    def test_details_typed_can_prove_an_earlier_releases_startup_firmware(self):
+        self.committed_by_an_earlier_release()
+        asked = self.run_with(("NewNet", "new"), typed=["Home", "wrong", "Home", "right"])
+        self.assertEqual(asked.call_count, 2)
+        self.assertIs(self.proven, False)
+
+    def test_the_current_startup_firmware_is_proven(self):
+        self.earlier = ["3.1.0"]
+        self.run_with(("Home", "right"))
+        self.assertIs(self.proven, True)
 
     def test_the_devices_own_details_are_used_when_they_match(self):
         asked = self.run_with(("Home", "right"))
@@ -774,9 +808,11 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
             self.assertEqual(ctx.state.input("bootloader_kept"), "sonoff")
             self.assertTrue(ctx.state.input("startup_unproven"))
 
-    def restored(self, unproven):
+    def restored(self, unproven, current=True):
         """step_restore: whether the Wi-Fi was proven, the runner given the
-        startup firmware, and the flags the restore server was started with."""
+        startup firmware, and the flags the restore server was started with;
+        `current`, whether the Wi-Fi proves the startup firmware this release
+        publishes rather than an earlier one."""
         from unittest import mock
         ctx = self.ctx()
         if unproven:
@@ -784,7 +820,8 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
         runner = mock.Mock(run=mock.Mock(return_value=(0, "")))
         given = []
         ctx.phase_runner = lambda with_recovery=True: given.append(with_recovery) or runner
-        with mock.patch.object(tasmota, "conversion_wifi") as wifi, mock.patch.object(output, "say"):
+        with mock.patch.object(tasmota, "conversion_wifi", return_value=current) as wifi, \
+                mock.patch.object(output, "say"):
             self.assertEqual(tasmota.step_restore(ctx), {"restore": 0})
         return wifi.called, given[0], runner.run.call_args.kwargs["extra_flags"]
 
@@ -796,6 +833,11 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
         # Wi-Fi details would ever prove it, and the run stopped there for good.
         self.assertEqual(self.restored(unproven=True),
                          (False, False, ["--i-confirm-normal-app-is-stable", "--recovery-unproven"]))
+
+    def test_g1_on_a_run_whose_startup_firmware_an_earlier_release_published_goes_without(self):
+        # Proven by that release's image, kept for it; the bundle holds this one's.
+        self.assertEqual(self.restored(unproven=False, current=False),
+                         (True, False, ["--i-confirm-normal-app-is-stable", "--recovery-unproven"]))
 
     def gate(self, checks):
         """G1's check that the device runs official Tasmota, given what each ask of
