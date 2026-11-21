@@ -122,6 +122,12 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(failures.classify(""), "other")
         self.assertEqual(failures.classify("words no pattern knows"), "other")
 
+    def test_an_upload_to_the_bridge_cut_off_is_an_upload_cut(self) -> None:
+        # Seen in reports: D1's upload timed out, or the pipe broke, and was "other".
+        for said in ("timed out", "[Errno 32] Broken pipe"):
+            self.assertEqual(failures.classify(f"the upload to the bridge did not complete: {said}. The device "
+                                               "still has the installer; try again"), "upload-cut")
+
     def test_the_runners_own_words(self) -> None:
         self.assertEqual(failures.classify(runner.connection_lost(ConnectionResetError("reset"))), "device-lost")
         self.assertEqual(failures.classify(runner.connection_lost(TimeoutError("timed out"))), "device-lost")

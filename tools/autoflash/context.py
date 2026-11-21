@@ -158,6 +158,7 @@ class Context:
         self.firmware_choice: routes.FirmwareChoice | None = None
         self.last_failure = ""  # what the last stage to fail said, for the report
         self.last_failure_class: str | None = None  # its class, where what stopped it said one (errors.Abort)
+        self.cut_off = False  # whether that was a transfer to or from the device cut off (runner.cut_off_hint)
         self.running_step: str | None = None  # the step under way (runner.execute)
         self.redoing_interrupted: set[str] = set()  # steps a run before this one was cut off in, done again
         # How the person stopped the run, for its report (report_data.STOPPED_BY).

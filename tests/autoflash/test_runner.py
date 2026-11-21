@@ -387,6 +387,18 @@ class RunStepsTests(unittest.TestCase):
         stand_ins["tell_how_to_carry_on"].assert_called_once()
         stand_ins["invite_report"].assert_not_called()
 
+    def test_a_run_stopped_by_a_transfer_cut_off_names_the_likely_cause(self):
+        for cut_off in (True, False):
+            def execute(ctx, step):
+                ctx.cut_off = cut_off and step == "S2"   # as runner.execute says of what stopped it
+                return 1 if step == "S2" else 0
+            with self.subTest(cut_off=cut_off):
+                _, _, stand_ins = self.run_steps(execute_with_retries=mock.Mock(side_effect=execute),
+                                                 cut_off_hint=mock.Mock(return_value=["the router"]))
+                titles = [c.args[0] for c in stand_ins["section"].call_args_list]
+                self.assertEqual("The connection to the device was cut off" in titles, cut_off)
+                stand_ins["tell_how_to_carry_on"].assert_called_once()
+
     def test_quitting_leaves_the_clean_up_to_main(self):
         code, ran, stand_ins = self.run_steps(codes={"S2": 130})
         self.assertEqual((code, ran), (130, ["S1", "S2"]))
@@ -427,6 +439,53 @@ class CarryOnTests(unittest.TestCase):
                     mock.patch.object(output, "tell") as told:
                 runner.tell_how_to_carry_on()
             self.assertIn(said, " ".join(str(c.args[0]) for c in told.call_args_list))
+
+
+class CutOffHintTests(unittest.TestCase):
+    """What a run stopped by a transfer cut off part way says to do: seen on
+    real runs, uploads to the bridge and reads from it cut off again and
+    again, the device's signal strong, and the computer on Ethernet."""
+
+    def hint(self, step, wifi):
+        from types import SimpleNamespace
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))
+        state.set_input("device_mac", "12:34:56:ab:cd:ef")
+        ctx = SimpleNamespace(state=state, last_failed_step=step)
+        with mock.patch.object(routes, "FAMILY", espressif), \
+                mock.patch.object(runner.hostsys, "has_wifi", return_value=wifi):
+            return " ".join(runner.cut_off_hint(ctx))
+
+    def test_with_wi_fi_on_the_installer_it_names_the_installers_own_network(self):
+        for step in ("C3", "D1"):
+            said = self.hint(step, True)
+            self.assertIn("mesh node, extender or powerline adapter", said)
+            self.assertIn("autoflash-recovery-CDEF", said)
+            self.assertNotIn("Switch the router off and on", said)
+
+    def test_without_wi_fi_or_past_the_installer_it_says_to_restart_the_router(self):
+        for step, wifi in (("D1", False), ("D1", None), ("F2", True)):
+            said = self.hint(step, wifi)
+            self.assertIn("Switch the router off and on", said)
+            self.assertIn("main router", said)
+            self.assertNotIn("autoflash-recovery", said)
+
+    def test_a_step_stopped_by_a_transfer_cut_off_says_so_and_no_other(self):
+        import http.client
+        from types import SimpleNamespace
+        for error, cut_off in ((http.client.IncompleteRead(b"x" * 1024), True), (TimeoutError("timed out"), True),
+                               (errors.CutOff("the upload to the bridge did not complete: timed out"), True),
+                               (errors.Abort("the bridge refused the image: too big"), False),
+                               (KeyError("x"), False)):
+            with self.subTest(error=repr(error)), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.dict(routes.STEP_INDEX, {"H1": ("Title", mock.Mock(side_effect=error))}), \
+                    mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
+                    mock.patch.object(output, "log_only"), mock.patch.object(output, "tell"), \
+                    mock.patch.object(output, "say"):
+                ctx = SimpleNamespace(state=RunState.open(Path(directory)), dry_run=False, cut_off=not cut_off)
+                self.assertEqual(runner.execute(ctx, "H1"), 1)
+                self.assertIs(ctx.cut_off, cut_off)
 
 
 class RetryTests(unittest.TestCase):

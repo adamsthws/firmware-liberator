@@ -606,9 +606,40 @@ def connection_towards(target: str) -> str | None:
 def connection_linux(interface: Path) -> str:
     """From the interface's folder in /sys/class/net: a Wi-Fi one has its
     wireless side; any other with hardware under it is Ethernet."""
-    if (interface / "wireless").exists() or (interface / "phy80211").exists():
+    if is_wifi_linux(interface):
         return "wifi"
     return "ethernet" if (interface / "device").exists() else "other"
+
+
+def is_wifi_linux(interface: Path) -> bool:
+    """Whether the interface whose folder in /sys/class/net this is is Wi-Fi."""
+    return (interface / "wireless").exists() or (interface / "phy80211").exists()
+
+
+# Each Wi-Fi adapter `netsh wlan show interfaces` lists has its GUID, written
+# alike in every language Windows speaks.
+NETSH_GUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE)
+
+
+def has_wifi(sys_net: Path = Path("/sys/class/net")) -> bool | None:
+    """Whether this computer has Wi-Fi, switched on or not, to join a
+    device's own network with; None if it cannot be told. Asks the system
+    only; sends nothing."""
+    try:
+        if IS_LINUX:
+            return any(is_wifi_linux(interface) for interface in sys_net.iterdir())
+        if IS_MAC:
+            completed = _run(["networksetup", "-listallhardwareports"])
+            if completed and completed.returncode == 0:
+                return bool(re.search(r"Hardware Port:\s*(Wi-?Fi|AirPort)", completed.stdout))
+        if IS_WINDOWS:
+            # Without a Wi-Fi adapter, or with its service stopped, netsh fails.
+            completed = _run(["netsh", "wlan", "show", "interfaces"])
+            if completed:
+                return completed.returncode == 0 and bool(NETSH_GUID.search(completed.stdout))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
 
 
 def connection_mac(ports: str, name: str) -> str:

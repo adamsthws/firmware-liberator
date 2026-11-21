@@ -96,7 +96,7 @@
     ],
     [
       "upload-cut",
-      "stopped part way|was not uploaded|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed|delivery failed|installer was not fully delivered|installer was not delivered|the device fetched \\S+ of \\S+ bytes"
+      "stopped part way|was not uploaded|upload to the bridge did not complete|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed|delivery failed|installer was not fully delivered|installer was not delivered|the device fetched \\S+ of \\S+ bytes"
     ],
     [
       "unexpected-firmware",

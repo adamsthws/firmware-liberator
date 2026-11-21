@@ -40,6 +40,10 @@ class SetupError(RuntimeError):
     pass
 
 
+class UploadCut(SetupError):
+    """An upload to the bridge the network cut off part way."""
+
+
 
 def is_bridge_page(body: str | None) -> bool:
     """Whether `body` is the installer's page."""
@@ -120,7 +124,7 @@ def upload_to_bridge(payload: bytes, *, host: str = SETUP_HOST, timeout: float =
         response = connection.getresponse()
         body = response.read().decode("utf-8", errors="replace").strip()
     except (OSError, http.client.HTTPException) as exc:
-        raise SetupError(f"the upload to the bridge did not complete: {exc}") from exc
+        raise UploadCut(f"the upload to the bridge did not complete: {exc}") from exc
     finally:
         connection.close()
     if response.status != 200 or BRIDGE_SUCCESS not in body:

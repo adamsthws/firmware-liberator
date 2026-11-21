@@ -13,7 +13,7 @@ package under here with the same handful of names - FIRMWARES, SOURCES and
 steps_for(firmware, source) for its routes, none of them beginning with the
 steps shared here, and what the runner needs to know of each step:
 POINT_OF_NO_RETURN, DESTRUCTIVE_STEPS, RETRY_STEPS, ERASED_CHECK_STEPS,
-STAGE_NAMES, TARGET_STAGE_NAMES, PLAIN_DESCRIPTION, ATTEMPTED_EVIDENCE,
+OWN_NETWORK_STEPS, STAGE_NAMES, TARGET_STAGE_NAMES, PLAIN_DESCRIPTION, ATTEMPTED_EVIDENCE,
 STEP_VERIFIERS (each step its verifier doubts is done again, unasked),
 SONOFF_FROM_BACKUP (whether going back to Sonoff's firmware needs
 the device's own backup; where it does, sonoff_without_backup(ctx, source)

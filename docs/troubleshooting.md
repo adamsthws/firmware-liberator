@@ -298,6 +298,28 @@ The message includes what the device said. Usually the file is wrong: check
 that `sha256sum -c SHA256SUMS` passes in `artifacts/`, and that you are
 uploading the file the tool named, not the `.factory.bin`.
 
+**"The connection to the device was cut off"**
+
+The run stopped because a transfer between your computer and the device kept
+stopping part way, after the tool's own tries: "the upload to the bridge did
+not complete", or "the connection to the device was lost" while it read the
+backup. The device keeps what it had, so running again is safe. A strong
+signal does not rule this out. Most often the cause is the link between your
+router and the device, or a mesh node, Wi-Fi extender or powerline adapter
+between them, which drops traffic to the device.
+
+- **If your computer has Wi-Fi** and the device is still on the installer
+  (backing up, or installing the interim firmware), go around the router.
+  Switch the router off, or block the device on it. After about a minute the
+  installer raises its own network, `autoflash-recovery-XXXX`. Join it from
+  your computer, switch the router back on or unblock the device, and run the
+  tool again. The installer stays on its own network while your computer is
+  joined, and the tool carries on through it.
+- **Otherwise**, switch the router off and on, and have the device join the
+  main router rather than a mesh node, extender or powerline link.
+
+The tool says which applies when it stops.
+
 ## When a migration stage stops
 
 On an Espressif device going to Tasmota, the stages that check, stage and

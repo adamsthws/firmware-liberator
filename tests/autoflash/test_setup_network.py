@@ -170,7 +170,8 @@ class SetupNetworkTests(unittest.TestCase):
         held = []
         threading.Thread(target=lambda: held.append(server.accept()), daemon=True).start()
         started = time.monotonic()
-        with self.assertRaisesRegex(setup_network.SetupError, "did not complete"):
+        # Cut off, not refused: the run ends naming the network (runner.cut_off_hint).
+        with self.assertRaisesRegex(setup_network.UploadCut, "did not complete"):
             setup_network.upload_to_bridge(b"\xe9" * 8_000_000, host=f"127.0.0.1:{server.getsockname()[1]}",
                                            timeout=0.5)
         self.assertLess(time.monotonic() - started, 10)

@@ -54,6 +54,7 @@ def asked_of_the_run(state: RunState) -> tuple[list[str], int]:
 
 def execute(ctx: Context, step: str) -> int:
     ctx.last_runner = None
+    ctx.cut_off = False   # what the step fails with, if it does, is a transfer cut off
     started, waited = time.monotonic(), output.waited()
     joined, cycled = asked_of_the_run(ctx.state)
     # The step under way, for a crash that escapes it to say where it was.
@@ -180,6 +181,7 @@ def _execute(ctx: Context, step: str) -> int:
         ctx.last_failure_class = getattr(exc, "failure", None)
         ctx.last_failed_step = step
         ctx.crash_site = None
+        ctx.cut_off = isinstance(exc, errors.CutOff)
         output.tell(f"FAILED: {exc}")
         return 1
     except Exception as exc:  # noqa: BLE001 - recorded and explained, not a bare traceback
@@ -195,6 +197,7 @@ def _execute(ctx: Context, step: str) -> int:
         ctx.last_failed_step = step
         # Where in the tool's code, for its report: no surprise from the network.
         ctx.crash_site = None if isinstance(exc, errors.NETWORK_ERRORS) else crash_site(exc)
+        ctx.cut_off = isinstance(exc, errors.NETWORK_ERRORS)
         output.tell(f"FAILED: {message}")
         return 1
     # A step may end its stage otherwise: "skipped" or "already done".
@@ -390,6 +393,24 @@ def tell_how_to_carry_on() -> None:
         output.tell("Fix the cause, then run the same command again: sh start.sh")
     # The run's log is named once, under the way to open an issue that follows
     # (report.ask_for_an_issue).
+
+
+def cut_off_hint(ctx: Context) -> list[str]:
+    """What to say when the run stops on a transfer to or from the device cut
+    off part way, its tries used up: most often the link between router and
+    device, not the device or this computer. Around it, where the device is on
+    the installer and this computer has Wi-Fi: the installer's own network."""
+    lines = ["Most often the link between your router and the device is at fault,",
+             "or a mesh node, extender or powerline adapter between them."]
+    if getattr(ctx, "last_failed_step", None) in routes.FAMILY.OWN_NETWORK_STEPS and hostsys.has_wifi():
+        return [*lines,
+                "To go around them, switch the router off or block the device on it:",
+                f"within a minute the device raises its own network, {names.our_setup_network(ctx)}.",
+                f"Join that in {hostsys.wifi_menu_hint()}, then switch the router back",
+                "on or unblock the device."]
+    return [*lines,
+            "Switch the router off and on, and have the device join the main router",
+            "rather than one of those."]
 
 
 def connection_lost(exc: BaseException) -> str:
@@ -625,6 +646,8 @@ def run_steps(ctx: Context) -> int:
             return code  # the operator chose to quit; main() cleans up and says so
         if code != 0:
             firewall.close_firewall_rules(ctx)
+            if getattr(ctx, "cut_off", False):
+                prompts.section("The connection to the device was cut off", cut_off_hint(ctx))
             tell_how_to_carry_on()
             return code
     output.say("")

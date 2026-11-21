@@ -222,6 +222,11 @@ STEP_VERIFIERS = {**tasmota.STEP_VERIFIERS, "U1": update.still_updated, "U5": up
 # instead raises its own network (F4 looks for that itself, F2 starts on the
 # startup firmware).
 ERASED_CHECK_STEPS = {"D4", "D5", "K1", "E1", "E2", "E3", "I1", "G1", "H1"}
+# The steps whose transfers go through the installer: it raises its own
+# network once off the home one a while, and the step carried on there goes
+# around the router (installer.reach_bridge). The mover raises one too, but
+# its uploads go to it on the home network only.
+OWN_NETWORK_STEPS = {"C3", "D1"}
 
 
 # Each step's name on its stage line, in words that need no knowledge of the

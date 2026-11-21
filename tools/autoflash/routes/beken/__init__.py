@@ -130,6 +130,9 @@ def steps_for(firmware: str, source: str = "sonoff") -> Steps:
 RETRY_STEPS = {"B1", "J1", "J3", "K1", "K2", "K3", "B4", "U2", "U4"}
 # No Tasmota here to lose its settings and raise a network of its own.
 ERASED_CHECK_STEPS: set[str] = set()
+# No step's transfers can go through a network of the device's own: the
+# interim OpenBeken raises none to carry on through.
+OWN_NETWORK_STEPS: set[str] = set()
 STAGE_NAMES = {
     "B1": "Querying Sonoff firmware",
     "B2": "Sending the new firmware",

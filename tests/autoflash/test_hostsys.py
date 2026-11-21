@@ -878,6 +878,33 @@ class ConnectionTests(unittest.TestCase):
             self.assertEqual([hostsys.connection_linux(root / name) for name in ("wlp2s0", "enp3s0", "br0")],
                              ["wifi", "ethernet", "other"])
 
+    def test_whether_this_computer_has_wi_fi_at_all(self):
+        # A computer on Ethernet with Wi-Fi can join a device's own network;
+        # one without cannot (runner.cut_off_hint).
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(hostsys, "IS_LINUX", True):
+            root = Path(tmp)
+            (root / "enp3s0" / "device").mkdir(parents=True)
+            (root / "lo").mkdir()
+            self.assertIs(hostsys.has_wifi(root), False)
+            (root / "wlp2s0" / "phy80211").mkdir(parents=True)
+            self.assertIs(hostsys.has_wifi(root), True)
+        ports = "Hardware Port: Wi-Fi\nDevice: en0\n\nHardware Port: USB 10/100/1000 LAN\nDevice: en5\n"
+        with mock.patch.object(hostsys, "IS_LINUX", False), mock.patch.object(hostsys, "IS_MAC", True):
+            for listed, has in ((ports, True), (ports.split("\n\n")[1], False)):
+                with mock.patch.object(hostsys, "_run", return_value=subprocess.CompletedProcess([], 0, listed, "")):
+                    self.assertIs(hostsys.has_wifi(), has)
+            with mock.patch.object(hostsys, "_run", return_value=None):
+                self.assertIsNone(hostsys.has_wifi())
+        interfaces = ("There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n"
+                      "    GUID                   : 12345678-1234-4abc-8def-123456789abc\n")
+        with mock.patch.object(hostsys, "IS_LINUX", False), mock.patch.object(hostsys, "IS_MAC", False), \
+                mock.patch.object(hostsys, "IS_WINDOWS", True):
+            for completed, has in ((subprocess.CompletedProcess([], 0, interfaces, ""), True),
+                                   (subprocess.CompletedProcess([], 0, "There is no wireless interface on the system.\n", ""), False),
+                                   (subprocess.CompletedProcess([], 1, "The Wireless AutoConfig Service (wlansvc) is not running.\n", ""), False)):
+                with mock.patch.object(hostsys, "_run", return_value=completed):
+                    self.assertIs(hostsys.has_wifi(), has)
+
     def test_macos_reads_the_hardware_port(self):
         ports = ("Hardware Port: Wi-Fi\nDevice: en0\nEthernet Address: 12:34:56:ab:cd:01\n\n"
                  "Hardware Port: USB 10/100/1000 LAN\nDevice: en5\nEthernet Address: 12:34:56:ab:cd:02\n\n"

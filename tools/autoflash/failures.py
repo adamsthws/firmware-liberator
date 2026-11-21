@@ -97,7 +97,8 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
                   r"|would not take its new name|went back to its Sonoff firmware before"
                   r"|still on its Sonoff firmware, so nothing was read|would not fetch Sonoff's firmware back"
                   r"|refused to fetch Sonoff's firmware|after it was sent \d+ times"),
-    ("upload-cut", r"stopped part way|was not uploaded|to the device failed|could not be sent to the device"
+    ("upload-cut", r"stopped part way|was not uploaded|upload to the bridge did not complete|to the device failed"
+                   r"|could not be sent to the device"
                    r"|did not complete within|did not print|nothing was armed|delivery failed"
                    r"|installer was not fully delivered|installer was not delivered"
                    r"|the device fetched \S+ of \S+ bytes"),

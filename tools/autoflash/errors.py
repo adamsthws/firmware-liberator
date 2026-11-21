@@ -31,6 +31,12 @@ class StoppedPartWay(Abort):
     failure = "upload-cut"
 
 
+class CutOff(Abort):
+    """A transfer to or from the device cut off part way, after the tries a
+    step makes: the run ends saying what most often causes that, and how to
+    go around it (runner.cut_off_hint)."""
+
+
 class NothingWritten(Abort):
     """A step stopped before it wrote anything to the device: a run of nothing
     else does not say what the device is (past_the_commit)."""

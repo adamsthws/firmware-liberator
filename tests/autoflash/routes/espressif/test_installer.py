@@ -897,6 +897,18 @@ class SpoiltTasmotaTests(unittest.TestCase):
         checked = imprint.parse_esp_image(sent[0])
         self.assertFalse(checked["checksum_valid"] or checked["sha256_valid"])
 
+    def test_an_upload_cut_off_ends_the_run_naming_the_network_and_one_refused_does_not(self):
+        from types import SimpleNamespace
+        for raised, stop in ((setup_network.UploadCut("the upload to the bridge did not complete: timed out"),
+                              errors.CutOff),
+                             (setup_network.SetupError("the bridge refused the image: too big"), errors.Abort)):
+            with self.subTest(stop=stop.__name__), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(setup_network, "upload_to_bridge", side_effect=raised), \
+                    mock.patch.object(output, "say"), self.assertRaises(errors.Abort) as stopped:
+                installer.upload_tasmota(SimpleNamespace(state=RunState.open(Path(directory))), self.IMAGE)
+            self.assertIs(type(stopped.exception), stop)
+            self.assertEqual(str(stopped.exception), f"{raised}. The device still has the installer; try again")
+
     def test_unasked_it_is_sent_as_it_is(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as directory, \

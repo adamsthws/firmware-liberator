@@ -34,7 +34,7 @@ from tools.autoflash import (
     testers,
 )
 from tools.autoflash.device import DeviceError
-from tools.autoflash.errors import Abort
+from tools.autoflash.errors import Abort, CutOff
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED
 from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
@@ -862,7 +862,8 @@ def upload_tasmota(ctx: Context, image: Path, host: str = setup_network.SETUP_HO
     try:
         setup_network.upload_to_bridge(payload, host=host)
     except setup_network.SetupError as exc:
-        raise Abort(f"{exc}. The device still has the installer; try again") from exc
+        stop = CutOff if isinstance(exc, setup_network.UploadCut) else Abort
+        raise stop(f"{exc}. The device still has the installer; try again") from exc
     output.say(f"    Upload verified in {time.monotonic() - started:.0f}s; the device is restarting into Tasmota.")
 
 

@@ -16,6 +16,15 @@ check.
 
 ## 3.2.0
 
+- A run stopped by a transfer to or from the device that kept being cut off
+  part way now says what most often causes it: the link between the router
+  and the device, or a mesh node, extender or powerline adapter between them.
+  On a computer with Wi-Fi, while the device is on the installer, it says how
+  to go around the router through the installer's own network,
+  `autoflash-recovery-XXXX`. Otherwise it says to restart the router and keep
+  the device on the main one. Such a failure of the upload to the bridge is
+  now counted as an upload cut off in the run's report, where before it was
+  unclassed.
 - A Dual R3 that drives a motor keeps how its wall switches work through the
   conversion: as push-buttons, acting as one is let go (S1 opens, S2 closes,
   either stops a motor that runs, the eWeLink app's default), hold to run, or
