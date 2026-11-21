@@ -7,7 +7,7 @@ nor a device's backup lost.
 
     tools/repo/remote_tree.py HOST send NAME [REF]
     tools/repo/remote_tree.py HOST devices NAME --from DIR MAC...
-    tools/repo/remote_tree.py HOST prep NAME espressif|beken [--device MAC] [--emulators N]
+    tools/repo/remote_tree.py HOST prep NAME espressif|beken [--device MAC] [--again]
     tools/repo/remote_tree.py HOST run NAME [--emulators N --family F] [--detach] -- COMMAND...
     tools/repo/remote_tree.py HOST fetch NAME
     tools/repo/remote_tree.py HOST remove NAME [--no-fetch]

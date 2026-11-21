@@ -471,5 +471,20 @@ class RemoveTests(unittest.TestCase):
         self.assertEqual(self.steps, ["remove"])
 
 
+class UsageTests(unittest.TestCase):
+    def test_each_option_the_usage_names_is_one_its_command_takes(self):
+        import contextlib
+        import io
+        import re
+        lines = re.findall(r"(?m)^\s+tools/repo/remote_tree\.py HOST (\w+) (.*)$", remote_tree.__doc__)
+        self.assertEqual(len(lines), 6)
+        for command, rest in lines:
+            out = io.StringIO()
+            with self.subTest(command=command), contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+                remote_tree.main(["host", command, "--help"])
+            for option in re.findall(r"--[a-z][a-z-]*", rest):
+                self.assertIn(option, out.getvalue(), f"{command} {option}")
+
+
 if __name__ == "__main__":
     unittest.main()
