@@ -189,8 +189,9 @@ fork's source, make the change, and regenerate them.
   channel read 0, which the BASICR4's firmware took for overheating, refusing
   updates (`"error": 407`). The properties `adc1_ch0` to `adc1_ch4` hold each
   ADC1 channel's raw 12-bit sample, set by `device-supervisor` from a kind's
-  `adc_readings` ([kinds.py](../../autoflash/kinds.py)). Not offered upstream
-  yet.
+  `adc_readings` ([kinds.py](../../autoflash/kinds.py)). Merged as
+  lcgamboa/qemu#23 (22 November 2026)
+  ([upstream contributions](../../../docs/upstream-contributions.md#the-emulators-wi-fi)).
 - **ADC calibration in the eFuses.** A real ESP32-C3 leaves Espressif with its
   ADC measured in eFuse block 2: for each attenuation, an init code (the
   offset) and the reading at a known voltage. Without it `esp_adc_cal` turns
@@ -220,7 +221,8 @@ fork's source, make the change, and regenerate them.
   baud 8E1, a timeout of one character: register 88) held each answer 18 ms
   instead of 0.3, and Tasmota, which waits 6 ms, found no meter
   ("C61: Rx none") though the board answered within 0.1 ms. The register now
-  counts in the unit of the UART's clock. Offered as lcgamboa/qemu#21, and to
+  counts in the unit of the UART's clock. Merged as lcgamboa/qemu#21 (14 November
+  2026), and offered to
   Espressif's QEMU, where the fork's UART comes from and the same fault hides
   behind a baud rate on REF_TICK taken from 40 MHz, 40 times too fast, as
   espressif/qemu#212
@@ -237,11 +239,15 @@ fork's source, make the change, and regenerate them.
   `GPIO_STATUS_REG`, which that handler does not read). The device is `/machine/gpio` on an
   ESP32-C3 and `/machine/soc/gpio` on a classic ESP32:
   `qom-set /machine/gpio gpio9 false` presses an S60's button.
-  [The board](#the-devices-board-boardpy) sets them.
+  [The board](#the-devices-board-boardpy) sets them. Merged as
+  lcgamboa/qemu#22 (22 November 2026).
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 after the
 pinned commit, on 7 November 2026 (`2d075b740`), so `0001`-`0003` drop out on a
-commit after that. Replace `0004` with
+commit after that, and `0006` on one after lcgamboa merged #21 on 14 November
+2026 (`885a6e7`); lcgamboa merged #22 and #23 on 22 November 2026 (`564205350`, `fac9a4689`), so
+`0005` and `0007` drop out on a commit after `fac9a4689`.
+Replace `0004` with
 [espressif/qemu #183](https://github.com/espressif/qemu/pull/183) (or
 lcgamboa's copy of it, once there): written for Espressif's `esp32.c`, its
 changes to that file go into `esp32_picsimlab.c`, and it touches the same part

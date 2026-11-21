@@ -107,9 +107,11 @@ going wrong on the emulator that would not on a device:
 | QEMU (lcgamboa) | [#17](https://github.com/lcgamboa/qemu/pull/17) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/17?label=) | Run on its own, every input pin read low, so Tasmota saw its button held and reset itself; the levels can now be set |
 | QEMU (lcgamboa) | [#18](https://github.com/lcgamboa/qemu/pull/18) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/18?label=) | `-monitor` bound its socket and never answered |
 | QEMU (lcgamboa) | [#19](https://github.com/lcgamboa/qemu/pull/19) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/19?label=) | A guest's Wi-Fi could not be taken away, so reconnect and fallback code could not be tested: a property now switches the emulated access points off |
+| QEMU (lcgamboa) | [#22](https://github.com/lcgamboa/qemu/pull/22) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/22?label=) | Once running, no input pin could change, so a button or wall switch could not be pressed: each pin's level can now be set from the monitor, raising its interrupt |
+| QEMU (lcgamboa) | [#23](https://github.com/lcgamboa/qemu/pull/23) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/23?label=) | Run on its own, every ESP32-C3 ADC channel read 0, which a BASICR4 took for overheating and refused its updates: each ADC1 channel's reading can now be set |
 
-The emulator carries #18 and #19 as patches `0001` and `0002` until its pin
-moves past them.
+The emulator carries #18 and #19 as patches `0001` and `0002`, and #22 and
+#23 as `0007` and `0005`, until its pin moves past them.
 
 <br>
 
