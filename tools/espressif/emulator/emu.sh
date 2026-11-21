@@ -100,6 +100,9 @@ fi
     echo "    $PY -m pip install --require-hashes --no-deps -r $ROOT/requirements/ci.txt" >&2
     exit 1
 }
+# The runs started by hand in it before, not sent yet: one whose emulator was
+# stopped is sent as it starts again, before --fresh forgets them (below).
+emulator_stats_manual "$STATE"
 if docker ps -q --filter "name=^$NAME$" | grep -q .; then
     echo "The emulator is already running. Join it with: docker exec -it -u ubuntu $NAME tmux attach -t autoflash" >&2
     exit 1
@@ -416,6 +419,11 @@ if [ "$api" = 1 ] && [ "$windows" = 0 ]; then
     local_api_goes_with "$NAME" "$NAME-api"
     api_env=(-e AUTOFLASH_READOUT_URL="$LOCAL_API_READOUT_URL")
 fi
+# The runs started by hand in it, sent once it stops (emulator-room.sh), as
+# what it is says: its device's kind, and its cloud.
+said_cloud=none; [ "$cloud" = 1 ] && said_cloud=real; [ "$stub" = 1 ] && said_cloud=stub
+printf '{"family": "espressif", "device": "%s", "cloud": "%s"}\n' "$kind" "$said_cloud" > "$STATE/emulator-stats.json"
+emulator_stats_after "$STATE" "$NAME"
 exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-computer \
     --memory "${AUTOFLASH_EMU_MEMORY:-$memory}" --cpus "${AUTOFLASH_EMU_CPUS:-2}" \
     --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \

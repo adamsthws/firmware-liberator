@@ -254,6 +254,21 @@ class OutcomeTests(Case):
                          "the class, never the words, which stay in run.log")
         self.assertLessEqual(lines[0]["at"], lines[1]["at"])
 
+    def test_a_run_says_which_emulator_suite_started_it_and_none_for_any_other(self):
+        folder = self.queue.parent / "devices" / "12-34-56-ab-cd-ef" / "runs" / "20261121-100000"
+        folder.mkdir(parents=True)
+        ctx = SimpleNamespace(args=SimpleNamespace(), state=SimpleNamespace(path=folder / "autoflash-state.json"))
+        with mock.patch.object(upload.report_data, "outcome", return_value=("converted", None)), \
+                mock.patch.object(upload, "post"):
+            for said in ("fault", None, "Not A Suite"):
+                with mock.patch.dict("os.environ", {} if said is None else {upload.SUITE_MARK: said}):
+                    if said is None:
+                        os.environ.pop(upload.SUITE_MARK, None)
+                    upload.send(ctx, "converted", 300, False)
+        lines = [json.loads(line) for line in (folder / upload.OUTCOMES).read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([line["suite"] for line in lines], ["fault", None, None],
+                         "a run by hand says so; a mark not a suite's name is none")
+
     def test_a_run_that_converted_keeps_its_checks_as_it_judged_them(self):
         from tools.autoflash import report
         folder = self.queue.parent / "devices" / "12-34-56-ab-cd-ef" / "runs" / "20261115-100000"

@@ -1010,6 +1010,7 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
 
 
 def main() -> int:
+    emulator_stats.mark("attended")   # its runs not taken for ones by hand
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["list", "run", "share"])
     parser.add_argument("names", nargs="*", help="run: the scenarios to run (default: all); share: the file "

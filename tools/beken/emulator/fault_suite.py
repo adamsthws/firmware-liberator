@@ -2008,6 +2008,7 @@ def report() -> None:
 
 def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
+    emulator_stats.mark("check" if command == "check" else "fault")   # its runs not taken for ones by hand
     for line in folders.migrate():
         print(line, file=sys.stderr)
     if command in ("prep", "prep-update", "batch"):

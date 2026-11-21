@@ -1,6 +1,7 @@
 import http.server
 import io
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -30,6 +31,7 @@ class Admin(http.server.BaseHTTPRequestHandler):
     says, every run taken but those `refuse` names."""
     answer = 200
     refuse: set = set()
+    why = "made up"
     seen: list = []
     batches: list = []
 
@@ -46,7 +48,7 @@ class Admin(http.server.BaseHTTPRequestHandler):
             return
         ids = [emulator_stats._id(key, item) for item in body[key]]
         said = json.dumps({"taken": [one for one in ids if one not in self.refuse],
-                           "refused": [{"id": one, "why": "made up"} for one in ids if one in self.refuse]})
+                           "refused": [{"id": one, "why": self.why} for one in ids if one in self.refuse]})
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -72,7 +74,7 @@ class EmulatorStatsTests(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        Admin.answer, Admin.refuse, Admin.seen, Admin.batches = 200, set(), [], []
+        Admin.answer, Admin.refuse, Admin.why, Admin.seen, Admin.batches = 200, set(), "made up", [], []
         self.env_file = self.folder / "home" / "emulator.env"
         self.env_file.parent.mkdir()
         self.env_file.write_text("EMULATOR_STATS_CLIENT_ID=cid.access\nEMULATOR_STATS_CLIENT_SECRET=made-up\n",
@@ -229,6 +231,17 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertIn("1 sent, 1 refused", emulator_stats.send(self.folder))
         self.assertEqual(self.kept(), [])
 
+    def test_a_run_of_a_suite_the_admin_view_does_not_take_yet_is_kept_until_it_does(self):
+        with emulator_stats._sending:
+            emulator_stats.record(self.folder, **run_args(suite="manual"))
+        Admin.refuse, Admin.why = {self.kept()[0]["id"]}, emulator_stats.NEWER_SUITE
+        self.assertEqual(emulator_stats.send(self.folder), "Emulator stats: 0 sent, 1 kept to send later "
+                         "(1 of a suite the admin view takes once it is deployed again)")
+        self.assertEqual(len(self.kept()), 1)
+        Admin.refuse = set()
+        self.assertEqual(emulator_stats.send(self.folder), "Emulator stats: 1 sent")
+        self.assertIn("missing or not as it has them: ${wrong.join(\", \")}", ADMIN, "as the view says it")
+
     def test_runs_the_admin_view_did_not_take_are_kept_for_the_next_batch(self):
         Admin.answer = 503
         emulator_stats.record(self.folder, **run_args())
@@ -355,6 +368,83 @@ class EmulatorStatsTests(unittest.TestCase):
         with mock.patch.dict("os.environ", {"EMULATOR_STATS_CLIENT_ID": "other.access"}):
             self.assertEqual(emulator_stats.client(), ("other.access", "made-up"))
 
+    def emulator(self, name, lines, inputs=None, settings=None):
+        """An emulator's state folder `name` under the test's folder, one run
+        in it with `lines` as its outcomes."""
+        state = self.folder / "emulation" / name
+        run = state / "work" / "captures" / "devices" / "12-34-56-ab-cd-ef" / "runs" / "20261121-100000"
+        run.mkdir(parents=True)
+        (run / "outcomes.jsonl").write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+        if inputs is not None:
+            (run / "autoflash-state.json").write_text(json.dumps({"inputs": inputs}), encoding="utf-8")
+        if settings is not None:
+            (state / emulator_stats.MANUAL_SETTINGS).write_text(json.dumps(settings), encoding="utf-8")
+        return state
+
+    def test_a_run_by_hand_is_sent_once_as_the_suite_manual_and_a_suites_never(self):
+        now = time.time()
+        lines = [{"at": now - 300, "result": "failed", "stopped": {"step": "K2", "error": "network-join"}, "suite": None},
+                 {"at": now - 200, "result": "converted", "stopped": None, "suite": "fault"},
+                 {"at": now - 150, "result": "converted", "stopped": None},   # a release before the mark
+                 {"at": now - 100, "result": "cancelled", "stopped": {"step": "C2", "error": "quit"}, "suite": None},
+                 {"at": now - 50, "result": "put-back", "stopped": None, "suite": None}]
+        state = self.emulator("state-3", lines, {"device_kind": "sonoff-s60", "source": "tasmota", "firmware": "esphome"},
+                              {"family": "espressif", "device": "", "cloud": "real"})
+        self.assertEqual(emulator_stats.manual(state), "Emulator stats: 3 sent")
+        sent = [row for _, body in Admin.seen for row in body["runs"]]
+        self.assertEqual([(row["suite"], row["verdict"], row["step"], row["stopped_by"]) for row in sent],
+                         [("manual", "FAIL", "K2", ["network-join"]), ("manual", "CANCELLED", "C2", []),
+                          ("manual", "PASS", None, [])])
+        self.assertEqual({(row["family"], row["device"], row["cloud"], row["scenario"], row["route"]) for row in sent},
+                         {("espressif", "sonoff-s60", "real", "manual:tasmota>esphome", "tasmota>esphome")})
+        self.assertEqual(sorted(emulator_stats.run_row(**run_args())), sorted(sent[0]), "as the admin view takes a run")
+        self.assertIsNone(emulator_stats.manual(state), "none new: nothing said, nothing sent")
+        # The same run in another instance, as a device kept with --save and started from again.
+        again = self.emulator("state-4", lines[:1])
+        self.assertIsNone(emulator_stats.manual(again))
+        self.assertEqual(len(Admin.seen), 1)
+        self.assertFalse((state.parent / emulator_stats.UNSENT).exists())
+
+    def test_runs_by_hand_that_could_not_be_sent_are_kept_beside_the_emulators_and_sent_later(self):
+        self.env_file.unlink()
+        state = self.emulator("state", [{"at": time.time(), "result": "crashed",
+                                         "stopped": {"step": "A3", "error": "crash"}, "suite": None}],
+                              settings={"family": "beken", "cloud": "stub"})
+        self.assertIn("1 kept, not sent", emulator_stats.manual(state))
+        self.assertEqual(Admin.seen, [])
+        self.env_file.write_text("EMULATOR_STATS_CLIENT_ID=cid.access\nEMULATOR_STATS_CLIENT_SECRET=made-up\n",
+                                 encoding="utf-8")
+        self.assertEqual(emulator_stats.manual(state), "Emulator stats: 1 sent")
+        [(_, body)] = Admin.seen
+        self.assertEqual([(row["family"], row["device"], row["verdict"]) for row in body["runs"]],
+                         [("beken", kinds.SONOFF_S61.key, "CRASH")], "an S61 where nothing says which device")
+
+    def test_runs_by_hand_are_neither_kept_nor_sent_with_stats_off(self):
+        state = self.emulator("state", [{"at": time.time(), "result": "converted", "stopped": None, "suite": None}])
+        with mock.patch.dict("os.environ", {"AUTOFLASH_EMU_NO_STATS": "1"}):
+            self.assertIsNone(emulator_stats.manual(state))
+        self.assertIsNone(emulator_stats.manual(self.folder / "emulation" / "never-started"))
+        self.assertFalse((state.parent / emulator_stats.MANUAL_TAKEN).exists())
+
+    def test_every_result_a_run_keeps_has_its_verdict(self):
+        from tools.autoflash import report_data
+        source = (ROOT / "tools/autoflash/report_data.py").read_text(encoding="utf-8")
+        said = set(re.findall(r'"(converted|updated|put-back|cancelled|failed|crashed)"', source))
+        self.assertEqual(said - set(emulator_stats.MANUAL_VERDICTS), set(), report_data.__file__)
+        self.assertEqual(emulator_stats.MANUAL_VERDICTS["cancelled"], "CANCELLED")
+        self.assertIn('"CANCELLED"', (ROOT / "website/api/emulator.js").read_text(encoding="utf-8"),
+                      "a run the person stopped is neither a pass nor a failure (INCONCLUSIVE)")
+        self.assertIn(f'export const MANUAL = "{emulator_stats.MANUAL}";',
+                      (ROOT / "website/api/emulator.js").read_text(encoding="utf-8"))
+
+    def test_a_suite_marks_its_runs_and_one_started_by_another_keeps_its_mark(self):
+        from tools.autoflash import report_upload
+        with mock.patch.dict("os.environ"):
+            os.environ.pop(report_upload.SUITE_MARK, None)
+            emulator_stats.mark("check")
+            emulator_stats.mark("fault")
+            self.assertEqual(report_upload.suite_mark(), "check")
+
 
 class EveryFamilyTests(unittest.TestCase):
     """Every chip family's suites send their runs alike: each fault suite, a
@@ -391,6 +481,46 @@ class EveryFamilyTests(unittest.TestCase):
         self.assertIn("print(emulator_stats.send(RESULTS), flush=True)", source)
         for family in attended_suite.SCENARIOS:
             self.assertEqual(attended_suite.device_of(family, None).family, family)
+
+    def test_every_suite_marks_the_runs_it_starts_and_every_way_in_passes_the_mark_on(self):
+        from tools.autoflash import report_upload
+        mark = report_upload.SUITE_MARK
+        for name, suite in (("tools/espressif/emulator/fault_suite.py", '"fault"'),
+                            ("tools/beken/emulator/fault_suite.py", '"fault"'),
+                            ("tools/espressif/emulator/attended_suite.py", '"attended"'),
+                            ("tools/repo/emulator_check.py", '"check"'),
+                            ("tools/espressif/emulator/public_devices.py", '"check"')):
+            source = (ROOT / name).read_text(encoding="utf-8")
+            main = source[source.index("\ndef main("):]
+            self.assertIn("emulator_stats.mark(", "\n".join(main.splitlines()[:6]), f"{name}: marked first")
+            self.assertIn(suite, main.split("emulator_stats.mark(", 1)[1].split(")", 1)[0], name)
+        # Where the tool starts in an emulator: the run's container is given the mark from the
+        # suite's environment (docker's -e NAME, nothing where there is none).
+        unattended = (ROOT / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
+        run = unattended[unattended.index('"${as_you[@]}" -e AUTOFLASH_EMULATOR_URL'):]
+        self.assertIn(f"-e {mark} ", run.split("|| status=$?")[0])
+        beken = (ROOT / "tools/beken/emulator/beken-emu.sh").read_text(encoding="utf-8")
+        self.assertIn(f"-e {mark}\n", beken.split("CONTAINER_OPTIONS=(", 1)[1].split("--entrypoint bash)")[0])
+        second = (ROOT / "tools/espressif/emulator/fault_suite.py").read_text(encoding="utf-8")
+        second = second[second.index('elif fault == "second":'):].split("timeout=200)")[0]
+        self.assertIn(f'"-e", "{mark}"', second)
+        # The Beken suite's second window runs in the computer, which has the mark already.
+        self.assertIn("instance.computer", (ROOT / "tools/beken/emulator/fault_suite.py").read_text(encoding="utf-8")
+                      .split("def as_you(", 1)[1].split("\ndef ")[0])
+
+    def test_every_emulator_script_sends_the_runs_by_hand_as_it_starts_and_ends(self):
+        for name, calls in (("tools/espressif/emulator/emu.sh", ('emulator_stats_manual "$STATE"',
+                                                                  'emulator_stats_after "$STATE" "$NAME"')),
+                            ("tools/espressif/emulator/unattended-test.sh", ('emulator_stats_manual "$STATE"',) * 2),
+                            ("tools/beken/emulator/beken-emu.sh", ('emulator_stats_manual "$DEVICE_STATE"',) * 2
+                             + ('emulator_stats_after "$DEVICE_STATE" --cidfile "$cid"',))):
+            source = (ROOT / name).read_text(encoding="utf-8")
+            for call in set(calls):
+                self.assertEqual(source.count(call), calls.count(call), f"{name}: {call}")
+        self.assertIn('"$STATE/emulator-stats.json"', (ROOT / "tools/espressif/emulator/emu.sh").read_text(encoding="utf-8"))
+        self.assertIn('"$DEVICE_STATE/emulator-stats.json"',
+                      (ROOT / "tools/beken/emulator/beken-emu.sh").read_text(encoding="utf-8"))
+        self.assertEqual(emulator_stats.MANUAL_SETTINGS, "emulator-stats.json")
 
 
 if __name__ == "__main__":

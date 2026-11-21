@@ -943,6 +943,7 @@ def check_device(kind: kinds.Kind, instances: list[int], motor: str = "") -> int
 
 
 def main(argv: list[str] | None = None) -> int:
+    emulator_stats.mark("check")   # its runs not taken for ones by hand
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("device", help="list, or a device's key")
     parser.add_argument("--changed-since", help="list: only what a change since this commit could affect")

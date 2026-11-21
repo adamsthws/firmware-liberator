@@ -86,6 +86,9 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+# The runs started by hand here before, not sent yet (emulator-room.sh): before
+# --from or --fresh puts other captures in their place.
+emulator_stats_manual "$STATE"
 # Keeping the device switches it off when the run ends; --keep leaves it on.
 if [ "$keep" = 1 ] && [ -n "$save" ]; then
     echo "--save turns the device off to keep it as the run left it: not with --keep" >&2; exit 2
@@ -311,10 +314,13 @@ stub_env+=(-e AUTOFLASH_READOUT_URL="${AUTOFLASH_READOUT_URL:-}")
     -e AUTOFLASH_TASMOTA_PASSWORD="${AUTOFLASH_TASMOTA_PASSWORD:-}" -e AUTOFLASH_ESPHOME_OTA_PASSWORD="${AUTOFLASH_ESPHOME_OTA_PASSWORD:-}" \
     -e AUTOFLASH_ESPHOME_WEB_USER="${AUTOFLASH_ESPHOME_WEB_USER:-}" -e AUTOFLASH_ESPHOME_WEB_PASSWORD="${AUTOFLASH_ESPHOME_WEB_PASSWORD:-}" \
     -e AUTOFLASH_ESPHOME_API_KEY="${AUTOFLASH_ESPHOME_API_KEY:-}" \
-    -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size "$size" "${driver_args[@]}" \
+    -e AUTOFLASH_EMU_SUITE -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size "$size" "${driver_args[@]}" \
     --save "captures/unattended/$stamp" -- --env-file "$answers" "${run_args[@]}" || status=$?
 
 stop_api
+# The run sent if it was started by hand, now: with --keep its emulator runs
+# on. A suite's is marked (AUTOFLASH_EMU_SUITE, passed into the run above).
+emulator_stats_manual "$STATE"
 echo "On this computer: ${STATE#"$ROOT/"}/work/captures/unattended/$stamp/"
 [ "$keep" = 1 ] && echo "The emulator is still running: http://localhost:$PORT, or docker exec -it -u ubuntu $NAME tmux attach -t autoflash"
 exit "$status"

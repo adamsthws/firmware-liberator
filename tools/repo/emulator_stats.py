@@ -6,6 +6,8 @@ stopped did by the tool's own classes, the emulator image's tag - never a
 run's report or log, which stay on the machine that ran it.
 
     emulator_stats.py send DIR...    send what the suites in DIR kept unsent
+    emulator_stats.py manual STATE...  send the runs started by hand in each
+                                     emulator's STATE folder, not sent before
     emulator_stats.py check          whether this computer can send: its
                                      credentials, and the admin view taking them
     emulator_stats.py push [HOST...] this computer's credentials copied to each
@@ -26,6 +28,13 @@ network, no credentials) goes with the next one, or by `send`, up to the admin
 view's OLDEST_DAYS. AUTOFLASH_EMU_NO_STATS=1 keeps and sends none, as in the
 tests (tests/no_network.py).
 
+Each suite marks the tool's runs it starts (mark), and the tool keeps the
+mark in the outcome line each run adds to its folder (report_upload.OUTCOMES).
+A run started by hand in an emulator has none: manual() sends each such line
+as a run of the suite "manual", as the emulator's scripts end, and as they
+start, for a run whose emulator was stopped (emu.sh, unattended-test.sh,
+beken-emu.sh device and computer).
+
 Sent with Access's service token for the suites, which never expires and can
 send runs and do nothing else. tools/repo/cloudflare_settings.py makes and
 rotates it, and writes it to CREDENTIALS, one file a computer that every
@@ -41,8 +50,10 @@ its runs unsent, and again as each ends.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import functools
+import hashlib
 import json
 import os
 import re
@@ -58,7 +69,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import __version__, credentials, kinds  # noqa: E402
+from tools.autoflash import __version__, credentials, kinds, report_upload  # noqa: E402
 
 # What Access's application for the suites covers (cloudflare_settings.py
 # UPLOAD_APP): every path the suites use, the runs' and any to come.
@@ -393,6 +404,135 @@ def check_run(folder: Path, *, family: str, device: str, route: str, passed: boo
            verdict="PASS" if passed else "FAIL", seconds=seconds, cloud=cloud, workers=2)
 
 
+def mark(suite: str) -> None:
+    """The tool's runs this process starts from now on marked as `suite`'s
+    (report_upload.SUITE_MARK), so manual() takes none of them for a run
+    started by hand: called first by every suite. A suite started by another
+    (the Beken fault suite's check, by emulator_check.py) keeps its mark."""
+    os.environ.setdefault(report_upload.SUITE_MARK, suite)
+
+
+# The suite a run started by hand is sent as.
+MANUAL = "manual"
+# A run by hand's verdict, from the tool's own result in its outcome line: a
+# conversion, update or putting back a pass; one the person stopped neither
+# (INCONCLUSIVE in website/api/emulator.js); a failure or a crash, or any
+# result not known here, a failure.
+MANUAL_VERDICTS = {"converted": "PASS", "updated": "PASS", "put-back": "PASS", "cancelled": "CANCELLED",
+                   "failed": "FAIL", "crashed": "CRASH"}
+# What an emulator's script says of it as it starts, in its state folder: its
+# family, its device's kind, its cloud (emu.sh, beken-emu.sh device).
+MANUAL_SETTINGS = "emulator-stats.json"
+# Beside an emulator's state folder, shared by every instance and the devices
+# kept to start from: the outcome lines taken (their ids), and the runs kept
+# to send (UNSENT), so a line copied to another instance is sent once.
+MANUAL_TAKEN = "emulator-stats-manual-taken.txt"
+
+
+def _manual_settings(state: Path) -> dict[str, str]:
+    try:
+        said = json.loads((state / MANUAL_SETTINGS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        said = {}
+    said = said if isinstance(said, dict) else {}
+    family = said.get("family") or ("beken" if "beken" in state.parts else "espressif")
+    return {"family": family, "device": said.get("device") or "",
+            "cloud": said.get("cloud") if said.get("cloud") in ("stub", "real", "none") else "stub"}
+
+
+def _run_inputs(folder: Path) -> dict[str, Any]:
+    """The inputs of the run whose folder holds an outcome line."""
+    try:
+        inputs = json.loads((folder / "autoflash-state.json").read_text(encoding="utf-8")).get("inputs")
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return inputs if isinstance(inputs, dict) else {}
+
+
+def manual_lines(state: Path) -> list[tuple[str, Path, dict[str, Any]]]:
+    """Every outcome line under the emulator's `state` that no suite started
+    (report_upload.suite_mark None), with an id of its own made from the line
+    itself, oldest first. A line without "suite" at all is from a release
+    before the mark, and not among them."""
+    found = []
+    for path in (state / "work" / "captures").glob(f"*/*/runs/*/{report_upload.OUTCOMES}"):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                said = json.loads(line)
+            except ValueError:
+                continue   # one being written
+            if (isinstance(said, dict) and "suite" in said and said["suite"] is None
+                    and isinstance(said.get("at"), (int, float))):
+                one = hashlib.sha256(json.dumps(said, sort_keys=True).encode()).hexdigest()[:32]
+                found.append((one, path.parent, said))
+    return sorted(found, key=lambda item: item[2]["at"])
+
+
+def manual_row(one: str, folder: Path, line: dict[str, Any], settings: dict[str, str]) -> dict[str, Any]:
+    """An outcome line by hand as a run_row of the suite MANUAL: its device by
+    the run's own record of it, else as the emulator was started; its
+    scenario its route (manual:sonoff>esphome); its id `one`, so a line sent
+    again is taken once."""
+    inputs = _run_inputs(folder)
+    family = settings["family"]
+    default = kinds.SONOFF_S61 if family == "beken" else kinds.SONOFF_S60
+    device = (kinds.find(inputs.get("device_kind")) or kinds.find(settings["device"]) or default).key
+    route = f"{inputs.get('source') or 'sonoff'}>{inputs.get('firmware') or '?'}"
+    stopped = line.get("stopped") if isinstance(line.get("stopped"), dict) else {}
+    row = run_row(family=family, suite=MANUAL, device=device, scenario=f"{MANUAL}:{route}", route=route,
+                  step=stopped.get("step"), verdict=MANUAL_VERDICTS.get(line.get("result"), "FAIL"),
+                  cloud=settings["cloud"], tries=1, outcomes=[line],
+                  finished=dt.datetime.fromtimestamp(line["at"], dt.timezone.utc))
+    return {**row, "id": one}
+
+
+@contextlib.contextmanager
+def _locked(path: Path):
+    """`path` held by this process alone, for as long as it runs: every
+    instance's script shares the folder beside their states."""
+    with open(path, "a", encoding="utf-8") as held:
+        try:
+            import fcntl
+        except ImportError:   # not on Windows, where no emulator's script runs
+            yield
+            return
+        fcntl.flock(held, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(held, fcntl.LOCK_UN)
+
+
+def manual(state: Path) -> str | None:
+    """The runs started by hand in the emulator's `state` folder not taken
+    before, kept beside it (UNSENT) and sent with any kept from before: a
+    line saying how it went, None where there were none, or stats are off."""
+    if off() or not state.is_dir():
+        return None
+    beside = state.parent
+    with _locked(beside / (MANUAL_TAKEN + ".lock")):
+        taken_path = beside / MANUAL_TAKEN
+        try:
+            taken = set(taken_path.read_text(encoding="utf-8").split())
+        except FileNotFoundError:
+            taken = set()
+        new = [item for item in manual_lines(state) if item[0] not in taken]
+        if new:
+            settings = _manual_settings(state)
+            with _kept, open(beside / UNSENT, "a", encoding="utf-8") as kept:
+                for one, folder, line in new:
+                    kept.write(json.dumps(manual_row(one, folder, line, settings)) + "\n")
+            with open(taken_path, "a", encoding="utf-8") as record:
+                record.write("".join(one + "\n" for one, _, _ in new))
+        if not new and not (beside / UNSENT).exists():
+            return None
+        return send(beside)
+
+
 def _headers(token: tuple[str, str]) -> dict[str, str]:
     return {"User-Agent": USER_AGENT, "CF-Access-Client-Id": token[0], "CF-Access-Client-Secret": token[1]}
 
@@ -435,14 +575,22 @@ def _id(key: str, row: dict[str, Any]) -> str:
     return "/".join(str(row.get(name)) for name in ("batch", "family", "device", "suite"))
 
 
+# The admin view's refusal of a run of a suite it does not take yet: one
+# newer than the view deployed (emulator.js SUITES), which it will take once
+# it is. Kept, not dropped as another refusal is.
+NEWER_SUITE = "missing or not as it has them: suite"
+
+
 def _send(folder: Path) -> str:
     """send()'s work, with _sending held: the batches kept, then the runs.
     Those taken, and those the admin view refuses (which it always would),
-    are no longer kept; the rest are, for next time. Each file is replaced
+    are no longer kept; the rest are, for next time, those of a suite it
+    does not take yet (NEWER_SUITE) too. Each file is replaced
     whole, so a process cut off part way loses none; those kept while this
     one sends stay for the next."""
     sent: dict[str, int] = {}
     refused: list[str] = []
+    newer = 0
     left = 0
     problem = None
     token = client()
@@ -467,6 +615,9 @@ def _send(folder: Path) -> str:
             done |= taken
             sent[key] = sent.get(key, 0) + len(taken)
             for one in answer.get("refused") or []:
+                if one.get("why") == NEWER_SUITE:
+                    newer += 1
+                    continue
                 done.add(one.get("id"))
                 refused.append(f"{one.get('id')}: {one.get('why')}")
         with _kept:
@@ -488,6 +639,7 @@ def _send(folder: Path) -> str:
         said += f", {len(refused)} refused ({'; '.join(refused[:3])})"
     if left:
         said += f", {left} kept to send later" + (f" ({problem})" if problem else "")
+        said += f" ({newer} of a suite the admin view takes once it is deployed again)" if newer else ""
     return said
 
 
@@ -495,6 +647,12 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["send"] and len(argv) > 1:
         for folder in argv[1:]:
             print(f"{folder}: {send(Path(folder))}")
+        return 0
+    if argv[:1] == ["manual"] and len(argv) > 1:
+        for state in argv[1:]:
+            said = manual(Path(state))
+            if said:
+                print(said)
         return 0
     if argv[:1] == ["push"]:
         to = argv[1:] or hosts()

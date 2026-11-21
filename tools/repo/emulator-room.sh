@@ -124,3 +124,30 @@ local_api_goes_with() {
     nohup sh -c 'n=0; until docker inspect "$1" >/dev/null 2>&1 || [ $((n += 1)) -gt 120 ]; do sleep 1; done
                  docker wait "$1" >/dev/null 2>&1; docker rm -f "$2" >/dev/null 2>&1' _ "$1" "$2" >/dev/null 2>&1 &
 }
+
+# emulator_stats_manual STATE - the runs started by hand in the emulator whose
+# state is STATE, not sent before, sent as the admin view's "manual" runs
+# (tools/repo/emulator_stats.py manual): a run a suite started is marked, and
+# not among them. Called as a script ends and as it starts, for a run whose
+# emulator was stopped part way. Never stops the script.
+emulator_stats_manual() {
+    python3 -I "$(dirname "${BASH_SOURCE[0]}")/emulator_stats.py" manual "$1" || true
+}
+
+# emulator_stats_after STATE CONTAINER, or STATE --cidfile FILE - emulator_stats_manual
+# STATE once CONTAINER stops (or the one whose id docker run --cidfile writes to
+# FILE, removed then), by a watcher of its own, as local_api_goes_with: the
+# container outlives the script that started it (exec'd, or in the background).
+emulator_stats_after() {
+    # shellcheck disable=SC2016  # expanded by the watcher's own shell, from its arguments
+    nohup sh -c 'script=$1 state=$2 n=0; shift 2
+                 if [ "$1" = --cidfile ]; then
+                     until [ -s "$2" ] || [ $((n += 1)) -gt 120 ]; do sleep 1; done
+                     cid=$(cat "$2" 2>/dev/null); rm -f "$2"; set -- "$cid"
+                 else
+                     until docker inspect "$1" >/dev/null 2>&1 || [ $((n += 1)) -gt 120 ]; do sleep 1; done
+                 fi
+                 [ -z "$1" ] || docker wait "$1" >/dev/null 2>&1
+                 python3 -I "$script" manual "$state"' _ "$(dirname "${BASH_SOURCE[0]}")/emulator_stats.py" "$@" \
+        >/dev/null 2>&1 &
+}

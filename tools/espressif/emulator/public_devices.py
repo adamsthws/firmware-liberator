@@ -336,6 +336,7 @@ def command_fetch(_args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    emulator_stats.mark("check")   # its runs not taken for ones by hand
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
     commands = parser.add_subparsers(dest="command", required=True)

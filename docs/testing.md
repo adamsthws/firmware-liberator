@@ -1527,12 +1527,34 @@ exception class alone. As a batch begins it sends how many
 scenarios its suite has for the device and how many it runs. No log, report or
 recording leaves the machine.
 
+**Runs you start by hand** go there too, as the suite `manual`: a conversion
+in `emu.sh`'s terminal, one `unattended-test.sh` runs on its own, and one on a
+Beken `beken-emu.sh computer`. Every suite marks the tool's runs it starts
+(`AUTOFLASH_EMU_SUITE`, `emulator_stats.py` `mark`), and the tool keeps the
+mark in its outcome line (`report_upload.SUITE_MARK`); a line with none is a
+run by hand. Each script sends those as it ends - `emu.sh` and `beken-emu.sh
+computer` once their container stops - and as it starts, for a run whose
+emulator was stopped part way (`emulator_stats.py manual STATE`, called by
+`emulator-room.sh`'s `emulator_stats_manual`). Each is sent once, its verdict
+the run's own result: converted, updated or put back a pass, failed a FAIL,
+crashed a CRASH, and stopped by you CANCELLED, neither a pass nor a failure.
+Its device is the run's own record of it, its scenario its route
+(`manual:sonoff>esphome`), its cloud the emulator's. The runs and a record of
+those taken are kept beside the emulators' state folders
+(`captures/emulation/`, `captures/emulation/beken/`), so a device kept with
+`--save` and started from in another instance is not sent again. An admin
+view deployed before it took `manual` refuses them for their suite alone
+(`NEWER_SUITE`): they are kept, and sent once it is deployed again. A readout
+keeps no outcome line, nor does a run on Windows, a run of an earlier release
+(`--code`), or of a checkout from before the mark: none of them is sent.
+
 The view takes each verdict as an outcome: a pass, a failure, or
 inconclusive - a run the suite could not judge, such as a fault that never
 landed or a device that did not start (`INCONCLUSIVE` in
 `website/api/emulator.js`). Pass rates are of first tries the suite could
 judge, as a batch runs only what has not passed yet and its re-runs would
-read as a worse rate. The view shows runs a day; pass rates and new failures
+read as a worse rate; a run by hand is no suite's first try, so a rate across
+suites leaves it out, and it has rates of its own by device. The view shows runs a day; pass rates and new failures
 (a scenario that passed on the commit before) by commit; each device, version by
 version of the tool, with the share of its suite's scenarios passed on that
 version - each version on its own, as a change may break what passed on the
@@ -1571,7 +1593,8 @@ there before the machine is thrown away, and each batch again as it ends. The vi
 A suite of a new chip family calls the same functions (`began`, `fault_run`,
 `attended_run`, `check_run`, `send`); `tests/repo/test_emulator_stats.py`
 checks that every `tools/*/emulator/fault_suite.py`, and each family's
-final-firmware check, does.
+final-firmware check, does, and that each suite marks its runs and each way
+it starts the tool in an emulator passes the mark on.
 
 ## Real devices
 

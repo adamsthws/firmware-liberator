@@ -287,6 +287,9 @@ case "${1:-}" in
             *) echo "$dump_path is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
         container /opt/beken-emulator/src/main.py "$dump_path" --with-boot -chip BK7238 --only-uart "$@" ;;
     device)
+        # The runs started by hand on its computers before, not sent yet
+        # (emulator-room.sh): before --fresh deletes them.
+        emulator_stats_manual "$DEVICE_STATE"
         if [ "$fresh" = 1 ]; then
             # Everything on its Wi-Fi first - the device and any computer's run - so
             # nothing writes its state while it goes.
@@ -299,6 +302,10 @@ case "${1:-}" in
         fi
         ensure; dump; network
         mkdir -p "$DEVICE_STATE/air"
+        # What emulator_stats.py manual sends its computers' runs by hand as: its
+        # device's kind (the S61 where none is given, as device.py has it), on its stub.
+        printf '{"family": "beken", "device": "%s", "cloud": "stub"}\n' "${AUTOFLASH_BEKEN_EMU_FLASH_DEVICE:-}" \
+            > "$DEVICE_STATE/emulator-stats.json"
         stub_others
         starts_from=$(device_dump)
         # Measured: the device 152 MB and its computer 97, plus 100.
@@ -352,6 +359,12 @@ case "${1:-}" in
     computer)
         shift; ensure; network
         [ -f "$DEVICE_STATE/ca.crt" ] || { echo "No device yet: start it first (beken-emu.sh device)" >&2; exit 1; }
+        # The runs started by hand here before, not sent yet, and this one's once
+        # its container stops (emulator-room.sh); a suite's are marked
+        # (AUTOFLASH_EMU_SUITE, passed into it below).
+        emulator_stats_manual "$DEVICE_STATE"
+        cid=$(mktemp -u "${TMPDIR:-/tmp}/autoflash-beken-computer.XXXXXX")
+        emulator_stats_after "$DEVICE_STATE" --cidfile "$cid"
         # The computer's own copy of this checkout, refreshed each time, its
         # captures kept: a device's runs are filed apart from every other's. Only
         # what git tracks or would, as emu.sh's (copy_checkout).
@@ -384,14 +397,14 @@ case "${1:-}" in
             fi
         fi
         readout_url=${AUTOFLASH_READOUT_URL:-$readout_url}
-        CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"}
+        CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"} --cidfile "$cid"
                            --network "$NETWORK" -v "$DEVICE_STATE/ca.crt:/device/ca.crt:ro"
                            -v "$DEVICE_STATE/power:/device/power" -e AUTOFLASH_EMULATOR_POWER=/device/power
                            -v "$DEVICE_STATE/router:/device/router" -e AUTOFLASH_EMULATOR_ROUTER=/device/router
                            -v "$DEVICE_STATE/joins:/device/joins"
                            -v "$DEVICE_STATE/air:/device/air:ro" --cap-add NET_ADMIN
                            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)"
-                           -e TERM_PROGRAM -e AUTOFLASH_READOUT_URL="$readout_url"
+                           -e TERM_PROGRAM -e AUTOFLASH_READOUT_URL="$readout_url" -e AUTOFLASH_EMU_SUITE
                            # The countdown after a Ctrl-C long enough to press another in
                            # (AUTOFLASH_EMULATOR_COUNTDOWN, the fault suite's ctrlc-countdown).
                            -e AUTOFLASH_EMULATOR_COUNTDOWN

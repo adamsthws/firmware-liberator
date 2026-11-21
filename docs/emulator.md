@@ -215,6 +215,10 @@ keeps the device's flash. One started with `--detach` runs on: join it with
 leaves it running, and end it with `docker stop autoflash-emu`
 (`autoflash-emu-N` for an instance).
 
+Once it stops, a conversion you ran in it, as in a Beken emulator's
+computer, is sent to the admin view's emulator figures as a run by hand, on a
+computer with the suites' token ([Emulator stats](testing.md#emulator-stats)).
+
 #### Several at once
 
 `--instance N` (1-99; `--instance=N` on `unattended-test.sh`) runs another

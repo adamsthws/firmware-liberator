@@ -306,6 +306,18 @@ def send_readout(ctx: Context, became: Any, seconds: float) -> threading.Thread 
 # itself classed it (report_data.outcome), whether reports are sent or not.
 # A line a run, as a run carried on by the next writes in the same folder.
 OUTCOMES = "outcomes.jsonl"
+# Which of the maintainer's emulator suites started the run, as each says in
+# this variable (tools/repo/emulator_stats.py mark): kept in the line as
+# "suite", None for any other run. emulator_stats.py manual sends an
+# emulator's runs with None as runs started by hand; a line without it is
+# from a release before it, and never sent.
+SUITE_MARK = "AUTOFLASH_EMU_SUITE"
+
+
+def suite_mark() -> str | None:
+    """The emulator suite that started this run (SUITE_MARK), else None."""
+    said = os.environ.get(SUITE_MARK, "")
+    return said if said.isascii() and said.isalpha() and said.islower() and len(said) <= 16 else None
 
 
 def keep_outcome(ctx: Context, ending: str, hardware: dict[str, str] | None = None) -> None:
@@ -313,14 +325,15 @@ def keep_outcome(ctx: Context, ending: str, hardware: dict[str, str] | None = No
     where it stopped and with what class (the words stay in run.log), and,
     for one that converted, its end-of-run checks: the report's answer,
     whether the meter confirmed the relay switched and what it read (each None
-    where it has no meter)."""
+    where it has no meter), and which emulator suite started it (suite_mark)."""
     state = getattr(ctx, "state", None)
     if state is None:
         return   # a run that never began one
     try:
         result, stopped = report_data.outcome(ctx, ending)
         line = {"at": round(dt.datetime.now(dt.timezone.utc).timestamp(), 3), "result": result,
-                "stopped": {"step": stopped["step"], "error": stopped["error"]} if stopped else None}
+                "stopped": {"step": stopped["step"], "error": stopped["error"]} if stopped else None,
+                "suite": suite_mark()}
         if hardware is not None:
             from tools.autoflash import report   # which sends through this module
             relay = hardware.get("Relay")

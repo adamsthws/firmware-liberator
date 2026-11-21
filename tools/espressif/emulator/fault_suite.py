@@ -1802,7 +1802,7 @@ class Scenario:
         elif fault == "second":
             # A second window, same command, while this one works.
             out = sh("docker", "exec", "-u", f"{os.getuid()}:{os.getgid()}", "-w", "/work",
-                     "-e", "HOME=/tmp", "-e", f"AUTOFLASH_EMULATOR_URL=http://localhost:{8080 + self.n}",
+                     "-e", "HOME=/tmp", "-e", "AUTOFLASH_EMU_SUITE",   # the suite's (emulator_stats.mark) "-e", f"AUTOFLASH_EMULATOR_URL=http://localhost:{8080 + self.n}",
                      "-e", "AUTOFLASH_EMULATOR_SUDO_PASSWORD=autoflash",
                      # A readout asks eWeLink for the device before it holds it.
                      *(arg for key, value in (STUB_ENV.items() if STUB_CLOUD else ()) for arg in ("-e", f"{key}={value}")),
@@ -3571,6 +3571,7 @@ def report():
 def main():
     import argparse
     global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS, FIRST
+    emulator_stats.mark("fault")   # its runs not taken for ones by hand
     if sys.argv[1:2] == ["status"]:   # its own arguments, as the Beken suite's (fault_status)
         sys.exit(fault_status.main(sys.argv[2:], scenarios(), EMU, "fault_suite.py status"))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
