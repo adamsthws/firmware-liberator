@@ -9,7 +9,8 @@ One statement a run. It is read with the maintainer's CLOUDFLARE_DATABASE_TOKEN,
 in the environment or tools/repo/.env.infra, which TOKENS in
 tools/repo/cloudflare_settings.py allows D1 Read alone: Cloudflare refuses
 it any write, so nothing asked here can change the database.
-tools/repo/cloudflare_tokens.py database-read-only makes it. What the rows
+tools/repo/cloudflare_tokens.py database-read-only makes it, for the days
+TOKENS gives it: run that again once it runs out. What the rows
 hold came from people's computers: each value is shown with its control
 characters escaped. Never from CI, whose logs are public.
 """

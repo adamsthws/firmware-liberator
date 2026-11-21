@@ -193,6 +193,28 @@ class TokensTests(unittest.TestCase):
         self.assertFalse([sent for sent in self.fake.sent if sent[:2] == ("POST", TOKENS)
                           and sent[2]["name"] == cs.TOKEN_PREFIX + "settings-check-read-only"])
 
+    def test_one_used_now_and_then_lasts_its_days_and_says_until_when(self):
+        code, out = self.run_it("readouts-review", "database-read-only")
+        self.assertEqual(code, 0, out)
+        for key in ("readouts-review", "database-read-only"):
+            made = next(body for method, path, body in self.fake.sent
+                        if method == "POST" and body["name"] == cs.TOKEN_PREFIX + key)
+            self.assertEqual(made["expires_on"], "2026-11-17T12:00:00Z", key)
+            self.assertNotIn("condition", made)
+            self.assertIn(f"{cs.TOKEN_PREFIX}{key}: made, its value put in tools/repo/.env.infra "
+                          f"{cs.TOKENS[key]['variable']}, until 2026-11-17T12:00:00Z", out)
+
+    def test_one_that_ran_out_is_made_afresh(self):
+        self.fake.tokens.append({"id": "old-db", "name": cs.TOKEN_PREFIX + "database-read-only",
+                                 "status": "expired", "policies": []})
+        code, out = self.run_it("database-read-only")
+        self.assertEqual(code, 0, out)
+        self.assertIn(("DELETE", f"{TOKENS}/old-db", None), self.fake.sent)
+        self.assertFalse([sent for sent in self.fake.sent if sent[1].startswith(f"{TOKENS}/old-db/")
+                          or sent[:2] == ("PUT", f"{TOKENS}/old-db")])
+        made = [token for token in self.fake.tokens if token["name"] == cs.TOKEN_PREFIX + "database-read-only"]
+        self.assertEqual([token["status"] for token in made], ["active"])
+
     def test_each_permission_goes_by_its_id_for_the_scope_it_is_given_on(self):
         made = ct.body("settings-apply", "a1", "z1", {}, {(g["name"], g["scopes"][0]): g["id"]
                                                           for g in self.fake.groups()}, NOW, "192.0.2.50/32")

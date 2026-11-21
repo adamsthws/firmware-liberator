@@ -137,6 +137,12 @@ Run it and it says how to make that token, then asks for it, so it is
 never written down. One made otherwise it leaves untouched and says what to
 change, so you can edit it in the dashboard and run it again.
 
+The tokens you use now and then from your computer, kept in
+`tools/repo/.env.infra`, last only as many days as `TOKENS` gives them
+(`days`): run the script for one when you next need it, and it makes it
+afresh. `apply` does not count one that has run out as missing, and the
+tool using it says when Cloudflare refuses it.
+
 CI never checks the tokens' permissions, as reading one token means reading
 every token in the account. It checks instead, on each run, that its own
 token is refused what it must never reach.

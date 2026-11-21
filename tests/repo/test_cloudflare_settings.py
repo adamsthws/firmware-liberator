@@ -1,3 +1,4 @@
+import contextlib
 import copy
 import datetime as dt
 import io
@@ -6,6 +7,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
@@ -704,6 +706,20 @@ class TokenTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("API tokens: not checked", out)
 
+    def test_one_that_lasts_days_and_ran_out_is_no_difference_but_said(self):
+        for token in self.fake.tokens[:-1]:
+            token["status"] = "expired"
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        for key, spec in cs.TOKENS.items():
+            name = cs.TOKEN_PREFIX + key
+            if spec.get("days"):
+                self.assertNotIn(f"{name}: does not exist", out)
+                self.assertIn(f"{name}: run out, as it does {spec['days']} days after it is made - run python3 "
+                              f"tools/repo/cloudflare_tokens.py {key} when you next need it", out)
+            else:
+                self.assertIn(f"{name}: does not exist", out)
+
     def test_as_written_it_is_no_difference(self):
         code, out = run(self.fake)
         self.assertEqual(code, 0, out)
@@ -811,6 +827,8 @@ class TokenTests(unittest.TestCase):
             self.assertEqual(spec.get("variable"), None if spec["kept"] == "worker" else "CLOUDFLARE_"
                              + key.removesuffix("-read-only").upper().replace("-", "_") + "_TOKEN", key)
             self.assertEqual(spec["kept"] == "worker", bool(spec.get("worker_secret")), key)
+            # Only one you make again yourself when next needed may run out between uses.
+            self.assertTrue(not spec.get("days") or spec["kept"] == "env", key)
             self.assertEqual(key.endswith("-read-only"), all(
                 name.endswith(" Read") for scope in ("zone", "account", "workers") for name in spec.get(scope, {})),
                 key)
@@ -1721,6 +1739,33 @@ class ApiRequestTests(unittest.TestCase):
         said, sent, _ = self.send("GET", 3)
         self.assertEqual(sent, 3)
         self.assertIn("GET /zones/z1: Remote end closed connection without response", said)
+
+    def refused(self, variable, in_use=None):
+        error = urllib.error.HTTPError("https://api.cloudflare.com", 403, "Forbidden", {},
+                                       io.BytesIO(b'{"errors": [{"message": "Invalid access token"}]}'))
+        before = cs.TOKEN_VARIABLE
+        cs.TOKEN_VARIABLE = variable
+        try:
+            with mock.patch.object(cs.urllib.request, "urlopen", side_effect=error), \
+                    mock.patch.object(cs, "token", lambda: "t"), cs.using(in_use) if in_use else contextlib.nullcontext():
+                cs.api("/zones/z1", "POST")
+        except cs.SettingsError as raised:
+            return str(raised)
+        finally:
+            cs.TOKEN_VARIABLE = before
+
+    def test_a_refusal_of_one_that_lasts_days_says_how_to_make_it_again(self):
+        self.assertEqual(self.refused("CLOUDFLARE_DATABASE_TOKEN"),
+                         "POST /zones/z1: HTTP 403: Invalid access token - the database-read-only token lasts "
+                         f"{cs.TOKENS['database-read-only']['days']} days; if it has run out, python3 tools/repo/cloudflare_tokens.py database-read-only "
+                         "makes it again")
+        self.assertIn("cloudflare_tokens.py readouts-review makes it again",
+                      self.refused("CLOUDFLARE_READOUTS_REVIEW_TOKEN"))
+        # Not one that never runs out, nor a helper's used in its place.
+        self.assertEqual(self.refused("CLOUDFLARE_SETTINGS_CHECK_TOKEN"),
+                         "POST /zones/z1: HTTP 403: Invalid access token")
+        self.assertEqual(self.refused("CLOUDFLARE_DATABASE_TOKEN", in_use="helper"),
+                         "POST /zones/z1: HTTP 403: Invalid access token")
 
     def test_a_change_is_sent_once(self):
         said, sent, waits = self.send("POST", 1)

@@ -438,9 +438,11 @@ TOKENS: dict[str, dict[str, Any]] = {
         "account": {"Account Analytics Read": "the month's use, as api_health.py usage reads it"},
     },
     # The maintainer's, for tools/repo/readouts.py: reviewing readouts in the
-    # API's database, and listing the bucket they are kept in.
+    # API's database, and listing the bucket they are kept in. It lasts
+    # `days`, as it is used now and then: made again when next needed, so
+    # a copy of it left in .env.infra is soon of no use to anyone.
     "readouts-review": {
-        "variable": "CLOUDFLARE_READOUTS_REVIEW_TOKEN", "kept": "env",
+        "variable": "CLOUDFLARE_READOUTS_REVIEW_TOKEN", "kept": "env", "days": 7,
         "zone": {"Zone Read": "the zone found by its name, and its account"},
         "account": {
             "D1 Write": "review, approve and reject: the readouts table",
@@ -450,8 +452,9 @@ TOKENS: dict[str, dict[str, Any]] = {
     },
     # The maintainer's, for tools/repo/database.py: questions asked of the
     # API's database, which D1 Read lets it answer and refuses any write to.
+    # It lasts `days`, as readouts-review does, for the same reason.
     "database-read-only": {
-        "variable": "CLOUDFLARE_DATABASE_TOKEN", "kept": "env",
+        "variable": "CLOUDFLARE_DATABASE_TOKEN", "kept": "env", "days": 7,
         "zone": {"Zone Read": "the zone found by its name, and its account"},
         "account": {"D1 Read": "the API's database queried"},
     },
@@ -672,11 +675,22 @@ def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = Fal
                 detail = "; ".join(e.get("message", "") for e in json.loads(detail)["errors"]) or detail
             except (ValueError, KeyError, TypeError):
                 pass
-            raise SettingsError(f"{method} {path}: HTTP {error.code}: {detail}", error.code) from None
+            raise SettingsError(f"{method} {path}: HTTP {error.code}: {detail}{lapsed(error.code)}",
+                                error.code) from None
         except OSError as error:
             if wait is None:
                 raise SettingsError(f"{method} {path}: {error}") from None
             time.sleep(wait)
+
+
+def lapsed(status: int) -> str:
+    """For a refusal of a token that lasts days (TOKENS' `days`), as Cloudflare
+    refuses one past its end: how to make it again."""
+    spec = TOKENS.get(token_key(), {})
+    if _IN_USE is not None or status not in (401, 403) or not spec.get("days"):
+        return ""
+    return (f" - the {token_key()} token lasts {spec['days']} days; if it has run out, "
+            f"python3 tools/repo/cloudflare_tokens.py {token_key()} makes it again")
 
 
 def every_page(path: str, ok_forbidden: bool = False) -> list[Any] | None:
@@ -750,7 +764,12 @@ def token_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
     for key, spec in TOKENS.items():
         name, remake = TOKEN_PREFIX + key, f"run python3 tools/repo/cloudflare_tokens.py {key}"
         named = [token for token in tokens if token.get("name") == name]
-        have = [token for token in named if token.get("status") == "active"]
+        # One that lasts days is left to run out between uses: made again when next needed.
+        have = [token for token in named if token.get("status") == "active"
+                or (spec.get("days") and token.get("status") == "expired")]
+        if spec.get("days") and len(named) == 1 and named[0].get("status") == "expired":
+            print(f"  {name}: run out, as it does {spec['days']} days after it is made - {remake} when you "
+                  "next need it")
         # Only the first of a name would be checked, and remade, the rest left
         # as they are, still usable.
         if len(named) > 1:

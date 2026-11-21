@@ -141,8 +141,9 @@ def body(key: str, account: str, zone_id: str, tags: dict[str, str], groups: dic
                                    f"for {scope}") from None
         policies.append({"effect": "allow", "permission_groups": ids, "resources": resources})
     made = {"name": cs.TOKEN_PREFIX + key, "policies": policies}
-    if spec.get("minutes"):
-        made["expires_on"] = when(spec["minutes"] / (24 * 60), now)
+    lasts = spec.get("minutes", 0) / (24 * 60) + spec.get("days", 0)
+    if lasts:
+        made["expires_on"] = when(lasts, now)
     if spec.get("from_here"):
         made["condition"] = {"request_ip": {"in": [network]}}
     return made
@@ -198,6 +199,11 @@ def make(key: str, account: str, made: dict[str, Any], tokens: list[dict[str, An
     new value."""
     path = f"/accounts/{account}/tokens"
     there = [token for token in tokens if token.get("name") == made["name"]]
+    if there and there[0].get("status") == "expired":
+        # Cloudflare changes no expired token's end until it is rolled
+        # (cs.ready_by_hand): one that ran out (TOKENS' `days`) is made afresh.
+        cs.api(f"{path}/{there[0]['id']}", "DELETE")
+        there = []
     if not there:
         return cs.api(path, "POST", made)["value"]
     cs.api(f"{path}/{there[0]['id']}", "PUT", {**made, "status": "active"})
@@ -370,8 +376,11 @@ def run(keys: list[str], now: dt.datetime) -> int:
             if alive and cs.TOKENS[key]["kept"] != "worker":
                 alive = False
                 left |= not drop(account, helper["id"], HELPER_KEY)
-            value = make(key, account, body(key, account, zone_id, tags, groups, now, network), tokens)
-            print(f"  {cs.TOKEN_PREFIX}{key}: made, its value put in {deliver(key, value, account, helper['value'])}")
+            made = body(key, account, zone_id, tags, groups, now, network)
+            value = make(key, account, made, tokens)
+            until = f", until {made['expires_on']}" if cs.TOKENS[key].get("days") else ""
+            print(f"  {cs.TOKEN_PREFIX}{key}: made, its value put in "
+                  f"{deliver(key, value, account, helper['value'])}{until}")
         for token in tokens:
             name = str(token.get("name"))
             if token.get("id") not in (own, helper["id"]) and name.startswith(cs.TOKEN_PREFIX) \
