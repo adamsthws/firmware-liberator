@@ -213,6 +213,16 @@ same way. A machine added later gets it with `python3
 tools/repo/emulator_stats.py push HOST`. Each deploy of the view checks that the suites' path turns
 away a request without the token.
 
+### Asking the database a question
+
+For anything the admin view does not show, `python3 tools/repo/database.py
+"SELECT ..."` prints the rows a query gives, and `--tables` each table and
+its columns (`api/migrations/` says what each holds). Its token can read the
+database and nothing else, so no query can change it; `python3
+tools/repo/cloudflare_tokens.py database-read-only` makes it, into
+`tools/repo/.env.infra`. The rows are people's reports: run it on your own
+computer, never from CI.
+
 ### Adding a Worker
 
 The deploy token can only be given a Worker that already exists, so a new

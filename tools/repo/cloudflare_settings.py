@@ -448,6 +448,13 @@ TOKENS: dict[str, dict[str, Any]] = {
             "Email Sending Read": "changes and notify: the suppression list, to remove addresses gone for good",
         },
     },
+    # The maintainer's, for tools/repo/database.py: questions asked of the
+    # API's database, which D1 Read lets it answer and refuses any write to.
+    "database-read-only": {
+        "variable": "CLOUDFLARE_DATABASE_TOKEN", "kept": "env",
+        "zone": {"Zone Read": "the zone found by its name, and its account"},
+        "account": {"D1 Read": "the API's database queried"},
+    },
 }
 DEPLOY_TOKEN = TOKEN_PREFIX + "workers-deploy"
 # The token each command of this script is run with; tools that borrow api()

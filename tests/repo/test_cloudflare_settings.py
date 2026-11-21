@@ -793,13 +793,14 @@ class TokenTests(unittest.TestCase):
                     mock.patch("sys.stderr", io.StringIO()):
                 main(list(args))
             return cs.TOKEN_VARIABLE
-        from tools.repo import api_health, readouts
+        from tools.repo import api_health, database, readouts
         try:
             self.assertEqual(seen(cs.main, "apply"), "CLOUDFLARE_SETTINGS_APPLY_TOKEN")
             self.assertEqual(seen(cs.main, "ci"), "CLOUDFLARE_SETTINGS_CHECK_TOKEN")
             self.assertEqual(seen(cs.main, "deploy-token"), "CLOUDFLARE_WORKERS_DEPLOY_TOKEN")
             self.assertEqual(seen(api_health.main, "usage"), "CLOUDFLARE_SETTINGS_CHECK_TOKEN")
             self.assertEqual(seen(readouts.main, "review"), "CLOUDFLARE_READOUTS_REVIEW_TOKEN")
+            self.assertEqual(seen(database.main, "SELECT 1"), "CLOUDFLARE_DATABASE_TOKEN")
         finally:
             cs.TOKEN_VARIABLE = cs.TOKENS["settings-apply"]["variable"]
 
