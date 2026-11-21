@@ -359,8 +359,13 @@ itself is run: changing it needs no new image.
   outside as a real pad's level, so an edge or a level latches the pin's
   interrupt as the firmware set it (INTLV, INTEN); its queue is applied in
   `_pacing`, between chunks. So the Beken emulator needed no patch for it,
-  where QEMU did. A rebuilt flash of another device runs on the S61's board
-  (`device.py`'s `KIND`), so only the S61's check presses its button.
+  where QEMU did. A rebuilt flash of another device runs on that device's
+  board (`device.py`'s `KIND`, from `AUTOFLASH_BEKEN_EMU_FLASH_DEVICE`): the
+  Basic 1GS's has its button on P6, P1 held low (an input that reads high
+  when pressed: left to its pull-up, OpenBeken saw it held from the start),
+  and no meter. On the S61's it had the
+  meter's pulses on its button and its Wi-Fi LED (P6 and P8), and its button
+  went unpressed.
 - **Both firmwares follow the button**: each press toggles the relay.
   OpenBeken reads its buttons from its 25 ms quick tick (`QuickTick`, a
   FreeRTOS software timer), and until patch

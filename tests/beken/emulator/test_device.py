@@ -28,6 +28,12 @@ class DeviceTests(unittest.TestCase):
         self.stock_points = device.stock_points
         return device.Device(Path(tmp), "tap0")
 
+    def test_the_board_is_the_s61s_or_the_one_of_the_device_whose_flash_it_runs(self):
+        with mock.patch.dict("os.environ", {"AUTOFLASH_BEKEN_EMU_FLASH_DEVICE": ""}):
+            self.assertEqual(self.module().KIND, "sonoff-s61")
+        with mock.patch.dict("os.environ", {"AUTOFLASH_BEKEN_EMU_FLASH_DEVICE": "sonoff-basic-1gs"}):
+            self.assertEqual(self.module().KIND, "sonoff-basic-1gs")
+
     def test_sonoffs_app_is_the_one_the_points_are_found_in(self):
         with tempfile.TemporaryDirectory() as tmp:
             device = self.device(tmp)

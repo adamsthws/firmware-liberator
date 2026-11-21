@@ -623,6 +623,29 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("FAIL  sonoff>esphome, its button: relay 1 stayed off with its button pressed", said)
 
+    def test_the_button_pressed_is_the_one_on_the_board_of_the_device_emulated(self):
+        from tools.autoflash import kinds
+        self.assertEqual(fault_suite.board_inputs(kinds.find("sonoff-s61"))["buttons"], (9,))
+        self.assertEqual(fault_suite.board_inputs(kinds.find("sonoff-basic-1gs"))["buttons"], (6,))
+
+    def test_a_device_with_no_board_has_no_button_pressed(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        log = ("[10:00:00] === run started ===\n[10:00:01]     Relay: Switches (meter unchanged)\n"
+               "[10:00:02]     Checks passed: True\n")
+        device = mock.Mock(all_runs=list, last_state=lambda: {"inputs": {"device_kind": "sonoff-basic-1gs"}},
+                           dhcp_names=lambda: ["esphome-cdef"], last_log=lambda: log)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
+                mock.patch.object(fault_suite, "Instance", return_value=device), \
+                mock.patch.object(fault_suite, "board_inputs", return_value={"buttons": (), "switches": ()}), \
+                mock.patch.object(fault_suite, "inputs_problem") as pressed, \
+                mock.patch.object(fault_suite, "interim_problems", return_value=[]), \
+                mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(fault_suite.check_way(1, ("sonoff>esphome",)), 0)
+        pressed.assert_not_called()
+        self.assertEqual(out.getvalue(), "PASS  sonoff>esphome\n")
+
     def test_each_of_its_routes_is_one_the_tool_has(self):
         for way in fault_suite.CHECK_WAYS:
             for route in way:

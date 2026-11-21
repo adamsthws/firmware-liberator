@@ -124,6 +124,22 @@ class WiringTests(unittest.TestCase):
         self.assertAlmostEqual(S61.volts_per_hz, 0.128238, places=5)
         self.assertAlmostEqual(S61.amps_per_hz, 0.011095, places=5)
 
+    def test_the_basic_1gss_are_its_openbeken_table_and_esphome_config(self):
+        gs = board.WIRING["sonoff-basic-1gs"]
+        table = (ROOT / "devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c").read_text(encoding="utf-8")
+        pins = {role: int(pin) for pin, role in re.findall(r"\{(\d+), IOR_(\w+), \d+\}", table)}
+        self.assertEqual((pins["Relay"], pins["Button"]), (gs.relay, gs.buttons[0]))
+        self.assertNotIn("BL0937_CF", pins, "no meter")
+        self.assertEqual((gs.cf, gs.cf1, gs.sel), (None, None, None))
+        self.assertEqual(pins["Button_n"], gs.low[0], "the input that reads high when pressed, held low")
+        config = (ROOT / "devices/sonoff-basic-1gs/esphome.yaml").read_text(encoding="utf-8")
+        self.assertIsNotNone(re.search(rf"id: button_2\n(?:.*\n){{0,3}}\s+number: P{gs.low[0]}\n", config),
+                             "its second button")
+        self.assertEqual(board.inputs("sonoff-basic-1gs"), {"buttons": (6,), "switches": ()})
+        self.assertIsNotNone(re.search(rf"id: button_1\n(?:.*\n){{0,3}}\s+number: P{gs.buttons[0]}\n", config),
+                             "button")
+        self.assertIsNotNone(re.search(rf"id: relay\n(?:.*\n){{0,3}}\s+pin: P{gs.relay}\n", config), "relay")
+
     def test_a_kind_with_no_board_here_gets_none(self):
         emu = Emulator()
         self.assertIsNone(board.attach(emu, "sonoff-s60"))
@@ -276,6 +292,20 @@ class ButtonTests(unittest.TestCase):
             self.assertEqual(emu.inputs, [(9, 0), (9, None)], "pressed low, then let go to its pull-up")
             self.assertEqual(sorted(path.name for path in Path(folder).iterdir()), ["buttons"])
             self.assertEqual(emu.paced, 3)
+
+    def test_a_board_without_a_meter_follows_its_button_and_drives_nothing_else(self):
+        # The Basic 1GS: given the S61's board, its button (P6) and Wi-Fi LED
+        # (P8) were the meter's CF1 and CF, and pulsed.
+        with tempfile.TemporaryDirectory() as folder:
+            emu = Emulator()
+            board.attach(emu, "sonoff-basic-1gs", seconds_per_insn=SECONDS_PER_INSN, state=Path(folder))
+            board.buttons(Path(folder)).hold(6)
+            for _ in range(100):
+                emu.state.insn_count += CHUNK
+                emu._pacing(emu.state)
+            self.assertEqual(emu.inputs, [(1, 0), (6, 0)], "P1 held low from the start, then P6 pressed")
+            self.assertEqual(emu.state.gpio_hw.pulses, {}, "no pin pulsed")
+            self.assertTrue(emu._fast_tick_idle(emu.state), "the idle loop skipped as without a board")
 
     def test_without_a_state_folder_nothing_is_pressed(self):
         emu = attached()

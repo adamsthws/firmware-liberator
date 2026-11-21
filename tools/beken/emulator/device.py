@@ -69,7 +69,9 @@ from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_AR
 
 SSID, PASSWORD = cloud_online.SSID, cloud_online.PW
 APP_ENTRY = stock_points.APP_BASE
-KIND = "sonoff-s61"   # whose board it is: the dump's
+# Whose board it is (board.py): the dump's, or the device's whose flash it
+# starts from (AUTOFLASH_BEKEN_EMU_FLASH_DEVICE, beken-emu.sh).
+KIND = os.environ.get("AUTOFLASH_BEKEN_EMU_FLASH_DEVICE") or "sonoff-s61"
 PEER_MAC = b"\x02\x00\x00\x00\x00\x01"
 # The computer's Wi-Fi on the device's own network: the station's MAC, which the
 # computer's end of that network takes (DIR/air/station).

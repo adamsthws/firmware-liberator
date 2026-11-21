@@ -1,5 +1,6 @@
-"""The board around an emulated Beken device's chip: its power meter, a BL0937,
-which measures a load while the relay that switches it is on.
+"""The board around an emulated Beken device's chip: its button, and on the
+S61 its power meter, a BL0937, which measures a load while the relay that
+switches it is on.
 
 device.py attaches it to the emulator it builds (`attach`). It runs from the
 checkout's copy in the container (/work), as device.py does, so changing it
@@ -59,16 +60,19 @@ LOAD = Load()
 
 @dataclass(frozen=True)
 class Wiring:
-    """Which of the chip's GPIOs the relay and the meter are on (Pn = n), and
-    what one hertz of each meter output measures."""
+    """Which of the chip's GPIOs the relay, the buttons and the meter are on
+    (Pn = n), and what one hertz of each meter output measures; no meter
+    pins for a device without one. `low`: inputs the board holds low while
+    nothing presses them, as one that reads high when pressed is."""
     relay: int
     buttons: tuple[int, ...]
-    cf: int
-    cf1: int
-    sel: int
-    watts_per_hz: float
-    volts_per_hz: float
-    amps_per_hz: float
+    low: tuple[int, ...] = ()
+    cf: int | None = None
+    cf1: int | None = None
+    sel: int | None = None
+    watts_per_hz: float = 0.0
+    volts_per_hz: float = 0.0
+    amps_per_hz: float = 0.0
 
 
 # The S61's wiring, as devices/sonoff-s61/drv_autoflash_sonoff_s61.c and
@@ -80,6 +84,11 @@ WIRING = {
                          watts_per_hz=1.21 * 2040 * 1000 / 1721506 * 0.930747,
                          volts_per_hz=1.1 * 2040 / 15397 * 0.879893,
                          amps_per_hz=1.1 * 1000 / 94638 * 0.954547),
+    # The Basic 1GS's, as devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c
+    # and esphome.yaml have it: no meter. Its second input, P1, reads high when
+    # pressed, so the board holds it low; left to its pull-up, OpenBeken took
+    # it for a button held down from the start.
+    "sonoff-basic-1gs": Wiring(relay=26, buttons=(6,), low=(1,)),
 }
 
 
@@ -174,10 +183,12 @@ class Board:
                  state: Path | None = None):
         self.emu, self.wiring = emu, wiring
         self.buttons = emulator_buttons.Follower(state / emulator_buttons.FILE) if state else None
-        self.meter = Bl0937(wiring, load)
+        self.meter = Bl0937(wiring, load) if wiring.cf is not None else None
         self.seconds_per_insn = seconds_per_insn
         self.owed = {"cf": 0.0, "cf1": 0.0}
         self.sel_high: bool | None = None
+        for pin in wiring.low:
+            emu.set_gpio_input(pin, 0)
 
     def output(self, pin: int) -> bool:
         return driven_high(self.emu._gpio_config_word(pin))
@@ -196,13 +207,15 @@ class Board:
             self.buttons.follow(time.monotonic(), self.hold, self.release)
 
     def pins(self) -> dict[str, int]:
-        return {"cf": self.wiring.cf, "cf1": self.wiring.cf1}
+        return {"cf": self.wiring.cf, "cf1": self.wiring.cf1} if self.meter is not None else {}
 
     def tick(self, state) -> None:
         """Pulse each output the firmware is ready for and owed a cycle, at
         the device's time now, as the relay and SEL are; and the buttons
         as the file holds them."""
         self.follow_buttons()
+        if self.meter is None:
+            return
         relay_on, sel_high = self.output(self.wiring.relay), self.output(self.wiring.sel)
         if sel_high != self.sel_high:
             # CF1 measures the other quantity now: what it owed of the last is not given.
@@ -247,6 +260,8 @@ class Board:
 
     def pulsing(self) -> bool:
         """Whether an output may pulse before the next slow tick."""
+        if self.meter is None:
+            return False
         rates = self.meter.rates(self.output(self.wiring.relay), self.output(self.wiring.sel))
         return any(rates[name] > 0 or self.owed[name] >= 1 for name in self.pins())
 
