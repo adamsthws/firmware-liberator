@@ -604,12 +604,13 @@ class CheckTests(unittest.TestCase):
                 mock.patch.object(fault_suite, "interim_problems", return_value=[]), \
                 mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
             found = fault_suite.check_way(1, (route,)), out.getvalue()
-        if found[0] == 0 and route.endswith("esphome"):
-            pressed.assert_called_once_with(device, "esphome")
+        if found[0] == 0:
+            pressed.assert_called_once_with(device, route.split(">")[1])
         return found
 
     def test_a_way_on_a_device_without_a_meter_passes_with_it_unchanged(self):
-        self.assertEqual(self.way_with_meter_unchanged("sonoff-basic-1gs"), (0, "PASS  sonoff>openbeken\n"))
+        self.assertEqual(self.way_with_meter_unchanged("sonoff-basic-1gs"),
+                         (0, "PASS  sonoff>openbeken\nPASS  sonoff>openbeken, its button: each press switched its relay\n"))
         self.assertEqual(self.way_with_meter_unchanged("sonoff-basic-1gs", route="sonoff>esphome"),
                          (0, "PASS  sonoff>esphome\nPASS  sonoff>esphome, its button: each press switched its relay\n"))
         status, said = self.way_with_meter_unchanged("sonoff-s61")

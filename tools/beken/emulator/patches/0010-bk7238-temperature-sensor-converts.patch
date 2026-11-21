@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
+Date: Sat, 21 Nov 2026 14:00:00 +0000
+Subject: [PATCH] emulator: the BK7238's temperature sensor converts
+
+A conversion on SARADC channel 7, the BK7238's temperature sensor (the
+SDK's ADC_TEMP_SENSER_CHANNEL), filled no FIFO and raised no interrupt,
+as on every channel from 7 up that no input is set for. The SDK's
+temp_single_get_current_temperature waits for that interrupt's semaphore
+1 s at a time, three times, so on the BK7238 every call took 3 s of the
+device's time and returned nothing.
+
+OpenBeken calls it from Main_OnEverySecond, its 1 s FreeRTOS software
+timer. The callback, 3 s long, was always overdue when it returned, so the
+timer task restarted it from its queue and ran it again at once, never
+getting back to its list of timers: the 25 ms quick tick (QuickTick),
+which reads the buttons, runs the repeating events and blinks the Wi-Fi
+LED, stopped for good a few seconds after boot, and a button held for any
+time was never seen. The once-a-second line came every 3 s, its "Time"
+counting by 3.
+
+The channel now converts as an external one does, at the default sample
+(DEFAULT_ADC_RAW): the read completes at once and the quick tick runs
+every 24 ms, and OpenBeken on a Sonoff S61 toggles its relay from its
+button. Only the BK7238's channel 7: the BK7252N's sensor is channel 9 and
+its 7 a pin, and neither was tried. tests/saradc_temperature.py fails
+without it.
+---
+ src/emulator.py             | 11 +++++++-
+ tests/saradc_temperature.py | 55 +++++++++++++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+), 1 deletion(-)
+ create mode 100644 tests/saradc_temperature.py
+
+diff --git a/src/emulator.py b/src/emulator.py
+index 4525ddc..1cb3635 100644
+--- a/src/emulator.py
++++ b/src/emulator.py
+@@ -2740,7 +2740,16 @@ class BekenEmulator:
+                 raw = self.get_adc_input(ch)
+                 self.state.saradc_last_raw = raw
+                 self.state.adc_samples[ch] = raw
+-                if ch < 7 or ch in self.adc_inputs:
++                # The BK7238's temperature sensor (channel 7, the SDK's
++                # ADC_TEMP_SENSER_CHANNEL) converts as an external channel
++                # does. Left unanswered, temp_single_get_current_temperature
++                # waited out its semaphore three times, 3 s, and OpenBeken,
++                # which calls it from its 1 s FreeRTOS software timer, kept
++                # the timer task inside that callback: overdue, each one ran
++                # again from the timer queue, the 25 ms button-scan timer
++                # never ran again, and its buttons went unread.
++                if (ch < 7 or ch in self.adc_inputs
++                        or (ch == 7 and self.chip_id_value == CHIP_FAMILIES["BK7238"][0])):
+                     if self.state.saradc_pending == 0:
+                         self.state.saradc_pending = 32
+             elif not (value & 0x14008):
+diff --git a/tests/saradc_temperature.py b/tests/saradc_temperature.py
+new file mode 100644
+index 0000000..df71c49
+--- /dev/null
++++ b/tests/saradc_temperature.py
+@@ -0,0 +1,55 @@
++"""The BK7238's temperature sensor answers: a conversion started on SARADC
++channel 7 fills the FIFO and raises the SARADC interrupt, as one on an
++external channel does, so the SDK's temperature read is not left waiting."""
++
++import sys
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++from src.emulator import BekenEmulator, CHIP_FAMILIES, SLOW_TICK_INSNS
++
++ADC_CONFIG2 = 0x00802C08      # bits [3:0]: the channel
++ADC_STATE = 0x00802C0C        # CHNL_EN (0x14008) starts converting
++SARADC_IRQ = 1 << 11
++
++
++def converted(chip, channel):
++    """Whether a conversion on `channel` leaves samples pending and raises
++    the SARADC interrupt by the next slow tick, on `chip`."""
++    emu = BekenEmulator(b"\xff" * 0x20000, None, b"", only_uart=True, chip_identity=CHIP_FAMILIES[chip])
++    emu.setup()
++    state = emu.state
++    state.icu_int_enable |= SARADC_IRQ
++    emu.hook_mem_write_mmio(emu.mu, None, ADC_CONFIG2, 4, channel, None)
++    emu.hook_mem_write_mmio(emu.mu, None, ADC_STATE, 4, 0x14008, None)
++    pending = state.saradc_pending
++    state.insn_count += SLOW_TICK_INSNS
++    emu._pacing(state)
++    return pending > 0 and bool(state.pending_irqs & SARADC_IRQ)
++
++
++def test_the_bk7238_temperature_channel_converts():
++    assert converted("BK7238", 7)
++
++
++def test_an_external_channel_converts_as_before():
++    assert converted("BK7238", 3)
++
++
++def test_an_unmodelled_internal_channel_stays_silent():
++    # Channel 8, TSSI, is still not modelled: no samples, no interrupt.
++    assert not converted("BK7238", 8)
++
++
++def main():
++    test_the_bk7238_temperature_channel_converts()
++    test_an_external_channel_converts_as_before()
++    test_an_unmodelled_internal_channel_stays_silent()
++    print("SARADC temperature self-tests passed.")
++
++
++if __name__ == "__main__":
++    main()

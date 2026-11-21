@@ -79,7 +79,8 @@ class RepositoryRootTests(unittest.TestCase):
         # Not the project's: examples of a shape, and paths in another project's tree.
         elsewhere = {"AGENTS.md": {"tools/a/b.py", "tests/a/test_b.py"},
                      "tools/beken/emulator/README.md": {"tests/self_test.py", "tests/tapnet.py",
-                                                        "tests/wifi_peers.py", "tests/slow_tick.py"}}
+                                                        "tests/wifi_peers.py", "tests/slow_tick.py",
+                                                        "tests/saradc_temperature.py"}}
         tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True,
                                  check=True).stdout.split()
         there = set(tracked) | {"/".join(name.split("/")[:n]) for name in tracked for n in range(1, name.count("/") + 1)}

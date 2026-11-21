@@ -300,6 +300,13 @@ SHOWS_WITHIN, LOOK_EVERY = 6.0, 0.25
 # How long after a press shows before the next: more than Tasmota waits for a
 # second press of a double press (SetOption13 off), so each is a press of its own.
 BETWEEN_PRESSES = 1.5
+# How long a press is held where a quick one (emulator_buttons.PRESS) is not
+# enough (s). OpenBeken reads its buttons each 25 ms tick and takes a level
+# once it has held 75 ms across them (BTN_DEBOUNCE_MS); in the Beken emulator
+# a press of 80 ms of the device's time switched the relay and one of 50 ms
+# did not, so a 0.1 s press, a little shorter in the device's time while it
+# is busy, now and then went unseen. Its long press starts at 1 s.
+HELD = {"openbeken": 0.3}
 
 
 class Device:
@@ -380,7 +387,10 @@ class Device:
             before = self.relay_becomes(relay)
             if before is None:
                 return f"relay {relay} could not be read before {what}"
-            {"press": buttons.press, "close": buttons.hold, "open": buttons.release}[how](pin)
+            if how == "press":
+                buttons.press(pin, HELD.get(self.firmware, emulator_buttons.PRESS))
+            else:
+                {"close": buttons.hold, "open": buttons.release}[how](pin)
             after = self.relay_becomes(relay, not before)
             if after is None or after == before:
                 found = "could not be read" if after is None else f"stayed {'on' if before else 'off'}"

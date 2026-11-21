@@ -530,6 +530,23 @@ class InputsCheckTests(unittest.TestCase):
             with self.subTest(firmware=firmware):
                 self.assertIsNone(self.problem(firmware, Board(lambda pin, held: 1 if held else None, 1), s60))
 
+    def test_openbekens_press_is_held_past_its_debounce(self):
+        held = []
+        board = Board(lambda pin, now: 1 if now else None, 1)
+        board.buttons.press = lambda pin, seconds=check.emulator_buttons.PRESS: held.append(seconds)
+        device = self.device("openbeken", board)
+        device.relay_becomes = lambda n, wanted=None: False if wanted is None else None
+        with mock.patch.object(check.time, "sleep"):
+            device.inputs_problem(board.buttons, {"buttons": (9,), "switches": ()})
+        self.assertEqual(held, [check.HELD["openbeken"]])
+        self.assertGreater(check.HELD["openbeken"], 0.075 + 0.025, "its debounce and a tick")
+        held.clear()
+        device = self.device("esphome", board)
+        device.relay_becomes = lambda n, wanted=None: False if wanted is None else None
+        with mock.patch.object(check.time, "sleep"):
+            device.inputs_problem(board.buttons, {"buttons": (9,), "switches": ()})
+        self.assertEqual(held, [check.emulator_buttons.PRESS])
+
     def test_a_button_that_switches_nothing_fails(self):
         found = self.problem("esphome", Board(lambda pin, held: None, 1), {"buttons": (9,), "switches": ()})
         self.assertEqual(found, "relay 1 stayed off with its button pressed (GPIO9)")

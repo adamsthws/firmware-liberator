@@ -255,6 +255,17 @@ under them.
   summary names it with its reason, says how many failures are known, and
   the run fails only if another case does. A known failure that passes is
   named too: the Dreo fan's, depending on its tick phase, may.
+- **`0010-bk7238-temperature-sensor-converts`** (`src/emulator.py`,
+  `tests/saradc_temperature.py`): a conversion on SARADC channel 7, the
+  BK7238's temperature sensor, fills the FIFO and raises the interrupt, as
+  one on an external channel does, with the default sample
+  (`DEFAULT_ADC_RAW`). Upstream answered no channel from 7 up that had no
+  input set, so the SDK's `temp_single_get_current_temperature` took 3 s and
+  returned nothing, and OpenBeken, calling it once a second from a FreeRTOS
+  software timer, starved its other timers: its buttons went unread
+  ([below](#the-devices-board-boardpy)). Only the BK7238's channel 7: the
+  BK7252N's sensor is channel 9, and neither it nor that chip was tried.
+  `tests/saradc_temperature.py` fails without it. It could go upstream.
 
 To change the fork, extract the archive (`captures/emulation/cache/`), apply
 the patches in order, commit the change, and `git format-patch` it into
@@ -318,9 +329,9 @@ itself is run: changing it needs no new image.
   1.8 kHz a quarter of the voltage's edges were lost: OpenBeken read 176 V of
   230.
 - **What the firmwares read**, in each way of `fault_suite.py check` (the
-  end-of-run check, with the cloud stub): OpenBeken 226-235 V and
-  97.6-100.3 W with the relay on, 226-231 V and 0 W off; ESPHome 230.0-230.6 V
-  and 100.1-100.8 W on, 230.4-230.6 V and 0 W off; Sonoff's firmware 230.22 V, 0.43 A and 100.00 W on (switched through
+  end-of-run check, with the cloud stub): OpenBeken 230.8-231.0 V and
+  99.9-101.4 W with the relay on, 230.4-231.0 V and 0 W off; ESPHome
+  230.1-230.4 V and 100.1-100.8 W on, 229.9-230.9 V and 0 W off; Sonoff's firmware 230.22 V, 0.43 A and 100.00 W on (switched through
   the stub's eWeLink, and asked for readings as the app asks, `uiActive`),
   230.22 V and nothing off. OpenBeken and ESPHome count pulses over a second
   of the firmware's own clock, so they read true only while it keeps the
@@ -328,15 +339,18 @@ itself is run: changing it needs no new image.
   in the voltage's windows and 4.7% in the current's, and they read 245-250 V
   and 103-108 W (ESPHome a power factor of 0.94-0.98). Sonoff's firmware times
   the pulses' periods by the chip's clock and read the same before and after.
-  OpenBeken's wider spread is not its calibration: from Sonoff's firmware and
-  from ESPHome alike it starts with the stock store's
-  (`AutoflashImport: OpenBeken cal I=0.011095 V=0.128238 P=1.334562` in its
-  serial log, and the tool reports `stock store` both ways), and one read
-  differs from the next by up to 2% under it (found 20 November 2026).
+  OpenBeken read 226-235 V and 97.6-100.3 W on, its once-a-second timer run
+  only every 3 s, until patch [0010](#the-fork-patchespatch) answered the
+  temperature reading it waits on in it (three runs of each way since, 23
+  November 2026). Its power still spreads wider than ESPHome's, which is not
+  its calibration: from Sonoff's firmware and from ESPHome alike it starts with
+  the stock store's (`AutoflashImport: OpenBeken cal I=0.011095 V=0.128238
+  P=1.334562` in its serial log, and the tool reports `stock store` both
+  ways), and one read differs from the next by up to 1.5% under it.
 - **The button** (P9, `WIRING`'s `buttons`), while the state folder's
   `buttons` file names it
   ([docs/emulator.md](../../../docs/emulator.md#buttons-and-wall-switches)):
-  read at most every 0.1 s of the wall's time between chunks
+  read at most every `POLL` of the wall's time between chunks
   (`tools/repo/emulator_buttons.py`, which the Espressif board follows the
   same way). A pin named is driven low through upstream's own
   `set_gpio_input(pin, 0)`, and one no longer named let go with
@@ -347,17 +361,22 @@ itself is run: changing it needs no new image.
   `_pacing`, between chunks. So the Beken emulator needed no patch for it,
   where QEMU did. A rebuilt flash of another device runs on the S61's board
   (`device.py`'s `KIND`), so only the S61's check presses its button.
-- **ESPHome follows the button; OpenBeken does not, yet.** On ESPHome each
-  press toggles the relay. OpenBeken reads its buttons from its 25 ms quick
-  tick (`QuickTick`, a FreeRTOS timer), debouncing by the time between ticks
-  (`rtos_get_time`), and in the emulator it never saw P9 pressed: no
-  `Button_OnInitialPressDown` in its log, P9 made a digital input on the
-  relay's channel (`setPinRole 9 dInput`) did not move the relay either, and
-  a repeating event (`addRepeatingEvent 1 4 Power1 TOGGLE`), run from the same
-  tick, never fired - while its once-a-second timer ran, and its relay
-  switched from `/cm`. So its quick tick does not run in the emulator, or its
-  clock does not move there; which, is open. Until then the check presses
-  the button on ESPHome alone (`fault_suite.BUTTON_CHECKED`).
+- **Both firmwares follow the button**: each press toggles the relay.
+  OpenBeken reads its buttons from its 25 ms quick tick (`QuickTick`, a
+  FreeRTOS software timer), and until patch
+  [0010](#the-fork-patchespatch) that timer stopped a few seconds after
+  boot: its 1 s timer's callback, `Main_OnEverySecond`, read the chip's
+  temperature, the emulator never answered the conversion, and the read
+  waited out its semaphore three times, 3 s; overdue each time it
+  returned, the callback ran again straight from the timer task's queue,
+  and the quick timer, due 3 ticks later, never ran again. So no
+  `Button_OnInitialPressDown`, nor a repeating event, and OpenBeken's
+  once-a-second line came every 3 s (found 21 November 2026). Its button
+  is debounced over its ticks (75 ms, `BTN_DEBOUNCE_MS`): a press held 80 ms
+  of the device's time switched the relay, one held 50 ms did not, so the
+  check holds a press longer there than a quick one
+  (`HELD`, [emulator_check.py](../../repo/emulator_check.py)): the quick one
+  went unseen now and then.
 - **Not modelled:** the chip's pulse shape and width (only the rate counts),
   or a pulse's timing within a 0.2 ms chunk.
 
