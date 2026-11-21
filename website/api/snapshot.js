@@ -42,7 +42,7 @@
 //   downloads whole, as GitHub shows them to anyone, the devices as above.
 import { LATEST_MIGRATION } from "./database.js";
 import { downloadDays } from "./downloads.js";
-import { deviceTesting, newerFirst } from "./emulator.js";
+import { deviceTesting, MANUAL, newerFirst } from "./emulator.js";
 import { monthsTo, popularity } from "./popularity.js";
 
 export const FORMAT = 1;
@@ -166,6 +166,9 @@ export async function snapshot(db, now = new Date()) {
   // Each device's versions, its suites summed in each: newest first.
   const testing = new Map();
   for (const row of await deviceTesting(all, true)) {
+    if (row.suite === MANUAL) {
+      continue;   // a run by hand is no suite's: how far testing has got is the suites'
+    }
     const device = testing.get(row.device) ?? { device: row.device, family: row.family, suites: new Set(),
       versions: new Map() };
     const version = device.versions.get(row.tool) ?? { tool: row.tool, last: "", firmware: {}, scenarios: 0,

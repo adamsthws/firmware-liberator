@@ -13,7 +13,7 @@
 // Nothing here is a person's run: those are the API's reports, and no figure
 // of theirs counts these.
 
-import { daysBack, deviceTesting, INCONCLUSIVE, outcomeOf } from "../api/emulator.js";
+import { daysBack, deviceTesting, INCONCLUSIVE, outcomeOf, SUITE_RUN, SUITES } from "../api/emulator.js";
 import { esc, FULL, columns, heat, number, table, tile } from "./render.js";
 
 // Every path the suites use: what Access's application for them covers.
@@ -51,7 +51,7 @@ const word = (v) => typeof v === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(v);
 const COMMON = {
   family: word,
   device: (v) => typeof v === "string" && /^[a-z0-9][a-z0-9-]{0,47}$/.test(v),
-  suite: (v) => v === "fault" || v === "attended" || v === "check",
+  suite: (v) => SUITES.includes(v),
   cloud: (v) => v === "stub" || v === "real" || v === "none",
   tool: (v) => typeof v === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(v),
   revision: (v) => v === null || (typeof v === "string" && /^[0-9a-f]{7,40}$/.test(v)),
@@ -254,10 +254,12 @@ export async function gatherEmulator(all, now) {
       sum(outcome = 'fail'), sum(outcome = 'inconclusive'), sum(verdict = 'BRICK'),
       sum(rerun = 0 AND outcome != 'inconclusive'), sum(rerun = 0 AND outcome = 'pass'), sum(coalesce(seconds, 0))
     FROM emulator_runs WHERE finished >= ?1 GROUP BY 1, 2, 3, 4`;
-  const [totals] = await all(`SELECT sum(runs) AS runs, sum(bricked) AS bricks, sum(first_judged) AS judged,
-      sum(first_passed) AS passed,
-      sum(CASE WHEN day >= ?2 THEN runs ELSE 0 END) AS week, sum(CASE WHEN day >= ?2 THEN first_judged ELSE 0 END)
-        AS week_judged, sum(CASE WHEN day >= ?2 THEN first_passed ELSE 0 END) AS week_passed,
+  const [totals] = await all(`SELECT sum(runs) AS runs, sum(bricked) AS bricks,
+      sum(CASE WHEN ${SUITE_RUN} THEN first_judged ELSE 0 END) AS judged,
+      sum(CASE WHEN ${SUITE_RUN} THEN first_passed ELSE 0 END) AS passed,
+      sum(CASE WHEN day >= ?2 THEN runs ELSE 0 END) AS week,
+      sum(CASE WHEN day >= ?2 AND ${SUITE_RUN} THEN first_judged ELSE 0 END) AS week_judged,
+      sum(CASE WHEN day >= ?2 AND ${SUITE_RUN} THEN first_passed ELSE 0 END) AS week_passed,
       sum(CASE WHEN day >= ?2 THEN inconclusive ELSE 0 END) AS week_inconclusive,
       sum(CASE WHEN day >= ?2 THEN seconds ELSE 0 END) AS week_seconds
     FROM (${DAYS})`, today, week);
@@ -271,7 +273,8 @@ export async function gatherEmulator(all, now) {
     today, daysBack(now, LONG_DAYS)),
     revisions: await all(`${withBefore(before)}
       SELECT revision, max(tool) AS tool, max(dirty) AS dirty, count(*) AS runs,
-        sum(rerun = 0 AND outcome != 'inconclusive') AS judged, sum(rerun = 0 AND outcome = 'pass') AS passed,
+        sum(rerun = 0 AND outcome != 'inconclusive' AND ${SUITE_RUN}) AS judged,
+        sum(rerun = 0 AND outcome = 'pass' AND ${SUITE_RUN}) AS passed,
         sum(outcome = 'inconclusive') AS inconclusive, sum(${NEW_FAILURE}) AS new_failures,
         count(DISTINCT scenario) AS scenarios, max(finished) AS last
       FROM ordered WHERE finished >= ? GROUP BY revision ORDER BY last DESC LIMIT ${REVISIONS}`, since),
@@ -301,8 +304,9 @@ export async function gatherEmulator(all, now) {
       GROUP BY step, why ORDER BY passed + failed DESC LIMIT 40`, since),
     // First tries by emulator image: a change to the emulator moves these, not
     // the tool.
-    images: await all(`SELECT family, image, count(*) AS runs, sum(rerun = 0 AND outcome != 'inconclusive') AS judged,
-        sum(rerun = 0 AND outcome = 'pass') AS passed, sum(outcome = 'inconclusive') AS inconclusive,
+    images: await all(`SELECT family, image, count(*) AS runs,
+        sum(rerun = 0 AND outcome != 'inconclusive' AND ${SUITE_RUN}) AS judged,
+        sum(rerun = 0 AND outcome = 'pass' AND ${SUITE_RUN}) AS passed, sum(outcome = 'inconclusive') AS inconclusive,
         max(finished) AS last
       FROM emulator_runs WHERE finished >= ? GROUP BY family, image ORDER BY last DESC LIMIT ${REVISIONS}`, since),
     stepFault: await all(`SELECT step, fault, sum(outcome != 'inconclusive') AS runs, sum(outcome = 'fail') AS failed
@@ -357,10 +361,11 @@ export function emulatorSections(data) {
     + ` value="${esc(row.cause_ref ?? "")}"> <button>Mark</button></form> ${refLink(row.cause_ref)}`;
   return [
     `<section class="card" id="emulator"><h2>Emulator runs</h2><p class="sub">The maintainer's own suites - fault,
-      attended and the final-firmware check, every chip family: one row a scenario run, sent as it ends. No person's
-      run is among them. Pass rates are of first tries the suite could judge: a batch re-running what failed, or a
-      run the suite could not judge (inconclusive: ${esc(INCONCLUSIVE.join(", "))}), counts apart. Days before today
-      are counted each night.</p><div class="tiles">`
+      attended and the final-firmware check, every chip family: one row a scenario run, sent as it ends - and the
+      maintainer's runs started by hand in an emulator (suite manual), sent as each emulator's script ends. No
+      person's run is among them. Pass rates are of first tries the suite could judge: a batch re-running what
+      failed, or a run the suite could not judge (inconclusive: ${esc(INCONCLUSIVE.join(", "))}), counts apart, and a
+      run by hand is no suite's first try. Days before today are counted each night.</p><div class="tiles">`
       + tile("Runs", number(t.runs ?? 0), `${share(t.passed, t.judged)} of first tries passed`)
       + tile("The last 7 days", number(t.week ?? 0), `${share(t.week_passed, t.week_judged)} of first tries passed`)
       + tile("Inconclusive, 7 days", share(t.week_inconclusive, t.week), "the test rig's, not the tool's")

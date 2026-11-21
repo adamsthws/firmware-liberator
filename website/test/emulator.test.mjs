@@ -395,3 +395,33 @@ test("the public figures give each device's testing, from checkouts with no chan
       coverage: 25, firstTry: null }] }],
   "the newest version at the top, then each; under five first tries judged, no share of them is given");
 });
+
+// A run started by hand in an emulator, as tools/repo/emulator_stats.py manual sends it.
+const byHand = (more = {}) => run({ suite: "manual", scenario: "manual:sonoff>esphome", route: "sonoff>esphome",
+  step: null, fault: null, arg: null, at: null, tries: 1, seconds: null, workers: null, ...more });
+
+test("a run by hand is taken and shown as the suite manual, and no suite's pass rate counts it", async () => {
+  const bindings = env();
+  const scenario = "sonoff>tasmota:D4:deviceoff-1";
+  const suites = [run({ scenario }), run({ scenario, verdict: "FAIL", finished: "2026-11-13T08:10:00Z" })];
+  const manual = [byHand(), byHand({ verdict: "FAIL", step: "K2", stopped_by: ["network-join"] }),
+    byHand({ verdict: "CRASH" }), byHand({ verdict: "CANCELLED", step: "C2" })];
+  const answer = await (await send(await service(), { runs: [...suites, ...manual] }, { bindings })).json();
+  assert.deepEqual(answer.refused, []);
+  assert.deepEqual(rows(bindings).filter((row) => row.suite === "manual").map((row) => row.outcome).sort(),
+    ["fail", "fail", "inconclusive", "pass"], "the person stopping a run is neither a pass nor a failure");
+  const html = await view(bindings);
+  assert.match(section(html, "emulator"), /Runs<\/div><div class="tile-value">6<\/div><div class="tile-note">50% of first tries passed/,
+    "the suites' first tries alone: 1 of 2");
+  assert.match(section(html, "emulator-revisions"), /<td class="number">6<\/td><td class="number">2<\/td><td>50% of 2<\/td>/);
+  assert.match(section(html, "emulator-images"), /<td class="number">6<\/td><td>50% of 2<\/td>/);
+  const devices = section(html, "emulator-devices");
+  assert.match(devices, /<td>sonoff-s60<\/td><td>fault<\/td><td>3\.0\.0<\/td><td>1<\/td><td>50% of 2<\/td>/);
+  assert.match(devices, /<td>sonoff-s60<\/td><td>manual<\/td><td>3\.0\.0<\/td><td>1<\/td><td>33% of 3<\/td>/,
+    "its own row, by suite, as every suite has");
+  assert.match(section(html, "emulator-failures"), /<td>manual<\/td><td class="text">manual:sonoff&gt;esphome<\/td><td>CANCELLED<\/td><td>inconclusive/);
+  const { snapshot } = await import("../api/snapshot.js");
+  const { testing } = await snapshot(bindings.DB, new Date(NOW));
+  assert.deepEqual(testing.map((row) => row.suites), [["fault"]], "the public figures are the suites' alone");
+  assert.equal(refused(byHand({ suite: "by-hand" }), NOW).includes("suite"), true);
+});

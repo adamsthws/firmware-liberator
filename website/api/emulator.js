@@ -3,12 +3,22 @@
 // (snapshot.js) read of them, and the nightly job's fold of them by day.
 // None of it is a person's run.
 
+// The suites whose runs are taken: each of the maintainer's suites, and
+// MANUAL, a run started by hand in an emulator (tools/repo/emulator_stats.py
+// manual). A run by hand shows wherever the suites' runs are listed or
+// grouped by suite, but is no suite's first try: no pass rate across suites
+// counts it (SUITE_RUN), nor the public figures.
+export const MANUAL = "manual";
+export const SUITES = ["fault", "attended", "check", MANUAL];
+export const SUITE_RUN = `suite != '${MANUAL}'`;
+
 // The verdicts of a run the suite could not judge - the fault never landed,
 // or landed at the wrong time, the device or the suite itself failed, or the
-// computer lost the internet: neither the tool's pass nor its failure. Each
-// suite's verdicts are in docs/testing.md; any other not PASS is a failure.
+// computer lost the internet - and of a run by hand the person stopped
+// (CANCELLED): neither the tool's pass nor its failure. Each suite's verdicts
+// are in docs/testing.md; any other not PASS is a failure.
 export const INCONCLUSIVE = ["MISTIMED", "NOT-FIRED", "NO-INTERNET", "NO-TRAFFIC", "NO-STEP", "NOT-READY",
-  "HARNESS-ERROR", "HARNESS", "ERROR", "OLD-RUN-FAILED"];
+  "HARNESS-ERROR", "HARNESS", "ERROR", "OLD-RUN-FAILED", "CANCELLED"];
 
 export const outcomeOf = (verdict) => (verdict === "PASS" ? "pass" : INCONCLUSIVE.includes(verdict)
   ? "inconclusive" : "fail");
