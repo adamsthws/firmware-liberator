@@ -48,7 +48,10 @@ const HEADERS = {
   "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline' ${SITE}; script-src 'self'; `
     + `img-src data: ${SITE}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
   "X-Robots-Tag": "noindex, nofollow",
-  "Referrer-Policy": "no-referrer",
+  // Nothing of this view's addresses to another site; and not no-referrer,
+  // under which a browser sends its own forms' POSTs with Origin: null, so
+  // each would be refused as not from this view (ownForm).
+  "Referrer-Policy": "same-origin",
   "X-Content-Type-Options": "nosniff",
 };
 const reply = (status, body, headers = {}) => new Response(body, { status, headers: { ...HEADERS, ...headers } });

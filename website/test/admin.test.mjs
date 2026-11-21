@@ -301,6 +301,14 @@ test("only a report held can be released or deleted from here", async () => {
   assert.deepEqual(rows(db, `SELECT count(*) AS n FROM reports WHERE id = '${id}'`), [{ n: 1 }]);
 });
 
+test("the view's own forms send its origin: a browser gives Origin: null under no-referrer", async () => {
+  const { bindings } = await held();
+  const response = await admin.handle(asked(await token()), bindings, NOW, keys);
+  // Fetch's "append a request Origin header": a POST that is not CORS is sent
+  // with Origin: null under no-referrer, which ownForm refuses as not this view's.
+  assert.equal(response.headers.get("Referrer-Policy"), "same-origin");
+});
+
 test("a change comes only from a form on this view itself", async () => {
   const { bindings, db, junk } = await held();
   const post = async (headers) => admin.handle(new Request("https://admin.firmwareliberator.com/held", {
