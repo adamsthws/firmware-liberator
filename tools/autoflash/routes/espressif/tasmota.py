@@ -665,7 +665,7 @@ def configure_tasmota(ctx: Context) -> dict[str, Any]:
     # cannot go in there: see at_next_save.)
     if runs.run_source(ctx.state) != "untemplated":
         hooked = device.at_next_save([*([f"Hostname {hostname}", f"DeviceName {hostname}"] if hostname else []),
-                                      f"Template {template}", "Module2 0", "Module 0"],
+                                      WIFI_AWAKE, f"Template {template}", "Module2 0", "Module 0"],
                                      timeout=SLOW_COMMAND)
         booted, uptime = device.started_at(), device.uptime_seconds()
         device.command("Reset 4", timeout=SLOW_COMMAND)
@@ -688,6 +688,16 @@ def configure_tasmota(ctx: Context) -> dict[str, Any]:
             "restarts": 1 if runs.run_source(ctx.state) == "untemplated" else 2}
 
 
+# A Tasmota the tool converts keeps its Wi-Fi out of modem sleep: by default
+# the radio sleeps between the router's beacons (Sleep 50), and a router that
+# holds the device's frames badly meanwhile stalls long transfers until they
+# are cut off. Every device converted is on mains, so the sleep saves nothing.
+# Tasmota applies it as it next joins the network, which the restart after
+# brings (support_wifi.ino WifiBegin). A Tasmota in use given its template
+# keeps the setting its owner chose.
+WIFI_AWAKE = "SetOption127 1"
+
+
 def give_template(device: device.Device, template: str, hostname: str | None, *, named: bool = False) -> None:
     """The device's template and name put in, its other settings kept, at the
     cost of a restart - and asked for after it.  Left without them, the device
@@ -700,7 +710,8 @@ def give_template(device: device.Device, template: str, hostname: str | None, *,
     # Named as every converted Tasmota is (tasmota-abcdef), and its own network
     # with it; one restart for both, as each would restart the device alone.
     names = (f"Hostname {hostname}; " + (f"DeviceName {hostname}; " if named else "")) if hostname else ""
-    device.command(f"Backlog {names}Module2 0; Module 0",
+    awake = f"{WIFI_AWAKE}; " if named else ""
+    device.command(f"Backlog {names}{awake}Module2 0; Module 0",
                    timeout=SLOW_COMMAND)
     output.event("phase", phase="template")
     output.say(f"Template applied as {json.loads(template)['NAME']}"

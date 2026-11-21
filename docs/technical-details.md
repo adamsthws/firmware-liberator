@@ -142,6 +142,33 @@ leave it in flash for that firmware to read), but is not worth it to close
 two brief exposures. If traffic on your local network is a concern, separate
 it, for example with an IoT VLAN.
 
+## The Wi-Fi radio kept awake
+
+Left to its defaults, an ESP32's Wi-Fi sleeps between the router's beacons,
+and the router holds the device's traffic meanwhile. A router that does that
+badly stalls a long transfer - the backup, an upload of firmware - until it is
+cut off, while short requests still go through, even with a strong signal
+([troubleshooting](troubleshooting.md#uploading-firmware)).
+Every device the tool converts runs on mains, so the sleep saves nothing, and
+each firmware it installs keeps the radio awake:
+
+- **The installer** (the bridge) sets no power saving each time it joins
+  ([its notes](../archive/bridge/README.md)).
+- **The Berry Tasmota** starts from settings the tool gives it with
+  `SetOption127 1` (`tasmota_settings.awake`). The classic ESP32's display
+  build takes it. The ESP32-C3's Bluetooth build cannot: its Bluetooth driver
+  puts the Wi-Fi into modem sleep as it joins and keeps it there, whether or
+  not Bluetooth is turned on (it is not: `SetOption115` is off, so the
+  Bluetooth radio never starts), and no setting or command undoes that.
+- **Official Tasmota** is given `SetOption127 1` with its template and name
+  as its settings are reset (F4). A Tasmota you installed yourself, given only
+  its template, keeps the setting you chose.
+- **OpenBeken** saves no power unless its `PowerSave` command is given, and
+  neither the tool nor its driver gives it.
+
+The emulators do not model a radio's sleep, so they show only that nothing
+else changed; `SetOption127` reads back as `ON` on a converted Tasmota.
+
 ## Your Sonoff backup
 
 Before a conversion writes over Sonoff's firmware it keeps a copy, under the

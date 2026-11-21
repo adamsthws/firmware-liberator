@@ -438,7 +438,7 @@ class TasmotaWifiPresetTests(unittest.TestCase):
         return given, sent
 
     def test_with_a_template_the_bridge_gets_it(self):
-        self.assertEqual(self.run_preset(b"T" * 4096), (True, [b"T" * 4096]))
+        self.assertEqual(self.run_preset(b"T" * 4096), (True, [self.ts.awake(b"T" * 4096)]))
 
     def test_given_the_wifi_tasmota_is_no_longer_named_alone(self):
         # An earlier try saved it without the Wi-Fi; this one with it: Tasmota
@@ -457,6 +457,20 @@ class TasmotaWifiPresetTests(unittest.TestCase):
         self.assertTrue(given)
         self.assertEqual(self.ts.text(sent[0], self.ts.SET_HOSTNAME), "autoflash-recovery-CDEF")
         self.assertEqual(self.ts.problems(sent[0]), [])  # the bridge checks the checksum first
+
+    def test_the_tasmota_keeps_its_wifi_awake(self):
+        # SetOption127 1, for the uploads it takes; named or not, and on the
+        # installer's network too.
+        template = self.ts.template_path(Path(__file__).resolve().parents[4]).read_bytes()
+        for mac, address, answer in ((None, "192.0.2.51", self.JOINED),
+                                     ("12:34:56:ab:cd:ef", "192.0.2.51", self.JOINED),
+                                     ("12:34:56:ab:cd:ef", setup_network.SETUP_HOST, self.ALONE)):
+            self.inputs.clear()
+            if mac:
+                self.inputs["device_mac"] = mac
+            _, sent = self.run_preset(template, address=address, answer=answer)
+            flags = int.from_bytes(sent[0][self.ts.FLAG5:self.ts.FLAG5 + 4], "little")
+            self.assertTrue(flags & self.ts.WIFI_NO_SLEEP, (mac, address))
 
     def test_on_the_installers_network_tasmota_is_named_without_the_wifi(self):
         # 4.4.4 has joined no network there, so it saves the settings with no

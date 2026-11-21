@@ -40,6 +40,8 @@ IPV4_DEFAULTS = bytes([0, 0, 0, 0, 192, 168, 1, 1, 255, 255, 255, 0, 192, 168, 1
 WIFI_CHANNEL = 0xF09             # last channel, used for a quick reconnect
 WIFI_BSSID = 0xF0A               # last access point's address (6 bytes)
 CONFIG_VERSION = 0xF36           # chip family; Tasmota refuses a restore otherwise
+FLAG5 = 0xFB4                    # SOBitfield5: SetOption114 to 145
+WIFI_NO_SLEEP = 1 << 13          # SetOption127: Wi-Fi never in modem sleep
 ESP32C3 = 4
 CRC32 = 0xFFC                    # over everything before it
 SSID_MAX, PASSWORD_MAX = 32, 64
@@ -201,6 +203,20 @@ def named(template: bytes, hostname: str) -> bytes:
     if not 0 < len(hostname.encode()) <= HOSTNAME_MAX or "%" in hostname:
         raise SettingsError(f"a Tasmota name is 1 to {HOSTNAME_MAX} bytes, with no %")
     return with_crc(with_text(template, SET_HOSTNAME, hostname))
+
+
+def awake(template: bytes) -> bytes:
+    """The template with Tasmota's Wi-Fi kept out of modem sleep (SetOption127 1).
+
+    Tasmota otherwise lets the radio sleep between the router's beacons
+    (support_wifi.ino WiFiSetSleepMode, with its default Sleep 50), and a router
+    that holds the device's frames badly meanwhile stalls a long transfer until
+    it is cut off. Every device the tool converts is on mains, so the sleep
+    saves nothing. Tasmota applies it each time it joins the network.
+    """
+    _require_size(template)
+    flags = struct.unpack_from("<I", template, FLAG5)[0] | WIFI_NO_SLEEP
+    return with_crc(template[:FLAG5] + struct.pack("<I", flags) + template[FLAG5 + 4:])
 
 
 def _require_size(settings: bytes) -> None:

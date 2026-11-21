@@ -926,7 +926,9 @@ class ConfigureStepTests(unittest.TestCase):
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
             result = tasmota.step_configure(ctx)
-        self.assertIn("Backlog Hostname tasmota-abcdef; DeviceName tasmota-abcdef; Module2 0; Module 0", sent)
+        # Its Wi-Fi kept awake too (SetOption127), taken as it rejoins after the restart.
+        self.assertIn("Backlog Hostname tasmota-abcdef; DeviceName tasmota-abcdef; SetOption127 1; "
+                      "Module2 0; Module 0", sent)
         self.assertEqual(result["restarts"], 2)
 
     def test_a_tasmota_in_use_that_lost_its_template_keeps_its_settings(self):
@@ -1024,7 +1026,7 @@ class ConfigureStepTests(unittest.TestCase):
              mock.patch.object(tasmota, "calibrate_tasmota_meter", return_value={"changed": True}):
             result = tasmota.step_configure(ctx)
         self.assertEqual(result["meter"], {"changed": True})   # calibrated after the reset, for the report
-        self.assertEqual(hooked, [["Hostname tasmota-abcdef", "DeviceName tasmota-abcdef",
+        self.assertEqual(hooked, [["Hostname tasmota-abcdef", "DeviceName tasmota-abcdef", "SetOption127 1",
                                    f"Template {template}", "Module2 0", "Module 0"]])
         self.assertEqual([c for c in sent if " " in c], ["Reset 4"])  # nothing after it
         back.assert_called_once()

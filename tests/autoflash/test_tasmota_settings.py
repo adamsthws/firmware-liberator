@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from tools.autoflash import tasmota_settings as ts
+from tools.espressif import chips
 
 ROOT = Path(__file__).resolve().parents[2]
 C_SOURCE = ROOT / "archive/bridge/main/tasmota_settings.c"
@@ -83,6 +84,16 @@ class SettingsRecordTests(unittest.TestCase):
         record = ts.fill(named, "Home", "pw")
         self.assertEqual(ts.text(record, ts.SET_HOSTNAME), "autoflash-recovery-CDEF")
 
+    def test_awake_sets_setoption127_and_keeps_every_other_setting(self):
+        template = ts.named(ts.make_template(default_record()), "autoflash-recovery-CDEF")
+        awake = ts.awake(template)
+        flags = struct.unpack_from("<I", awake, ts.FLAG5)[0]
+        self.assertEqual(flags, struct.unpack_from("<I", template, ts.FLAG5)[0] | 1 << 13)  # SetOption127
+        self.assertEqual(awake[:ts.FLAG5], template[:ts.FLAG5])
+        self.assertEqual(awake[ts.FLAG5 + 4:ts.CRC32], template[ts.FLAG5 + 4:ts.CRC32])
+        self.assertEqual(ts.problems(awake), [])  # the bridge checks the checksum first
+        self.assertEqual(ts.awake(awake), awake)
+
     def test_a_wifi_name_and_password_fit_tasmotas_fields(self):
         template = ts.make_template(default_record())
         ts.fill(template, "A" * 32, "B" * 64)
@@ -158,6 +169,14 @@ class PinnedReleaseTests(unittest.TestCase):
         self.assertTrue(ts.text(template, 0).startswith("http://ota.tasmota.com/"))
         self.assertEqual(ts.text(template, ts.SET_HOSTNAME), "%s-%04d")
         self.assertEqual(ts.make_template(template), template)
+
+    def test_each_committed_template_sleeps_until_made_awake(self):
+        # Tasmota's own defaults, as captured: SetOption127 off, Sleep 50.
+        for chip in (chips.ESP32C3, chips.ESP32):
+            template = ts.template_path(ROOT, chip).read_bytes()
+            self.assertFalse(struct.unpack_from("<I", template, ts.FLAG5)[0] & ts.WIFI_NO_SLEEP, chip.key)
+            self.assertTrue(struct.unpack_from("<I", ts.awake(template), ts.FLAG5)[0] & ts.WIFI_NO_SLEEP)
+            self.assertEqual(ts.problems(ts.awake(template), chip.config_version), [])
 
     def test_a_template_with_wifi_in_it_is_not_used(self):
         from tools.espressif.safeboot.safeboot_migration import PINNED_ARTIFACTS

@@ -803,6 +803,12 @@ def give_tasmota_the_wifi(ctx: Context, address: str) -> bool:
         template = tasmota_settings.named(template, names.our_setup_network(ctx))
     elif alone:
         return False  # nothing to give it: the Wi-Fi is given on its network, as ever
+    # Its Wi-Fi kept awake for the uploads ahead. The ESP32-C3's Berry build
+    # sleeps all the same: its Bluetooth driver puts the Wi-Fi into modem sleep
+    # as it joins and keeps it there (xdrv_79_esp32_ble.ino BLEInit), which no
+    # setting or command undoes. The classic ESP32's display build has no
+    # Bluetooth, and takes it.
+    template = tasmota_settings.awake(template)
     try:
         answer = setup_network.send_tasmota_settings(template, host=address,
                                                      layout=tasmota_settings.layout_query())
