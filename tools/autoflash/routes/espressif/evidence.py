@@ -149,7 +149,7 @@ def evidence_by_what_answers(finished: set[str], not_yet: set[str]):
 def evidence_bootloader(ctx: "Context") -> tuple[bool | None, str]:
     chip = images.chip_of(kinds.of_run(ctx.state))
     image = images.published_bootloader(chip)
-    actual = ctx.device.sha_region(0, len(image))
+    actual = ctx.device.sha_region(chip.bootloader_at, len(image))
     if actual == images.bootloader_file(chip)[2]:
         return True, "ESPHome's bootloader is in place, so this step did finish."
     return False, "The device still has its old bootloader, so this step has to be done again."
