@@ -366,7 +366,7 @@ class MotorCheckTests(unittest.TestCase):
         device, sent = check.MotorDevice("127.0.0.1:8081", "tasmota"), []
         # Rule1 the owner's: the switches' rule where the tool would put it, in Rule2.
         rules = {name: {"State": "ON" if name == "Rule1" else "OFF", "Rules": "ON System#Boot DO Var1 1 ENDON"
-                        if name == "Rule1" else ""} for name in check.motor_setup.TASMOTA_RULES}
+                        if name == "Rule1" else ""} for name in check.tasmota_rules.RULE_SETS}
         device.tasmota = lambda command: {command: rules[command]} if command in rules else sent.append(command) or {}
         device.setup = lambda known=None: moved
         device.answers = lambda within=None: sent.append("answers?") or True

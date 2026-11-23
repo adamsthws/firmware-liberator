@@ -2,58 +2,36 @@
 found in its Sonoff backup or the firmware it runs, and Tasmota set up so that
 its two outputs are never on together."""
 
+import contextlib
 import json
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import kinds, motor
+from tests.autoflash.test_tasmota_rules import RELEASED, THEIRS, FakeRuleSets
+from tools.autoflash import kinds, motor, tasmota_rules
 from tools.autoflash.errors import Abort
 from tools.espressif import flashmap, inspect_stock_nvs
 
 
-class FakeTasmota:
+class FakeTasmota(FakeRuleSets):
     """Tasmota's answers to the commands motor.py gives and asks, as 16.0.0
     gives them (xdrv_27_esp32_shutter.ino, support_command.ino)."""
 
     def __init__(self, takes=True):
+        super().__init__(takes)
         self.settings = {"SetOption80": "OFF", "Interlock": "OFF", "Groups": "", "ShutterRelay1": 0,
                          "ShutterMode": 0, "PowerOnState": 3}
         self.travel = {"ShutterOpenDuration1": 10.0, "ShutterCloseDuration1": 10.0}
         self.template = json.loads(kinds.find("sonoff-dualr3").tasmota_template())
-        # Its switches as a template starts them, toggling their relays, and no rules.
+        # Its switches as a template starts them, toggling their relays; no rules (FakeRuleSets).
         self.switchmodes = {"SwitchMode1": 0, "SwitchMode2": 0}
-        self.rules = {name: {"State": "OFF", "Once": "OFF", "StopOnError": "OFF", "Rules": ""}
-                      for name in motor.TASMOTA_RULES}
-        self.sent, self.takes = [], takes
 
-    def held(self, name):
-        """A rule set's state and text."""
-        return self.rules[name]["State"], self.rules[name]["Rules"]
-
-    def command(self, text, timeout=None):
-        self.sent.append(text)
-        if text.startswith("Backlog "):
-            for part in text[len("Backlog "):].split("; "):
-                self.command(part)
-            return {}
-        name, _, value = text.partition(" ")
+    def answer(self, name, value):
         if name in self.switchmodes:
             if value and self.takes:
                 self.switchmodes[name] = int(value)
             return {name: self.switchmodes[name]}
-        if name in self.rules:
-            rule = self.rules[name]
-            if value and self.takes:
-                # Rule<x> 0/1 its State, 4/5 Once, 8/9 StopOnError, off/on;
-                # " clears its text, which anything else replaces.
-                flags = {"0": "State", "1": "State", "4": "Once", "5": "Once", "8": "StopOnError", "9": "StopOnError"}
-                if value in flags:
-                    rule[flags[value]] = "ON" if int(value) % 2 else "OFF"
-                else:
-                    rule["Rules"] = "" if value == '"' else value
-            return {name: {**{key: rule[key] for key in ("State", "Once", "StopOnError")},
-                           "Length": len(rule["Rules"]), "Free": 511 - len(rule["Rules"]), "Rules": rule["Rules"]}}
         if name == "Template":
             if value and self.takes:
                 self.template = json.loads(value)
@@ -88,11 +66,43 @@ class FakeTasmota:
 def switch_commands(mode, device=None):
     """The commands that set `device`'s wall switches to `mode`: by default,
     one whose rule sets are all free."""
-    return motor.tasmota_switch_commands(mode, motor.tasmota_rules(device or FakeTasmota()))
+    return motor.tasmota_switch_commands(mode, tasmota_rules.read(device or FakeTasmota()))
 
 
-# A rule of the person's own.
-THEIRS = "ON Power1#State DO Publish stat/blind/power %value% ENDON"
+# The push-buttons' rule as a later release could write it, and the one
+# written today, which it would then make an earlier release's.
+EARLIER = RELEASED[motor.RULE_FEATURE][motor.PUSH_BUTTONS][-1]
+LATER = EARLIER + " ON System#Boot DO ShutterStop1 ENDON"
+
+
+@contextlib.contextmanager
+def rule_changed():
+    """motor.py as a release that changed the push-buttons' rule to LATER."""
+    texts = tasmota_rules.RULE_TEXTS[motor.RULE_FEATURE]
+    with mock.patch.dict(texts, {motor.PUSH_BUTTONS: (*texts[motor.PUSH_BUTTONS], LATER)}), \
+            mock.patch.dict(motor.TASMOTA_SWITCHES, {motor.PUSH_BUTTONS: (4, LATER)}):
+        yield
+
+
+class RuleTextTests(unittest.TestCase):
+    """The motor's rules in tasmota_rules' registry (whose own tests prove
+    every released text is still known)."""
+
+    def test_each_mode_with_a_rule_writes_its_last_registered_text(self):
+        registered = tasmota_rules.RULE_TEXTS[motor.RULE_FEATURE]
+        for mode, (_, rule) in motor.TASMOTA_SWITCHES.items():
+            if rule:
+                self.assertEqual(registered[mode][-1], rule)
+                self.assertFalse(tasmota_rules.stale({"Rules": rule}, motor.RULE_FEATURE))
+        self.assertEqual(registered.keys(), {mode for mode, (_, rule) in motor.TASMOTA_SWITCHES.items() if rule})
+
+    def test_an_earlier_releases_text_is_the_motors_and_stale(self):
+        with rule_changed():
+            self.assertEqual(tasmota_rules.own(motor.RULE_FEATURE, {"Rules": EARLIER}), motor.PUSH_BUTTONS)
+            self.assertTrue(tasmota_rules.stale({"Rules": EARLIER}, motor.RULE_FEATURE))
+            self.assertFalse(tasmota_rules.stale({"Rules": LATER}, motor.RULE_FEATURE))
+            self.assertFalse(tasmota_rules.stale({"Rules": THEIRS}, motor.RULE_FEATURE))
+            self.assertIn(f"Rule1 {LATER}", switch_commands(motor.PUSH_BUTTONS))
 
 
 def ctx(kind="sonoff-dualr3", running=None, device=None, setup=None):
@@ -239,13 +249,13 @@ class NoteRunningTests(unittest.TestCase):
         self.assertIsNone(motor.tasmota_switches(device))
 
     def test_tasmotas_switches_are_read_with_the_rule_in_any_rule_set(self):
-        for name in motor.TASMOTA_RULES:
+        for name in tasmota_rules.RULE_SETS:
             with self.subTest(name):
                 device = FakeTasmota()
                 device.command(f"Backlog SwitchMode1 4; SwitchMode2 4; {name} "
                                f"{motor.TASMOTA_SWITCHES[motor.ONE_BUTTON][1]}; {name} 1")
                 # The person's own rules beside it, whatever they do, say nothing of the switches.
-                for other in set(motor.TASMOTA_RULES) - {name}:
+                for other in set(tasmota_rules.RULE_SETS) - {name}:
                     device.command(f"Backlog {other} {THEIRS}; {other} 1")
                 self.assertEqual(motor.tasmota_switches(device), motor.ONE_BUTTON)
                 run = ctx(device=device)
@@ -262,6 +272,12 @@ class NoteRunningTests(unittest.TestCase):
                        + "; ".join(f"{name} {motor.TASMOTA_SWITCHES[mode][1]}; {name} 1"
                                    for name, mode in (("Rule1", motor.ONE_BUTTON), ("Rule3", motor.PUSH_BUTTONS))))
         self.assertIsNone(motor.tasmota_switches(device))
+
+    def test_tasmotas_switches_are_read_from_an_earlier_releases_rule(self):
+        device = FakeTasmota()
+        device.command(f"Backlog SwitchMode1 4; SwitchMode2 4; Rule2 {EARLIER}; Rule2 1")
+        with rule_changed():
+            self.assertEqual(motor.tasmota_switches(device), motor.PUSH_BUTTONS)
 
     def test_a_rule_set_that_does_not_answer_is_neither_read_nor_written(self):
         device = FakeTasmota()
@@ -392,12 +408,12 @@ class SetUpTasmotaTests(unittest.TestCase):
                 self.assertEqual(motor.tasmota_switches(device), motor.PUSH_BUTTONS)
 
     def test_with_every_rule_set_the_persons_none_is_written_and_the_switches_are_hold_to_run(self):
-        theirs = {name: f"{THEIRS} ON Power{n}#State DO Var{n} 1 ENDON" for n, name in enumerate(motor.TASMOTA_RULES, 1)}
+        theirs = {name: f"{THEIRS} ON Power{n}#State DO Var{n} 1 ENDON" for n, name in enumerate(tasmota_rules.RULE_SETS, 1)}
         device = self.with_rules(**theirs)
         device.sent.clear()
         result, tell = self.set_up(device, backup={"motorCalibrate": True, "calibrate_time": 8000})
         self.assertEqual(result, {"motor": "set up"})
-        self.assertEqual({name: device.held(name) for name in motor.TASMOTA_RULES},
+        self.assertEqual({name: device.held(name) for name in tasmota_rules.RULE_SETS},
                          {name: ("ON", text) for name, text in theirs.items()})
         self.assertFalse([text for text in device.sent if text.startswith("Rule") and " " in text],
                          "no rule set written")
@@ -455,6 +471,27 @@ class SetUpTasmotaTests(unittest.TestCase):
         self.assertEqual(device.held("Rule3"), ("ON", THEIRS + " ON Power2#State DO Var2 1 ENDON"))
         self.assertEqual(motor.tasmota_switches(device), motor.HOLD_TO_RUN)
         self.assertIn("Switches are hold to run", tell.call_args_list[0].args[0])
+
+    def test_an_earlier_releases_rule_in_rule2_is_written_over_there(self):
+        # Set up as an earlier release left it, every setting in place.
+        device = self.with_rules(Rule2=EARLIER)
+        device.command("Backlog SwitchMode1 4; SwitchMode2 4")
+        with rule_changed():
+            result, tell = self.set_up(device)
+            self.assertEqual(motor.tasmota_switches(device), motor.PUSH_BUTTONS)
+        self.assertEqual(result, {"motor": "set up"})
+        self.assertEqual(device.held("Rule2"), ("ON", LATER))
+        self.assertEqual([device.held(name) for name in ("Rule1", "Rule3")], [("OFF", "")] * 2)
+
+    def test_hold_to_run_clears_an_earlier_releases_rule(self):
+        device = self.with_rules(Rule1=THEIRS, Rule2=EARLIER)
+        device.command("Backlog SwitchMode1 4; SwitchMode2 4")
+        with rule_changed():
+            result, tell = self.set_up(device, backup={"motorSwMode": motor.HOLD_TO_RUN})
+            self.assertEqual(motor.tasmota_switches(device), motor.HOLD_TO_RUN)
+        self.assertEqual(result, {"motor": "set up"})
+        self.assertEqual(device.held("Rule1"), ("ON", THEIRS))
+        self.assertEqual(device.held("Rule2"), ("OFF", ""))
 
     def test_one_an_earlier_release_set_up_is_given_its_wall_switches(self):
         # Every setting but the switches, which still toggle their relays.

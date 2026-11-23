@@ -96,6 +96,9 @@ wall switches, nor at a start.
   switches swapped; `TASMOTA_SWITCHES` in `motor.py` says which and why.
   The rule goes in the first of `Rule1` to `Rule3` that is free, or where the
   tool put it before; a rule of your own in any of them is never changed.
+  The tool knows its rule by its text, any release's
+  (`RULE_TEXTS` in `tasmota_rules.py`), so a rule an earlier release wrote is replaced
+  where it is, never left running beside a new one.
   With all three holding rules of yours, the tool sets up the rest and leaves
   the switches as hold to run, says so and waits a few seconds before it
   carries on so you can read it (`RULE_WANTED_SHOWN`); its `run.log` says

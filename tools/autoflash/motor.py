@@ -47,7 +47,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from tools.autoflash import esphome, kinds, output, prompts, records
+from tools.autoflash import esphome, kinds, output, prompts, records, tasmota_rules
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.espressif import flashmap, inspect_stock_nvs
@@ -115,23 +115,25 @@ TASMOTA_TRAVEL = f"{TASMOTA_OPEN} and {TASMOTA_CLOSE}"
 # is held and off as it is let go, the interlock turning the other off
 # first. Both held, it runs the motor the way of the one closed last, where
 # Sonoff's stops it: nothing in Tasmota's switches says both are held.
-# The rule goes in one of Tasmota's three rule sets, any of which may hold a
-# rule of the person's own. The tool's is known by its text alone, which
-# Tasmota 16.0.0 gives back as it was given, case and spacing too, beside
-# its State, Once and StopOnError (seen in the emulator); Tasmota keeps no
-# mark of who wrote a rule. It goes where the tool's is already,
-# else in the first set with no rule, never over another
-# (tasmota_switch_commands).
-TASMOTA_RULES = ("Rule1", "Rule2", "Rule3")
+# The rule goes in one of Tasmota's rule sets where the motor's is already,
+# else in the first with no rule, never over another (tasmota_rules).
 # Seconds the run counts down once it has said the wall switches are hold to
 # run for want of a rule set (tell_set_up), so the line can be read before the
 # stage passes and takes it off the screen. The log keeps it.
 RULE_WANTED_SHOWN = 10.0
+# Every text a release has written for each mode's rule, oldest first, the
+# last the one written now; a changed rule is added, never edited in place
+# (tasmota_rules.RULE_TEXTS says why).
+RULE_FEATURE = "motor"
+tasmota_rules.register(RULE_FEATURE, {
+    PUSH_BUTTONS: ("ON Switch1#State=2 DO ShutterStopOpen1 ENDON ON Switch2#State=2 DO ShutterStopClose1 ENDON",),
+    ONE_BUTTON: ("ON Switch1#State=2 DO ShutterStopToggleDir1 ENDON "
+                 "ON Switch2#State=2 DO ShutterStopToggleDir1 ENDON",),
+})
 TASMOTA_SWITCHES = {
-    PUSH_BUTTONS: (4, "ON Switch1#State=2 DO ShutterStopOpen1 ENDON ON Switch2#State=2 DO ShutterStopClose1 ENDON"),
+    PUSH_BUTTONS: (4, tasmota_rules.written(RULE_FEATURE, PUSH_BUTTONS)),
     HOLD_TO_RUN: (2, ""),
-    ONE_BUTTON: (4, "ON Switch1#State=2 DO ShutterStopToggleDir1 ENDON "
-                    "ON Switch2#State=2 DO ShutterStopToggleDir1 ENDON"),
+    ONE_BUTTON: (4, tasmota_rules.written(RULE_FEATURE, ONE_BUTTON)),
 }
 # The ESPHome build's settings, by their names in devices/sonoff-dualr3/esphome-motor.yaml,
 # and its Wall switches' option for each of SWITCH_MODES.
@@ -293,46 +295,6 @@ def tasmota_wiring(device: Any, kind: kinds.Kind) -> tuple[bool, bool] | None:
     return None
 
 
-def rule_text(text: str) -> str:
-    """A rule's text as Tasmota's rules compare it: case and spacing aside."""
-    return " ".join(text.split()).upper()
-
-
-def tasmota_rules(device: Any) -> dict[str, dict[str, Any] | None]:
-    """Each of a Tasmota's TASMOTA_RULES as it answers for it: its State,
-    Once and StopOnError ("ON" or "OFF") and Rules, its text; None for one it
-    did not answer for."""
-    found: dict[str, dict[str, Any] | None] = {}
-    for name in TASMOTA_RULES:
-        try:
-            answer = device.command(name).get(name)
-        except (DeviceError, OSError, AttributeError):
-            answer = None
-        found[name] = answer if isinstance(answer, dict) else None
-    return found
-
-
-def own_rule(rule: dict[str, Any] | None) -> int | None:
-    """Which of SWITCH_MODES a rule set holds the tool's rule for, on or off;
-    None for one holding any other rule, or none."""
-    text = rule_text(str(rule.get("Rules", ""))) if rule else ""
-    return next((mode for mode, (_, wanted) in TASMOTA_SWITCHES.items() if wanted and text == rule_text(wanted)),
-                None)
-
-
-def rule_free(rule: dict[str, Any] | None) -> bool:
-    """Whether a rule set holds no rule; one that did not answer is not free."""
-    return rule is not None and not str(rule.get("Rules", "")).strip()
-
-
-def holds(rule: dict[str, Any] | None) -> str:
-    """What a rule set holds, as the log says it."""
-    if rule is None:
-        return "did not answer"
-    what = "nothing" if rule_free(rule) else "the tool's rule" if own_rule(rule) else "another rule"
-    return f"{what} ({', '.join(f'{key} {rule.get(key)}' for key in ('State', 'Once', 'StopOnError'))})"
-
-
 def tasmota_switches(device: Any) -> int | None:
     """Which of SWITCH_MODES a Tasmota's wall switches are set to
     (TASMOTA_SWITCHES), the tool's rule in whichever rule set, on and run
@@ -342,10 +304,11 @@ def tasmota_switches(device: Any) -> int | None:
         modes = {device.command(f"SwitchMode{n}").get(f"SwitchMode{n}") for n in (1, 2)}
     except (DeviceError, OSError, AttributeError):
         return None
-    rules = tasmota_rules(device)
+    rules = tasmota_rules.read(device)
     if len(modes) != 1 or None in rules.values():
         return None
-    on = {own_rule(rule) for rule in rules.values() if own_rule(rule) and str(rule.get("State")).upper() == "ON"
+    on = {tasmota_rules.own(RULE_FEATURE, rule) for rule in rules.values()
+          if tasmota_rules.own(RULE_FEATURE, rule) is not None and str(rule.get("State")).upper() == "ON"
           and str(rule.get("Once")).upper() != "ON"}
     found = HOLD_TO_RUN if not on else on.pop() if len(on) == 1 else None
     return found if found and modes == {TASMOTA_SWITCHES[found][0]} else None
@@ -353,22 +316,14 @@ def tasmota_switches(device: Any) -> int | None:
 
 def tasmota_switch_commands(mode: int, rules: dict[str, dict[str, Any] | None]) -> list[str] | None:
     """The commands that set a Tasmota whose rule sets are `rules`
-    (tasmota_rules) to `mode`: each switch's SwitchMode, then the tool's
-    rule in the set that holds it already, else in the first free one, and
-    that set on, Once and StopOnError off (4, 8), which an earlier rule there
-    may have left on; the tool's rule cleared (") and off in any other set.
-    None where `mode` needs a rule and every set holds another: no rule the
-    tool did not write is written over."""
+    (tasmota_rules.read) to `mode`: each switch's SwitchMode, then the
+    motor's rule written where `mode` has one, cleared where it has none.
+    None where `mode` needs a rule and every set holds another
+    (tasmota_rules.write_commands)."""
     switch, rule = TASMOTA_SWITCHES[mode]
-    own = [name for name, found in rules.items() if own_rule(found)]
-    commands = [f"SwitchMode1 {switch}", f"SwitchMode2 {switch}"]
-    if rule:
-        into = (own or [name for name, found in rules.items() if rule_free(found)] or [None])[0]
-        if into is None:
-            return None
-        commands += [f"{into} {rule}", f"{into} 4", f"{into} 8", f"{into} 1"]
-        own = [name for name in own if name != into]
-    return commands + [command for name in own for command in (f'{name} "', f"{name} 0")]
+    given = tasmota_rules.write_commands(RULE_FEATURE, mode, rules) if rule \
+        else tasmota_rules.clear_commands(RULE_FEATURE, rules)
+    return None if given is None else [f"SwitchMode1 {switch}", f"SwitchMode2 {switch}", *given]
 
 
 def tasmota_travel(device: Any) -> tuple[float | None, float | None]:
@@ -499,8 +454,9 @@ def tell_set_up(travel_names: str, setup: Setup, timed: bool, rule_wanted: bool 
         said += f", not {ESPHOME_SWITCH_MODES[setup.switches].lower()}"
     output.tell(f"    Motor mode carried across: Switches are {said}.")
     if rule_wanted:
-        output.log_only(f"    That needs one of Tasmota's rules, and {', '.join(TASMOTA_RULES[:-1])} and "
-                        f"{TASMOTA_RULES[-1]} hold rules of the person's own: empty one, then run the tool again.")
+        *others, last = tasmota_rules.RULE_SETS
+        output.log_only(f"    That needs one of Tasmota's rules, and {', '.join(others)} and {last} hold rules of the "
+                        "person's own: empty one, then run the tool again.")
     if timed:
         output.tell(f"    Its travel times carried across: {setup.open:g} s to open, {setup.close:g} s to close.")
     else:
@@ -522,8 +478,8 @@ def set_up_tasmota(ctx: Context) -> dict[str, Any]:
     taken - hold to run where their mode needs a rule and no rule set is free
     of the person's (tasmota_switch_commands), the person told; nothing for
     one in relay mode. One that has every setting already,
-    its wall switches' among them, is left as it is, the person's travel
-    times with it."""
+    its wall switches' among them in the rule written now, is left as it is,
+    the person's travel times with it."""
     if not drives(ctx):
         return {}
     log_sonoff_motor(ctx)
@@ -532,6 +488,7 @@ def set_up_tasmota(ctx: Context) -> dict[str, Any]:
     wiring = (bool(setup.reversed), bool(setup.swapped))
     # A template that is none of the kind's is the person's, and left so.
     if tasmota_in_force(device) and tasmota_switches(device) == setup.switches \
+            and not any(tasmota_rules.stale(rule, RULE_FEATURE) for rule in tasmota_rules.read(device).values()) \
             and tasmota_wiring(device, kind) in (None, wiring):
         output.say("    Tasmota drives the motor already: its outputs interlocked, both off at every start.")
         return {"motor": "in place"}
@@ -542,8 +499,9 @@ def set_up_tasmota(ctx: Context) -> dict[str, Any]:
         if tasmota_wiring(device, kind) != wiring:
             raise Abort("Tasmota did not take the template that drives the motor the right way round; "
                         "it is safe to do this step again")
-    rules = tasmota_rules(device)
-    output.log_only("    Tasmota's rule sets: " + ", ".join(f"{name} {holds(rule)}" for name, rule in rules.items()))
+    rules = tasmota_rules.read(device)
+    output.log_only("    Tasmota's rule sets: " + ", ".join(f"{name} {tasmota_rules.holds(rule)}"
+                                                       for name, rule in rules.items()))
     switches, commands = setup.switches, tasmota_switch_commands(setup.switches, rules)
     if commands is None:
         switches, commands = HOLD_TO_RUN, tasmota_switch_commands(HOLD_TO_RUN, rules)

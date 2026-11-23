@@ -59,7 +59,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import kinds, motor as motor_setup  # noqa: E402
+from tools.autoflash import kinds, motor as motor_setup, tasmota_rules  # noqa: E402
 from tools.repo import cpu_load, emulator_buttons, emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
@@ -436,16 +436,16 @@ def owner_rule_problem(instance: int, saved: str, stub: tuple[str, ...], log: Pa
                 return "the device did not answer after its run"
             device.tasmota(f"Backlog Rule1 {OWNER_RULE}; Rule1 1")
             time.sleep(TASMOTA_BACKLOG)
-            note(f"the owner's rule given: {device.settings(*motor_setup.TASMOTA_RULES)}")
+            note(f"the owner's rule given: {device.settings(*tasmota_rules.RULE_SETS)}")
             keep_as(instance, saved)
             subprocess.run(["docker", "stop", container], capture_output=True, check=False)
             subprocess.run(run, stdout=out, stderr=subprocess.STDOUT, check=False)
             if not device.answers():
                 return "the device did not answer after the run again"
-            rules = device.settings(*motor_setup.TASMOTA_RULES)
+            rules = device.settings(*tasmota_rules.RULE_SETS)
             note(f"after the run again: {rules}, Var1 {device.tasmota('Var1')}")
             owner = rules["Rule1"] or {}
-            if motor_setup.rule_text(str(owner.get("Rules", ""))) != motor_setup.rule_text(OWNER_RULE) \
+            if tasmota_rules.normalised(str(owner.get("Rules", ""))) != tasmota_rules.normalised(OWNER_RULE) \
                     or owner.get("State") != "ON":
                 return f"the owner's rule in Rule1 is now {owner}"
             if device.tasmota("Var1").get("Var1") != "1":
@@ -843,7 +843,7 @@ class MotorDevice(Device):
         if self.firmware == "tasmota":
             # Its wall switches' rule where the tool would put it.
             switches = motor_setup.tasmota_switch_commands(setup.switches,
-                                                           self.settings(*motor_setup.TASMOTA_RULES))
+                                                           self.settings(*tasmota_rules.RULE_SETS))
             if switches is None:
                 return "Tasmota has no rule set free for its wall switches"
             # The template last: a new one on a Tasmota that runs its template
