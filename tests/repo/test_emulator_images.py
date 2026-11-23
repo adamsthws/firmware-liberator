@@ -34,6 +34,47 @@ def upstream(folder: Path) -> dict[str, str]:
                 if line and not line.startswith("#"))
 
 
+# Upstream BekenEmulator's last commit before its C++ rewrite. While the image
+# pins it, the docs say what moving off it would take; once it moves, they must
+# stop saying the image stays on it.
+LAST_PYTHON_BEKEN = "d9a3772a26fa92158be72faf46855726ef8e21d7"
+# What each doc says while the image stays on Python, and where.
+STAYS_ON_PYTHON = {
+    "tools/beken/emulator/README.md": "The image stays on the Python commit",
+    "docs/upstream-contributions.md": "will be ported once that settles",
+}
+
+
+def stale_rewrite_notes(commit: str, docs: dict[str, str]) -> list[str]:
+    """The docs out of step with the pin: missing their note while the image is
+    on Python, still carrying it once the pin has moved."""
+    on_python = commit == LAST_PYTHON_BEKEN
+    return [path for path, phrase in STAYS_ON_PYTHON.items() if (phrase in docs[path]) != on_python]
+
+
+class BekenRewriteNoteTests(unittest.TestCase):
+    """tools/beken/emulator/README.md#upstreams-c-rewrite measures the C++
+    rewrite against the Python emulator the image is built on: a move to the
+    rewrite rewrites it too."""
+
+    def docs(self) -> dict[str, str]:
+        return {path: (ROOT / path).read_text(encoding="utf-8") for path in STAYS_ON_PYTHON}
+
+    def test_the_rewrite_notes_match_the_pin(self):
+        commit = upstream(EMULATORS["beken"])["commit"]
+        self.assertEqual(stale_rewrite_notes(commit, self.docs()), [],
+                         "the Beken pin and these docs disagree on whether the image is on upstream's "
+                         "Python emulator: say what the move changed, and drop the 'stays on Python' words")
+
+    def test_either_side_out_of_step_is_found(self):
+        with_notes = {path: "... %s ..." % phrase for path, phrase in STAYS_ON_PYTHON.items()}
+        without = dict.fromkeys(STAYS_ON_PYTHON, "ported to the C++ emulator")
+        self.assertEqual(stale_rewrite_notes(LAST_PYTHON_BEKEN, with_notes), [])
+        self.assertEqual(stale_rewrite_notes("0" * 40, without), [])
+        self.assertEqual(stale_rewrite_notes("0" * 40, with_notes), list(STAYS_ON_PYTHON))
+        self.assertEqual(stale_rewrite_notes(LAST_PYTHON_BEKEN, without), list(STAYS_ON_PYTHON))
+
+
 @unittest.skipUnless(shutil.which("bash") and shutil.which("sha256sum"), "needs bash and sha256sum")
 class NextImageTests(unittest.TestCase):
     def test_each_upstream_pin_is_in_the_one_form(self):

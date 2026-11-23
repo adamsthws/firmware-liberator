@@ -161,7 +161,8 @@ Proven in the BekenEmulator on a dump of a real S61
 **Related:** the BekenEmulator had no licence;
 [issue #2](https://github.com/openshwprojects/BekenEmulator/issues/2) ![state](https://img.shields.io/github/issues/detail/state/openshwprojects/BekenEmulator/2?label=)
 asked for one, and it is GPL-3.0 since 7 November 2026. It was rewritten in C++
-the same day, so this project's fixes to it will be ported once that settles.
+the same day, so this project's fixes to it will be ported once that settles
+([what the rewrite offers](../tools/beken/emulator/README.md#upstreams-c-rewrite)).
 
 <br>
 

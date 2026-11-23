@@ -71,6 +71,44 @@ named for the upstream project, as the
 [Espressif emulator's](../../espressif/emulator/README.md#the-image) are, and
 `image.sh`'s exception for today's goes with that pin.
 
+## Upstream's C++ rewrite
+
+On 7 November 2026, upstream replaced the Python emulator with one in C++
+(`bekensim`: its own ARM and Thumb interpreter, no Unicorn, no libraries
+beyond the C++ standard library). It also started ESP8266 and classic ESP32
+backends, which are still being built. The image stays on the Python commit
+`UPSTREAM` pins until that settles. Moving would mean a faster emulator,
+at the cost of a port.
+
+- **It is about four times as fast.** Running OpenBeken for the BK7238
+  (upstream's `firmwares/OpenBK7238_QIO_1.18.300.bin`, `--with-boot -chip
+  BK7238 --only-uart`, no Wi-Fi peer), its uptime advanced 41.7 seconds a
+  second, against 9.7 in this image, both on one full core (three runs of 120
+  s each, upstream `3afc3a6`, 23 November 2026). Both count the same
+  `SLOW_TICK_INSNS` per `SLOW_TICK_MS`, so that is instructions executed.
+  The races [0008](#the-fork-patchespatch) describes come from the slow CPU,
+  and suites spend most of their time in it.
+- **Booting Sonoff's S61 firmware** gave the same 80 UART lines in about a
+  second in both, before it waits for Wi-Fi.
+- **The port is the cost.** Everything this directory does inside the
+  emulator runs in its Python process through Unicorn (`hook_add`,
+  `reg_write`, `mem_write`): `device.py`, `board.py`, `cloud_online.py`,
+  `cloud_dial.py`, `seed_join.py`, `integrity_gate.py` and `stage_apply.py`.
+  `bekensim` has no such interface, so each would be rewritten in C++ in the
+  fork, or wait for upstream to add one. Its options have nothing like 0005's
+  `--net-tap` or 0006's several peers. The other patches are not yet checked
+  against it.
+- **Its build** at `3afc3a6` fails with g++ 13:
+  `src/esp8266/esp8266_wifi_dma.cpp` calls `snprintf` without `<cstdio>`.
+  With that included, `make` builds it in under half a minute.
+
+Worth moving once upstream's changes slow down and the hooks have
+somewhere to go. The move rewrites this section, and
+[upstream-contributions](../../../docs/upstream-contributions.md)'s note
+on it: `BekenRewriteNoteTests` in `tests/repo/test_emulator_images.py` fails
+once `UPSTREAM` leaves the Python commit while either still says the image
+stays on it.
+
 ## What it models
 
 - **The base** is BekenEmulator (`openshwprojects/BekenEmulator`), a Python
@@ -248,7 +286,7 @@ under them.
   `SLOW_TICK_MS`, 5,000 instructions a millisecond of the device's time,
   where a real chip runs 100,000 or more, so a task's work takes twenty
   times as many of its ticks. A faster emulated CPU would be the real fix;
-  it is not made.
+  it is not made ([upstream's rewrite](#upstreams-c-rewrite) is one).
 - **`0009-self-test-known-failures-reported-as-known`**
   (`tests/self_test.py`): a case may carry `known_failure`, its reason, the
   evidence in a comment beside it. It still runs and prints its checks; the
