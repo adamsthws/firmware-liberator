@@ -10,10 +10,11 @@ from tools.autoflash.state import RunState
 
 
 class SetupNetworkTestCase(unittest.TestCase):
-    def ctx(self, mac="12:34:56:ab:cd:ef"):
+    def ctx(self, mac="12:34:56:ab:cd:ef", kind="sonoff-s60"):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
+        state.set_input("device_kind", kind)   # an S60, the ESP32-C3 whose names these are
         if mac:
             state.set_input("device_mac", mac)
         return SimpleNamespace(state=state)

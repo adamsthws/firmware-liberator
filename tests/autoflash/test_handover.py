@@ -25,7 +25,7 @@ class ConsentTests(unittest.TestCase):
         # Seen: X1 tried again by itself asked for it again, and Enter stopped the run.
         from types import SimpleNamespace
         from unittest import mock
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: None))   # the S60's, proven
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get))   # the S60's, proven
         with mock.patch.object(prompts, "require_word", return_value=True) as asked, \
              mock.patch.object(prompts, "warning_box"):
             handover.consent_to_leave(ctx, "Tasmota")
@@ -35,7 +35,7 @@ class ConsentTests(unittest.TestCase):
     def test_refused_it_quits_before_going_on(self):
         # The runner records that nothing was written (runner._execute).
         from types import SimpleNamespace
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: None))
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get))
         with mock.patch.object(prompts, "require_word", side_effect=prompts.Declined("q")), \
              mock.patch.object(prompts, "warning_box"), self.assertRaises(prompts.Declined):
             handover.consent_to_leave(ctx, "Tasmota")

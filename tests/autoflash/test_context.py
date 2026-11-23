@@ -19,7 +19,7 @@ class WifiFallbackTests(unittest.TestCase):
     def ctx(self, *, found=None, bundle_for=None):
         from types import SimpleNamespace
         ctx = SimpleNamespace(args=SimpleNamespace(wifi=False), manifest_path=Path("unused"),
-                              state=SimpleNamespace(set_input=lambda *_: None, input=lambda *_: None,
+                              state=SimpleNamespace(set_input=lambda *_: None, input={"device_kind": "sonoff-s60"}.get,
                                                     is_done=lambda _: False),
                               _wifi=None, _recovery=None, esphome_api_locked=False)
         ctx.remember_wifi = lambda ssid, password, image: context.Context.remember_wifi(
@@ -361,6 +361,7 @@ class PhasePortTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state = RunState.open(Path(directory))
             state.set_input("delivery_port", delivered)
+            state.set_input("device_kind", "sonoff-s60")
             ctx = SimpleNamespace(state=state, manifest_path=Path("m.json"), evidence=Path("e"),
                                   listen_ip=lambda: "192.0.2.141", device=object(),
                                   recovery_bytes=lambda: b"recovery")

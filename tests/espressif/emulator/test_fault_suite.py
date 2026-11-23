@@ -744,7 +744,7 @@ class RunWordsTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=test_tasmota.ConfigureStepTests.console([]), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: False)
-        state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF"}.get(key))
+        state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF", "device_kind": "sonoff-s60"}.get(key))
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device, state=state)
         with mock.patch.object(output, "say") as said:
             tasmota.step_configure(ctx)

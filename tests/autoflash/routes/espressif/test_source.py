@@ -193,7 +193,7 @@ class PastTheCommitTests(unittest.TestCase):
 
     def test_x1_finding_no_update_service_says_nothing_was_written(self):
         from types import SimpleNamespace
-        inputs = {"device_ip": "192.0.2.137", "source": "tasmota"}
+        inputs = {"device_ip": "192.0.2.137", "source": "tasmota", "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get), dry_run=False,
                               wifi=lambda why=None: ("wifi", "password"))
         with mock.patch.object(unlock, "identify", return_value="tasmota"), \

@@ -29,6 +29,15 @@ def step_pair(ctx: Context) -> dict[str, Any]:
     if not ip:
         output.say("Signing in to eWeLink to see which supported devices are in the account...")
         ip = find_account_device(ctx, reached(ctx.account_devices()))
+    elif getattr(ctx, "account_device", None) is None and not kinds.recorded(ctx.state):
+        # Given by its address (--device-ip): which kind it is is the
+        # account's to say, by its MAC, before anything is chosen for it.
+        ctx.account_device = by_mac(ctx, hostsys.mac_of(ip))
+        if ctx.account_device is None:
+            raise NothingWritten(
+                f"could not tell which device the one at {ip} is: no device of a kind this tool converts in "
+                f"the eWeLink account {ctx.email()} has its hardware address. Check it is on Sonoff's firmware "
+                "and in that account, or run the tool without --device-ip to choose it from the account")
     ctx.state.set_input("device_ip", ip)
     account = getattr(ctx, "account_device", None)
     if account:
@@ -38,6 +47,22 @@ def step_pair(ctx: Context) -> dict[str, Any]:
         ctx.state.set_input("device_mac", mac)
         runs.file_device(ctx, mac, account)
     return {"device_ip": ip, "device_mac": mac}
+
+
+def by_mac(ctx: Context, mac: str | None) -> AccountDevice | None:
+    """The device in the owner's eWeLink account, of a kind this tool
+    converts, whose Wi-Fi MAC is `mac`: what identifies a device found by its
+    address alone, or part way through a conversion with no record of its
+    kind on this computer. None where there is no MAC, eWeLink cannot be
+    reached, or no such device is there."""
+    if not mac:
+        return None
+    wanted = hostsys.normalise_mac(mac)
+    for record in ctx.account_devices() or []:
+        sta_mac = (record.get("params") or {}).get("staMac")
+        if sta_mac and hostsys.normalise_mac(str(sta_mac)) == wanted:
+            return account_device(record)
+    return None
 
 
 @dataclass(frozen=True)

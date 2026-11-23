@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from tools.autoflash import detect, esphome, hostsys, kinds, output, records, prompts, runs, unlock
 from tools.autoflash.device import PASSWORD_HINT
-from tools.autoflash.errors import Abort
+from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import source as espressif_source
 from tools.autoflash.state import RunState
 
@@ -337,6 +337,26 @@ def kind_left_part_way(ctx: Context) -> str | None:
     return None
 
 
+def kind_from_account(ctx: Context, found: "detect.Found") -> str:
+    """The kind of the device `found`, which says none, as the owner's eWeLink
+    account records the device with its MAC (account.by_mac): a device part way
+    through a conversion is still in the account it was converted from.
+    NothingWritten, saying what to do, where the account cannot say."""
+    from tools.autoflash import account   # it builds on the routes, which import this
+    mac = ctx.state.input("device_mac")
+    if mac:
+        output.say("    Nothing on the device says which kind it is: asking the eWeLink account, by its MAC...")
+        listed = account.by_mac(ctx, mac)
+        if listed is not None:
+            return listed.kind
+    raise NothingWritten(
+        f"could not tell which device the one at {found.host} is: what it runs "
+        f"({detect.NAMES.get(found.firmware, found.firmware)}) does not say, no run of it on this computer "
+        "recorded its kind, and "
+        "the eWeLink account did not list it by its hardware address. Nothing was written to it. Run the tool "
+        "on the computer that began its conversion, or sign in to the eWeLink account it was added to")
+
+
 def tasmota_kind(ctx: Context, host: str) -> str:
     """The kind official Tasmota at `host` says by its template, as the
     network search reads it (detect.tasmota)."""
@@ -372,6 +392,11 @@ def adopt_device(ctx: Context, found: "detect.Found") -> None:
     if kind is None and found.firmware in ("midway", "installer", "untemplated", "esphome-update") \
             and ctx.state.input("device_mac"):
         kind = kind_left_part_way(ctx)
+    if kind is None and found.firmware != "readout":
+        # Nothing it runs says, and no run here recorded it: the account's
+        # record of its MAC does, or the run stops. Never guessed - the S60
+        # once stood in, and a device of another kind was sent its firmware.
+        kind = kind_from_account(ctx, found)
     if kind:
         ctx.state.set_input("device_kind", kind)
     output.say(f"    This run is for {found.describe()}.")

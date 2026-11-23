@@ -151,9 +151,15 @@ class RunTests(unittest.TestCase):
         state.set_input("device_kind", "sonoff-s60")
         self.assertIs(kinds.of_run(state), S60)
 
-    def test_one_that_recorded_none_the_first_the_tool_knows(self):
-        # A run from before kinds were recorded: the S60's, the only kind then.
-        self.assertIs(kinds.of_run(self.state()), kinds.ALL[0])
+    def test_one_that_recorded_none_is_of_no_kind_never_the_first_the_tool_knows(self):
+        # The S60 once stood in for an unknown kind: a device part way with no
+        # record, or given by its address, could have been sent the S60's
+        # firmware. A run begun by 1.x, the S60's alone, says so itself
+        # (routes.settle_route).
+        state = self.state()
+        self.assertIsNone(kinds.recorded(state))
+        with self.assertRaisesRegex(kinds.UnknownKind, "could not tell which device.*nothing was written"):
+            kinds.of_run(state)
 
 
 class ConversionTests(unittest.TestCase):

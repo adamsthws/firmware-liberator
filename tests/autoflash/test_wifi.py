@@ -37,7 +37,7 @@ class WifiFromDeviceTests(unittest.TestCase):
 
         device = SimpleNamespace(command=command, download_settings=download_settings)
         return SimpleNamespace(device=device, args=SimpleNamespace(wifi=forced),
-                               state=SimpleNamespace(input=lambda name: None))
+                               state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get))
 
     def read(self, **kwargs):
         with mock.patch.object(output, "say"):
@@ -137,7 +137,7 @@ class BackupWifiTests(unittest.TestCase):
 
     def ctx(self, **inputs):
         from types import SimpleNamespace
-        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.50", **inputs}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.50", "device_kind": "sonoff-s60", **inputs}
         state = SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__, is_done=lambda step: False)
         return SimpleNamespace(state=state, manifest_path=Path("unused"), args=SimpleNamespace(wifi=False),
                                _wifi=None, _recovery=None, esphome_key=None, esphome_api_locked=False)

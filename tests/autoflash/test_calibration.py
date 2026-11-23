@@ -193,7 +193,7 @@ class StepTests(unittest.TestCase):
 
     def ctx(self, command=None):
         from types import SimpleNamespace
-        inputs = {"device_ip": "192.0.2.51", "device_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"device_ip": "192.0.2.51", "device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}
         return SimpleNamespace(device=SimpleNamespace(command=command), esphome_key=None,
                                state=SimpleNamespace(input=inputs.get))
 

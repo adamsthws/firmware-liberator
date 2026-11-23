@@ -30,7 +30,7 @@ class NetworkCheckTests(unittest.TestCase):
         from types import SimpleNamespace
         wifi = {"SSId": ssid, "Signal": signal} if ssid else {}
         device = SimpleNamespace(command=lambda _: {"StatusSTS": {"Wifi": wifi}})
-        state = SimpleNamespace(input=lambda key: None, set_input=lambda key, value: None)
+        state = SimpleNamespace(input={"device_kind": "sonoff-s60"}.get, set_input=lambda key, value: None)
         return SimpleNamespace(device=device, manifest_path=Path("unused"), state=state)
 
     def test_a_matching_network_passes(self):
@@ -372,7 +372,7 @@ class SetupNetworkGoneTests(unittest.TestCase):
     def gone(self, answering, visible, network="tasmota-ABCDEF-1234"):
         from types import SimpleNamespace
         clock = iter(range(5000, 6000, 2))  # as far from 0 as a real clock is
-        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef"}.get))
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}.get))
         with mock.patch.object(setup_network, "port_open", return_value=answering), \
              mock.patch.object(prompts, "scan_wifi_ssids", return_value=visible), \
              mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
@@ -385,7 +385,7 @@ class SetupNetworkGoneTests(unittest.TestCase):
     def test_it_looks_again_only_after_a_pause(self):
         from types import SimpleNamespace
         clock = iter(range(5000, 6000, 2))  # as far from 0 as a real clock is
-        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef"}.get))
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}.get))
         with mock.patch.object(setup_network, "port_open", return_value=False) as asked, \
              mock.patch.object(prompts, "scan_wifi_ssids", return_value=["Home"]), \
              mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \

@@ -18,7 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import errors, firewall, join, output, report, routes, runner, runs, safety_locks, unlock
+from tools.autoflash import errors, firewall, join, kinds, output, report, routes, runner, runs, safety_locks, unlock
 from tools.autoflash.routes import update
 from tools.autoflash.phases import PhaseError
 from tools.autoflash.state import RunState
@@ -67,6 +67,8 @@ class RouteScreenTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
+        # A device of the family, as A1 (or what it runs) identifies it.
+        state.set_input("device_kind", next(kind.key for kind in kinds.ALL if routes.FAMILIES[kind.family] is family))
         ctx = SimpleNamespace(state=state, dry_run=False, research_bridge=False, go_back=None,
                               finished=False, last_runner=None)
         steps = [step for step, _, _ in routes.steps_for(firmware, source, family)]

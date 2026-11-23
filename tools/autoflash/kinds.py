@@ -37,6 +37,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from tools.autoflash.errors import Abort
+
 
 # The namespace every kind's ESPHome project is named in (ESPHome wants one,
 # before a dot): liberator.sonoff-s60. Images before 3.0.0 were named in
@@ -639,7 +641,25 @@ def name_words() -> set[str]:
     return {word for kind in ALL for word in kind.name.lower().split()}
 
 
+class UnknownKind(Abort):
+    """A run asked its device's kind before anything identified it. Never
+    guessed: the S60 once stood in for an unknown kind, so a device found part
+    way with no record of it, or by an address alone, could have been sent an
+    S60's firmware. It stops the run as any Abort does."""
+
+
+def recorded(state) -> Kind | None:
+    """The kind a run recorded once something identified its device (`state`:
+    its RunState) - eWeLink, its stock firmware, or what its firmware says -
+    or None before then."""
+    return by_key(state.input("device_kind"))
+
+
 def of_run(state) -> Kind:
-    """The kind a run converts (`state`: its RunState): as it recorded once
-    known, else the first the tool knows - the only one, so far."""
-    return by_key(state.input("device_kind")) or ALL[0]
+    """The kind a run converts (`state`: its RunState), as it recorded once
+    known. UnknownKind where nothing has identified it yet: what is done to
+    a device is done only once its kind is known, never on a guess."""
+    kind = recorded(state)
+    if kind is None:
+        raise UnknownKind("the tool could not tell which device this is, so nothing was written to it")
+    return kind

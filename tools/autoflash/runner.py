@@ -96,6 +96,10 @@ def _execute(ctx: Context, step: str) -> int:
     try:
         # Its errors are the step's: seen in the fault suite, an Abort from
         # it crashed the run.
+        if step not in routes.IDENTIFYING_STEPS:
+            # Every step after the start acts on the device as its kind: never
+            # one not identified (kinds.UnknownKind, the step's Abort).
+            kinds.of_run(ctx.state)
         set_up_if_erased(ctx, step)
         if step in routes.FAMILY.DESTRUCTIVE_STEPS:
             ctx.state.mark(step, ATTEMPTED, nothing_written=False)

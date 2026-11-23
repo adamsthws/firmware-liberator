@@ -33,6 +33,7 @@ from tools.autoflash import (  # noqa: E402
     hostsys,
     interrupt,
     join,
+    kinds,
     offers,
     output,
     records,
@@ -305,7 +306,8 @@ def remove_run(directory: Path) -> bool:
 def cmd_status(ctx: Context) -> int:
     output.say(f"Device:    {ctx.run}")
     output.say(f"Address:   {ctx.state.input('device_ip') or '(not set)'}")
-    output.say(f"Manifest:  {ctx.manifest_path}")
+    # The bundle is the device's chip's: none before anything said which device it is.
+    output.say(f"Manifest:  {ctx.manifest_path if kinds.recorded(ctx.state) else '(the device is not identified yet)'}")
     output.say(f"State:     {ctx.state.path}")
     available = routes.update_available(ctx)
     if available:

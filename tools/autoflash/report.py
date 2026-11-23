@@ -207,16 +207,17 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
     check_hardware() measured.  "__" marks what the run could not tell.
     """
     hardware = hardware or {}
-    kind = kinds.of_run(ctx.state)
+    # None for a run stopped before anything said which device it is.
+    kind = kinds.recorded(ctx.state)
     # None for a run stopped before its firmware was chosen (A3).
     firmware = routes.recorded_firmware(ctx.state)
-    espressif = kind.family == "espressif"
+    espressif = kind is not None and kind.family == "espressif"
     # A run that starts on a converted device never asks Sonoff's firmware or
     # eWeLink: what the device's record kept from its first conversion - the
     # model, and the Sonoff firmware its backup holds - stands in.
     record = records.read_device(ctx.state.input("device_mac") or "")
     # A converted device with no record here says its kind, if not its exact model.
-    model = run_model(ctx) or (kind.name if runs.run_source(ctx.state) != "sonoff" else "")
+    model = run_model(ctx) or (kind.name if kind and runs.run_source(ctx.state) != "sonoff" else "")
     stock_version = str(ctx.state.input("stock_version") or record.get("stock_version") or "")
     captures = ctx.state.data.get("captures", {})
     retries = {number: captures[f"{step}.attempts"] - 1 for number, (step, _, _) in enumerate(routes.STEPS, 1)
@@ -257,7 +258,7 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         # to come back (arrival.until_back), on either family.
         ("Power cycled", "true" if ctx.state.input("power_cycles") else "false"),
         # Only where there is something to check (checks_apply).
-        *([("Checks", checks_passed(hardware))] if checks_apply(kind, firmware) else []),
+        *([("Checks", checks_passed(hardware))] if kind and checks_apply(kind, firmware) else []),
         # Not how the meter's calibration went: a device's readings a few
         # percent out is no news to the person converting it. The report
         # sent holds it (report_data.meter_word), the log why.

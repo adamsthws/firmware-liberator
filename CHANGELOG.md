@@ -101,6 +101,15 @@ check.
   with what usually stops it: a firewall, a guest network, or a router that
   keeps Wi-Fi devices apart. Before, the run said the delivery stopped part
   way and to switch the device off and on, which does not help.
+- The tool never takes a device it has not identified for an S60. Before,
+  a device part way through a conversion that no run on this computer had
+  recorded - left by another computer, say - was taken for one, as was a
+  device on Sonoff's firmware given by its address (`--device-ip`) until
+  eWeLink named it. On a device of another kind, a BASICR4 especially, which
+  has the same chip, that could have sent it the S60's firmware. Such a device
+  is now named by your eWeLink account, found by its hardware address, and
+  where the account cannot say, the run stops before anything is written and
+  says what to do.
 
 ## 3.1.0
 

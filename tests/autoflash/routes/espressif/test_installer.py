@@ -411,7 +411,7 @@ class TasmotaWifiPresetTests(unittest.TestCase):
         self.ts = ts
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self.inputs = {}
+        self.inputs = {"device_kind": "sonoff-s60"}
         self.ctx = SimpleNamespace(state=SimpleNamespace(set_input=self.inputs.__setitem__,
                                                          input=self.inputs.get))
 
@@ -467,6 +467,7 @@ class TasmotaWifiPresetTests(unittest.TestCase):
                                      ("12:34:56:ab:cd:ef", "192.0.2.51", self.JOINED),
                                      ("12:34:56:ab:cd:ef", setup_network.SETUP_HOST, self.ALONE)):
             self.inputs.clear()
+            self.inputs["device_kind"] = "sonoff-s60"
             if mac:
                 self.inputs["device_mac"] = mac
             _, sent = self.run_preset(template, address=address, answer=answer)
@@ -718,7 +719,7 @@ class StockBackupTests(unittest.TestCase):
         patch = mock.patch.object(records, "DEVICES", Path(self.dir.name))
         patch.start()
         self.addCleanup(patch.stop)
-        self.inputs = {"stock_version": "1.2.0", "device_mac": self.MAC}
+        self.inputs = {"stock_version": "1.2.0", "device_mac": self.MAC, "device_kind": "sonoff-s60"}
         self.captures = {}
         state = SimpleNamespace(input=lambda key, default=None: self.inputs.get(key, default),
                                 set_input=self.inputs.__setitem__, capture=self.captures.__setitem__)
@@ -951,7 +952,7 @@ class StockLayoutTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash.routes.espressif import installer
         self.inputs = {}
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None, set_input=self.inputs.__setitem__))
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get, set_input=self.inputs.__setitem__))
         with mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51"), \
                 mock.patch.object(installer, "bridge_info", return_value={}), \
                 mock.patch.object(installer.dump_stock_flash, "read_table", return_value=table):
@@ -1045,7 +1046,7 @@ class BridgeInfoTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash.routes.espressif import installer
         self.installer = installer
-        self.ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None, set_input=lambda name, value: None))
+        self.ctx = SimpleNamespace(state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get, set_input=lambda name, value: None))
         self.logged = []
         for patch in (mock.patch.object(installer.output, "log_only", self.logged.append),
                       mock.patch.object(installer.output, "progress_clear"),
@@ -1132,6 +1133,7 @@ class DeliveryPortTests(unittest.TestCase):
             state = RunState.open(root)
             state.set_input("device_ip", "192.0.2.96")
             state.set_input("stock_version", "1.2.0")
+            state.set_input("device_kind", "sonoff-s60")
             ctx = SimpleNamespace(state=state, bridge=Path("bridge.ota"), dir=root,
                                   args=SimpleNamespace(listen_ip=None), listen_ip=lambda: "192.0.2.141", email=lambda: "me@example.com",
                                   ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "eu",

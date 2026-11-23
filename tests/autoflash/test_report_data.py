@@ -159,7 +159,7 @@ class PayloadTests(RouteTestCase):
         self.assertEqual((data["result"], data["source"]), ("put-back", "esphome"))
 
     def test_an_unknown_device_is_named_by_its_model_alone(self):
-        ctx = self.ctx(product_model="NEWTHING", stock_version="not a version")
+        ctx = self.ctx(product_model="NEWTHING", device_kind=None, stock_version="not a version")
         data = self.payload(ctx, "failed", failure="the device is a NEWTHING, which this tool does not convert yet")
         self.assertEqual((data["device"], data["family"], data["model"], data["stock_version"]),
                          (None, None, "NEWTHING", None))

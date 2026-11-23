@@ -31,6 +31,7 @@ class StartChoiceTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         ctx = SimpleNamespace(state=RunState.open(root), evidence=root / "live", wifi=lambda: ("Home-2G", "password"))
+        ctx.state.set_input("device_kind", "sonoff-s60")
         ctx.manifest_path = bundle.default_manifest(ctx)   # as with no --manifest
         return ctx
 

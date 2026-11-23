@@ -602,6 +602,33 @@ class PairStepTests(unittest.TestCase):
         self.assertEqual(ctx.state.input("device_mac"), "12:34:56:ab:cd:ef")
         filed.assert_called_once()
 
+    def given_by_address(self, listed):
+        ctx = self.ctx()
+        ctx.state.set_input("device_ip", "192.0.2.50")
+        ctx.account_device = None
+        ctx.email = lambda: "someone@example.com"
+        ctx.account_devices = lambda: listed
+        with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"), \
+             mock.patch.object(runs, "file_device"), mock.patch.object(output, "say"):
+            account.step_pair(ctx)
+        return ctx
+
+    def test_a_device_given_by_its_address_is_the_kind_the_account_lists_by_its_mac(self):
+        # --device-ip skipped the account: the kind was left unknown, and A3
+        # chose from an S60's firmware for whatever device it was.
+        ctx = self.given_by_address([
+            {"deviceid": "1000000001", "productModel": "S60TPG", "params": {"staMac": "12:34:56:AB:CD:00"}},
+            {"deviceid": "1000000002", "productModel": "BASICR4", "params": {"staMac": "12:34:56:AB:CD:EF"}}])
+        self.assertEqual(ctx.state.input("device_kind"), "sonoff-basicr4")
+        self.assertEqual(ctx.account_device.device_id, "1000000002")
+
+    def test_a_device_given_by_its_address_the_account_does_not_list_stops_before_anything(self):
+        other = {"deviceid": "1000000001", "productModel": "S60TPG", "params": {"staMac": "12:34:56:AB:CD:00"}}
+        for listed in (None, [], [other]):
+            with self.subTest(listed=listed), \
+                    self.assertRaisesRegex(errors.NothingWritten, "could not tell which device the one at 192.0.2.50"):
+                self.given_by_address(listed)
+
     def test_a_typed_address_leaves_the_screen_with_its_question(self):
         # Asked after the "did not answer" menu, it is a block of its own, taken
         # off once answered - not left under the stage line.

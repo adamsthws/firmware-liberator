@@ -174,10 +174,12 @@ class Context:
         self.last_failed_step = ""  # and which it was: a failure may send earlier steps back
         self.offers: offers.Sender | None = None   # the account's offers, sent beside the run
         self.offers_not_run: str | None = None   # why they were not (offers.start)
-        try:
-            output.private(bundle_ssid(self.manifest_path), "wifi-name")
-        except (BundleError, OSError, ValueError):
-            pass  # no bundle yet: its network is kept out of the log once known
+        # Every chip's: which the device has is not known yet.
+        for path in [self._manifest] if self._manifest else [bundle.manifest_of(chip) for chip in chips.ALL]:
+            try:
+                output.private(bundle_ssid(path), "wifi-name")
+            except (BundleError, OSError, ValueError):
+                pass  # no bundle yet: its network is kept out of the log once known
 
     def remember_wifi(self, ssid: str, password: str, image: bytes | None) -> None:
         output.private(ssid, "wifi-name")

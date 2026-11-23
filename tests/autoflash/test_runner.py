@@ -17,6 +17,14 @@ from tools.autoflash.routes.espressif import bundle, evidence, tasmota
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED, RunState
 
 
+def s60_run(directory):
+    """A run's record in `directory`, its device identified as an S60's, as
+    every step past the start needs one identified (runner._execute)."""
+    state = RunState.open(directory)
+    state.set_input("device_kind", "sonoff-s60")
+    return state
+
+
 class ConfirmSkipTests(unittest.TestCase):
     """A step recorded as done is skipped only as far as the device agrees."""
 
@@ -85,7 +93,7 @@ class RunStepsTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
-        self.state = RunState.open(self.root)
+        self.state = s60_run(self.root)
 
     def run_steps(self, *, codes=None, check=None, answer=0, unattended=False, skip=True, dry_run=False,
                   research_bridge=False, **overrides):
@@ -450,7 +458,7 @@ class CutOffHintTests(unittest.TestCase):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         state.set_input("device_mac", "12:34:56:ab:cd:ef")
         ctx = SimpleNamespace(state=state, last_failed_step=step)
         with mock.patch.object(routes, "FAMILY", espressif), \
@@ -483,7 +491,7 @@ class CutOffHintTests(unittest.TestCase):
                     mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
                     mock.patch.object(output, "log_only"), mock.patch.object(output, "tell"), \
                     mock.patch.object(output, "say"):
-                ctx = SimpleNamespace(state=RunState.open(Path(directory)), dry_run=False, cut_off=not cut_off)
+                ctx = SimpleNamespace(state=s60_run(Path(directory)), dry_run=False, cut_off=not cut_off)
                 self.assertEqual(runner.execute(ctx, "H1"), 1)
                 self.assertIs(ctx.cut_off, cut_off)
 
@@ -497,7 +505,7 @@ class RetryTests(unittest.TestCase):
 
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         ctx = SimpleNamespace(state=state, dry_run=False)
         outcomes = iter(errors)
 
@@ -542,7 +550,7 @@ class RetryTests(unittest.TestCase):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         ctx = SimpleNamespace(state=state, dry_run=False)
         title, _ = routes.STEP_INDEX["E1"]
         with mock.patch.dict(routes.STEP_INDEX, {"E1": (title, mock.Mock(return_value={"read": 7}))}), \
@@ -562,7 +570,7 @@ class RetryTests(unittest.TestCase):
         for step, expected in (("E3", "attempted"), ("E2", FAILED)):
             directory = tempfile.TemporaryDirectory()
             self.addCleanup(directory.cleanup)
-            state = RunState.open(Path(directory.name))
+            state = s60_run(Path(directory.name))
             title, _ = routes.STEP_INDEX[step]
             failing = mock.Mock(side_effect=PhaseError("the device stopped the commit without reaching this computer"))
             with mock.patch.dict(routes.STEP_INDEX, {step: (title, failing)}), \
@@ -572,6 +580,33 @@ class RetryTests(unittest.TestCase):
                 runner.execute(SimpleNamespace(state=state, dry_run=False), step)
             self.assertEqual(state.status(step), expected, step)
 
+    def test_no_step_past_the_start_acts_on_a_device_of_no_known_kind(self):
+        # The S60 once stood in for an unknown kind (kinds.of_run): whatever
+        # path leaves the kind unknown, the first step to act on the device
+        # stops, before its handler runs, and writes nothing.
+        from types import SimpleNamespace
+        for step in ("A5", "C2", "L1", "B2"):
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            state = RunState.open(Path(directory.name))  # no kind recorded
+            handler = mock.Mock(return_value={})
+            with self.subTest(step=step), mock.patch.dict(routes.STEP_INDEX, {step: ("A step", handler)}), \
+                    mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
+                    mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
+                self.assertNotEqual(runner.execute(SimpleNamespace(state=state, dry_run=False), step), 0)
+                handler.assert_not_called()
+                self.assertNotEqual(state.status(step), ATTEMPTED)
+        # The start's own steps find the kind, so run without one.
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))  # no kind recorded
+        handler = mock.Mock(return_value={})
+        with mock.patch.dict(routes.STEP_INDEX, {"A1": ("Pair", handler)}), \
+                mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
+                mock.patch.object(output, "say"):
+            self.assertEqual(runner.execute(SimpleNamespace(state=state, dry_run=False), "A1"), 0)
+        handler.assert_called_once()
+
 
 class StageTimingTests(unittest.TestCase):
     """Every stage's time is kept for the report, however it ends."""
@@ -580,7 +615,7 @@ class StageTimingTests(unittest.TestCase):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         waited = iter([100.0, 145.0, 145.0])   # at its start, then twice at its end: 45 s at its questions
         with mock.patch.object(output, "waited", side_effect=lambda: next(waited)), \
                 mock.patch.object(runner, "_execute", return_value=0):
@@ -591,7 +626,7 @@ class StageTimingTests(unittest.TestCase):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         state.set_input("power_cycles", {"by hand": 1})   # an earlier stage's
         state.set_input(join.OWN_NETWORK, [join.NOT_GIVEN])
         reasons = iter([join.SETTINGS_LOST, join.NOT_JOINED])
@@ -629,7 +664,7 @@ class StageTimingTests(unittest.TestCase):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         ctx = SimpleNamespace(state=state, dry_run=False, last_failure="", crash_site="stale")
         title, _ = routes.STEP_INDEX["E1"]
         for raised, expected in ((KeyError("model"), r"^KeyError at tools/autoflash/"), (errors.Abort("refused"), None)):
@@ -652,7 +687,7 @@ class StageTimingTests(unittest.TestCase):
 
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         ctx = SimpleNamespace(state=state, dry_run=False)
 
         def stage(context):
@@ -689,7 +724,7 @@ class GoBackTests(unittest.TestCase):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.state = RunState.open(Path(directory.name))
+        self.state = s60_run(Path(directory.name))
         self.ctx = SimpleNamespace(state=self.state, dry_run=False, go_back=None)
 
     def execute(self):
@@ -805,7 +840,7 @@ class ScreenTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.log = Path(directory.name) / "run.log"
-        self.state = RunState.open(Path(directory.name))
+        self.state = s60_run(Path(directory.name))
         self.ctx = SimpleNamespace(state=self.state, dry_run=False, go_back=None, finished=False)
 
     def screen(self, stages):
@@ -952,7 +987,7 @@ class BringUpToDateTests(unittest.TestCase):
         family = routes.FAMILIES[family_name]
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         state.set_input("device_kind", "sonoff-s60" if family_name == "espressif" else "sonoff-s61")
         ctx = SimpleNamespace(state=state, dry_run=dry_run, esphome_firmware=None)
         routes.apply_target(firmware, "sonoff", family)
@@ -1016,7 +1051,7 @@ class DeviceBackTests(unittest.TestCase):
         from unittest import mock
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         state.set_input("device_ip", "10.0.0.63")
         if d1_done:
             state.mark("D1", DONE)
@@ -1075,7 +1110,7 @@ class UnexpectedErrorTests(unittest.TestCase):
 
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
+        state = s60_run(Path(directory.name))
         ctx = SimpleNamespace(state=state, dry_run=False)
         title, _ = routes.STEP_INDEX[step]
         failing = mock.Mock(side_effect=error)
@@ -1152,7 +1187,7 @@ class UnexpectedErrorTests(unittest.TestCase):
         # started at once, did not find the device, away from eWeLink for minutes.
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as tmp:
-            state = RunState.open(Path(tmp))
+            state = s60_run(Path(tmp))
             send = routes.FAMILY.POINT_OF_NO_RETURN
             state.mark(send, "attempted", nothing_written=False)
             self.assertTrue(runner.stopped_mid_send(SimpleNamespace(state=state, consented=True)))
@@ -1201,7 +1236,8 @@ class ErasedTasmotaTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
         done = {"D1", "F4"} if f4_done else {"D1"}
-        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG"}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG",
+                  "device_kind": "sonoff-s60"}
         # Answers in turn, the last for every ask after; a network in turn likewise.
         replies = list(answers) if isinstance(answers, list) else [answers]
         self.waited, self.captured = [], {}
@@ -1284,7 +1320,8 @@ class ErasedTasmotaTests(unittest.TestCase):
         # seen in the fault suite, G1 there was never helped.
         from types import SimpleNamespace
         from unittest import mock
-        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG"}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG",
+                  "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(device=SimpleNamespace(answers=lambda timeout=None: False,
                                                      wait_reachable=lambda timeout=None: None),
                               state=SimpleNamespace(input=inputs.get, is_done=lambda s: s == "F4",

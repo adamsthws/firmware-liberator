@@ -192,6 +192,57 @@ class ReadoutLeftTests(unittest.TestCase):
         self.assertEqual(back.call_args.args[1], "192.0.2.60")
 
 
+class UnknownKindCarriedOnTests(unittest.TestCase):
+    """A run carried on that recorded no kind - begun by a release that took
+    an unknown kind for the S60's - is identified now, or stops; only one
+    begun by 1.x, which converted the S60 alone, is an S60 by its record."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def ctx(self, **inputs):
+        state = RunState.open(Path(self.tmp.name) / "run")
+        for key, value in inputs.items():
+            state.set_input(key, value)
+        return SimpleNamespace(state=state, replace_own_build=False, firmware_given=None, esphome_firmware=None)
+
+    def test_a_basicr4_carried_on_part_way_with_no_kind_is_the_kind_the_account_lists(self):
+        ctx = self.ctx(source="installer", firmware="tasmota", device_ip="192.0.2.50", device_mac="12:34:56:ab:cd:ef")
+        listed = SimpleNamespace(kind="sonoff-basicr4")
+        with mock.patch.object(routes.account, "by_mac", return_value=listed) as asked, \
+                mock.patch.object(routes.source.output, "say"):
+            self.assertEqual(routes.settle_route(ctx), ("tasmota", "installer"))
+        self.assertEqual(asked.call_args.args[1], "12:34:56:ab:cd:ef")
+        self.assertIs(kinds.of_run(ctx.state), kinds.SONOFF_BASICR4)
+
+    def test_one_the_account_cannot_name_stops_before_anything(self):
+        ctx = self.ctx(source="midway", firmware="esphome", device_ip="192.0.2.50", device_mac="12:34:56:ab:cd:ef")
+        with mock.patch.object(routes.account, "by_mac", return_value=None), \
+                mock.patch.object(routes.source.output, "say"), \
+                self.assertRaisesRegex(errors.NothingWritten, "could not tell which device"):
+            routes.settle_route(ctx)
+        self.assertIsNone(kinds.recorded(ctx.state))
+
+    def test_a_run_with_its_kind_recorded_asks_nothing(self):
+        ctx = self.ctx(source="installer", firmware="tasmota", device_kind="sonoff-s60")
+        with mock.patch.object(routes.account, "by_mac", side_effect=AssertionError("not asked")):
+            self.assertEqual(routes.settle_route(ctx), ("tasmota", "installer"))
+
+    def test_status_of_a_run_that_never_identified_its_device_asks_no_release(self):
+        # It once compared the device's firmware with the S60's release.
+        ctx = self.ctx(source="tasmota", firmware="esphome", device_ip="192.0.2.50")
+        with mock.patch.object(routes.update, "earlier_release", side_effect=AssertionError("not asked")):
+            self.assertIsNone(routes.update_available(ctx))
+
+    def test_a_run_begun_by_1x_is_an_s60s_by_its_own_record(self):
+        ctx = self.ctx()
+        ctx.state.mark("C2", DONE)
+        with mock.patch.object(routes.account, "by_mac", side_effect=AssertionError("not asked")):
+            self.assertEqual(routes.settle_route(ctx), ("tasmota", "sonoff"))
+        self.assertIs(kinds.of_run(ctx.state), kinds.SONOFF_S60)
+
+
 class MotorModeNotedTests(unittest.TestCase):
     def test_the_firmware_found_is_asked_of_a_motor_before_the_device_leaves_it(self):
         # Gone with that firmware: Tasmota's shutter, ESPHome's cover (tools/autoflash/motor.py).

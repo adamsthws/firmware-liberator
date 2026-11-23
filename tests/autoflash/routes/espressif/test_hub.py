@@ -22,6 +22,7 @@ class PromoteTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
+        state.set_input("device_kind", "sonoff-s60")
         if failed_before:
             state.mark("D4", FAILED, error="Berry Tasmota was not uploaded")
         events = []

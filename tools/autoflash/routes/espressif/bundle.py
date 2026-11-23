@@ -22,9 +22,14 @@ if TYPE_CHECKING:
 DEFAULT_MANIFEST = Path("captures/safeboot-recovery-migration/manifest.json")
 
 
+def manifest_of(chip: chips.Chip) -> Path:
+    """Where the bundle for a device of `chip` goes."""
+    return (records.CAPTURES / chip.bundle / "manifest.json").resolve()
+
+
 def default_manifest(ctx: Context) -> Path:
     """Where the bundle for this run's device's chip goes, unless --manifest said."""
-    return (records.CAPTURES / chips.of(kinds.of_run(ctx.state).chip).bundle / "manifest.json").resolve()
+    return manifest_of(chips.of(kinds.of_run(ctx.state).chip))
 
 
 def step_check(ctx: Context) -> dict[str, Any]:

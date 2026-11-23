@@ -187,7 +187,7 @@ class ConversionWifiTests(unittest.TestCase):
             "safeboot_sha256": hashlib.sha256(image("Home", "right")).hexdigest(),
         }))
         self.ctx = SimpleNamespace(evidence=evidence, manifest_path=Path("unused"),
-                                   state=SimpleNamespace(input=lambda name: None),
+                                   state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get),
                                    args=SimpleNamespace(wifi=False), held_wifi=lambda: None,
                                    remember_wifi=mock.Mock())
         self.pinned = ("Home", "right")
@@ -655,7 +655,7 @@ class CommitEvidenceTests(unittest.TestCase):
                             (plan_module.SONOFF_TABLE_SHA256, False),
                             (DeviceError("no Berry"), False)):
             device = mock.Mock(sha_region=mock.Mock(side_effect=[table]))
-            ctx = SimpleNamespace(dry_run=False, device=device, state=SimpleNamespace(input=lambda name: None))
+            ctx = SimpleNamespace(dry_run=False, device=device, state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get))
             with mock.patch.object(hub, "run_plan") as run_plan, \
                  mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
                 hub.sonoff_layout_back(ctx)
@@ -699,7 +699,9 @@ class TasmotaBackTests(unittest.TestCase):
         from unittest import mock
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        ctx = SimpleNamespace(state=RunState.open(Path(directory.name)), dry_run=False, web_password=None,
+        state = RunState.open(Path(directory.name))
+        state.set_input("device_kind", "sonoff-s60")
+        ctx = SimpleNamespace(state=state, dry_run=False, web_password=None,
                               finder=mock.Mock(poll=mock.Mock(return_value=True)),
                               device=mock.Mock(host="192.0.2.50", is_safeboot=mock.Mock(return_value=safeboot),
                                                wants_password=mock.Mock(return_value=wants_password)))
@@ -790,6 +792,7 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
+        state.set_input("device_kind", "sonoff-s60")
         for step in done:
             state.mark(step, "done")
         if e3:
@@ -950,7 +953,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console(sent), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: False)
-        state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF"}.get(key))
+        state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF", "device_kind": "sonoff-s60"}.get(key))
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device, state=state)
         with mock.patch.object(output, "say") as said:
             result = tasmota.step_configure(ctx)
@@ -970,7 +973,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console(sent, "tasmota-abcdef"), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: False)
-        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
@@ -989,7 +992,8 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console(sent, "tasmota-abcdef"), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: self.fail("hooked to a reset"))
-        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "source": "untemplated"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "source": "untemplated",
+                  "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
@@ -1038,7 +1042,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console([], "tasmota-abcdef", takes=False),
                                  is_safeboot=lambda: False, at_next_save=lambda commands, timeout=None: False)
-        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"), self.assertRaises(errors.Abort):
@@ -1068,7 +1072,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=command, is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: hooked.append(commands) or True)
-        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"), mock.patch.object(tasmota, "back_after_reset") as back, \
@@ -1103,7 +1107,7 @@ class ConfigureStepTests(unittest.TestCase):
         device = SimpleNamespace(wait_reachable=lambda **_: None, command=command, is_safeboot=lambda: False,
                                  started_at=lambda: "t", uptime_seconds=lambda: 10,
                                  wait_for_reboot=lambda **_: 1.0, at_next_save=lambda commands, timeout=None: False)
-        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "device_kind": "sonoff-s60"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
@@ -1198,7 +1202,7 @@ class OfficialTasmotaSeenTests(unittest.TestCase):
         on_startup = [True]
         device = SimpleNamespace(wait_reachable=lambda **_: None, is_safeboot=lambda: on_startup[0],
                                  command=lambda c, timeout=None: None)
-        state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF"}.get(key))
+        state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF", "device_kind": "sonoff-s60"}.get(key))
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.168.60.50"), device=device, state=state)
 
         def installed(ctx_, app):
@@ -1228,7 +1232,7 @@ class BackAfterResetTests(unittest.TestCase):
             return 5.0
 
         device = SimpleNamespace(wait_for_reboot=wait_for_reboot, wait_reachable=mock.Mock())
-        ctx = SimpleNamespace(device=device, state=SimpleNamespace(input=lambda key: None))
+        ctx = SimpleNamespace(device=device, state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get))
         with mock.patch.object(prompts, "find_ssid", return_value=setup) as looked, \
              mock.patch.object(names, "setup_networks", return_value=("tasmota-ABCDEF-1234",)), \
              mock.patch.object(join, "configure_device_wifi") as configured, \
@@ -1402,7 +1406,7 @@ class StepCanonicalWaitTests(unittest.TestCase):
     see would be too long."""
 
     def wait(self, seen):
-        ctx = types.SimpleNamespace(state=types.SimpleNamespace(data={}, input=lambda key, default=None: None),
+        ctx = types.SimpleNamespace(state=types.SimpleNamespace(data={}, input={"device_kind": "sonoff-s60"}.get),
                                     device=types.SimpleNamespace())
         with mock.patch.object(tasmota, "recovery_firmware_up", side_effect=seen), \
                 mock.patch.object(tasmota.runs, "run_source", return_value="sonoff"), \

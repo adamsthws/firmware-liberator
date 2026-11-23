@@ -53,8 +53,13 @@ LEAVES_DIRECT = "leaves_tasmota_direct"
 
 
 def family_of(state: RunState) -> ModuleType:
-    """The family whose steps a run takes: its kind's (kinds.of_run)."""
-    return FAMILIES[kinds.of_run(state).family]
+    """The family whose steps a run takes: its kind's. Before its kind is
+    known a run takes only the shared start (IDENTIFYING_STEPS), the same in
+    every family, and has written nothing: the Espressif family's tables
+    list those, and no other step runs until the kind is known
+    (runner._execute)."""
+    kind = kinds.recorded(state)
+    return FAMILIES[kind.family] if kind else espressif
 
 
 def step_prerequisites(ctx: Context) -> dict[str, Any]:
@@ -129,6 +134,9 @@ STOCK_START: Steps = [
     ("A3", "Choose the firmware", step_choose),
 ]
 START: Steps = [STOCK_START[0], STOCK_START[2]]
+# The start's steps, which come before the device's kind is known or find it:
+# every other step runs only once it is (runner._execute).
+IDENTIFYING_STEPS = frozenset(step for step, _, _ in STOCK_START)
 STAGE_NAMES = {"A0": "Confirming prerequisites", "A1": "Discovering the device", "A3": "Choosing the firmware"}
 PLAIN_DESCRIPTION = {
     "A0": "lists what needs to be in place before starting",
@@ -152,7 +160,10 @@ def update_available(ctx: Context) -> str | None:
     """What `status` says of an update for the run's device, or None: none, or
     the device not answering.  It only asks: nothing is recorded."""
     firmware = recorded_firmware(ctx.state)
-    published = family_of(ctx.state).published_version(kinds.of_run(ctx.state), firmware) if firmware else None
+    kind = kinds.recorded(ctx.state)
+    if kind is None:
+        return None   # a run that never identified its device has no release to compare
+    published = family_of(ctx.state).published_version(kind, firmware) if firmware else None
     try:
         release = update.earlier_release(ctx, firmware, published)
     except (OSError, RuntimeError):
@@ -278,6 +289,15 @@ def nothing_to_convert(ctx: Context, source: str) -> None:
                          "API key, run this again with --replace-own-build." if own else ""))
 
 
+def identify_carried_on(ctx: Context, running: str) -> None:
+    """The kind of the device a run carried on has no record of, from the
+    owner's eWeLink account by its MAC (source.kind_from_account), or
+    NothingWritten saying what to do."""
+    host = ctx.state.input("device_ip") or "its address"
+    found = detect.Found(host, running, ctx.state.input("device_mac"))
+    ctx.state.set_input("device_kind", source.kind_from_account(ctx, found))
+
+
 def settle_route(ctx: Context, defer: bool = False) -> tuple[str | None, str]:
     """What the device runs now and which firmware it is to have: kept from the
     run's start, given on the command line, or found out and asked - once,
@@ -296,14 +316,21 @@ def settle_route(ctx: Context, defer: bool = False) -> tuple[str | None, str]:
             f"{'--esphome' if ctx.esphome_firmware else '--firmware'}, or start again with --new"
         )
     if kept:
+        if not kinds.recorded(ctx.state) and (running not in (None, "sonoff") or ctx.state.is_done("A1")):
+            # Carried on, begun by a release that took an unknown kind for the
+            # S60's: the account says which it is now, or the run stops.
+            identify_carried_on(ctx, running or "sonoff")
         return kept, running or "sonoff"
     if running == "sonoff":
         return None, "sonoff"  # found in eWeLink already; the firmware is chosen at A3
     started = [step for step in LEGACY_STOCK_STEPS if ctx.state.is_done(step)]
     if started:
-        # Begun by 1.x, before there was a choice: from Sonoff's, for Tasmota.
+        # Begun by 1.x, before there was a choice: from Sonoff's, for Tasmota -
+        # on an S60, the one device 1.x converted, where it recorded no kind.
         ctx.state.set_input("source", "sonoff")
         ctx.state.set_input("firmware", "tasmota")
+        if not kinds.recorded(ctx.state):
+            ctx.state.set_input("device_kind", kinds.SONOFF_S60.key)
         return "tasmota", "sonoff"
     running = source.find_current_firmware(ctx)
     motor.note_running(ctx, running)
@@ -313,10 +340,13 @@ def settle_route(ctx: Context, defer: bool = False) -> tuple[str | None, str]:
         from tools.autoflash import readout_beken
         raise NothingToDo(readout_beken.put_back(ctx, ctx.state.require("device_ip")[0]))
     updating = running
-    published = family_of(ctx.state).published_version(kinds.of_run(ctx.state), running)
-    if update.outdated(ctx, running, published) or (
-            ctx.replace_own_build and update.replace_own_build(ctx, running, published)):
-        running = "outdated"
+    if running != "sonoff":
+        # Found converted, so identified (source.adopt_device): an update of
+        # its firmware is its kind's release. Sonoff's is found through eWeLink.
+        published = family_of(ctx.state).published_version(kinds.of_run(ctx.state), running)
+        if update.outdated(ctx, running, published) or (
+                ctx.replace_own_build and update.replace_own_build(ctx, running, published)):
+            running = "outdated"
     if running == "sonoff":
         if given == "sonoff":
             nothing_to_convert(ctx, "sonoff")

@@ -197,6 +197,18 @@ it found:
   or guest Wi-Fi, a different router, or a VPN. The message names the network
   the device is on.
 
+**"could not tell which device the one at ... is"**
+
+The tool acts on a device only once it knows which kind it is, as each kind
+takes its own firmware. Nothing was written to it. A device on Sonoff's
+firmware, given with `--device-ip`, is named by your eWeLink account, found by
+its hardware address: check it is in the account you sign in to, or run the
+tool without `--device-ip` and choose it from the account. A device part way
+through a conversion, on firmware that does not say what it is, is named by
+the record of its conversion on the computer that began it, else by the
+account: run the tool on that computer, or sign in to the eWeLink account the
+device was added to.
+
 **"No supported device in the eWeLink account ..."**
 
 The device is in a different eWeLink account, or is one the tool does not

@@ -282,7 +282,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     state = ctx.state
     kind = kinds.by_key(state.input("device_kind"))
     firmware = routes.recorded_firmware(state)
-    espressif = kinds.of_run(state).family == "espressif"
+    espressif = kind is not None and kind.family == "espressif"
     record = records.read_device(state.input("device_mac") or "")
     captures = state.data.get("captures", {})
     source = runs.run_source(state)
@@ -334,7 +334,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "setup_network": report.own_network_joined(state),
         "power_cycled": bool(state.input("power_cycles")),
         "checks": checks_word(hardware),
-        "meter": meter_word(captures, firmware) if kinds.of_run(state).has_meter else None,
+        "meter": meter_word(captures, firmware) if kind and kind.has_meter else None,
         "nth_device": nth,
         "chip": chip_info(state),
         "computer": computer_info(state),

@@ -402,7 +402,9 @@ def running_motor(ctx: Context, firmware: str) -> bool | None:
 def note_running(ctx: Context, firmware: str) -> None:
     """What the firmware the device runs as the run begins says of its mode,
     kept for the run: it is gone once the device leaves that firmware."""
-    if kinds.of_run(ctx.state).motor_mode and firmware in ("tasmota", "esphome"):
+    # Sonoff's firmware, as the run begins, before eWeLink says which device it is.
+    kind = kinds.recorded(ctx.state)
+    if kind and kind.motor_mode and firmware in ("tasmota", "esphome"):
         found = running_motor(ctx, firmware)
         output.log_only(f"    {firmware} on the device runs it as {'a motor' if found else 'relays'}"
                         + ("" if found is not None else " (it did not say)"))

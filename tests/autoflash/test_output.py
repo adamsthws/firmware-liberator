@@ -1179,7 +1179,7 @@ class FallbackScreenTests(OutputTestCase):
             _wifi = None
             esphome_api_locked = False
             manifest_path = Path("m.json")
-            state = mock.Mock()
+            state = mock.Mock(input=mock.Mock(side_effect=lambda key, *_: "sonoff-s60" if key == "device_kind" else mock.DEFAULT))
 
             @property
             def device(self):
@@ -1353,7 +1353,7 @@ class ReportTests(OutputTestCase):
         from types import SimpleNamespace
         from tools.autoflash.state import RunState
         state = RunState.open(Path(self.tmp.name) / "run")
-        for key, value in {"product_model": "S60TPG", "stock_version": "1.2.0",
+        for key, value in {"product_model": "S60TPG", "device_kind": "sonoff-s60", "stock_version": "1.2.0",
                            "email": "me@example.com", "device_ip": "192.0.2.50",
                            "device_name": "tasmota-1A2B3C-4567", **inputs}.items():
             state.set_input(key, value)
@@ -1444,6 +1444,7 @@ class ReportTests(OutputTestCase):
         ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="sonoff", source="openbeken")
         bare = dataclasses.replace(report.kinds.SONOFF_S61, has_relay=False, sensors=())
         with mock.patch.object(report.kinds, "of_run", return_value=bare), \
+                mock.patch.object(report.kinds, "recorded", return_value=bare), \
                 mock.patch.object(report, "check_ewelink_hardware", side_effect=AssertionError("nothing to switch")), \
                 mock.patch.object(report, "offer_report") as offered, \
                 mock.patch.object(report.report_upload, "send") as sent, mock.patch.object(output, "show_links"):

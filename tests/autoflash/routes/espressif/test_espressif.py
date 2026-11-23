@@ -38,7 +38,7 @@ class RouteTestCase(unittest.TestCase):
 
     def ctx(self, given=None, run="run", **inputs):
         state = RunState.open(Path(self.tmp.name) / run)
-        for key, value in {"product_model": "S60TPF", "stock_version": "1.2.0",
+        for key, value in {"product_model": "S60TPF", "device_kind": "sonoff-s60", "stock_version": "1.2.0",
                            "device_ip": "192.0.2.50", **inputs}.items():
             state.set_input(key, value)
         return SimpleNamespace(state=state, firmware_given=given, esphome_firmware=None, replace_own_build=False,

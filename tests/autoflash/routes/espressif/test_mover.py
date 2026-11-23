@@ -652,7 +652,7 @@ class EsphomeSignalTests(unittest.TestCase):
                 raise status
             return status
 
-        inputs = {"device_ip": "192.168.60.50"}
+        inputs = {"device_ip": "192.168.60.50", "device_kind": "sonoff-s60"}
         state = SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__)
         return SimpleNamespace(state=state, wifi=lambda: ("Home-2G", "pass"), esphome_firmware=None,
                                dry_run=False, device=SimpleNamespace(command=command))
@@ -734,7 +734,7 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
     def ctx(self, slot):
         from types import SimpleNamespace
         device = mock.Mock(current_ota=mock.Mock(return_value=slot))
-        inputs = {"device_ip": "192.168.60.50"}
+        inputs = {"device_ip": "192.168.60.50", "device_kind": "sonoff-s60"}
         state = SimpleNamespace(input=inputs.get)
         return SimpleNamespace(state=state, wifi=lambda: ("Home-2G", "pass"), dry_run=False,
                                      device=device)
@@ -772,7 +772,7 @@ class BerryFromStartupTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
         ctx = SimpleNamespace(dry_run=False, device=SimpleNamespace(host="192.168.60.50"),
-                              state=SimpleNamespace(input=lambda name: None),
+                              state=SimpleNamespace(input={"device_kind": "sonoff-s60"}.get),
                               web_password=None, esphome_login=None)
         answers = iter(versions)
         seen = []

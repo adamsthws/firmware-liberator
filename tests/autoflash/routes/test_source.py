@@ -2,6 +2,7 @@
 (tools/autoflash/routes/source.py): found by address or by a search of the
 network, waited for if it may be restarting, and unlocked if it asks."""
 import contextlib
+import shutil
 import tempfile
 import time
 import unittest
@@ -40,14 +41,23 @@ class KindLeftPartWayTests(unittest.TestCase):
             state.set_input(key, value)
         return directory
 
-    def adopted(self, firmware, name=None, kind=None):
+    def adopted(self, firmware, name=None, kind=None, account=()):
         from types import SimpleNamespace
         here = self.root / "here"
         here.mkdir()
-        ctx = SimpleNamespace(state=RunState.open(here), dir=here, set_device_ip=lambda host: None)
+        self.asked_account = []
+        ctx = SimpleNamespace(state=RunState.open(here), dir=here, set_device_ip=lambda host: None,
+                              account_devices=lambda: self.asked_account.append(True) or account)
+        self.ctx = ctx
         with mock.patch.object(runs, "file_device"), mock.patch.object(hostsys, "mac_of", return_value=None):
             source.adopt_device(ctx, detect.Found("192.0.2.50", firmware, "12:34:56:ab:cd:ef", name, kind))
         return ctx.state.input("device_kind")
+
+    @staticmethod
+    def listed(product, mac="12:34:56:AB:CD:EF", stock_model=""):
+        """A device as the eWeLink account lists it."""
+        return {"deviceid": "1000abcdef", "productModel": product, "extra": {"model": stock_model},
+                "params": {"staMac": mac}}
 
     def test_the_mover_is_the_kind_its_last_run_was(self):
         self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-th-elite")
@@ -66,7 +76,44 @@ class KindLeftPartWayTests(unittest.TestCase):
 
     def test_another_devices_run_says_nothing_of_it(self):
         self.run_of("12:34:56:ab:cd:00", "1", device_kind="sonoff-th-elite")
-        self.assertIsNone(self.adopted("midway", "the mover"))
+        with self.assertRaisesRegex(errors.NothingWritten, "could not tell which device"):
+            self.adopted("midway", "the mover")
+
+    def test_a_record_of_it_here_is_enough_without_asking_the_account(self):
+        self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-basicr4")
+        self.assertEqual(self.adopted("installer", "the installer"), "sonoff-basicr4")
+        self.assertEqual(self.asked_account, [])
+
+    def test_a_basicr4_part_way_with_no_record_is_the_kind_the_account_lists_by_its_mac(self):
+        # The same ESP32-C3 as the S60: once taken for one, the S60's plan and
+        # layout would have gone onto it, no chip check standing in the way.
+        for firmware, name in (("installer", "the installer"), ("midway", "the mover"), ("midway", "the hub"),
+                               ("untemplated", None)):
+            with self.subTest(firmware=firmware, name=name):
+                shutil.rmtree(self.root / "here", ignore_errors=True)
+                kind = self.adopted(firmware, name, account=[self.listed("S60TPF", mac="12:34:56:AB:CD:00"),
+                                                              self.listed("BASICR4")])
+                self.assertEqual(kind, "sonoff-basicr4")
+                self.assertNotEqual(kinds.of_run(self.ctx.state), kinds.SONOFF_S60)
+
+    def test_a_device_part_way_the_account_cannot_name_stops_before_anything(self):
+        # Not signed in or not reached (None), not there, or of no kind the tool converts.
+        for account in (None, [], [self.listed("S60TPF", mac="12:34:56:AB:CD:00")], [self.listed("ZBMINI")]):
+            with self.subTest(account=account):
+                shutil.rmtree(self.root / "here", ignore_errors=True)
+                with self.assertRaisesRegex(errors.NothingWritten, "could not tell which device.*Nothing was written"):
+                    self.adopted("installer", "the installer", account=account)
+                self.assertIsNone(self.ctx.state.input("device_kind"))
+                with self.assertRaises(kinds.UnknownKind):
+                    kinds.of_run(self.ctx.state)
+
+    def test_an_esphome_whose_page_does_not_say_is_the_kind_the_account_lists(self):
+        with mock.patch.object(source.esphome, "title", return_value=("Kitchen", None)):
+            self.assertEqual(self.adopted("esphome", account=[self.listed("POWR316D")]), "sonoff-pow-elite")
+
+    def test_the_readout_firmware_is_no_kind_and_asks_nothing(self):
+        self.assertIsNone(self.adopted("readout"))
+        self.assertEqual(self.asked_account, [])
 
     def test_what_it_says_itself_comes_first(self):
         self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-th-elite")
@@ -162,8 +209,11 @@ class AdoptDeviceTests(unittest.TestCase):
         self.assertEqual(self.adopt_esphome("esphome 123456", "Sonoff-S60"), "sonoff-s60")
         self.assertEqual(self.adopt_esphome("Kitchen", "Sonoff-S61"), "sonoff-s61")   # renamed
         self.assertEqual(self.adopt_esphome("Sonoff S60 123456", ""), "sonoff-s60")   # released before the comment
-        self.assertIsNone(self.adopt_esphome("esphome abcdef"))
-        self.assertIsNone(self.adopt_esphome(None))
+        # One that does not say is never taken for an S60: the account is asked
+        # (KindLeftPartWayTests), and with no MAC to ask by, the run stops.
+        for title in ("esphome abcdef", None):
+            with self.subTest(title=title), self.assertRaisesRegex(errors.NothingWritten, "could not tell"):
+                self.adopt_esphome(title)
 
 
 class FirmwareSearchCase(unittest.TestCase):

@@ -14,7 +14,7 @@ from tools.autoflash import esphome, hostsys, join, output, prompts, report
 from tools.autoflash.state import DONE
 
 # A run's state, as the relay check reads its kind from: the S60's, with a meter.
-A_RUN = SimpleNamespace(input=lambda key: None)
+A_RUN = SimpleNamespace(input={"device_kind": "sonoff-s60"}.get)
 
 
 class EndingTests(RouteTestCase):
