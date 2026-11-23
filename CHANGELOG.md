@@ -93,6 +93,9 @@ check.
   written, when the device found it was not an S60's chip; but updating its
   Tasmota sent it the S60's Tasmota. One that will not say its template now
   stops before anything is done, saying to try again.
+- A run no longer crashes as it looks for your device when another device on
+  your network answers with something that is not a proper web page (one
+  that sends the request back, say): that device is passed over.
 
 ## 3.1.0
 

@@ -1,6 +1,7 @@
 """The OpenBeken HTTP client, against a stand-in for OpenBeken's own server."""
 import http.server
 import json
+import socketserver
 import threading
 import unittest
 from unittest import mock
@@ -188,6 +189,31 @@ class OpenBekenTests(unittest.TestCase):
         for half in (b'{"chipset": "BK7238"}', b'{"build": "version 1.0.0"}'):
             with self.subTest(half=half), mock.patch.object(openbeken, "_get", return_value=half):
                 self.assertIsNone(openbeken.info(self.server.host))
+
+    def test_a_device_answering_no_http_is_no_openbeken(self):
+        # Seen on users' networks as the search asked every device: one sent
+        # the request back, one a page with no status line, one less than it
+        # said - each crashed the run before any device was chosen.
+        answers = {
+            "echo": None,
+            "no status line": b"<html><body>a camera</body></html>",
+            "cut short": b"HTTP/1.1 200 OK\r\nContent-Length: 4000\r\n\r\n{\"chipset\": \"BK7238\"",
+        }
+        for name, answer in answers.items():
+            with self.subTest(name):
+                class Odd(socketserver.BaseRequestHandler):
+                    def handle(self):
+                        asked = self.request.recv(4096)
+                        self.request.sendall(asked if answer is None else answer)
+                server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Odd)
+                threading.Thread(target=server.serve_forever, daemon=True).start()
+                self.addCleanup(server.server_close)
+                self.addCleanup(server.shutdown)
+                host = f"127.0.0.1:{server.server_address[1]}"
+                self.assertIsNone(openbeken.info(host, timeout=2))
+                self.assertIsNone(openbeken.kind(host, {"chipset": "BK7238"}, timeout=2))
+                self.assertIsNone(openbeken.is_interim(host, timeout=2))
+                self.assertFalse(openbeken.is_readout(host, timeout=2))
 
     def test_a_command_answers_through_the_envelope(self):
         self.assertEqual(openbeken.command(self.server.host, "SetStartValue 1 -1"), "SetStartValue done")

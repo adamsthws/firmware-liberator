@@ -9,6 +9,7 @@ address and command goes to a device that has already answered as OpenBeken.
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -36,6 +37,15 @@ class CommandError(RuntimeError):
         self.empty = empty   # its words did not reach it: nothing was run (EMPTY)
 
 
+# What a request asked of a device that does not answer as OpenBeken raises:
+# no connection, or an answer cut short or not HTTP at all
+# (http.client.HTTPException), which other devices on the network give - one
+# echoing the request back, one sending a page with no status line. Each
+# probe takes it as no answer, as esphome's pages do: it once crashed the
+# network search.
+NO_ANSWER = (OSError, http.client.HTTPException)
+
+
 def _url(host: str, path: str) -> str:
     return f"http://{host}:{PORT}{path}" if ":" not in host else f"http://{host}{path}"
 
@@ -49,7 +59,7 @@ def info(host: str, timeout: float = 4.0) -> dict[str, Any] | None:
     """What /api/info says, or None where OpenBeken does not answer there."""
     try:
         found = json.loads(_get(host, "/api/info", timeout))
-    except (OSError, ValueError, urllib.error.URLError):
+    except (ValueError, *NO_ANSWER):
         return None
     return found if isinstance(found, dict) and "chipset" in found and "build" in found else None
 
@@ -63,7 +73,7 @@ def kind(host: str, found: dict[str, Any], timeout: float = 4.0) -> kinds.Kind |
     for candidate in kinds.on_chip(str(found.get("chipset") or "")):
         try:
             command(host, f"AutoflashKind {candidate.key}", timeout)
-        except (CommandError, OSError):
+        except (CommandError, *NO_ANSWER):
             continue
         return candidate
     return None
@@ -78,7 +88,7 @@ def is_interim(host: str, timeout: float = 4.0) -> bool | None:
         command(host, "AutoflashInterim", timeout)
     except CommandError:
         return False
-    except OSError:
+    except NO_ANSWER:
         return None
     return True
 
@@ -89,7 +99,7 @@ def is_readout(host: str, timeout: float = 4.0) -> bool:
     "readout" alone, as each build does for its own kind."""
     try:
         command(host, "AutoflashKind readout", timeout)
-    except (CommandError, OSError):
+    except (CommandError, *NO_ANSWER):
         return False
     return True
 
@@ -114,7 +124,7 @@ def calibration_state(host: str, timeout: float = 4.0) -> str | None:
             if exc.unknown:
                 return None
             continue
-        except OSError:
+        except NO_ANSWER:
             return None
         return state
     return CALIBRATION_CHANGED
