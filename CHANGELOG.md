@@ -77,6 +77,9 @@ check.
   website now asks for each file's link and SHA-256 instead, and fetches the
   file itself, so a readout's first stage sends less
   ([what the tool sends](docs/what-the-tool-sends.md#what-ewelink-offers-your-devices)).
+- A run to Tasmota whose device was switched off part way, and checked
+  again just as it started, no longer stops at staging every time it is run
+  again ("NVS changed since preflight"): it checks the device again first.
 
 ## 3.1.0
 

@@ -487,7 +487,7 @@ class CommitEvidenceTests(unittest.TestCase):
         runner.run.assert_not_called()
         self.assertEqual([ctx.state.status(s) for s in ("E1", "E2")], [FAILED, FAILED])
 
-    def staged_after(self, preflight_manifest):
+    def staged_after(self, preflight_manifest, outcomes=((0, ""),)):
         """step_stage, E1's report made with `preflight_manifest`: which steps
         ran, the run's bundle being {}."""
         import json
@@ -502,11 +502,18 @@ class CommitEvidenceTests(unittest.TestCase):
         ctx.state = RunState.open(ctx.evidence)
         ctx.state.mark("E1", "done")
         ran = []
-        ctx.phase_runner = lambda: mock.Mock(run=lambda phase: ran.append(phase) or (0, ""))
+        given = iter(outcomes)
+        ctx.phase_runner = lambda: mock.Mock(run=lambda phase: ran.append(phase) or next(given))
         with mock.patch.object(tasmota, "step_preflight", side_effect=lambda c: ran.append("E1") or {}), \
              mock.patch.object(output, "say"):
             self.assertEqual(tasmota.step_stage(ctx), {"exit": 0})
         return ran
+
+    def test_a_stage_refused_as_the_settings_changed_since_checks_again_first(self):
+        # Seen in the fault suite: E1 made as the device started, before its
+        # Tasmota saved its settings; every run after refused E2 the same way.
+        refused = (1, "THE DEVICE SAYS: migration_refused: NVS changed since preflight\n")
+        self.assertEqual(self.staged_after(b"{}", (refused, (0, ""))), ["stage", "E1", "stage"])
 
     def test_staging_after_checks_with_this_bundle(self):
         self.assertEqual(self.staged_after(b"{}"), ["stage"])

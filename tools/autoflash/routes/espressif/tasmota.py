@@ -62,7 +62,8 @@ if TYPE_CHECKING:
 # A phase server's line that says why it stopped, rather than how it is getting on.
 # The commit's own checks, made before its first write, that the device is still
 # as E1 and E2 left it (tools/espressif/safeboot/repartition/berry/commit.be.tmpl).
-COMMIT_REFUSED_AS_CHANGED_RE = re.compile(r"NVS changed since preflight|staged Safeboot")
+NVS_CHANGED = "NVS changed since preflight"
+COMMIT_REFUSED_AS_CHANGED_RE = re.compile(rf"{NVS_CHANGED}|staged Safeboot")
 # The commit's checks of what it wrote: after any of these it put back what was
 # there before (a bit read wrong once, say), so it can be tried again.
 COMMIT_READBACK_RE = re.compile(r"read-back differs|SHA-256 differs|did not erase|"
@@ -100,6 +101,14 @@ def step_stage(ctx: Context) -> dict[str, Any]:
         output.say("E1 again: its checks were made with another bundle than this run's")
         ctx.state.mark("E1", DONE, result=step_preflight(ctx))
     code, captured = ctx.phase_runner().run("stage")
+    if code != 0 and NVS_CHANGED in (failure_reason(captured) or ""):
+        # E1's view of the device is out of date - its settings saved since,
+        # as Tasmota does a few seconds after it starts (its quick power-cycle
+        # count reset): seen in the fault suite, every run after refused the
+        # same way, E1 kept as done. E1 only reads: done again, then the stage.
+        output.say("    The device's settings changed since its checks: checking it again.")
+        ctx.state.mark("E1", DONE, result=step_preflight(ctx))
+        code, captured = ctx.phase_runner().run("stage")
     if code != 0:
         raise phases.phase_failed("stage", code, captured)
     return {"exit": code}
