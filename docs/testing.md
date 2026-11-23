@@ -887,6 +887,14 @@ emulator and the linters; it is made again only when `setup-dev` or
 trees. The other machine's `python3` needs its venv module (`python3-venv`
 on Debian and Ubuntu); `send` says so where it is missing.
 
+Each `send` makes the tree that commit's exactly, a change to a file it
+tracks made in the tree undone, and finishes what a send cut off part way
+left: a tree that is no whole git checkout is made anew, and a `.venv` never
+finished made again. A tree that is no whole checkout but holds `captures/`
+or a device's backup is left as it is, and `send` says to `remove` it first,
+which keeps a backup with no other copy. A command that fails there shows
+the end of what it printed, and what it was doing.
+
 `devices` links each device's backup from where it is kept there rather than
 copying it, so nothing in the tree is ever the only copy of yours. `run`
 gives `{first}` the first of `--emulators` instances no emulator or suite

@@ -3,6 +3,8 @@ what is sent, the instances a command is given, what is fetched before a
 tree is removed, and that a real device's backup outlives the tree. The scripts it runs there are run here, in a home folder
 of the test's own."""
 
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -69,20 +71,109 @@ class SentTreeTests(unittest.TestCase):
         self.git("add", "file.txt")
         self.git("commit", "-q", "-m", text)
 
-    def send(self, name="t", env=None):
+    def send(self, name="t", env=None, cut_off=None):
+        """send, its commands there run here; `cut_off` (N, "before" or
+        "after"): the Nth of them (from 0) cut off before it runs or after."""
         home = self.home
         env = {**os.environ, "HOME": str(home), **(env or {})}
+        sent = []
 
         class Here(remote_tree.Remote):
-            def run(self, script, *args, stdin=None, check=True, capture=True):
+            def run(self, script, *args, stdin=None, check=True, capture=True, doing=""):
+                sent.append(script)
+                if cut_off == (len(sent) - 1, "before"):
+                    raise SystemExit("cut off")
                 done = subprocess.run(["sh", "-c", script, "-", *args], cwd=home, input=stdin, capture_output=True,
                                       env=env, timeout=60, check=False)
                 if check and done.returncode:
                     raise AssertionError(done.stderr.decode(errors="replace"))
+                if cut_off == (len(sent) - 1, "after"):
+                    raise SystemExit("cut off")
                 return done
 
         with mock.patch.object(remote_tree, "ROOT", self.repo), mock.patch("builtins.print"):
             remote_tree.send(Here("here", None), name, "main")
+        return len(sent)
+
+    def checked_out(self, text, name="t"):
+        """The tree at main, holding `text`, nothing in it changed."""
+        where = self.home / remote_tree.tree(name)
+        self.assertEqual((where / "file.txt").read_text(encoding="utf-8"), text)
+        status = subprocess.run(["git", "-C", str(where), "status", "--porcelain", "--untracked-files=no"],
+                                capture_output=True, text=True, check=True).stdout
+        self.assertEqual(status, "")
+        head = subprocess.run(["git", "-C", str(where), "rev-parse", "HEAD"], capture_output=True, text=True,
+                              check=True).stdout
+        self.assertEqual(head, self.git("rev-parse", "main"))
+
+    def test_a_send_cut_off_between_any_two_commands_there_is_finished_by_the_next(self):
+        steps = self.send("probe")
+        for step in range(steps):
+            for when in ("before", "after"):
+                with self.subTest(step=step, when=when):
+                    self.home_anew()
+                    with self.assertRaises(SystemExit):
+                        self.send(cut_off=(step, when))
+                    self.send()
+                    self.checked_out("two")
+
+    def home_anew(self):
+        shutil.rmtree(self.home)
+        self.home.mkdir()
+
+    def git_there(self, *args):
+        subprocess.run(["git", *args], cwd=self.home, capture_output=True, check=True,
+                       env={**os.environ, "HOME": str(self.home)})
+
+    def test_a_send_cut_off_part_way_through_a_command_is_finished_by_the_next(self):
+        # One such left a folder with no .git where the tree was, and every
+        # later send of it failed ("not a git repository") until it was
+        # removed by hand.
+        where = remote_tree.tree("t")
+
+        def folder_without_git():
+            (self.home / where).mkdir(parents=True)
+            (self.home / where / "file.txt").write_text("tw", encoding="utf-8")
+
+        def git_init_only():
+            self.git_there("init", "-q", where)
+
+        def clone_not_checked_out():
+            self.git_there("clone", "-q", "--shared", "--no-checkout", remote_tree.REPO, where)
+            (self.home / where / "file.txt").write_text("tw", encoding="utf-8")
+
+        def later_checkout_part_way():
+            self.send()
+            self.commit("three")
+            (self.home / where / "file.txt").write_text("thr", encoding="utf-8")
+
+        def repository_part_made():
+            shutil.rmtree(self.home / remote_tree.REPO)
+            (self.home / remote_tree.REPO).mkdir()
+
+        def clone_beside_part_made():
+            (self.home / remote_tree.TREES / ".t.new/.git").mkdir(parents=True)
+
+        for state in (folder_without_git, git_init_only, clone_not_checked_out, later_checkout_part_way,
+                      repository_part_made, clone_beside_part_made):
+            with self.subTest(state=state.__name__):
+                self.home_anew()
+                self.send("u")  # the trees' repository there, holding the commit
+                state()
+                self.send()
+                self.checked_out((self.repo / "file.txt").read_text(encoding="utf-8"))
+
+    def test_a_tree_no_whole_checkout_that_holds_captures_or_a_backup_is_left_and_remove_named(self):
+        for kept in ("captures/emulation/suite/results.jsonl", "captures/devices/12-34-56-ab-cd-ef/sonoff-backup/a.bin",
+                     "old/sonoff-backup/flash.bin"):
+            with self.subTest(kept=kept):
+                self.home_anew()
+                path = self.home / remote_tree.tree("t") / kept
+                path.parent.mkdir(parents=True)
+                path.write_bytes(b"a backup")
+                with self.assertRaisesRegex(AssertionError, "remote_tree.py here remove t"):
+                    self.send()
+                self.assertEqual(path.read_bytes(), b"a backup")
 
     def archived(self, tag):
         return subprocess.run(["git", "-C", str(self.home / remote_tree.tree("t")), "archive", tag],
@@ -118,8 +209,12 @@ class SentTreeTests(unittest.TestCase):
         (self.repo / "tools/repo").mkdir(parents=True)
         (self.repo / "requirements").mkdir()
         setup_dev = self.repo / "tools/repo/setup-dev"
-        setup_dev.write_text('#!/bin/sh\nmkdir -p .venv/bin && echo ran >> "$HOME/setup-dev.log"\n',
-                             encoding="utf-8")
+        # As the real one: a .venv whose python is there is not made again,
+        # and lacking its pip it fails.
+        setup_dev.write_text('#!/bin/sh\nset -e\n[ -e .venv/bin/python ] || { mkdir -p .venv/bin; '
+                             'touch .venv/bin/python .venv/pip; }\n'
+                             '[ -e .venv/pip ] || { echo "No module named pip" >&2; exit 1; }\n'
+                             'echo ran >> "$HOME/setup-dev.log"\n', encoding="utf-8")
         setup_dev.chmod(0o755)
         (self.repo / "requirements/ci.txt").write_text("one==1\n", encoding="utf-8")
         self.git("add", "tools/repo/setup-dev", "requirements/ci.txt")
@@ -150,6 +245,16 @@ class SentTreeTests(unittest.TestCase):
         self.send(env=env)
         self.assertEqual(self.setup_dev_runs(), 2)
 
+    def test_a_venv_cut_off_being_made_is_made_again(self):
+        env = self.with_setup_dev(can_make_a_venv=True)
+        self.send(env=env)
+        venv = self.home / remote_tree.tree("t") / ".venv"
+        (venv / "pip").unlink()
+        (venv / ".made-from").unlink()
+        self.send(env=env)
+        self.assertEqual(self.setup_dev_runs(), 2)
+        self.assertTrue((venv / ".made-from").exists())
+
     def test_a_machine_whose_python_cannot_make_a_venv_is_told_what_to_install(self):
         env = self.with_setup_dev(can_make_a_venv=False)
         with self.assertRaisesRegex(AssertionError, "python3-venv"):
@@ -164,11 +269,13 @@ class SentTreeTests(unittest.TestCase):
         # The ref left behind held every commit a tree was ever sent at.
         self.send()
         self.send("u")
+        (self.home / remote_tree.TREES / ".t.new").mkdir()  # a clone a send was cut off making
         done = subprocess.run(["sh", "-c", remote_tree.REMOVE, "-", remote_tree.tree("t")], cwd=self.home,
                               capture_output=True, text=True, env={**os.environ, "HOME": str(self.home)},
                               timeout=60, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertFalse((self.home / remote_tree.tree("t")).exists())
+        self.assertFalse((self.home / remote_tree.TREES / ".t.new").exists())
         self.assertEqual(self.refs(), ["refs/trees/u"])
 
     def test_removing_a_tree_already_gone_removes_its_ref(self):
@@ -183,6 +290,20 @@ class SentTreeTests(unittest.TestCase):
     def test_a_commit_without_setup_dev_is_sent_without_a_venv(self):
         self.send()
         self.assertFalse((self.home / remote_tree.tree("t") / ".venv").exists())
+
+
+@unittest.skipUnless(shutil.which("sh"), "needs sh")
+class FailureTests(unittest.TestCase):
+    def test_a_command_that_fails_there_shows_the_end_of_what_it_printed_and_what_it_was_doing(self):
+        # A send once said only "failed (1)", its cause lost.
+        remote = remote_tree.Remote("host", None)
+        remote.ssh = ["sh", "-c", 'exec sh -c "$1"', "ssh"]
+        script = 'echo out; i=0; while [ $i -lt 30 ]; do echo "line $i" >&2; i=$((i + 1)); done; exit 3'
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaisesRegex(SystemExit, r"^host: checking out: failed \(3\)$"):
+            remote.run(script, doing="checking out")
+        shown = err.getvalue().splitlines()
+        self.assertEqual(shown, ["out", *(f"line {n}" for n in range(30 - remote_tree.SHOWN, 30))])
 
 
 class InstanceTests(unittest.TestCase):
@@ -473,8 +594,6 @@ class RemoveTests(unittest.TestCase):
 
 class UsageTests(unittest.TestCase):
     def test_each_option_the_usage_names_is_one_its_command_takes(self):
-        import contextlib
-        import io
         import re
         lines = re.findall(r"(?m)^\s+tools/repo/remote_tree\.py HOST (\w+) (.*)$", remote_tree.__doc__)
         self.assertEqual(len(lines), 6)

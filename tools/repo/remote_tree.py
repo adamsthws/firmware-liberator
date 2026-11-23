@@ -15,8 +15,12 @@ nor a device's backup lost.
 HOST is as ssh takes it, from your own ssh config or --ssh-config FILE. The
 trees are in ~/autoflash-trees/ there, beside one repository of their own
 (.repo.git) that each send adds to: a send bundles only what that repository
-lacks. A send makes the tree's .venv with tools/repo/setup-dev, again only
-when that or requirements/ changed: python3 there needs its venv module.
+lacks. Each send makes the tree REF's exactly, whatever one cut off part way
+left: a tree that is no whole checkout is made anew, unless it holds
+captures/ or a device's backup, when send says to remove it first. A send
+makes the tree's .venv with tools/repo/setup-dev, again only when that or
+requirements/ changed, or it was left unfinished: python3 there needs its
+venv module.
 
 `devices` copies the named devices' folders from DIR, a captures/devices
 folder on that machine, into the tree's, each backup's files as hard links:
@@ -162,11 +166,51 @@ python3 -c 'import venv, ensurepip' 2>/dev/null || {
     echo "python3 here cannot make a .venv: install its venv module (python3-venv on Debian and Ubuntu), then send again" >&2
     exit 1
 }
+# One never finished (.made-from is written last) may lack its pip, which
+# setup-dev, finding its python, would not make again.
+[ -f .venv/.made-from ] || rm -rf .venv
 tools/repo/setup-dev >&2
 printf '%s\n' "$made" > .venv/.made-from
 echo ".venv made"
 """
 
+
+# Run there: tree $1 checked out at commit $2, made a clone of the trees'
+# repository where it is none. The clone is made beside it and moved into
+# place whole, so that a send cut off while cloning leaves no half of one
+# where the tree is. A tree that is no whole checkout anyway - its .git
+# missing or not its own, or lacking the commit, left so by a send from
+# before or by hand - is made anew, but only where it holds nothing a send
+# did not put there: one with captures/ or a device's backup (sonoff-backup,
+# as REMOVE finds them) is left as it is, and remove ($3 the host, for what
+# it says) told of, which keeps such a backup. The checkout is forced: what a
+# checkout cut off part way wrote is put right, as is a tracked file edited
+# in the tree.
+CHECKOUT = r"""set -eu
+tree=$1 commit=$2 repo=${1%/*}/.repo.git new=${1%/*}/.${1##*/}.new
+whole() {
+    [ "$(git -C "$tree" rev-parse --git-dir 2>/dev/null)" = .git ] &&
+        git -C "$tree" remote get-url origin >/dev/null 2>&1 &&
+        git -C "$tree" cat-file -e "$commit^{commit}" 2>/dev/null
+}
+if ! whole; then
+    if [ -e "$tree" ]; then
+        if [ -e "$tree/captures" ] || find "$tree" -name sonoff-backup | grep -q .; then
+            echo "$tree is no whole git checkout, and holds captures/ or a device's backup: remove it" \
+                 "(tools/repo/remote_tree.py $3 remove ${tree##*/}), which keeps a backup with no other copy," \
+                 "then send again" >&2
+            exit 1
+        fi
+        echo "$tree was no whole git checkout: made anew"
+        rm -rf "$tree"
+    fi
+    rm -rf "$new"
+    git clone -q --shared --no-checkout "$repo" "$new"
+    mv "$new" "$tree"
+fi
+git -C "$tree" fetch -q origin "+refs/tags/*:refs/tags/*"
+git -C "$tree" checkout -q -f --detach "$commit"
+"""
 
 # Run there: tree $1 deleted, but for a backup's file in it with no other copy
 # (one link) that is not an emulated device's, which it lists; and its ref
@@ -179,6 +223,7 @@ echo ".venv made"
 # (--auto), as git itself would. Fails where anything else is left.
 REMOVE = r"""set -u
 tree=$1 repo=${1%/*}/.repo.git
+rm -rf "${tree%/*}/.${tree##*/}.new"  # a clone a send was cut off making (CHECKOUT)
 unref() {
     [ -d "$repo" ] || return 0
     git -C "$repo" update-ref -d "refs/trees/${tree##*/}" 2>/dev/null || :
@@ -242,6 +287,10 @@ echo $! > "$log.pid"; echo "$log"
 """
 
 
+# How many of the last lines a command that failed there printed are shown.
+SHOWN = 20
+
+
 class Remote:
     def __init__(self, host: str, config: str | None):
         self.host = host
@@ -249,18 +298,22 @@ class Remote:
         self.rsh = shlex.join(self.ssh[:-1])
 
     def run(self, script: str, *args: str, stdin: bytes | None = None, check: bool = True,
-            capture: bool = True) -> subprocess.CompletedProcess:
+            capture: bool = True, doing: str = "") -> subprocess.CompletedProcess:
         """`script` run by sh in the home folder there, with `args` as $1...
-        (`stdin` given, it reads that instead of the script's text)."""
+        (`stdin` given, it reads that instead of the script's text). Where it
+        fails (`check`), the end of what it printed is shown, and what it was
+        `doing`."""
         command = f"sh -c {shlex.quote(script)} - {shlex.join(args)}" if args else f"sh -c {shlex.quote(script)}"
         done = subprocess.run([*self.ssh, command], input=stdin, capture_output=capture, check=False)
         if check and done.returncode:
-            sys.stderr.write((done.stderr or b"").decode(errors="replace"))
-            raise SystemExit(f"{self.host}: failed ({done.returncode})")
+            for said in (done.stdout, done.stderr):
+                lines = (said or b"").decode(errors="replace").splitlines()
+                sys.stderr.write("".join(f"{line}\n" for line in lines[-SHOWN:]))
+            raise SystemExit(f"{self.host}: {doing + ': ' if doing else ''}failed ({done.returncode})")
         return done
 
-    def text(self, script: str, *args: str) -> str:
-        return self.run(script, *args).stdout.decode()
+    def text(self, script: str, *args: str, doing: str = "") -> str:
+        return self.run(script, *args, doing=doing).stdout.decode()
 
 
 def git(*args: str) -> str:
@@ -270,24 +323,28 @@ def git(*args: str) -> str:
 def send(remote: Remote, name: str, ref: str) -> None:
     where = tree(name)
     commit = git("rev-parse", "--verify", f"{ref}^{{commit}}").strip()
-    remote.run(f'mkdir -p {TREES} && {{ [ -d {REPO} ] || git init -q --bare {REPO}; }}')
+    # The trees' repository made again where a send was cut off making it.
+    remote.run(f'mkdir -p {TREES} && {{ [ "$(git -C {REPO} rev-parse --is-bare-repository 2>/dev/null)" = true ] '
+               f'|| git init -q --bare {REPO}; }}', doing="making the trees' repository")
     probed = probes(git("rev-list", "--first-parent", "--max-count=4096", commit).split())
     have = remote.text(f'for c in "$@"; do git -C {REPO} cat-file -e "$c^{{commit}}" 2>/dev/null && echo "$c" || :; done',
-                       *probed)
+                       *probed, doing="asking which commits it has")
     # The tags too: a suite's prep-update builds the release before from its
     # tag (git archive), in either family.
     bundle = subprocess.run(["git", "bundle", "create", "-", *bundle_range(ref, probed, set(have.split())), "--tags"],
                             cwd=ROOT, capture_output=True, check=True).stdout
     remote.run(f'cat > {TREES}/.incoming.bundle && git -C {REPO} fetch -q "$HOME/{TREES}/.incoming.bundle" '
-               f'"+{ref}:refs/trees/{name}" "+refs/tags/*:refs/tags/*" && rm -f {TREES}/.incoming.bundle', stdin=bundle)
+               f'"+{ref}:refs/trees/{name}" "+refs/tags/*:refs/tags/*" && rm -f {TREES}/.incoming.bundle', stdin=bundle,
+               doing="fetching what was sent")
     # A bundle leaves out a lightweight tag (each release's) on a commit the
     # other machine had already: each is set there by hand.
     tags = git("for-each-ref", "--format=%(objectname) %(refname)", "refs/tags/")
     remote.run(f'while read -r sha ref; do git -C {REPO} cat-file -e "$sha" 2>/dev/null '
-               f'&& git -C {REPO} update-ref "$ref" "$sha" || :; done', stdin=tags.encode())
-    remote.run(f'set -e; [ -d {where} ] || git clone -q --shared --no-checkout {REPO} {where}; '
-               f'git -C {where} fetch -q origin "+refs/tags/*:refs/tags/*"; git -C {where} checkout -q --detach {commit}')
-    venv = remote.text(VENV, where).strip()
+               f'&& git -C {REPO} update-ref "$ref" "$sha" || :; done', stdin=tags.encode(), doing="setting the tags")
+    made = remote.text(CHECKOUT, where, commit, remote.host, doing=f"checking out ~/{where}").strip()
+    if made:
+        print(made)
+    venv = remote.text(VENV, where, doing="making its .venv").strip()
     print(f"{remote.host}:~/{where} at {commit[:12]} ({len(bundle) // 1024} kB sent), {venv}")
 
 
