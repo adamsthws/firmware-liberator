@@ -50,8 +50,8 @@ def step_openbeken_check(ctx: Context, wait: float = ARRIVAL_WAIT, *, interim: b
     kind = kinds.of_run(ctx.state)
     started = time.monotonic()
 
-    # Sent by Sonoff's firmware (B2): one still answering after a restart
-    # did not take the image.
+    # Sent by Sonoff's firmware (B2): one still answering after a restart,
+    # or once the wait is out (until_back's from_sonoff), did not take the image.
     sent_by = "B2" if ctx.state.is_done("B2") else None
 
     def check(host: str, restarted: bool) -> dict[str, Any] | None:
@@ -76,7 +76,7 @@ def step_openbeken_check(ctx: Context, wait: float = ARRIVAL_WAIT, *, interim: b
     found = until_back(ctx, look, title, (
         f"{title} has not answered on your Wi-Fi. The device installs it as it restarts, then reads its "
         "Wi-Fi from the device's own store and joins; if it has not, switch the device off and on, then try "
-        "again to check it"), sent_by=sent_by)
+        "again to check it"), sent_by=sent_by, from_sonoff=sent_by is not None)
     seconds = round(time.monotonic() - started, 1)
     version = openbeken.version(found)
     settled = found["interim"] == interim

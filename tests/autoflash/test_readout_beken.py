@@ -173,6 +173,20 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual(read.call_args.args[1], "192.0.2.60")
 
 
+class WaitForOpenBekenTests(unittest.TestCase):
+    def test_sonoffs_firmware_still_answering_stops_it_unasked_saying_to_try_again(self):
+        # As a conversion's J1 and K1 (arrival.until_back's from_sonoff): the
+        # reader was not installed, and a switch off and on would not install it.
+        ctx = a_ctx()
+        with mock.patch.object(rb, "_poll", side_effect=rb.arrival.NotBack), \
+                mock.patch.object(rb.arrival, "still_on_sonoff", return_value=True), \
+                mock.patch.object(rb.arrival.prompts, "ask_choice", side_effect=rb.prompts.QuitRun(130)) as asked, \
+                mock.patch.object(rb.arrival.prompts, "section"), mock.patch.object(rb.output, "say"), \
+                self.assertRaisesRegex(rb.Abort, "^The readout firmware was not installed: "):
+            rb.wait_for_openbeken(ctx)
+        asked.assert_not_called()
+
+
 class PutBackTests(unittest.TestCase):
     """A device a readout stopped part way left on the readout firmware: its
     Sonoff firmware put back by the next run."""

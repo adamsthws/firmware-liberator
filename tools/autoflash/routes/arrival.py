@@ -1,7 +1,9 @@
 """A device back after a write, on either chip family: looked for, and where
 it has not come back, the person at the keyboard asked to switch it off and
 on, then looked for again (until_back) - counted for the report; an
-unattended run stops there, saying to.  And the check every route back to
+unattended run stops there, saying to.  Where Sonoff's firmware sent the
+image, whether it still answers is looked for first (still_on_sonoff): if it
+does, the image was not installed.  And the check every route back to
 Sonoff's firmware ends with (back_on_sonoff): the device on the Wi-Fi it was
 on, and in eWeLink again.
 """
@@ -35,6 +37,27 @@ NOT_BACK_LINES = (
 )
 
 
+# What until_back says in place of NOT_BACK_LINES where Sonoff's firmware,
+# which sent the image, no longer answers either (still_on_sonoff).
+NEITHER_LINES = (
+    "Sonoff's firmware no longer answers either, so the device most likely has",
+    "it, still starting or unable to join your Wi-Fi. Switch it off for a few",
+    "seconds at the socket, then on, to start it again.",
+)
+# The run's record of what still_on_sonoff found the last time it looked,
+# in the words its report sends (report_data.stock_check): Sonoff's firmware
+# answering, so the image was not installed; neither answering; or not to be
+# told. Unset where it never looked.
+STOCK_CHECK = "stock_check"
+STOCK_CHECKS = {True: "sonoff-answers", False: "neither-answers", None: "cannot-tell"}
+
+
+def not_installed(what: str) -> str:
+    """Why a run goes back to send `what` again, or stops, where Sonoff's
+    firmware still answers after it was sent (until_back)."""
+    return f"{what} was not installed: the device still answers on Sonoff's firmware"
+
+
 class NotBack(Exception):
     """The device did not answer as its new firmware in the time waited.
     `lines`, where given, say why in place of NOT_BACK_LINES, and `reason`
@@ -57,7 +80,7 @@ def waiting_for(what: str) -> str:
 
 
 def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
-               sent_by: str | None = None) -> T:
+               sent_by: str | None = None, *, from_sonoff: bool = False) -> T:
     """look(restarted), and again each time the person at the keyboard says
     the device is back on after a restart - `restarted` then True - until it
     finds the device or they stop (q).  An unattended run stops at the first
@@ -72,7 +95,18 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
     Before a restart that says nothing: the device may not have restarted.
     A switch off and on asked for is remembered in the run's record
     (restart_asked), so a run that stopped to ask - an unattended one, or a
-    person who quit there - takes it as done when it is run again."""
+    person who quit there - takes it as done when it is run again.
+
+    `from_sonoff`: the image was sent through Sonoff's firmware.  Not back,
+    whether Sonoff's firmware still answers is looked for before the person
+    is asked (still_on_sonoff).  If it does, the image was not installed -
+    its updater refused it, or never applied it - and a switch off and on
+    would not install it: the run goes back to `sent_by`, as after a restart,
+    or with none stops, saying to try again.  If it does not, the person is
+    told the device most likely has the image (NEITHER_LINES); where that
+    cannot be told, asked as before.  Seen in real runs: people stopped at
+    the question without switching the device, and nothing showed which it
+    was."""
     restarted = bool(ctx.state.input("restart_asked"))
     asked_back = None   # when the person said it was back on, to time its return
     while True:
@@ -90,9 +124,15 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
                          "not installed") from exc
         except NotBack as exc:
             ctx.state.set_input("restart_asked", True)
+            on_sonoff = still_on_sonoff(ctx) if from_sonoff else None
+            if on_sonoff:
+                ctx.state.set_input("restart_asked", None)
+                if sent_by is None:
+                    raise Abort(f"{not_installed(what)}, as before: try again, and it is sent again") from exc
+                raise GoBack(sent_by, not_installed(what), "not installed") from exc
             if prompts.UNATTENDED:
                 raise Abort(exc.reason or advice) from exc
-            lines = exc.lines or NOT_BACK_LINES
+            lines = exc.lines or (NEITHER_LINES if on_sonoff is False else NOT_BACK_LINES)
         else:
             ctx.state.set_input("restart_asked", None)
             if asked_back is not None:
@@ -215,6 +255,37 @@ def sonoff_answers(ctx: Context, host: str) -> bool:
         return False
     device_id = account.device_id(ctx, hostsys.normalise_mac(seen))
     return bool(device_id) and answering(ctx, device_id)[2]
+
+
+def still_on_sonoff(ctx: Context) -> bool | None:
+    """After an image Sonoff's firmware was sent has not answered in the time
+    waited: whether Sonoff's firmware answers instead.  True where it does,
+    on the Wi-Fi (eWeLink's LAN port) or through eWeLink (relay.answers);
+    False where nothing answers as Sonoff's at the device's address and
+    eWeLink, reached, has the device not answering; None where that cannot
+    be told - eWeLink not signed in to in this run (a sign-in asked for here
+    would be a question before the question), not reached, or the device's
+    id there not known.  Logged and kept in the run's record (STOCK_CHECK),
+    not said on the screen: what the run does with it says."""
+    with output.working("Checking whether Sonoff's firmware still answers"):
+        host = ctx.finder.poll() or ctx.state.input("device_ip")
+        running = detect.identify(host, timeout=3.0) if host else None
+        found, why = None, "eWeLink not signed in to in this run"
+        if running == "sonoff":
+            found, why = True, "on your Wi-Fi"
+        elif getattr(ctx.ewelink, "held", None) is not None:
+            device_id = account.device_id(ctx)
+            devices, online, answered = answering(ctx, device_id) if device_id else (None, False, False)
+            if answered:
+                found, why = True, "through eWeLink"
+            elif devices is not None:
+                found, why = False, f"eWeLink has the device {'online, not answering' if online else 'offline'}"
+            else:
+                why = "eWeLink not reached" if device_id else "its eWeLink id not known"
+    ctx.state.set_input(STOCK_CHECK, STOCK_CHECKS[found])
+    output.log_only(f"    Sonoff's firmware: {STOCK_CHECKS[found]} ({why}; at its address on your Wi-Fi, "
+                    f"{running or 'nothing known'}).")
+    return found
 
 
 def back_on_sonoff(ctx: Context, leaving: tuple[str, ...] = (), wait: float = SONOFF_WAIT) -> dict[str, Any]:

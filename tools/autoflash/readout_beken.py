@@ -140,7 +140,9 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
 
 def wait_for_openbeken(ctx: Context, wait: float = ARRIVE_WAIT) -> str:
     """The address OpenBeken answers at, once it has started and joined the
-    Wi-Fi. Abort if the device stayed on, or went back to, Sonoff's firmware."""
+    Wi-Fi. Abort if the device stayed on, or went back to, Sonoff's firmware
+    (until_back's from_sonoff): a readout has no step to go back to, and
+    run again it sends the readout firmware again."""
     output.say("Waiting for the readout firmware to start and join your Wi-Fi...")
 
     def look(host: str) -> str | None:
@@ -150,7 +152,7 @@ def wait_for_openbeken(ctx: Context, wait: float = ARRIVE_WAIT) -> str:
                                "The readout firmware", (
         "The readout firmware has not answered on your Wi-Fi. It installs as the device restarts, then reads "
         "the device's Wi-Fi from its stock store and joins; if it has not, switch the device off and on, then "
-        "read it out again"))
+        "read it out again"), from_sonoff=True)
     output.say(f"    OpenBeken answered at {found}.")
     return found
 

@@ -272,6 +272,32 @@ it away from eWeLink. It keeps its Sonoff firmware. Switch it off and on at
 the socket, choose to send it again, and the tool waits for eWeLink to show it
 online first.
 
+**The new firmware has not answered after it was sent (a Beken device)**
+
+When the firmware Sonoff's own sent does not answer on your Wi-Fi in a few
+minutes, the tool first checks whether Sonoff's firmware still answers, on
+your Wi-Fi or through eWeLink:
+
+- **"... was not installed: the device still answers on Sonoff's
+  firmware"**: Sonoff's firmware refused the update or never applied it, and
+  switching the device off and on would not install it. The tool sends it
+  again by itself; a readout stops, and run again it sends it again.
+- **"Sonoff's firmware no longer answers either"**: the device most likely
+  has the new firmware, still starting or unable to join your Wi-Fi. Switch
+  it off for a few seconds at the socket, then on, and choose to look for it
+  again: it starts again and tries your Wi-Fi again. If it still does not
+  answer, check the Wi-Fi it was on is still there, on 2.4 GHz.
+- **Asked to switch it off and on with neither said**: the tool could not
+  tell (eWeLink not reached, or not signed in to in this run). Switch it off
+  and on as asked.
+
+If you quit at the question, switch the device off and on before you run the
+tool again: it takes that as done, and looks for the new firmware again.
+
+On an Espressif device the installer is looked for in the same way: if
+Sonoff's firmware answers again instead, the tool sends the installer again
+by itself.
+
 **"Device model is ..., not one this tool converts"**
 
 Another Sonoff on the same account answered, and the tool stopped before

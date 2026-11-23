@@ -1,0 +1,30 @@
+{
+ "about": "A readout of an S61 on Sonoff's firmware, the readout firmware sent spoilt (--simulate-bad-image readout): Sonoff's firmware refuses it, and once the wait is out still answers (arrival.still_on_sonoff), so the run stops saying it was not installed, never asking for the device to be switched off and on; the readout run again, as a person would, reads it whole",
+ "covers": [
+  "from-sonoff"
+ ],
+ "start": "fresh",
+ "command": "readout",
+ "minutes": 60,
+ "args": [
+  "--simulate-bad-image",
+  "readout"
+ ],
+ "answers": [],
+ "expect": {
+  "exit": 1,
+  "shows": [
+   "^ *FAILED: The readout firmware was not installed: the device still answers on Sonoff's firmware"
+  ]
+ },
+ "again": {
+  "minutes": 60,
+  "answers": [],
+  "expect": {
+   "exit": 0,
+   "shows": [
+    "^ *Readout complete!$"
+   ]
+  }
+ }
+}

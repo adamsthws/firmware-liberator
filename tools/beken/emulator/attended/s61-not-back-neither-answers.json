@@ -1,0 +1,31 @@
+{
+ "about": "An S61 from Sonoff's firmware to OpenBeken, the device switched off as OpenBeken is checked and left off: once the wait is out, neither OpenBeken nor Sonoff's firmware answers (arrival.still_on_sonoff), so the run says the device most likely has OpenBeken and asks for it to be switched off and on; switched, it carries on to the end",
+ "covers": [
+  "from-sonoff",
+  "device-switched-off"
+ ],
+ "start": "fresh",
+ "minutes": 60,
+ "answers": [
+  {
+   "when": "Which firmware should the device have",
+   "type": "1\r"
+  },
+  {
+   "when": "Stage +6 - Checking OpenBeken +- Underway",
+   "power": "off",
+   "anywhere": true
+  },
+  {
+   "when": "Once it is back on, choose",
+   "type": "2\r",
+   "shows": [
+    "Sonoff's firmware no longer answers either"
+   ]
+  }
+ ],
+ "expect": {
+  "exit": 0,
+  "result": "Converted"
+ }
+}

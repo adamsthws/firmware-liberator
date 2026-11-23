@@ -854,6 +854,17 @@ newest `wifi-ssid` and `wifi-pass` whose CRC is good, and calls OpenBeken's own
 changes of `mainConfig_t`'s layout and checksum between OpenBeken releases, and
 as it only reads the stock store, going back stays open.
 
+**No network of its own when it cannot join.** Unlike ESPHome, OpenBeken
+with Wi-Fi details never puts up its own access point because the network
+will not have it: it keeps trying the details it has. Read in its source
+(`src/user_main.c` at the commit `artifacts/firmware.json` pins as
+`app_commit`): it opens one only with no SSID at all - the driver found none
+in Sonoff's store - or in safe mode, after more than
+`RESTARTS_REQUIRED_FOR_SAFE_MODE` (4) starts in a row that each ended early.
+So the checks of OpenBeken and the interim firmware (`routes/beken/arrived.py`,
+K1 and J1) do not watch for a network of the device's own, as ESPHome's check
+(K2) does: there is none to give it the Wi-Fi through.
+
 **The fallback, kept as an emulator aid: a config written beforehand.**
 [`wifi_migrate.py`](../tools/beken/wifi_migrate.py) reads the credentials from the
 stock store, builds a `mainConfig_t` holding them and writes it into an OpenBeken

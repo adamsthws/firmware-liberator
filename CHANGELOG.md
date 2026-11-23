@@ -92,6 +92,14 @@ check.
   fixed word (such as `which-account` or `go-ahead`), never the question's
   words or your answer. The website keeps them (migration 0003)
   ([what the tool sends](docs/what-the-tool-sends.md#what-a-report-holds)).
+- When a Beken device's new firmware does not answer after Sonoff's
+  firmware sent it, the tool now checks whether Sonoff's firmware still
+  answers before asking you to switch the device off and on. If it does, the
+  update was not installed, and switching it off and on would not install
+  it: the tool sends it again (a readout stops, and run again sends it
+  again). If neither answers, it says the device most likely has the new
+  firmware, still starting or unable to join your Wi-Fi
+  ([troubleshooting](docs/troubleshooting.md#the-first-install)).
 - A device on Tasmota given by its address (`--device-ip`), or whose Tasmota
   has a web password, is now taken for the kind of device its template names.
   Before, the run took any such device for an S60, and its report named no

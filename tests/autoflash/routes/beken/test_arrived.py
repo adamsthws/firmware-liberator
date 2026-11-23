@@ -1,5 +1,6 @@
 """The device on its new firmware: started, on the Wi-Fi, answering as what was
 installed, and backed up (B4)."""
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -106,10 +107,13 @@ class ArrivedTests(unittest.TestCase):
                           " ".join(str(call.args[0]) for call in said.call_args_list))
             self.assertFalse(self.server.interim)
 
-    def waiting_on_sonoff(self, ctx, answers):
+    def waiting_on_sonoff(self, ctx, answers, told=mock.DEFAULT):
         """J1 with the device answering as Sonoff's firmware throughout, and the
-        question after each wait answered with `answers` in turn."""
-        with mock.patch.object(openbeken, "info", return_value=None), \
+        question after each wait answered with `answers` in turn - and, where
+        `told` is given, what arrival.still_on_sonoff says once the wait is out."""
+        checked = (contextlib.nullcontext() if told is mock.DEFAULT
+                   else mock.patch.object(arrival, "still_on_sonoff", return_value=told))
+        with checked, mock.patch.object(openbeken, "info", return_value=None), \
                 mock.patch.object(detect, "identify", return_value="sonoff"), \
                 mock.patch.object(arrived.join.time, "sleep"), \
                 mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 100000, 100))), \
@@ -121,6 +125,22 @@ class ArrivedTests(unittest.TestCase):
             finally:
                 self.asked = asked.call_count
 
+    def test_j1_after_b2_sends_it_again_unasked_when_sonoffs_firmware_still_answers_after_the_wait(self):
+        # Seen in real S61 and BASIC-1GS runs: the image delivered whole, the
+        # interim firmware never answering, and the person stopping at the
+        # switch off and on asked for - which would not have installed it, if
+        # Sonoff's firmware was still there.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            ctx.state.mark("B2", state.DONE)
+            with self.assertRaises(errors.GoBack) as back:
+                self.waiting_on_sonoff(ctx, [])
+            self.assertEqual((back.exception.step, back.exception.outcome), ("B2", "not installed"))
+            self.assertEqual(back.exception.reason, arrival.not_installed("The interim firmware"))
+            self.assertEqual(self.asked, 0)
+            self.assertEqual(ctx.state.input(arrival.STOCK_CHECK), "sonoff-answers")
+            self.assertIsNone(ctx.state.input("restart_asked"))
+
     def test_j1_after_b2_sends_the_run_back_to_it_when_a_restart_leaves_sonoffs_firmware(self):
         # The image was sent whole, but the device, switched off and on, starts
         # Sonoff's firmware again: it was not installed, and never will be.
@@ -128,10 +148,11 @@ class ArrivedTests(unittest.TestCase):
             ctx = a_context(tmp, firmware="esphome")
             ctx.state.mark("B2", state.DONE)
             with self.assertRaises(errors.GoBack) as back:
-                self.waiting_on_sonoff(ctx, [0])
+                self.waiting_on_sonoff(ctx, [0], told=None)
             self.assertEqual((back.exception.step, back.exception.outcome), ("B2", "not installed"))
             self.assertIn("The interim firmware was not installed", back.exception.reason)
-            # Before the restart, Sonoff's firmware answering said nothing: asked once, to switch it off and on.
+            # Before the restart, where whether Sonoff's firmware answers could
+            # not be told: asked once, to switch it off and on.
             self.assertEqual(self.asked, 1)
 
     def test_a_switch_off_and_on_asked_for_is_taken_as_done_by_the_next_run(self):
@@ -141,7 +162,7 @@ class ArrivedTests(unittest.TestCase):
             ctx = a_context(tmp, firmware="esphome")
             ctx.state.mark("B2", state.DONE)
             with mock.patch.object(arrival.prompts, "UNATTENDED", True), self.assertRaises(errors.Abort):
-                self.waiting_on_sonoff(ctx, [])
+                self.waiting_on_sonoff(ctx, [], told=None)
             self.assertTrue(ctx.state.input("restart_asked"))
             with self.assertRaises(errors.GoBack):
                 self.waiting_on_sonoff(ctx, [])

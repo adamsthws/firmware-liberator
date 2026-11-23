@@ -52,6 +52,105 @@ class UntilBackTests(unittest.TestCase):
             self.assertEqual(shown.call_args.args[1], ["its own line"])
 
 
+class NotBackFromSonoffTests(unittest.TestCase):
+    """An image Sonoff's firmware sent, not back: whether Sonoff's firmware
+    still answers is looked for before the person is asked."""
+
+    def not_back(self, ctx, told, *, sent_by="B2", from_sonoff=True, unattended=False):
+        """until_back with a look never finding it, still_on_sonoff saying
+        `told`, and q at the question; the lines it was asked with, if it was."""
+        def look(_restarted):
+            raise arrival.NotBack
+        with mock.patch.object(arrival, "still_on_sonoff", return_value=told) as self.checked, \
+                mock.patch.object(arrival.prompts, "UNATTENDED", unattended), \
+                mock.patch.object(arrival.prompts, "section") as shown, \
+                mock.patch.object(arrival.prompts, "ask_choice", side_effect=arrival.prompts.QuitRun(130)), \
+                mock.patch.object(arrival.output, "transient_begin"):
+            try:
+                arrival.until_back(ctx, look, "OpenBeken", "advice", sent_by, from_sonoff=from_sonoff)
+            except arrival.prompts.QuitRun:
+                return shown.call_args.args[1]
+        raise AssertionError("not asked")
+
+    def test_sonoffs_firmware_answering_sends_it_again_unasked(self):
+        for unattended in (False, True):
+            with self.subTest(unattended=unattended), tempfile.TemporaryDirectory() as tmp:
+                ctx = a_context(tmp, firmware="openbeken")
+                with self.assertRaises(errors.GoBack) as back:
+                    self.not_back(ctx, True, unattended=unattended)
+                self.assertEqual((back.exception.step, back.exception.reason, back.exception.outcome),
+                                 ("B2", arrival.not_installed("OpenBeken"), "not installed"))
+                self.assertIsNone(ctx.state.input("restart_asked"))
+
+    def test_with_no_step_to_go_back_to_it_stops_saying_to_try_again(self):
+        # A readout: run again, it sends the readout firmware again.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="openbeken")
+            with self.assertRaisesRegex(errors.Abort, "^OpenBeken was not installed: .*try again, and it is sent "
+                                                      "again$"):
+                self.not_back(ctx, True, sent_by=None)
+
+    def test_neither_answering_the_person_hears_the_device_most_likely_has_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.not_back(a_context(tmp, firmware="openbeken"), False), list(arrival.NEITHER_LINES))
+
+    def test_where_it_cannot_be_told_the_person_is_asked_as_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.not_back(a_context(tmp, firmware="openbeken"), None), list(arrival.NOT_BACK_LINES))
+
+    def test_unattended_neither_or_cannot_tell_stops_with_the_advice(self):
+        for told in (False, None):
+            with self.subTest(told=told), tempfile.TemporaryDirectory() as tmp, \
+                    self.assertRaisesRegex(errors.Abort, "^advice$"):
+                self.not_back(a_context(tmp, firmware="openbeken"), told, unattended=True)
+
+    def test_an_image_another_firmware_sent_is_not_checked_for(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.not_back(a_context(tmp, firmware="openbeken"), True, sent_by="J2",
+                                           from_sonoff=False), list(arrival.NOT_BACK_LINES))
+            self.checked.assert_not_called()
+
+
+class StillOnSonoffTests(unittest.TestCase):
+    def told(self, tmp, *, running=None, held=True, devices=(), relayed=True, known=True):
+        ctx = a_context(tmp, device_ip="192.0.2.50")
+        ctx.ewelink = SimpleNamespace(held=("eu", {}) if held else None)
+        ctx.account_devices = lambda: None if devices is None else list(devices)
+        with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(detect, "identify", return_value=running), \
+                mock.patch.object(arrival.output, "log_only") as self.logged, \
+                mock.patch.object(arrival.ewelink_relay, "answers", return_value=relayed) as self.relay:
+            if known:
+                records.remember_device(MAC, ewelink_id="1001234abc")
+            found = arrival.still_on_sonoff(ctx)
+        self.assertEqual(ctx.state.input(arrival.STOCK_CHECK), arrival.STOCK_CHECKS[found])
+        return found
+
+    def test_its_lan_port_says_so(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIs(self.told(tmp, running="sonoff"), True)
+            self.relay.assert_not_called()
+
+    def test_answering_through_ewelink_says_so(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIs(self.told(tmp, devices=[{"deviceid": "1001234abc", "online": True}]), True)
+
+    def test_ewelink_reached_and_the_device_not_answering_there_says_neither(self):
+        # Online in eWeLink is not enough: it keeps a silent device online for minutes.
+        for devices, relayed in (([{"deviceid": "1001234abc", "online": False}], True),
+                                 ([{"deviceid": "1001234abc", "online": True}], False)):
+            with self.subTest(devices=devices, relayed=relayed), tempfile.TemporaryDirectory() as tmp:
+                self.assertIs(self.told(tmp, devices=devices, relayed=relayed), False)
+
+    def test_cannot_be_told_without_ewelink_or_the_devices_id_there(self):
+        # Not signed in to in this run: never a sign-in asked for before the question.
+        for case in ({"held": False}, {"devices": None}, {"known": False}):
+            with self.subTest(case), tempfile.TemporaryDirectory() as tmp:
+                self.assertIsNone(self.told(tmp, **case))
+                self.relay.assert_not_called()
+        self.assertIn("cannot-tell", self.logged.call_args.args[0])
+
+
 class WaitingSaidTests(unittest.TestCase):
     def test_the_wait_for_the_new_firmware_says_what_it_is(self):
         # Seen in an attended S61 run: minutes of the stage's spinner alone

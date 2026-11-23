@@ -300,7 +300,14 @@ A run to OpenBeken ends there. For **ESPHome**:
 
 A device that has not come back on its new firmware, whichever it is, is most
 often one that needs switching off and on. The tool asks you to, then looks
-for it again, and the report says whether you had to.
+for it again, and the report says whether you had to. Before it asks, after
+OpenBeken or the interim firmware was sent through Sonoff's firmware, it
+checks whether Sonoff's firmware still answers, on your Wi-Fi or through
+eWeLink: if it does, the update was not installed, and the tool sends it
+again rather than ask; if neither answers, it tells you the device most
+likely has the new firmware and is still starting or cannot join your Wi-Fi.
+OpenBeken, unlike ESPHome, puts up no network of its own when it cannot join
+yours, so there is none to give it your Wi-Fi through.
 
 ## At the end
 
