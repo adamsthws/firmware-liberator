@@ -689,6 +689,8 @@ class Board:
 
 
 RUN = Path("/run/autoflash-emu")
+# A file in the container written whole, or not at all: sh -c WRITE sh PATH TEXT.
+WRITE = 'printf %s "$2" > "$1.part" && mv "$1.part" "$1"'
 
 
 def buttons(container: str) -> emulator_buttons.Buttons:
@@ -701,8 +703,10 @@ def buttons(container: str) -> emulator_buttons.Buttons:
                               check=False).stdout
 
     def write(text: str) -> None:
-        subprocess.run(["docker", "exec", "-i", container, "sh", "-c", 'cat > "$1.part" && mv "$1.part" "$1"',
-                        "sh", path], input=text, capture_output=True, text=True, check=True)
+        # The text as an argument, not on standard input: under load a docker
+        # exec -i once never passed its input's end on, and cat waited for good.
+        subprocess.run(["docker", "exec", container, "sh", "-c", WRITE, "sh", path, text],
+                       capture_output=True, text=True, check=True)
     return emulator_buttons.Buttons(read, write)
 
 

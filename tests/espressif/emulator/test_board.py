@@ -461,9 +461,15 @@ class ButtonTests(unittest.TestCase):
             board.buttons("autoflash-emu-81").hold(9)
         read, write = ran.call_args_list
         self.assertEqual(read.args[0], ["docker", "exec", "autoflash-emu-81", "cat", "/run/autoflash-emu/buttons"])
-        self.assertEqual(write.args[0][:3], ["docker", "exec", "-i"])
-        self.assertEqual(write.args[0][-1], "/run/autoflash-emu/buttons")
-        self.assertEqual(write.kwargs["input"], "9\n32\n")
+        # Not on standard input, whose end docker exec -i once never passed on.
+        self.assertEqual(write.args[0][:3], ["docker", "exec", "autoflash-emu-81"])
+        self.assertNotIn("input", write.kwargs)
+        self.assertEqual(write.args[0][-2:], ["/run/autoflash-emu/buttons", "9\n32\n"])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "buttons"
+            subprocess.run(write.args[0][3:-2] + [str(path), "9\n32\n"], check=True)
+            self.assertEqual(path.read_text(encoding="utf-8"), "9\n32\n")
+            self.assertEqual([item.name for item in Path(folder).iterdir()], ["buttons"])
 
 
 class EarlierReleaseTests(unittest.TestCase):
