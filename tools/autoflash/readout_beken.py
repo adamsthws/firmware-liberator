@@ -286,7 +286,10 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, versio
     flash, info, back = read_out(ctx, name, version, device, found, skippable=skippable)
     manifest["read"] = True
     # What every genuine readout of it shares: its table, and the Sonoff
-    # firmware it was put back on (the offered file's, by its hash).
+    # firmware it was put back on (the offered file's, by its hash). No
+    # table_sha256, as an Espressif readout gives: a Beken table is held in
+    # Sonoff's app, which stock_sha256 hashes whole, and tools/beken/layouts.py
+    # knows it by its entries, publishing no table of its own.
     manifest["firmware"] = {"layout": found.layout.key, "stock_version": found.version,
                             "stock_sha256": hashlib.sha256(found.rbl).hexdigest()}
     manifest["flash"] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}

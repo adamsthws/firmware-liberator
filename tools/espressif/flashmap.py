@@ -5,6 +5,7 @@ read the MAC from its eFuses. No device's layout is assumed.
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from dataclasses import dataclass
 
@@ -48,6 +49,20 @@ def table_at(flash: bytes) -> int:
         if flash[at:at + len(ENTRY_MAGIC)] == ENTRY_MAGIC:
             return at
     raise ValueError("no partition table at 0x8000 or 0xC000: an encrypted dump, or not a whole flash")
+
+
+def table_sector(flash: bytes) -> bytes:
+    """The partition table's whole sector, as the device holds it: all of it,
+    flags, MD5 record and padding too, which a list of its entries leaves out."""
+    at = table_at(flash)
+    return flash[at:at + TABLE_SIZE]
+
+
+def table_sha256(sector: bytes) -> str:
+    """What a table is known by: the SHA-256 of its whole sector, as a layout
+    pins it (layouts.Layout.table_sha256), a readout's manifest gives it and a
+    run's report gives a table refused."""
+    return hashlib.sha256(sector).hexdigest()
 
 
 def partitions(flash: bytes) -> list[Partition]:

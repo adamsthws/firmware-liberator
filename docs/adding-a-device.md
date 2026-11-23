@@ -149,8 +149,9 @@ or [beken-research.md](beken-research.md).
    partitions or a readout's summary of them, which leave out what they do not
    name. A BASICR4 table built that way lost `esp_secure_cert`'s encrypted
    flag, and the tool would have refused every real BASICR4. Give the layout a
-   `Seen` with the sector's SHA-256 and where it was read;
-   `tests/espressif/test_layouts.py` holds the published table to it.
+   `Seen` with the sector's SHA-256 and where it was read (a readout's
+   manifest gives it as `table_sha256`); `tests/espressif/test_layouts.py`
+   holds the published table to it.
    The tool refuses a real device whose table it does not know
    before it overwrites anything, so an unknown layout stops safely. To leave
    Tasmota, the mover goes at `0x20000`. If your device's `ota_0` is elsewhere,

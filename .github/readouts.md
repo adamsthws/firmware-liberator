@@ -388,6 +388,12 @@ with that readout's object.
   one. A rejected one frees its place for another sender's.
 - **Duplicates.** The manifest's `flash.sha256` is of the device's own flash
   before it was anonymised, so two readouts of one device share it.
+- **Adding a device from one.** An Espressif readout's manifest gives
+  `table_sha256`, the SHA-256 of its partition table's sector as read, before
+  anything was taken out. A new layout's table is that sector, byte for byte
+  (`update_firmware.py esp32 tables --table-from KEY=flash.bin`), never one
+  built again from `facts`' Partition lines, and its `Seen` in
+  `tools/espressif/layouts.py` records that hash: check the two are equal.
 - **Once a device is supported**, add its product model to `ENOUGH` in the
   API's `wrangler.jsonc`, so no more of it are taken. Its readouts stay.
 - **Making room**, should the store fill (the nightly alert and the usage

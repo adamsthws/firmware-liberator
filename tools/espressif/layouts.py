@@ -41,7 +41,8 @@ class Seen:
     """A layout's table as a real device holds it: the SHA-256 of its 4096-byte
     sector, and where that sector was read - the public dump of a device on it
     (its key in tools/espressif/emulator/public_dump.py, or "s60" for its
-    S60_DUMP), or a real device's readout (READOUT). The table a layout pins and publishes is that sector byte for
+    S60_DUMP), or a real device's readout (READOUT: its manifest's
+    table_sha256). The table a layout pins and publishes is that sector byte for
     byte (update_firmware.py esp32 tables), never one built again from its
     entries: a list of them can lose what it does not say, as one that left out
     esp_secure_cert's encrypted flag made a BASICR4 table no real one has."""

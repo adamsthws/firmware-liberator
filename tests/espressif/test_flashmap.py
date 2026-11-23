@@ -58,6 +58,18 @@ class Dump(unittest.TestCase):
         self.assertEqual(flashmap.table_at(bytes(flash)), 0xC000)
         self.assertEqual([slot.offset for slot in flashmap.app_slots(bytes(flash))], [0x60000])
 
+        self.assertEqual(flashmap.table_sector(bytes(flash)), bytes(flash[0xC000:0xD000]))
+
+    def test_the_table_sector_is_whole_as_read(self):
+        flash = flash_with(0x1000, 0)
+        self.assertEqual(flashmap.table_sector(flash), flash[0x8000:0x9000])
+        with self.assertRaisesRegex(ValueError, "no partition table"):
+            flashmap.table_sector(b"\xff" * 0x10000)
+
+    def test_a_table_is_known_by_its_whole_sectors_hash(self):
+        from tools.espressif import layouts
+        self.assertEqual(flashmap.table_sha256(layouts.SONOFF_BASICR4.table), layouts.SONOFF_BASICR4.table_sha256)
+
 
 class Mac(unittest.TestCase):
     MAC = "12:34:56:ab:cd:ef"

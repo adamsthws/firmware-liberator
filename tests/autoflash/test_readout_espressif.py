@@ -1,5 +1,6 @@
 """A readout of an Espressif device: only the bridge sent to the device, and
 only once PROCEED is typed."""
+import hashlib
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -7,6 +8,7 @@ from unittest import mock
 from tests.autoflash.test_readout import learned, record, start_run
 from tests.espressif.test_scrub import flash as wifi_flash
 from tools.autoflash import account, hostsys, kinds, records, prompts, readout, readout_espressif, safety_locks
+from tools.espressif import flashmap
 
 # A kind a whole readout is for (Readout wanted) that the tool does not convert:
 # the bridge has never run on a real one.
@@ -71,7 +73,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], MINIR4.wrapper_model)
         manifest, files = offered.call_args.args[1:3]
         self.assertTrue(manifest["read"])
-        for key in ("firmware", "facts", "wifi_blanked", "identity_replaced"):
+        for key in ("firmware", "table_sha256", "facts", "wifi_blanked", "identity_replaced"):
             self.assertIn(key, manifest)
         self.assertEqual(manifest["flash"], {"size": 1, "sha256": "ab", "matches_device": None})
         self.assertTrue(manifest["wifi_blanked"])
@@ -129,6 +131,22 @@ class BridgeTests(unittest.TestCase):
         firewalled.assert_called_once_with(self.ctx)
         self.assertEqual(read.call_args.args[0], "192.0.2.77")
         self.assertEqual(self.ctx.state.input(readout.STATE_KEY), "sent")
+
+
+class TableHashTests(unittest.TestCase):
+    """The table's whole sector hashed as read, for a layout added from the
+    readout to be held to (layouts.Seen)."""
+
+    def test_it_is_the_sectors_wherever_the_table_is(self):
+        for at in flashmap.TABLE_OFFSETS:
+            flash = bytearray(b"\xff" * 0x10000)
+            flash[at:at + 4] = flashmap.ENTRY_MAGIC + b"\x01\x02"
+            flash[at + 28] = 1  # a flag, which a list of the entries would lose
+            self.assertEqual(readout_espressif.table_sha256(bytes(flash)),
+                             hashlib.sha256(flash[at:at + flashmap.TABLE_SIZE]).hexdigest())
+
+    def test_none_without_a_table(self):
+        self.assertIsNone(readout_espressif.table_sha256(b"\xff" * 0x10000))
 
 
 class BackOnSonoffTests(unittest.TestCase):

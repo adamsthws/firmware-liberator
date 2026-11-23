@@ -1342,7 +1342,7 @@ def real_table(data: bytes) -> bytes:
     device, or the 4096-byte sector itself. A ValueError if it is not a table as
     ESP-IDF writes one: its entries, the MD5 record of them, the rest erased."""
     from tools.espressif import flashmap
-    sector = data if len(data) == TABLE_SIZE else data[flashmap.table_at(data):][:TABLE_SIZE]
+    sector = data if len(data) == TABLE_SIZE else flashmap.table_sector(data)
     parse_partition_sector(sector)
     return sector
 

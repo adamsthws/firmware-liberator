@@ -56,6 +56,7 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
                                           known=known, skippable=skippable)
     manifest["read"] = True
     manifest["firmware"] = firmware_of(flash)
+    manifest["table_sha256"] = table_sha256(flash)
     manifest["facts"] = device_facts.lines(flash, efuse, device_facts.parse_info(info) if info else None)
     manifest["flash"] = {"size": report["size"], "sha256": report["sha256"],
                          "matches_device": report.get("matches_device")}
@@ -95,6 +96,17 @@ def firmware_of(flash: bytes) -> dict[str, Any]:
             apps.append({"project": described["project"], "version": described["version"], "elf_sha256": built})
     return {"table": hashlib.sha256(json.dumps(table).encode()).hexdigest(),
             "apps": sorted(apps, key=lambda app: app["elf_sha256"])}
+
+
+def table_sha256(flash: bytes) -> str | None:
+    """The SHA-256 of the partition table's sector as read, wherever the table
+    is: for a device added from this readout, the hash its layout's table is
+    held to (tools/espressif/layouts.py, Seen). Kept apart from firmware_of,
+    which the website hashes to tell readouts that agree. None with no table."""
+    try:
+        return flashmap.table_sha256(flashmap.table_sector(flash))
+    except ValueError:
+        return None
 
 
 def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id: str, *,

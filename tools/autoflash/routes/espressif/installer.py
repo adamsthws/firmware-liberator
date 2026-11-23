@@ -5,7 +5,6 @@ uploaded through it - steps C2, C3 and D1.
 
 from __future__ import annotations
 
-import hashlib
 import re
 import time
 import urllib.error
@@ -13,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, layouts
+from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, flashmap, layouts
 from tools.autoflash import (
     account,
     device,
@@ -487,7 +486,7 @@ def require_known_layout(ctx: Context) -> None:
     except OSError as exc:
         output.log_only(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
         return
-    known = hashlib.sha256(table).hexdigest() == layout.table_sha256
+    known = flashmap.table_sha256(table) == layout.table_sha256
     info = bridge_info(ctx)
     note_hardware(ctx, info, backup)
     if backup:
@@ -498,7 +497,7 @@ def require_known_layout(ctx: Context) -> None:
     # The table's hash and where it was read, for the run's report alone when
     # it is refused (report_data.table_refused): the API tells the maintainer
     # of a new one seen on a model the tool converts.
-    ctx.state.set_input("table_refused", None if known else {"sha256": hashlib.sha256(table).hexdigest(),
+    ctx.state.set_input("table_refused", None if known else {"sha256": flashmap.table_sha256(table),
                                                              "at": f"0x{at:x}"})
     if not known:
         raise Abort("this device's memory is not laid out as this tool expects, so nothing has been written "
