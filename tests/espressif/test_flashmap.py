@@ -42,6 +42,15 @@ class Dump(unittest.TestCase):
         self.assertEqual((flashmap.nvs(flash).offset, flashmap.nvs(flash).size), (0x9000, 0x40000))
         self.assertEqual([slot.offset for slot in flashmap.app_slots(flash)], [0x60000])
 
+    def test_the_settings_are_the_nvs_partition_labelled_nvs_not_the_first(self):
+        # The BASICR4's: two NVS partitions for Matter before its settings, and fctry after.
+        data = bytearray(flash_with(0, 5))
+        table = (entry(b"nvs_matter", 1, 2, 0x10000, 0x6000) + entry(b"nvs", 1, 2, 0x1C000, 0x10000)
+                 + entry(b"fctry", 1, 2, 0x3F0000, 0x6000))
+        data[0x8000:0x8000 + len(table)] = table
+        self.assertEqual(flashmap.nvs(bytes(data)).label, "nvs")
+        self.assertEqual([p.label for p in flashmap.nvs_partitions(bytes(data))], ["nvs_matter", "nvs", "fctry"])
+
     def test_a_table_built_to_be_at_0xc000_is_read_there(self):
         # The BASICR4's firmware reads its table there (CONFIG_PARTITION_TABLE_OFFSET).
         flash = bytearray(flash_with(0, 5)) + b"\xff" * 0x4000

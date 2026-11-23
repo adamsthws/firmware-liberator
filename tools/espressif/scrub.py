@@ -62,12 +62,21 @@ FACTORY_IDENTITY = ("deviceid", "factory_apikey")
 MIN_LEN = 4
 
 
-def _nvs_span(flash: bytes) -> tuple[int, int]:
+def _nvs_spans(flash: bytes) -> list[tuple[int, int]]:
+    """(offset, size) of every NVS partition: secrets go from each, not only
+    from the settings' (a BASICR4's empty nvs_matter comes before them)."""
     try:
-        partition = flashmap.nvs(flash)
-        return partition.offset, partition.size
+        found = [(partition.offset, min(partition.size, max(0, len(flash) - partition.offset)))
+                 for partition in flashmap.nvs_partitions(flash)]
     except ValueError:
-        return NVS_OFFSET, min(NVS_SIZE, max(0, len(flash) - NVS_OFFSET))
+        found = []
+    return found or [(NVS_OFFSET, min(NVS_SIZE, max(0, len(flash) - NVS_OFFSET)))]
+
+
+def _all_entries(flash: bytes):
+    """_entries of every NVS partition."""
+    for start, size in _nvs_spans(flash):
+        yield from _entries(flash, start, size)
 
 
 def _entries(flash: bytes, start: int, size: int):
@@ -113,8 +122,7 @@ def _replace_all(out: bytearray, old: bytes, new: bytes, apps: list[range]) -> i
 def _reseal(before: bytes, out: bytearray) -> None:
     """Each settings entry whose bytes were changed here, with its data and
     header checksums worked out again: only one whose checksum held before."""
-    start, size = _nvs_span(before)
-    for at, _, payload, length in _entries(before, start, size):
+    for at, _, payload, length in _all_entries(before):
         stored = struct.unpack_from("<I", before, at + 28)[0]
         if (before[payload : payload + length] == out[payload : payload + length]
                 or zlib.crc32(before[payload : payload + length], 0xFFFFFFFF) != stored):
@@ -132,18 +140,18 @@ AIS_SPACES = {"pair": ais_records.is_pair, "factory": ais_records.is_factory}
 def _blank_unknown_ais(flash: bytes, out: bytearray, space: str) -> int:
     """Blank, after its header, each `space` record whose version is not one
     known here; how many were."""
-    start, size = _nvs_span(flash)
-    try:
-        names, _ = parse(flash[start:start + size])
-    except (ValueError, struct.error):
-        return 0
     blanked = 0
-    for at, key, payload, length in _entries(flash, start, size):
-        data = flash[payload : payload + length]
-        if (key == b"info" and names.get(flash[at]) == space and len(data) > 4
-                and struct.unpack_from("<H", data)[0] == ais_records.MAGIC and not AIS_SPACES[space](data)):
-            out[payload + 4 : payload + length] = bytes(length - 4)
-            blanked += 1
+    for start, size in _nvs_spans(flash):
+        try:
+            names, _ = parse(flash[start:start + size])  # each partition numbers its namespaces anew
+        except (ValueError, struct.error):
+            continue
+        for at, key, payload, length in _entries(flash, start, size):
+            data = flash[payload : payload + length]
+            if (key == b"info" and names.get(flash[at]) == space and len(data) > 4
+                    and struct.unpack_from("<H", data)[0] == ais_records.MAGIC and not AIS_SPACES[space](data)):
+                out[payload + 4 : payload + length] = bytes(length - 4)
+                blanked += 1
     return blanked
 
 
@@ -164,12 +172,11 @@ def wifi(flash: bytes) -> tuple[bytes, int]:
     """`flash` with its Wi-Fi network's name, passwords and keys blanked, and how
     many places were."""
     out = bytearray(flash)
-    start, size = _nvs_span(flash)
     secrets: set[bytes] = set()
     names: set[bytes] = set()      # every network name, for the PMKs
     station: set[bytes] = set()    # the owner's network's, to take out
     blanked = 0
-    for _, key, at, length in _entries(flash, start, size):
+    for _, key, at, length in _all_entries(flash):
         if key in TEXT_KEYS:
             value = bytes(out[at : at + length]).split(b"\0", 1)[0]
             if _password(value):
@@ -188,7 +195,7 @@ def wifi(flash: bytes) -> tuple[bytes, int]:
                     station.add(name)
                     out[at + 4 : at + 4 + count] = b"*" * count
                     blanked += 1
-    for _, _, at, length in _entries(flash, start, size):
+    for _, _, at, length in _all_entries(flash):
         layout = ais_records.pair_fields(flash[at : at + length])
         if layout is None:
             continue
@@ -239,9 +246,8 @@ def identity(flash: bytes) -> tuple[bytes, int]:
     """`flash` with the device's eWeLink identity, as its frame_params names it,
     replaced throughout by made-up values; and how many places were."""
     out = bytearray(flash)
-    start, size = _nvs_span(flash)
     values: set[str] = set()
-    for _, key, at, length in _entries(flash, start, size):
+    for _, key, at, length in _all_entries(flash):
         if key == b"content":
             try:
                 frame = json.loads(flash[at : at + length].split(b"\0", 1)[0])
@@ -259,7 +265,7 @@ def identity(flash: bytes) -> tuple[bytes, int]:
     apps = _apps(flash)
     for value in sorted(values, key=len, reverse=True):
         replaced += _replace_all(out, value.encode(), made_up(value).encode(), apps)
-    for _, _, at, length in _entries(flash, start, size):
+    for _, _, at, length in _all_entries(flash):
         if ais_records.is_factory(flash[at : at + length]) and out[at : at + length] != flash[at : at + length]:
             out[at : at + length] = ais_records.resealed(bytes(out[at : at + length]))
     replaced += _blank_unknown_ais(flash, out, "factory")

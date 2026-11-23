@@ -24,6 +24,7 @@ BOOTLOADER_AT = {"esp32": 0x1000, "esp32c3": 0x0}
 TYPE_APP = 0
 TYPE_DATA = 1
 SUBTYPE_NVS = 2
+NVS_LABEL = "nvs"  # ESP-IDF's default settings partition (NVS_DEFAULT_PART_NAME)
 
 # The eFuse files QEMU reads. An ESP32-C3's are the read registers from
 # EFUSE_RD_WR_DIS on, 1024 bytes as kept here; a classic ESP32's are its four
@@ -62,12 +63,20 @@ def partitions(flash: bytes) -> list[Partition]:
     return found
 
 
+def nvs_partitions(flash: bytes) -> list[Partition]:
+    """Every NVS partition: a table may have more than the settings' (the
+    BASICR4's has nvs_matter, nvs_matter_bkp and fctry before and after it)."""
+    return [partition for partition in partitions(flash)
+            if partition.type == TYPE_DATA and partition.subtype == SUBTYPE_NVS]
+
+
 def nvs(flash: bytes) -> Partition:
-    """The first NVS partition, where the stock firmware keeps its settings."""
-    for partition in partitions(flash):
-        if partition.type == TYPE_DATA and partition.subtype == SUBTYPE_NVS:
-            return partition
-    raise ValueError("the partition table has no NVS partition")
+    """The NVS partition the stock firmware keeps its settings in: the one
+    labelled "nvs", which ESP-IDF's nvs_flash_init opens, or else the first."""
+    found = nvs_partitions(flash)
+    if not found:
+        raise ValueError("the partition table has no NVS partition")
+    return next((partition for partition in found if partition.label == NVS_LABEL), found[0])
 
 
 def app_slots(flash: bytes) -> list[Partition]:

@@ -37,14 +37,20 @@ MEMORY_DUMP = re.compile(rb"^\s*(?:0x)?[0-9a-fA-F]{8}:\s+0x[0-9a-fA-F]{8}")
 
 
 def secrets(flash: bytes) -> dict[bytes, str]:
-    """Every secret byte string in the dump's NVS, mapped to a label."""
+    """Every secret byte string in the dump's NVS partitions, each of them,
+    mapped to a label."""
     try:
-        partition = flashmap.nvs(flash)
-        offset, size = partition.offset, partition.size
-    except ValueError:  # no table (a flash part way through a rewrite): where most keep it
-        offset, size = NVS_OFFSET, NVS_SIZE
-    names, values = parse(flash[offset : offset + size])
+        spans = [(partition.offset, partition.size) for partition in flashmap.nvs_partitions(flash)]
+    except ValueError:  # no table (a flash part way through a rewrite)
+        spans = []
     found: dict[bytes, str] = {}
+    for offset, size in spans or [(NVS_OFFSET, NVS_SIZE)]:  # without one, where most keep it
+        _add_secrets(flash[offset : offset + size], found)
+    return found
+
+
+def _add_secrets(settings: bytes, found: dict[bytes, str]) -> None:
+    names, values = parse(settings)
 
     def add(raw: bytes, label: str) -> None:
         raw = raw.rstrip(b"\0")
@@ -69,7 +75,6 @@ def secrets(flash: bytes) -> dict[bytes, str]:
             for name, text in re.findall(rb'"([A-Za-z0-9_]+)"\s*:\s*"([^"]*)"', data):
                 if name.decode() not in PUBLIC_JSON and len(text) >= MIN_LEN:
                     found.setdefault(text, f"{space}.{name.decode()}")
-    return found
 
 
 def redactor(flash: bytes):

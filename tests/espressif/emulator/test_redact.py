@@ -1,3 +1,4 @@
+import struct
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,16 @@ class RedactTests(unittest.TestCase):
         nvs = page([entry(0, 0x01, "user_usual", data=b"\x01"), *variable(1, 0x21, "content", b'{"pw":"hunter22"}\0')])
         apply = redact.redactor(flash(nvs))
         self.assertEqual(apply(b"key hunter22\n"), b"key <redacted:user_usual.pw>\n")
+
+    def test_masks_a_secret_in_every_nvs_partition(self):
+        # The BASICR4's table: its settings after an empty nvs_matter.
+        image = bytearray(b"\xff" * 0x30000)
+        table = b"".join(b"\xaa\x50\x01\x02" + struct.pack("<II", offset, 0x6000) + label.ljust(16, b"\0") + bytes(4)
+                         for label, offset in ((b"nvs_matter", 0x10000), (b"nvs", 0x1C000)))
+        image[0xC000:0xC000 + len(table)] = table
+        nvs = page([entry(0, 0x01, "user_usual", data=b"\x01"), *variable(1, 0x21, "content", b'{"pw":"hunter22"}\0')])
+        image[0x1C000:0x1C000 + len(nvs)] = nvs
+        self.assertEqual(redact.redactor(bytes(image))(b"key hunter22\n"), b"key <redacted:user_usual.pw>\n")
 
     def test_flash_with_no_secrets_passes_lines_through(self):
         # A public device's flash has no Sonoff NVS: the log is kept, not lost.

@@ -87,11 +87,10 @@ class ScrubTests(unittest.TestCase):
         self.assertEqual(scrub.wifi(image), (image, 0))
 
 
-def bad_checksums(flash: bytes) -> list[bytes]:
+def bad_checksums(flash: bytes, start: int = scrub.NVS_OFFSET, size: int = scrub.NVS_SIZE) -> list[bytes]:
     """The keys of written settings entries whose header or data checksum fails."""
-    start = scrub.NVS_OFFSET
     bad = []
-    for at, key, payload, length in scrub._entries(flash, start, scrub.NVS_SIZE):
+    for at, key, payload, length in scrub._entries(flash, start, size):
         page = at - (at - start) % scrub.PAGE
         index = (at - page - 64) // 32
         if (flash[page + 32 + index // 4] >> ((index % 4) * 2)) & 3 != 2:
@@ -184,6 +183,52 @@ class AisTests(unittest.TestCase):
     def test_its_settings_still_check_out(self):
         out = scrub.identity(scrub.wifi(ais_flash())[0])[0]
         self.assertEqual(bad_checksums(out), [])
+
+
+def table_entry(label: bytes, kind: int, subtype: int, offset: int, size: int) -> bytes:
+    return (scrub.flashmap.ENTRY_MAGIC + bytes([kind, subtype]) + struct.pack("<II", offset, size)
+            + label.ljust(16, b"\0") + bytes(4))
+
+
+# A real BASICR4's table, at 0xC000: its settings are in the partition labelled
+# nvs, after two NVS partitions of its own for Matter, left empty, and its
+# fctry, also empty, is one more after the apps.
+BASICR4_TABLE = (("esp_secure_cert", 0x3F, 0x06, 0xD000, 0x2000), ("nvs_matter", 1, 2, 0x10000, 0x6000),
+                 ("nvs_matter_bkp", 1, 2, 0x16000, 0x6000), ("nvs", 1, 2, 0x1C000, 0x10000),
+                 ("otadata", 1, 0, 0x2C000, 0x2000), ("phy_init", 1, 1, 0x2E000, 0x1000),
+                 ("ota_0", 0, 0x10, 0x30000, 0x1E0000), ("ota_1", 0, 0x11, 0x210000, 0x1E0000),
+                 ("fctry", 1, 2, 0x3F0000, 0x6000))
+
+
+def basicr4_flash(**settings: bytes) -> bytes:
+    """A whole flash laid out as a real BASICR4's, each partition named in
+    `settings` holding those NVS pages."""
+    image = bytearray(b"\xff" * 0x400000)
+    table = b"".join(table_entry(label.encode(), *rest) for label, *rest in BASICR4_TABLE)
+    image[0xC000:0xC000 + len(table)] = table
+    offsets = {label: offset for label, _, _, offset, _ in BASICR4_TABLE}
+    for label, pages in settings.items():
+        image[offsets[label]:offsets[label] + len(pages)] = pages
+    return bytes(image)
+
+
+def ais_settings() -> bytes:
+    return ais_flash()[scrub.NVS_OFFSET:scrub.NVS_OFFSET + scrub.PAGE]
+
+
+class NvsPartitionsTests(unittest.TestCase):
+    def test_settings_after_empty_nvs_partitions_are_scrubbed(self):
+        # The BASICR4's: its first NVS partition, nvs_matter, is empty.
+        out = scrub.identity(scrub.wifi(basicr4_flash(nvs=ais_settings()))[0])[0]
+        for secret in (NOW, BEFORE, SSID, OLD_SSID, b"1000abcdee", AIS_KEY.encode()):
+            self.assertNotIn(secret, out, secret)
+        self.assertEqual(bad_checksums(out, 0x1C000, 0x10000), [])
+
+    def test_every_nvs_partition_is_scrubbed(self):
+        out = scrub.identity(scrub.wifi(basicr4_flash(nvs_matter_bkp=ais_settings(), fctry=flash()[
+            scrub.NVS_OFFSET:scrub.NVS_OFFSET + scrub.PAGE]))[0])[0]
+        for secret in (NOW, BEFORE, SSID, OLD_SSID, PMK, APIKEY, b"1000abcdee", AIS_KEY.encode()):
+            self.assertNotIn(secret, out, secret)
 
 
 class FirmwareTests(unittest.TestCase):
