@@ -81,6 +81,6 @@
     // them itself (/v1/offers, a whole readout's manifest; offered.js). Back
     // to "files" if eWeLink stops giving files by their links:
     // .github/readouts.md says when.
-    "OFFERED_SEND": "files"
+    "OFFERED_SEND": "links"
   }
 }

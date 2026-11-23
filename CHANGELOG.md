@@ -69,6 +69,10 @@ check.
   default; so does the mover the run uses leaving Tasmota. A Beken device's
   ESPHome never dozed. A device adopted into Home Assistant has it once its
   package names this release.
+- A readout no longer downloads the firmware eWeLink offers your device: the
+  website now asks for each file's link and SHA-256 instead, and fetches the
+  file itself, so a readout's first stage sends less
+  ([what the tool sends](docs/what-the-tool-sends.md#what-ewelink-offers-your-devices)).
 
 ## 3.1.0
 

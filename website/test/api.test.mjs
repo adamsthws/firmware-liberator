@@ -900,7 +900,7 @@ test("asked first, the answer says whether a first stage sends its files or thei
         "not wanted too");
     }
     const wrangler = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
-    assert.match(wrangler, /^\s*"OFFERED_SEND": "files"$/m, "files, until the maintainer flips it");
+    assert.match(wrangler, /^\s*"OFFERED_SEND": "links"$/m, "links, until eWeLink stops giving files by their links");
   });
 
 test("twenty readouts a day are kept from one sender, counted under a keyed hash", async () => {
