@@ -412,7 +412,11 @@ The weekly update raised the version in `tools/autoflash/__init__.py` to the
 changelog's (`--raise-version`); for an update made by hand, raise it when the
 release is ready. Merging that to `main` publishes the release
 (`.github/workflows/release.yml`), with the firmware files attached, once the
-tests, lint and leak scan pass on `main` again.
+tests, lint and leak scan pass on `main` again. An emulator image needs
+nothing of you: a push that changes what one is built from starts its
+workflow (`emulator-image.yml`, `beken-emulator-image.yml`), which publishes
+the new tag (`image.sh tag`) unless it is published already, and the
+emulator check the release waits on waits for it.
 
 Runs left part way by the release before carry on with the new firmware by
 themselves: the bundle is built again for the new pins, at A5 or as a run

@@ -7,6 +7,7 @@ next: write its test to let the old form be while `image.sh tag` is today's
 tag, so it fails once an image comes without it.
 """
 
+import fnmatch
 import re
 import shutil
 import subprocess
@@ -150,6 +151,71 @@ class NextImageTests(unittest.TestCase):
                 self.assertTrue(names)
                 self.assertEqual([name for name in names if not PATCH_NAME.match(name)], [])
                 self.assertEqual([name[:4] for name in names], [f"{n:04d}" for n in range(1, len(names) + 1)])
+
+
+# The workflow that publishes each family's image for every tag a push brings.
+IMAGE_WORKFLOWS = {"espressif": ROOT / ".github/workflows/emulator-image.yml",
+                   "beken": ROOT / ".github/workflows/beken-emulator-image.yml"}
+
+
+def push_paths(workflow: Path) -> list[str]:
+    """The paths a push must change to start the workflow."""
+    text = workflow.read_text(encoding="utf-8")
+    block = re.search(r"(?m)^  push:\n    paths:\n((?:      - .*\n)+)", text)
+    return re.findall(r"(?m)^      - (\S+)$", block.group(1)) if block else []
+
+
+def path_matches(path: str, pattern: str) -> bool:
+    if pattern.endswith("/**"):
+        return path.startswith(pattern[:-2])
+    return fnmatch.fnmatchcase(path, pattern)
+
+
+def unpublished_inputs(family: str, paths: list[str]) -> list[str]:
+    """Each of the emulator's files that changes its tag and no push path
+    names: a push changing only it would leave its new tag unpublished. One
+    file of each top-level entry is changed, in a copy of what git tracks."""
+    folder = EMULATORS[family]
+    relative = folder.relative_to(ROOT).as_posix()
+    tracked = subprocess.run(["git", "ls-files", "-z", "--", relative], cwd=ROOT, check=True,
+                             capture_output=True, text=True).stdout.split("\0")
+    with tempfile.TemporaryDirectory() as directory:
+        for name in filter(None, tracked):
+            (Path(directory) / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, Path(directory) / name)
+        copy = Path(directory) / relative
+        before = image_sh(copy, "tag")
+        firsts = {}
+        for name in sorted(filter(None, tracked)):
+            firsts.setdefault(Path(name).relative_to(relative).parts[0], name)
+        missed = []
+        for name in firsts.values():
+            changed = Path(directory) / name
+            original = changed.read_bytes()
+            changed.write_bytes(original + b"\n")
+            if image_sh(copy, "tag") != before and not any(path_matches(name, pattern) for pattern in paths):
+                missed.append(name)
+            changed.write_bytes(original)
+        return missed
+
+
+@unittest.skipUnless(shutil.which("bash") and shutil.which("sha256sum") and shutil.which("git"),
+                     "needs bash, sha256sum and git")
+class PublishedOnPushTests(unittest.TestCase):
+    """A push that brings a new tag starts the workflow that publishes it, so
+    no one publishes an image by hand (docs/updating-firmware.md#6-release)."""
+
+    def test_every_input_of_a_tag_starts_its_image_workflow(self):
+        for family, workflow in IMAGE_WORKFLOWS.items():
+            with self.subTest(family=family):
+                paths = push_paths(workflow)
+                self.assertTrue(paths, f"{workflow.name}: no push paths read")
+                self.assertEqual(unpublished_inputs(family, paths), [],
+                                 f"add it to {workflow.name}'s push paths")
+
+    def test_an_input_left_out_is_found(self):
+        paths = [path for path in push_paths(IMAGE_WORKFLOWS["beken"]) if not path.endswith("/UPSTREAM")]
+        self.assertEqual(unpublished_inputs("beken", paths), ["tools/beken/emulator/UPSTREAM"])
 
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("sha256sum"), "needs bash and sha256sum")
