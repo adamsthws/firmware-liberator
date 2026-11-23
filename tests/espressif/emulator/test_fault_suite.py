@@ -639,6 +639,30 @@ class SavedDeviceTests(unittest.TestCase):
         # The real cloud's turns first, as many as the tuner may allow, the others after them.
         self.assertEqual(self.numbered(81, stub=False), [(81, True), (82, True), (83, False), (84, False)])
 
+    def test_a_batch_given_more_than_the_cores_hold_runs_them_saying_so(self):
+        rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abcd"]
+        given, said = [], []
+        for kind, expected in ((fs.kinds.SONOFF_DUALR3, True), (fs.kinds.SONOFF_S60, False)):
+            with self.subTest(kind=kind.key), mock.patch.object(fs, "DEVICE", kind), \
+                    mock.patch.object(fs, "scenarios", return_value=rows), \
+                    mock.patch.object(fs.fault_verdicts, "latest", return_value={}), \
+                    mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
+                    mock.patch.object(fs, "untrusting_starts", return_value=[]), \
+                    mock.patch.object(fs, "STUB_CLOUD", True), mock.patch.object(fs, "FIRST", 81), \
+                    mock.patch.object(fs, "worker", lambda n, *rest: given.append(n)), \
+                    mock.patch.object(fs, "log_connections"), \
+                    mock.patch.object(fs.emulator_instances, "running", return_value=set()), \
+                    mock.patch.object(fs.cpu_load.os, "cpu_count", return_value=4), \
+                    mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_STUB_WORKERS": "4"}), \
+                    mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
+                    mock.patch.object(fs.scenario_times, "times", return_value={}), \
+                    mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(" ".join(map(str, a)))):
+                given.clear()
+                said.clear()
+                fs.batch()
+                self.assertEqual(sorted(given), [81, 82, 83, 84])
+                self.assertEqual(any("4 emulators at once need 8 cores" in line for line in said), expected)
+
     def test_a_batch_refuses_instances_another_run_has(self):
         with self.assertRaises(SystemExit) as refused:
             self.numbered(1, stub=True, running={2})
@@ -1477,6 +1501,36 @@ class ScenarioTests(unittest.TestCase):
                     fs.os.environ.pop("AUTOFLASH_EMU_CLOUD_WORKERS", None)
                 self.assertEqual(fs.cloud_workers(), expected)
                 self.assertEqual(fs.Tuner().workers, expected)
+
+    def test_a_classic_esp32s_emulators_are_counted_two_cores_each(self):
+        # QEMU runs its two cores on a thread each (cpu_load.EMULATOR_CORES).
+        for kind, cores, cloud, stub in ((fs.kinds.SONOFF_DUALR3, 8, 4, 3), (fs.kinds.SONOFF_DUALR3, 4, 2, 2),
+                                         (fs.kinds.SONOFF_S60, 4, 4, 3), (fs.kinds.SONOFF_S60, 2, 2, 2)):
+            with self.subTest(kind=kind.key, cores=cores), mock.patch.object(fs, "DEVICE", kind), \
+                    mock.patch.object(fs, "NO_CLOUD", False), mock.patch.object(fs.cpu_load.os, "cpu_count", return_value=cores), \
+                    mock.patch.dict(fs.os.environ):
+                for name in ("AUTOFLASH_EMU_CLOUD_WORKERS", "AUTOFLASH_EMU_STUB_WORKERS", "AUTOFLASH_EMU_ANY_WORKERS"):
+                    fs.os.environ.pop(name, None)
+                self.assertEqual((fs.cloud_workers(), fs.stub_workers()), (cloud, stub))
+
+    def test_a_count_asked_for_is_kept_however_many_cores_it_needs(self):
+        with mock.patch.object(fs, "DEVICE", fs.kinds.SONOFF_DUALR3), mock.patch.object(fs.cpu_load.os, "cpu_count", return_value=4), \
+                mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_CLOUD_WORKERS": "4", "AUTOFLASH_EMU_STUB_WORKERS": "4"}):
+            self.assertEqual((fs.cloud_workers(), fs.stub_workers()), (4, 4))
+
+    def test_the_cloud_turns_are_counted_for_the_device_given_not_the_s60(self):
+        with mock.patch.object(fs.sys, "argv", ["fault_suite.py", "--device", "12:34:56:ab:cd:ef", "report"]), \
+                mock.patch.object(fs, "device_kind", return_value=fs.kinds.SONOFF_DUALR3), \
+                mock.patch.object(fs, "report"), mock.patch.object(fs.cpu_load.os, "cpu_count", return_value=8), \
+                mock.patch.object(fs, "NO_CLOUD", False), mock.patch.dict(fs.os.environ), \
+                mock.patch.object(fs, "TUNER", fs.TUNER), mock.patch.object(fs, "DEVICE", fs.DEVICE), \
+                mock.patch.object(fs, "ROUTES", fs.ROUTES), mock.patch.object(fs, "MAC", fs.MAC), \
+                mock.patch.object(fs, "OUT", fs.OUT), mock.patch.object(fs, "RESULTS", fs.RESULTS), \
+                mock.patch.object(fs, "LOGS", fs.LOGS), mock.patch.object(fs, "FIRST", fs.FIRST), \
+                mock.patch.object(fs, "STUB_CLOUD", fs.STUB_CLOUD):
+            fs.os.environ.pop("AUTOFLASH_EMU_CLOUD_WORKERS", None)
+            fs.main()
+            self.assertEqual(fs.TUNER.workers, 4)
 
     def test_only_a_real_cloud_run_is_told_to_wait_for_a_turn(self):
         for stub_cloud, no_cloud, expected in ((False, False, True), (True, False, False), (False, True, False)):

@@ -546,6 +546,20 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual(self.run_all({"s60-a": ("espressif", {}), "s61-a": ("beken", {})}, 4)[0],
                          {"espressif": {81}, "beken": {81}})
 
+    def test_workers_whose_devices_need_more_cores_than_the_computer_has_run_saying_so(self):
+        found = {f"s60-{i}": ("espressif", {}) for i in range(3)} | {"s61-a": ("beken", {})}
+        for kind, cores, short in ((attended_suite.kinds.SONOFF_DUALR3, 4, True), (attended_suite.kinds.SONOFF_S60, 4, False),
+                                   (attended_suite.kinds.SONOFF_DUALR3, 6, False)):
+            with self.subTest(kind=kind.key, cores=cores), redirect_stdout(io.StringIO()) as said, \
+                    mock.patch.object(attended_suite, "device_of", lambda family, mac, kind=kind:
+                                      kind if family == "espressif" else attended_suite.kinds.SONOFF_S61), \
+                    mock.patch.object(attended_suite.cpu_load.os, "cpu_count", return_value=cores), \
+                    mock.patch.object(attended_suite, "run_one", return_value="PASS"), \
+                    mock.patch.object(attended_suite.emulator_instances, "running", return_value=set()):
+                attended_suite.run_all(list(found), found, Path("no-results"), None, workers=3, first=81)
+            # Three of the four at once: at worst three of the classic ESP32's, two cores each.
+            self.assertEqual("at once need 6 cores" in said.getvalue(), short)
+
     def test_a_run_refuses_instances_another_run_has_before_any_starts(self):
         found = {"s60-a": ("espressif", {}), "s61-a": ("beken", {})}
         running = {"espressif": set(), "beken": {61}}

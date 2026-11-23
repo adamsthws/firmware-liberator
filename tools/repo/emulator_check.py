@@ -10,7 +10,8 @@ for every device the tool converts, so a new one has it by being added.
         its check: each final firmware installed, then each device taken to the
         other, two ways side by side (a way goes on as soon as its own run is
         done), on the two emulators numbered: two devices checked at once on one
-        computer each need their own. Nothing here needs a secret or an
+        computer each need their own, and the cores for them
+        (cpu_load.EMULATOR_CORES), which it warns of. Nothing here needs a secret or an
         account: an S60 starts from the published public devices, any other
         Espressif device from its public dump on the cloud stub, an S61 from
         upstream's public dump, and a Beken device with no public dump from a
@@ -53,7 +54,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds, motor as motor_setup  # noqa: E402
-from tools.repo import emulator_buttons, emulator_stats  # noqa: E402
+from tools.repo import cpu_load, emulator_buttons, emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
 # publishes it, and the variable that says where the tool pulls it from.
@@ -929,6 +930,9 @@ def check_beken(kind: kinds.Kind, instances: list[int]) -> int:
 
 
 def check_device(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:
+    short = cpu_load.cores_short([kind.chip] * len(instances))
+    if short:
+        print(short, flush=True)
     if family_of(kind) == "beken":
         return check_beken(kind, instances)
     from tools.espressif.emulator import public_dump

@@ -32,8 +32,9 @@ for you, what a run tells you, and what to do when it does not boot.
   ([docs/emulator.md](emulator.md#buttons-and-wall-switches)). A conversion
   passing there says the firmware installs and starts, and follows those
   pins, not that the pins are right.
-- **Run no more emulators at once than the computer has cores**: more gives
-  false failures.
+- **Run no more emulators at once than the computer has cores for**, a
+  classic ESP32's needing two (`cpu_load.EMULATOR_CORES`): more gives false
+  failures.
 - **If it will not convert yet**, keep the work: its folder stays in
   `devices/`, with its status `readout-wanted` or `not-supported`, and
   [devices/README.md](../devices/README.md) says what is holding it up. The

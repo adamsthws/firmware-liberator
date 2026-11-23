@@ -92,7 +92,8 @@ is on it, the interim's settings are erased from its flash (interim_problems).
 
 Each emulator is a device of its own (beken-emu.sh --instance N: autoflash-beken-emu-N),
 AUTOFLASH_BEKEN_EMU_WORKERS of them at once (default 2: each takes a core, and the
-tool's runs share what is left), numbered from --first-instance (default 1), as
+tool's runs share what is left; one on a computer of one core, as
+cpu_load.EMULATOR_CORES counts them), numbered from --first-instance (default 1), as
 the Espressif suite's and the attended suite's are, so a batch keeps clear of
 another one's emulators on the same computer: one asked to start on an instance
 already running refuses (tools/repo/emulator_instances.py), as starting it
@@ -1751,7 +1752,10 @@ def batch(ids_file: str | None = None, first: int = 1) -> None:
     for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],
                                            scenario_times.times(*suite_roots())):
         todo.put(sc)
-    count = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
+    count = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", cpu_load.emulators_at_once(DEVICE.chip, 2)))
+    short = cpu_load.cores_short([DEVICE.chip] * count)
+    if short:
+        print(f"batch: {short}", flush=True)
     numbers = emulator_instances.take("beken", first, count)
     lock = threading.Lock()
     workers = batch_workers.Workers(lambda line: print(line, flush=True))

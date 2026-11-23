@@ -118,7 +118,8 @@ on an emulator of its own, --workers at once, the longest first, an S61's
 beside an S60's, numbered from --first-instance (61) to one per worker in
 each family, each started afresh: a run uses no more instance numbers than
 it has workers, and refuses to start on one already running
-(tools/repo/emulator_instances.py).
+(tools/repo/emulator_instances.py). It says so where --workers at once may
+need more cores than the computer has (cpu_load.EMULATOR_CORES).
 """
 
 from __future__ import annotations
@@ -146,7 +147,7 @@ from tools.autoflash import cli, context, kinds, prompts, readout, records, sign
 from tools.autoflash.routes import source  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.ewelink.stub_cloud import accounts  # noqa: E402
-from tools.repo import (disk_space, emulator_instances, emulator_stats, fault_verdicts,  # noqa: E402
+from tools.repo import (cpu_load, disk_space, emulator_instances, emulator_stats, fault_verdicts,  # noqa: E402
                         scenario_times, suite_coverage, unattended_run)
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
@@ -971,6 +972,12 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
     at_once = {family: min(max(1, workers), count) for family, count in planned.items() if count}
     for family, count in at_once.items():
         emulator_instances.refuse_taken(family, range(first, first + count))
+    # The most cores `workers` at once may need: the costliest scenarios' devices together.
+    chip = {family: device_of(family, mac).chip for family in at_once}
+    costliest = sorted((chip[found[name][0]] for name in todo), key=cpu_load.emulator_cores, reverse=True)
+    short = cpu_load.cores_short(costliest[:max(1, workers)])
+    if short:
+        print(short, flush=True)
     free: dict[str, queue.SimpleQueue[int]] = {}
     for family, count in at_once.items():
         emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,

@@ -739,8 +739,8 @@ or have their fault after the device has left Sonoff's firmware, where the
 stub serves as well. The batch says how many it left out, for
 `--stub-cloud batch` to run.
 
-The cloud scenarios run on six emulators (`AUTOFLASH_EMU_CLOUD_WORKERS`; one
-per core on a computer with fewer), with the rest's `AUTOFLASH_EMU_ANY_WORKERS`
+The cloud scenarios run on six emulators (`AUTOFLASH_EMU_CLOUD_WORKERS`; as
+many as a computer with fewer cores holds, by `cpu_load.EMULATOR_CORES`), with the rest's `AUTOFLASH_EMU_ANY_WORKERS`
 on top. Eight took as long as six over the 75, their turns at eWeLink coming
 one at a time. Use fewer where memory is mostly taken: there, four had their
 memory swapped out, and their connections to eWeLink timed out with nothing
@@ -852,8 +852,9 @@ is only the start of every connection, kept or not); no limit of eWeLink's
 has been seen.
 A batch run again carries on with what has not passed.
 
-**How many at once.** At most one emulator per core
-([why](emulator.md#several-at-once)). A batch started with
+**How many at once.** No more emulators than the computer has cores for, a
+classic ESP32's taking two (`cpu_load.EMULATOR_CORES`,
+[why](emulator.md#several-at-once)); a batch asked for more says so. A batch started with
 `AUTOFLASH_EMU_MOST_WORKERS` above its workers can be scaled while it runs:
 only the number written in `workers` in its results directory take a
 scenario, so raising it starts more, and lowering it stops the last ones once
@@ -1082,7 +1083,7 @@ scenario's longest.
 - **A download of the installer that stalls.** Twice, after a short outage
   in the first send to ESPHome, every later download of the installer stalled
   part way. Both passed when run again; it is unexplained.
-- **More than one emulator per core** slows the emulated device enough to
+- **More emulators than the computer has cores for** slows the emulated device enough to
   fail with nothing wrong, once losing the tool until it restarted. It
   happened once at one per core too, on a virtual machine whose host was
   busy: after a fault at E2, the device's own requests to the tool stalled at
@@ -1292,7 +1293,7 @@ from that dump and the Basic Gen5's official file, each with its logs in
 `captures/emulation/device-check/DEVICE/`. To check both on one computer at
 once, give one of them `--instances 3,4`.
 
-Each emulated device takes a core, so two workers suit a laptop. Sonoff's
+Each emulated S61 takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a
 device, so the tool asks for a switch off and on only after a fault.
 
@@ -1454,7 +1455,8 @@ run's option `--simulate-bad-image STEP[:N]`: the image step STEP sends,
 spoilt the first N times - an S61's at B2, J2 or O1, refused by its
 bootloader; an S60's at D1, the Berry Tasmota, refused by the installer.
 Each runs on an emulator of its own, `--workers` at once, the longest first,
-an S61's beside an S60's (at most one emulator per core, as for every suite).
+an S61's beside an S60's (no more than the computer has cores for, as for every suite,
+`cpu_load.EMULATOR_CORES`).
 Each family's instances are numbered from `--first-instance` (61), one per
 worker, and reused, each scenario starting its device afresh: a
 run keeps clear of the instances it was not given.

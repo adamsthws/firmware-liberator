@@ -20,7 +20,8 @@ device, every fault - on emulators side by side, on one machine or several
 
 Add --stub-cloud to prep/batch to run against a local eWeLink stub per emulator
 (emu.sh --stub-cloud): fully offline, no cloud lock, every scenario in parallel
-on AUTOFLASH_EMU_STUB_WORKERS emulators. Without it the real cloud is used and
+on AUTOFLASH_EMU_STUB_WORKERS emulators (three, or as many as the computer's
+cores hold: cpu_load.EMULATOR_CORES). Without it the real cloud is used and
 the cloud scenarios take turns, as below. --first-instance N (default 1) numbers
 a batch's emulators from N, and prep's and prep-update's from N too, as the
 attended suite's and the Beken suite's (emulator_instances.add_first_instance): one asked to start on an instance already running refuses
@@ -48,7 +49,8 @@ How many at once, from the environment:
     AUTOFLASH_EMU_CLOUD_WORKERS     emulators for the scenarios that need eWeLink (from
                                     instance 1); each run and its device use the cloud only
                                     in its turn, and are side by side otherwise. Six
-                                    unless set, or one per core on a computer with fewer
+                                    unless set, or as many as the computer's cores hold
+                                    (cpu_load.EMULATOR_CORES)
     AUTOFLASH_EMU_CLOUD_MOST        try up to this many, one more at a time while they
                                     pass
     AUTOFLASH_EMU_CLOUD_BACK_OFF=1  start at AUTOFLASH_EMU_CLOUD_WORKERS and drop one at a
@@ -124,10 +126,18 @@ NO_CLOUD = os.environ.get("AUTOFLASH_EMU_NO_CLOUD") == "1"
 def cloud_workers():
     """How many emulators take the scenarios that need eWeLink: six, as their
     turns at eWeLink come one at a time and 8 went no faster, and
-    no more than one per core, or they fail falsely. A computer whose memory is
-    mostly taken holds fewer (docs/testing.md)."""
-    default = 0 if NO_CLOUD else min(6, os.cpu_count() or 1)
+    no more than the computer's cores hold (cpu_load.EMULATOR_CORES), or they
+    fail falsely. A computer whose memory is mostly taken holds fewer
+    (docs/testing.md)."""
+    default = 0 if NO_CLOUD else cpu_load.emulators_at_once(DEVICE.chip, 6)
     return int(os.environ.get("AUTOFLASH_EMU_CLOUD_WORKERS", default))
+
+
+def stub_workers():
+    """How many emulators a --stub-cloud batch runs its scenarios on: three,
+    or as many as the computer's cores hold (cpu_load.EMULATOR_CORES)."""
+    default = cpu_load.emulators_at_once(DEVICE.chip, 3)
+    return int(os.environ.get("AUTOFLASH_EMU_STUB_WORKERS", os.environ.get("AUTOFLASH_EMU_ANY_WORKERS", default)))
 
 
 # Each emulator serves its own local eWeLink stub (emu.sh --stub-cloud): the
@@ -3316,7 +3326,7 @@ def batch(ids_file=None):
             (cloud if needs_cloud(known[i]) else anywhere).put(known[i])
     if STUB_CLOUD:
         nc = 0
-        na = int(os.environ.get("AUTOFLASH_EMU_STUB_WORKERS", os.environ.get("AUTOFLASH_EMU_ANY_WORKERS", "3")))
+        na = stub_workers()
         cloud_slots = 0
     else:
         nc = cloud_workers()
@@ -3324,6 +3334,9 @@ def batch(ids_file=None):
         cloud_slots = max(nc, TUNER.most)
     first = FIRST + cloud_slots   # the others after the cloud's
     print(f"batch: {cloud.qsize()} cloud on {nc}, {anywhere.qsize()} others on {na}", flush=True)
+    short = cpu_load.cores_short([DEVICE.chip] * (cloud_slots + na))
+    if short:
+        print(f"batch: {short}", flush=True)
     if stub_only:
         print(f"batch: {stub_only} left to the stub (--stub-cloud batch): their fault comes after eWeLink",
               flush=True)
@@ -3570,7 +3583,7 @@ def report():
 
 def main():
     import argparse
-    global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS, FIRST
+    global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS, FIRST, TUNER
     emulator_stats.mark("fault")   # its runs not taken for ones by hand
     if sys.argv[1:2] == ["status"]:   # its own arguments, as the Beken suite's (fault_status)
         sys.exit(fault_status.main(sys.argv[2:], scenarios(), EMU, "fault_suite.py status"))
@@ -3609,6 +3622,8 @@ def main():
         parser.error("--device is needed: the backed-up device the emulators run copies of")
     MAC = args.device
     DEVICE = device_kind(MAC)
+    # Made again for the device's chip: one made on import counted the S60's (cloud_workers).
+    TUNER = Tuner()
     ROUTES = routes_for(DEVICE)
     if DEVICE is not kinds.SONOFF_S60 and "AUTOFLASH_EMU_SUITE_DIR" not in os.environ:
         # Its scenarios share the S60's names, not their passes.

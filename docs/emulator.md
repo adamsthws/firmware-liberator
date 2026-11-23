@@ -246,8 +246,19 @@ backup.
   To see how far batches on several computers have got, copy their
   `results.jsonl` here and give them to either suite's `status`
   ([testing.md](testing.md#the-fault-suites)).
-- **Run no more at once than your computer has cores**, or runs fail that
-  would otherwise pass. Sampled with `docker stats` every 2 seconds through
+- **Run no more at once than your computer has cores for**, or runs fail
+  that would otherwise pass. An ESP32-C3's or an S61's emulator needs a core,
+  and a classic ESP32's two: QEMU runs its two cores on a thread each (MTTCG),
+  and each can keep a core busy. With six classic ESP32s on eight cores, two
+  Tasmota routes in 36 lost the CSE7761 meter, whose reads it times across
+  its two cores; with four, none in 30 did
+  ([why](../tools/espressif/emulator/README.md#when-tasmota-misses-the-cse7761)).
+  `tools/repo/cpu_load.py` keeps each chip's count (`EMULATOR_CORES`); every
+  suite's default fits your cores by it, and one asked for more (its workers'
+  variable or `--workers`) runs them, saying how many cores they need, as a
+  device's check does on too few for its two emulators. Suites run side by
+  side do not see each other's emulators: count them together, as for two
+  classic ESP32 checks at once. Sampled with `docker stats` every 2 seconds through
   whole conversions, an S60's emulator, its computer included, took about 0.6
   of a CPU and about 115 MB, peaking near 150 MB; a classic ESP32's runs two
   cores and peaked at 250 MB. An S61's idles while its firmware waits, its

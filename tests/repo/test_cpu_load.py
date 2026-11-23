@@ -49,5 +49,34 @@ class WaitTests(unittest.TestCase):
         self.assertIn("starting the next scenario anyway", said[-1])
 
 
+class EmulatorCoresTests(unittest.TestCase):
+    def test_a_classic_esp32_takes_two_cores_and_the_others_one(self):
+        # QEMU runs a classic ESP32's two cores on a thread each.
+        self.assertEqual([cpu_load.emulator_cores(chip) for chip in ("esp32", "esp32c3", "bk7238")], [2, 1, 1])
+
+    def test_every_chip_counted_is_one_a_kind_has(self):
+        from tools.autoflash import kinds
+        self.assertLessEqual(set(cpu_load.EMULATOR_CORES), {kind.chip for kind in kinds.EVERY})
+
+    def test_as_many_at_once_as_the_cores_hold_never_none_nor_more_than_asked(self):
+        for chip, most, cores, expected in (("esp32", 6, 8, 4), ("esp32c3", 6, 8, 6), ("esp32", 3, 4, 2),
+                                            ("esp32c3", 3, 4, 3), ("esp32", 3, 1, 1), ("bk7238", 2, 1, 1)):
+            with self.subTest(chip=chip, most=most, cores=cores):
+                self.assertEqual(cpu_load.emulators_at_once(chip, most, cores), expected)
+
+    def test_this_computers_cores_where_none_are_given(self):
+        with mock.patch.object(cpu_load.os, "cpu_count", return_value=4):
+            self.assertEqual(cpu_load.emulators_at_once("esp32", 6), 2)
+        with mock.patch.object(cpu_load.os, "cpu_count", return_value=None):
+            self.assertEqual(cpu_load.emulators_at_once("esp32c3", 6), 1)
+
+    def test_a_mix_is_short_where_its_cores_together_are_more_than_the_computers(self):
+        self.assertIsNone(cpu_load.cores_short(["esp32"] * 4, cores=8))
+        self.assertIsNone(cpu_load.cores_short(["esp32c3"] * 8, cores=8))
+        short = cpu_load.cores_short(["esp32"] * 4 + ["bk7238"], cores=8)
+        self.assertIn("5 emulators at once need 9 cores, 2 for each esp32, and this computer has 8", short)
+        self.assertNotIn("for each bk7238", cpu_load.cores_short(["bk7238"] * 3, cores=2))
+
+
 if __name__ == "__main__":
     unittest.main()

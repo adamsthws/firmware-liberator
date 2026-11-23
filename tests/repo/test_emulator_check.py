@@ -114,6 +114,19 @@ def runs_from():
             *(kind.key for kind in kinds.EVERY if kind.family == "beken")}
 
 
+class CoresTests(unittest.TestCase):
+    def test_a_check_whose_two_emulators_need_more_cores_than_the_computer_has_runs_saying_so(self):
+        for key, cores, short in (("sonoff-dualr3", 3, True), ("sonoff-dualr3", 4, False), ("sonoff-s60", 2, False)):
+            with self.subTest(key=key, cores=cores), redirect_stdout(io.StringIO()) as said, \
+                    mock.patch.object(check.cpu_load.os, "cpu_count", return_value=cores), \
+                    mock.patch.object(check, "check_public_dump", return_value=0) as ran, \
+                    mock.patch.object(check.subprocess, "call", return_value=0), \
+                    mock.patch.object(check, "ROOT", Path("/nowhere")):
+                self.assertEqual(check.check_device(kinds.find(key), [3, 4]), 0)
+            self.assertEqual("2 emulators at once need 4 cores" in said.getvalue(), short)
+            self.assertEqual(ran.called, key == "sonoff-dualr3")
+
+
 class BekenCheckTests(unittest.TestCase):
     """A Beken device's check: the fault suite's, on the emulators asked for,
     its logs where an Espressif device's go, from the S61's dump or a flash

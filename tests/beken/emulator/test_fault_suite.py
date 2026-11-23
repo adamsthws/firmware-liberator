@@ -417,6 +417,27 @@ class BatchResultTests(unittest.TestCase):
             fault_suite.batch(first=81)
         self.assertEqual(sorted(call.args[0] for call in instance.call_args_list), [81, 82])
 
+    def test_a_batch_runs_as_many_as_the_cores_hold_and_says_so_of_more_asked_for(self):
+        from unittest import mock
+        rows = [{"id": i, "route": "sonoff>openbeken", "step": "B2", "fault": "deviceoff", "arg": 1} for i in "abc"]
+        for environ, cores, used, short in (({}, 1, [81], False), ({}, 8, [81, 82], False),
+                                            ({"AUTOFLASH_BEKEN_EMU_WORKERS": "3"}, 2, [81, 82, 83], True)):
+            with self.subTest(environ=environ, cores=cores), mock.patch.object(fault_suite, "scenarios", return_value=rows), \
+                    mock.patch.object(fault_suite.fault_verdicts, "latest", return_value={}), \
+                    mock.patch.object(fault_suite, "Instance") as instance, mock.patch.object(fault_suite, "record"), \
+                    mock.patch.object(fault_suite, "run_scenario", return_value={"verdict": "PASS"}), \
+                    mock.patch.dict(fault_suite.os.environ, environ), \
+                    mock.patch.object(fault_suite.cpu_load.os, "cpu_count", return_value=cores), \
+                    mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
+                    mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
+                    mock.patch("builtins.print") as printed:
+                if not environ:
+                    fault_suite.os.environ.pop("AUTOFLASH_BEKEN_EMU_WORKERS", None)
+                fault_suite.batch(first=81)
+            self.assertEqual(sorted(call.args[0] for call in instance.call_args_list), used)
+            said = " ".join(str(call.args[0]) for call in printed.call_args_list if call.args)
+            self.assertEqual("3 emulators at once need 3 cores" in said, short)
+
     def test_a_batch_says_each_verdict_as_the_espressif_suite_does(self):
         rows = [{"id": "a", "route": "sonoff>openbeken", "step": "B2", "fault": "deviceoff", "arg": 1}]
         with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
