@@ -337,6 +337,18 @@ def kind_left_part_way(ctx: Context) -> str | None:
     return None
 
 
+def tasmota_kind(ctx: Context, host: str) -> str:
+    """The kind official Tasmota at `host` says by its template, as the
+    network search reads it (detect.tasmota)."""
+    try:
+        said = detect.tasmota(host, password=getattr(ctx, "web_password", None))
+    except (detect.Unreadable, detect.Locked):
+        said = None
+    if not said or said[0] != "tasmota" or not said[2]:
+        raise Abort(f"the device at {host} did not say twice alike what it runs: try again")
+    return said[2]
+
+
 def adopt_device(ctx: Context, found: "detect.Found") -> None:
     """This run is for the device `found`: its address, and its MAC to file it by."""
     ctx.set_device_ip(found.host)
@@ -351,6 +363,12 @@ def adopt_device(ctx: Context, found: "detect.Found") -> None:
         # run must never take the S60's way.
         named = kinds.for_esphome(*esphome.title(found.host))
         kind = named.key if named else None
+    if kind is None and found.firmware == "tasmota":
+        # Found by its address, or once given its web password: what it runs
+        # was all that was asked, not the template that names its kind. Left
+        # unknown, the run took it for the first kind (kinds.of_run), and its
+        # report named no device.
+        kind = tasmota_kind(ctx, found.host)
     if kind is None and found.firmware in ("midway", "installer", "untemplated", "esphome-update") \
             and ctx.state.input("device_mac"):
         kind = kind_left_part_way(ctx)

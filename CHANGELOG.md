@@ -86,6 +86,13 @@ check.
   where it was read, so the project hears of a model's table it has wrong
   without anyone opening an issue
   ([what the tool sends](docs/what-the-tool-sends.md#what-a-report-holds)).
+- A device on Tasmota given by its address (`--device-ip`), or whose Tasmota
+  has a web password, is now taken for the kind of device its template names.
+  Before, the run took any such device for an S60, and its report named no
+  device. On another kind of device a conversion stopped, before anything was
+  written, when the device found it was not an S60's chip; but updating its
+  Tasmota sent it the S60's Tasmota. One that will not say its template now
+  stops before anything is done, saying to try again.
 
 ## 3.1.0
 

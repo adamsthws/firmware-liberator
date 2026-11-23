@@ -120,6 +120,29 @@ class AdoptDeviceTests(unittest.TestCase):
         self.assertEqual((inputs["device_ip"], inputs["device_mac"]), ("192.0.2.137", "12:34:56:ab:cd:ef"))
         filed.assert_called_once_with(ctx, "12:34:56:ab:cd:ef", None)
 
+    def adopt_tasmota(self, said):
+        inputs = {}
+        ctx = SimpleNamespace(state=SimpleNamespace(set_input=inputs.__setitem__, input=inputs.get),
+                              set_device_ip=lambda ip: inputs.__setitem__("device_ip", ip), web_password="secret")
+        with mock.patch.object(hostsys, "mac_of", return_value=None), \
+             mock.patch.object(detect, "tasmota", side_effect=[said]) as asked, \
+             mock.patch.object(output, "say"):
+            source.adopt_device(ctx, detect.Found("192.0.2.137", "tasmota"))
+        asked.assert_called_once_with("192.0.2.137", password="secret")
+        return inputs.get("device_kind")
+
+    def test_a_tasmota_found_without_its_kind_is_the_kind_its_template_says(self):
+        # Found by --device-ip, or once given its web password, only "tasmota"
+        # was known: a POW Elite's run took it for an S60, and the report of
+        # an S60's named no device.
+        self.assertEqual(self.adopt_tasmota(("tasmota", "tasmota-ABCDEF-1234", "sonoff-pow-elite")),
+                         "sonoff-pow-elite")
+
+    def test_a_tasmota_that_will_not_say_its_kind_again_is_not_taken_for_one(self):
+        for said in (None, detect.Unreadable("192.0.2.137"), ("hub", None, None)):
+            with self.subTest(said=said), self.assertRaises(errors.Abort):
+                self.adopt_tasmota(said)
+
     def adopt_esphome(self, title, comment=None):
         from types import SimpleNamespace
         inputs = {}
