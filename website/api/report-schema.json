@@ -456,6 +456,18 @@
           "question"
         ],
         "additionalProperties": false
+      },
+      "stock_check": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "sonoff-answers",
+          "neither-answers",
+          "cannot-tell",
+          null
+        ]
       }
     },
     "required": [
@@ -1204,6 +1216,18 @@
         "at"
       ],
       "additionalProperties": false
+    },
+    "stock_check": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "sonoff-answers",
+        "neither-answers",
+        "cannot-tell",
+        null
+      ]
     }
   },
   "required": [

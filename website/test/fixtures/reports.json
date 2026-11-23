@@ -133,7 +133,8 @@
       "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "download",
       "firmware_name": null, "firmware_name_expected": null,
       "begun_on": null, "back_after_power_cycle": null,
-      "table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0xc000"}
+      "table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0xc000"},
+      "stock_check": "sonoff-answers"
     },
     {
       "format": 1, "id": "adadadadadadadad", "proof": "1794000000:41", "tag": "user",
@@ -202,7 +203,9 @@
     {"why": "a refused table read where no table is", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x9000"}}},
     {"why": "a refused table's hash not 64 hex digits", "set": {"table_refused": {"sha256": "0123456789ABCDEF", "at": "0x8000"}}},
     {"why": "a question no word names", "set": {"stopped": {"step": "A1", "error": "quit", "text": "", "crash_site": null, "question": "Which eWeLink account is this device in"}}},
-    {"why": "a refused table with a key the schema does not name", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x8000", "table": "00ff"}}}
+    {"why": "a refused table with a key the schema does not name", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x8000", "table": "00ff"}}},
+    {"why": "a check of Sonoff's firmware no word names", "set": {"stock_check": "sonoff answers"}},
+    {"why": "a check of Sonoff's firmware as true or false", "set": {"stock_check": true}}
   ],
   "readoutValid": [
     {
@@ -230,7 +233,8 @@
       "whole": null, "device_hash": "c5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
       "os": {"family": "macos", "version": "15.1", "arch": "arm64"},
       "python": {"version": "3.12.4", "source": "portable"},
-      "seconds": 40, "converted_here": 0, "stopped": {"step": "read", "question": "go-ahead"}
+      "seconds": 40, "converted_here": 0, "stopped": {"step": "read", "question": "go-ahead"},
+      "stock_check": "cannot-tell"
     }
   ],
   "readoutInvalid": [
@@ -248,6 +252,7 @@
     {"why": "a stage no readout has", "set": {"stopped": {"step": "D1", "question": null}}},
     {"why": "a question no word names", "set": {"stopped": {"step": "read", "question": "proceed"}}},
     {"why": "a run's stopped, with its words", "set": {"stopped": {"step": "read", "question": null, "text": "it stopped"}}},
-    {"why": "stopped without its question", "set": {"stopped": {"step": "read"}}}
+    {"why": "stopped without its question", "set": {"stopped": {"step": "read"}}},
+    {"why": "a check of Sonoff's firmware no word names", "set": {"stock_check": "still answers"}}
   ]
 }

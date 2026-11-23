@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import (failures, join, kinds, offers, readout, records, report, report_data,  # noqa: E402
                              report_upload, routes)
+from tools.autoflash.routes import arrival  # noqa: E402
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -84,6 +85,9 @@ def schema() -> dict[str, Any]:
     model = nullable(string(f"^{report_data.MODEL.pattern}$", 24))
     # The question a run or readout was stopped at, in a word (report_data.question_word).
     question = nullable(words(*report_data.QUESTION_WORDS))
+    # What the check of Sonoff's firmware found before a switch off and on was
+    # asked for (report_data.stock_check): null where none ran.
+    stock_check = nullable(words(*arrival.STOCK_CHECKS.values()))
     return {
         "$comment": "Written by tools/repo/report_schema.py: change that, not this.",
         "maxBytes": MAX_BYTES,
@@ -123,7 +127,8 @@ def schema() -> dict[str, Any]:
             # the question it was stopped at.
             "stopped": nullable(record({"step": nullable(words(*(key for key, _ in readout.STAGES))),
                                         "question": question})),
-        }, optional=("stopped",)),
+            "stock_check": stock_check,
+        }, optional=("stopped", "stock_check")),
         **record({
             **shared,
             "kind": words("run"),
@@ -190,7 +195,8 @@ def schema() -> dict[str, Any]:
             # its SHA-256, and where it was read.
             "table_refused": nullable(record({"sha256": string("^[0-9a-f]{64}$", 64),
                                               "at": words(*report_data.TABLE_PLACES)})),
-        }, optional=("offers", "table_refused")),
+            "stock_check": stock_check,
+        }, optional=("offers", "table_refused", "stock_check")),
     }
 
 

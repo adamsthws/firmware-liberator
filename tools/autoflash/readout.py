@@ -41,6 +41,7 @@ from typing import Any, Callable, Iterable, TYPE_CHECKING
 from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
 from tools.autoflash import errors, failures, openbeken, proof_of_work, readout_beken, readout_espressif, report, report_upload, signup
 from tools.autoflash.errors import Abort, Finished, NothingWritten
+from tools.autoflash.routes import arrival
 # How a device's readout ended (Became.outcome): its report's result, sent as
 # each readout ends (report_upload.send_readout), and on the screen's at the end.
 from tools.autoflash.report_data import (
@@ -242,6 +243,7 @@ class Became:
     error: str | None = None    # how a failed one failed (failures.classify)
     step: str | None = None     # the stage (STAGES) one stopped, failed or crashed in
     question: str | None = None   # the question one was stopped at (report_data.QUESTION_WORDS)
+    stock_check: str | None = None   # what the check of Sonoff's firmware found (arrival.still_on_sonoff)
     report_id: str | None = None   # its report's, once kept to send (report_upload.send_readout)
 
     @classmethod
@@ -507,6 +509,8 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     # Its own report, sent as it ends however it ends: one a readout.
     report_upload.begin_readout(ctx)
     started, waited = time.monotonic(), output.waited()
+    # Each readout's own check of Sonoff's firmware, never one before it.
+    ctx.state.set_input(arrival.STOCK_CHECK, None)
     try:
         said = _run(ctx, device, address, batch)
     except NothingWritten as exc:
@@ -533,6 +537,7 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         if this.outcome in STOPPED:
             this.step = _under_way
         _under_way = None
+        this.stock_check = ctx.state.input(arrival.STOCK_CHECK)
         report_upload.send_readout(ctx, this, time.monotonic() - started - (output.waited() - waited))
     output.stage_end("complete")
     return said

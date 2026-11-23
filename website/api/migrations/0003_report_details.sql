@@ -34,3 +34,15 @@ CREATE TABLE IF NOT EXISTS readout_steps (
   id TEXT PRIMARY KEY,
   step TEXT NOT NULL
 ) WITHOUT ROWID;
+
+-- `outcome`: what the tool found when a firmware Sonoff's firmware sent had
+-- not answered, before it asked for the device to be switched off and on (a
+-- run's or readout's report's "stock_check", report_data.stock_check):
+-- 'sonoff-answers' (not installed, sent again), 'neither-answers' (most
+-- likely installed, not joining), or 'cannot-tell'. One row a report that
+-- gives one: none where no check ran, nor from a tool that sends no such
+-- field. Its report's own id, in reports or readout_reports.
+CREATE TABLE IF NOT EXISTS stock_checks (
+  id TEXT PRIMARY KEY,
+  outcome TEXT NOT NULL
+) WITHOUT ROWID;

@@ -246,6 +246,25 @@ python3 tools/repo/database.py "SELECT question, count(*) AS runs FROM reports
   AND tag = 'user' GROUP BY question ORDER BY runs DESC"
 ```
 
+### Whether the new firmware was installed
+
+Where the firmware Sonoff's firmware sent a Beken device (OpenBeken, the
+interim firmware, a readout's reader) does not answer, the tool checks
+whether Sonoff's firmware still does before it asks for the device to be
+switched off and on (`arrival.still_on_sonoff`). A run's or readout's
+report says what it found (`stock_check`, kept in `stock_checks`):
+`sonoff-answers` (not installed: sent again, or the readout stopped),
+`neither-answers` (most likely installed, not joining the Wi-Fi), or
+`cannot-tell`; nothing where no check ran, nor from 3.1.0 or before. The
+admin view shows it beside where each report stopped; with the question
+people quit at:
+
+```sh
+python3 tools/repo/database.py "SELECT outcome, question, count(*) AS runs FROM stock_checks
+  JOIN reports USING (id) LEFT JOIN stop_questions USING (id)
+  WHERE tag = 'user' GROUP BY outcome, question ORDER BY runs DESC"
+```
+
 ### A partition table refused
 
 Before writing anything, the tool checks the device's partition table is

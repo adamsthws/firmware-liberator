@@ -729,6 +729,35 @@ class RunTests(unittest.TestCase):
                         pass
                     self.assertEqual(sent, [(outcome, step, question)])
 
+    def test_its_report_says_what_its_own_check_of_sonoffs_firmware_found(self):
+        # As a conversion's report: the readout firmware not answering, Sonoff's
+        # firmware still did (arrival.still_on_sonoff). Each readout its own:
+        # none carried over from one before it.
+        from tools.autoflash import kinds, report_upload
+        from tools.autoflash.routes import arrival
+
+        def not_installed(*_args, **_kwargs):
+            self.ctx.state.set_input(arrival.STOCK_CHECK, "sonoff-answers")
+            raise errors.Abort(arrival.not_installed("The readout firmware"))
+        asked = account.Asked("1.2.0", kinds.SONOFF_S61.stock_model, "S61STPF", [], {}, "1000abcdef")
+        for raised, found in ((not_installed, "sonoff-answers"), (None, None)):
+            sent = []
+            with self.subTest(found=found), learned(kinds.SONOFF_S61.wrapper_model, "BK7238"), \
+                    mock.patch.object(report_upload, "send_readout",
+                                      side_effect=lambda ctx, became, seconds: sent.append(became.stock_check)), \
+                    mock.patch.object(account, "ask_account", return_value=asked), \
+                    mock.patch.object(account, "already_converting"), mock.patch.object(runs, "hold_device"), \
+                    mock.patch.object(readout_beken, "stock_from_offered", return_value=object()), \
+                    mock.patch.object(readout_beken, "read_and_anonymise", side_effect=raised,
+                                      return_value=({}, True)), \
+                    mock.patch.object(readout, "send", return_value="r-1"), \
+                    mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"):
+                try:
+                    readout.run(self.ctx, record("S61STPF", kinds.SONOFF_S61.stock_model))
+                except errors.Abort:
+                    pass
+            self.assertEqual(sent, [found])
+
     def test_the_stage_under_way_stops_with_the_readout(self):
         from tools.autoflash import kinds
         s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)

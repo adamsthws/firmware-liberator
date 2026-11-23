@@ -19,6 +19,7 @@ from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, openbeken, records, routes, runs
 from tools.autoflash import prompts, report
+from tools.autoflash.routes import arrival
 from tools.espressif import layouts as espressif_layouts
 from tools.ewelink.firmware_name import A_NAME
 from tools.ewelink.get_device_key import API
@@ -290,7 +291,17 @@ def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str,
         # the question it was stopped at, as a run's report says them.
         "stopped": ({"step": became.step, "question": became.question}
                     if became.outcome in (CANCELLED, FAILED, CRASHED) else None),
+        # Whether Sonoff's firmware still answered once the reader had not, as a run's.
+        "stock_check": stock_check(became.stock_check),
     }
+
+
+def stock_check(found: Any) -> str | None:
+    """What the check before a switch off and on was asked for found
+    (arrival.still_on_sonoff), as a report says it: a word of
+    arrival.STOCK_CHECKS, or None where no check ran. The same for a run and
+    a readout."""
+    return found if found in arrival.STOCK_CHECKS.values() else None
 
 
 def outcome(ctx: Context, ending: str) -> tuple[str, dict[str, Any] | None]:
@@ -397,6 +408,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "back_after_power_cycle": back,
         "offers": offers_info(ctx),
         "table_refused": table_refused(state),
+        "stock_check": stock_check(state.input(arrival.STOCK_CHECK)),
     }
 
 

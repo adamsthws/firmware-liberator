@@ -397,6 +397,12 @@ with that readout's object.
   ```
 
   Reports from 3.1.0 and before say neither.
+- **Whether the reader was installed.** A Beken readout whose reader does
+  not answer checks whether Sonoff's firmware still does
+  (`arrival.still_on_sonoff`); its report says what it found, as a run's
+  does (`stock_check`, kept in `stock_checks`): `sonoff-answers` where the
+  reader was not installed, `neither-answers`, or `cannot-tell`. The admin
+  view's latest readout reports show it beside where one stopped.
 - **Reviewing.** `readouts.py review` lists the readouts waiting, by key,
   with an odd one's fingerprint marked; `approve ID` or `reject ID` settles
   one. A rejected one frees its place for another sender's.

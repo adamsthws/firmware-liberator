@@ -131,6 +131,22 @@ test("the latest reports and readout reports say the question each was stopped a
     new RegExp(`<td>cancelled</td><td>${readout.stopped.step} at ${readout.stopped.question}</td>`));
 });
 
+test("the latest reports, readout reports and held ones say what the check of Sonoff's firmware found", async () => {
+  const bindings = env();
+  const samples = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8"));
+  const run = samples.valid.find((sample) => sample.stock_check);
+  const readout = samples.readoutValid.find((sample) => sample.stock_check);
+  await bindings.DB.batch([...writes(bindings.DB, run, "a".repeat(64), "2026-11-09"),
+    ...writes(bindings.DB, readout, "b".repeat(64), "2026-11-09"),
+    ...writes(bindings.DB, { ...run, id: "fedcba9876543210", stock_check: "neither-answers" }, "c".repeat(64),
+      "2026-11-09", "held for review")]);
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  const card = (heading) => html.split(heading)[1].split("</section>")[0];
+  assert.match(card("The latest reports"), new RegExp(`<td>${run.stock_check}</td>`));
+  assert.match(card('id="readout-reports">'), new RegExp(`<td>${readout.stock_check}</td>`));
+  assert.match(card('id="held">'), /<td>neither-answers<\/td>/);
+});
+
 test("the view lists the keys a later whole readout disagrees with, unsettled", async () => {
   const { bindings, db } = await held();
   const add = db.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review,
@@ -221,14 +237,16 @@ test("the view shows the offers sent beside runs, day by day: sent, taken, and t
     + '<td class="number">12</td><td class="number">8</td><td>25%</td><td>50%</td></tr>'), "newest first, every day");
 });
 
-test("a held report deleted takes what it said of its offers and a table refused with it", async () => {
+test("a held report deleted takes what it said of its offers, a table refused and its stock check with it", async () => {
   const db = env().DB;
-  const id = await offered(db, "2026-11-09", {}, { table_refused: { sha256: "ab".repeat(32), at: "0x8000" } },
-    "held for review");
+  const id = await offered(db, "2026-11-09", {}, { table_refused: { sha256: "ab".repeat(32), at: "0x8000" },
+    stock_check: "neither-answers" }, "held for review");
   assert.equal(rows(db, "SELECT id FROM refused_tables").length, 1);
+  assert.equal(rows(db, "SELECT id FROM stock_checks").length, 1);
   await db.batch(admin.remove(db, id));
   assert.deepEqual(rows(db, "SELECT id FROM report_offers"), []);
   assert.deepEqual(rows(db, "SELECT id FROM refused_tables"), []);
+  assert.deepEqual(rows(db, "SELECT id FROM stock_checks"), []);
 });
 
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {

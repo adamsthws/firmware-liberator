@@ -46,13 +46,18 @@ stages people choose to stop at, and which devices people want supported next: s
   Sonoff's firmware was taken, whether the power meter kept its calibration,
   and, going back to Sonoff's firmware, where the eWeLink identity came from
   (the backup, the device or your account), never the identity itself.
+  Where the new firmware Sonoff's firmware sent did not answer, what the
+  tool found when it checked whether Sonoff's firmware still did, before
+  asking you to switch the device off and on, as a word: `sonoff-answers`
+  (it was not installed), `neither-answers`, or `cannot-tell`.
 - **A readout's report** (one for each device read out): how it ended -
   accepted by the website, kept on your computer unsent, not needed (one like
   it is in already), turned away as the website was full, not read as the
   device now runs other firmware, skipped, stopped by you, or failed, with
   the kind of problem; one stopped or failed part way says the stage it was
-  in, and the question you stopped it at, as a conversion's does - the
-  device's kind, its model and the name and version
+  in, and the question you stopped it at, and what a check of Sonoff's
+  firmware found, as a conversion's does - the device's kind, its model and
+  the name and version
   of its Sonoff firmware, whether its whole memory was read, and how long it
   took. Never the readout itself, nor its reference.
 - **Before a readout, the question whether one is wanted:** the device's

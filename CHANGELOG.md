@@ -100,6 +100,10 @@ check.
   again). If neither answers, it says the device most likely has the new
   firmware, still starting or unable to join your Wi-Fi
   ([troubleshooting](docs/troubleshooting.md#the-first-install)).
+- A run's or readout's report now says what that check found, as a fixed
+  word: `sonoff-answers`, `neither-answers` or `cannot-tell`, or nothing
+  where no check ran. The website keeps it (migration 0003)
+  ([what the tool sends](docs/what-the-tool-sends.md#what-a-report-holds)).
 - A device on Tasmota given by its address (`--device-ip`), or whose Tasmota
   has a web password, is now taken for the kind of device its template names.
   Before, the run took any such device for an S60, and its report named no

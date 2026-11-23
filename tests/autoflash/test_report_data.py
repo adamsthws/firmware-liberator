@@ -107,6 +107,19 @@ class PayloadTests(RouteTestCase):
             ctx.state.set_input("table_refused", spoilt)
             self.assertIsNone(self.payload(ctx, "failed")["table_refused"], spoilt)
 
+    def test_what_the_check_of_sonoffs_firmware_found_is_sent_as_its_word_and_null_where_none_ran(self):
+        from tools.autoflash.routes import arrival
+        ctx = self.ctx(device_kind="sonoff-s61")
+        self.assertIsNone(self.payload(ctx)["stock_check"])
+        schema = report_schema.current()
+        for found in arrival.STOCK_CHECKS.values():
+            ctx.state.set_input(arrival.STOCK_CHECK, found)
+            sent = self.payload(ctx)
+            self.assertEqual(sent["stock_check"], found)
+            self.assertEqual(report_schema.validate(schema, {**sent, "proof": "1794000000:198"}), [], found)
+        ctx.state.set_input(arrival.STOCK_CHECK, "sonoff answers")   # never words the schema does not name
+        self.assertIsNone(self.payload(ctx)["stock_check"])
+
     def test_the_firmware_name_the_device_checks_is_sent_and_whether_it_is_the_tools(self):
         from tools.autoflash import kinds
         for name, expected in ((kinds.SONOFF_S60.wrapper_model, True), ("FWSW-E32S60B-S60-ESP32C3FN4", False)):
@@ -378,6 +391,14 @@ class ReadoutPayloadTests(unittest.TestCase):
             self.assertEqual(report_schema.validate(schema, {**sent, "proof": "1794000000:198"}), [])
         for ended in (report_data.ACCEPTED, report_data.SKIPPED, report_data.NOT_NEEDED):
             self.assertIsNone(self.payload(outcome=ended, step="save")["stopped"], ended)
+
+    def test_what_the_check_of_sonoffs_firmware_found_is_sent_as_a_runs_is(self):
+        schema = report_schema.current()["readout"]
+        self.assertIsNone(self.payload()["stock_check"])
+        sent = self.payload(outcome=report_data.FAILED, error="other", step="read", stock_check="sonoff-answers")
+        self.assertEqual(sent["stock_check"], "sonoff-answers")
+        self.assertEqual(report_schema.validate(schema, {**sent, "proof": "1794000000:198"}), [])
+        self.assertIsNone(self.payload(stock_check="still answers")["stock_check"])
 
     def test_what_is_not_as_the_tool_writes_it_is_sent_as_not_known(self):
         sent = self.payload(product="a product", model="", version="v1", mac=None, whole=None)

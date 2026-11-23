@@ -159,6 +159,9 @@ const REFUSED = "INSERT OR IGNORE INTO refused_tables (id, sha256, at) VALUES (?
 // a report that gives one.
 const QUESTION = "INSERT OR IGNORE INTO stop_questions (id, question) VALUES (?, ?)";
 const READOUT_STEP = "INSERT OR IGNORE INTO readout_steps (id, step) VALUES (?, ?)";
+// What the check of Sonoff's firmware found before a switch off and on was
+// asked for (migration 0003), one row a run's or readout's report that gives one.
+const STOCK_CHECK = "INSERT OR IGNORE INTO stock_checks (id, outcome) VALUES (?, ?)";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -201,6 +204,9 @@ export function writes(db, report, hash, day, held = null) {
     if (report.stopped?.question) {
       statements.push(db.prepare(QUESTION).bind(report.id, report.stopped.question));
     }
+    if (report.stock_check) {
+      statements.push(db.prepare(STOCK_CHECK).bind(report.id, report.stock_check));
+    }
     return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
   }
   const statements = [db.prepare(INSERT).bind(...Object.values(COLUMNS(report, hash, day, held)))];
@@ -223,6 +229,9 @@ export function writes(db, report, hash, day, held = null) {
   }
   if (report.stopped?.question) {
     statements.push(db.prepare(QUESTION).bind(report.id, report.stopped.question));
+  }
+  if (report.stock_check) {
+    statements.push(db.prepare(STOCK_CHECK).bind(report.id, report.stock_check));
   }
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }
