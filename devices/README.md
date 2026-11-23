@@ -23,7 +23,6 @@ None has published firmware, and none has been converted for real.
 
 | Device | Status | Where it stops, in the emulator | What would move it on |
 |---|---|---|---|
-| [BASICR4](sonoff-basicr4/README.md) | Readout wanted | It starts, on a stand-in flash laid out on a real one's partition table, at 0xC000, and is read out | A bridge that copies its table to 0x8000 before the conversion, which a real one's readout shows there is room for |
 | [MINIR4](sonoff-minir4/README.md) | Readout wanted | It starts and is read out, with the factory and pair records it keeps; a conversion has not been tried yet | Trying a conversion in the emulator |
 | [NSPanel](sonoff-nspanel/README.md) | Not supported yet | It boots from a whole dump, then turns the installer down after the file's first 24 bytes, as it wants three records, the app and two screen images ([why](sonoff-nspanel/research.md#the-nspanel-wants-three-records)) | Genuine screen images and a real panel to prove the display path on, or another way in |
 | [M5 1-gang](sonoff-m5-1c/README.md), [2-gang](sonoff-m5-2c/README.md), [3-gang](sonoff-m5-3c/README.md) | Not supported yet | It goes quiet, and never starts its Wi-Fi | A whole dump of one that is not the locked Matter version |

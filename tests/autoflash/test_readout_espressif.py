@@ -10,20 +10,20 @@ from tools.autoflash import account, hostsys, kinds, records, prompts, readout, 
 
 # A kind a whole readout is for (Readout wanted) that the tool does not convert:
 # the bridge has never run on a real one.
-BASICR4 = kinds.SONOFF_BASICR4
-AS_BASICR4 = account.Asked("1.1.0", BASICR4.stock_model, "BASICR4", [], {}, "1000abcdef")
-DEVICE = record("BASICR4", BASICR4.stock_model)
+MINIR4 = kinds.SONOFF_MINIR4
+AS_MINIR4 = account.Asked("1.2.0", MINIR4.stock_model, "MINIR4", [], {}, "1000abcdef")
+DEVICE = record("MINIR4", MINIR4.stock_model)
 
 
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         start_run(self)
-        asked = mock.patch.object(account, "ask_account", return_value=AS_BASICR4)
+        asked = mock.patch.object(account, "ask_account", return_value=AS_MINIR4)
         asked.start()
         self.addCleanup(asked.stop)
 
     def test_nothing_is_sent_without_proceed(self):
-        with learned(BASICR4.wrapper_model, "ESP32C3"), \
+        with learned(MINIR4.wrapper_model, "ESP32D0WD"), \
                 mock.patch.object(prompts, "require_word", side_effect=prompts.Declined("q")), \
                 mock.patch.object(hostsys, "run_tool") as sent:
             with self.assertRaises(prompts.Declined):
@@ -40,7 +40,7 @@ class BridgeTests(unittest.TestCase):
         def found(ctx, *, sent):
             state_then.append(ctx.state.input(readout.STATE_KEY))   # a stop from here on reads through it
             return "192.0.2.77"
-        with learned(BASICR4.wrapper_model, "ESP32C3"), \
+        with learned(MINIR4.wrapper_model, "ESP32D0WD"), \
                 mock.patch.object(prompts, "require_word", return_value=True), \
                 mock.patch.object(firewall, "choose_port", return_value=8088), \
                 mock.patch.object(firewall, "ensure_firewall"), \
@@ -63,12 +63,12 @@ class BridgeTests(unittest.TestCase):
                                                       "6 Restoring Sonoff's firmware", "back on Sonoff's"])
         command = sent.call_args.args[0]
         self.assertEqual(command[1], "-u")  # each line of the sender's in the log as it comes
-        self.assertEqual(command[command.index("--readout-model") + 1], BASICR4.wrapper_model)
+        self.assertEqual(command[command.index("--readout-model") + 1], MINIR4.wrapper_model)
         # Sent to the account's device by its id, not by its eWeLink discovery advert.
         self.assertEqual(command[command.index("--device-id") + 1], DEVICE["deviceid"])
         self.assertNotIn("--mdns-capture", command)
         wrapped = Path(command[command.index("--firmware") + 1]).read_bytes()
-        self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], BASICR4.wrapper_model)
+        self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], MINIR4.wrapper_model)
         manifest, files = offered.call_args.args[1:3]
         self.assertTrue(manifest["read"])
         for key in ("firmware", "facts", "wifi_blanked", "identity_replaced"):
@@ -88,7 +88,7 @@ class BridgeTests(unittest.TestCase):
         from tools.espressif import analyze_vendor_ota, dump_stock_flash
 
         def sent_app(spoil):
-            with learned(BASICR4.wrapper_model, "ESP32C3"), \
+            with learned(MINIR4.wrapper_model, "ESP32D0WD"), \
                     mock.patch.object(images, "SPOIL_STEP", spoil), \
                     mock.patch.object(prompts, "require_word", return_value=True), \
                     mock.patch.object(firewall, "choose_port", return_value=8088), \
@@ -104,7 +104,7 @@ class BridgeTests(unittest.TestCase):
         whole, spoilt = sent_app(None), sent_app("readout")
         self.assertEqual(len(whole), len(spoilt))
         self.assertNotEqual(whole, spoilt)
-        self.assertEqual(analyze_vendor_ota.analyze(spoilt)["wrapper"]["model"], BASICR4.wrapper_model)
+        self.assertEqual(analyze_vendor_ota.analyze(spoilt)["wrapper"]["model"], MINIR4.wrapper_model)
         self.assertEqual(self.ctx.state.data["captures"]["readout.spoilt"], 1)
 
     def test_on_the_reading_program_already_it_reads_through_it_sending_nothing(self):

@@ -185,7 +185,10 @@ choose.
 8. **Install a first Tasmota through the installer**, and give it your Wi-Fi
    details so it joins too. If the installer could not join, or Tasmota does
    not appear, the tool asks you to join the device's own network, names it,
-   does the rest itself, and tells you when to switch back.
+   does the rest itself, and tells you when to switch back. On a device whose
+   Sonoff firmware reads its layout table from further in (a BASICR4), the
+   installer first copies the table to where Tasmota reads it, a place
+   Sonoff's firmware never reads, so this costs nothing if the power fails.
 9. **Update the bootloader** to ESPHome's, which starts Tasmota, ESPHome and
    Sonoff's firmware alike and rolls back an update that fails to start. There
    is only one, so it is fetched and checked whole first, then written in

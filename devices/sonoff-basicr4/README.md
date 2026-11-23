@@ -4,20 +4,24 @@
 
 [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-basicr4.json)](README.md)
 
-## Where it stops
+## Testing
 
-Its firmware keeps its partition table at 0xC000, and its bootloader reads it
-there. Tasmota and ESPHome, like the tool's own programs, are built to look for
-it at 0x8000, so the tool does not convert it yet, and turns it down as it does
-any device it does not know. Its stock firmware starts in the emulator, on a
-stand-in flash laid out on a real one's table, and is read out.
+**In the emulator:** it converts to Tasmota and to ESPHome, each then to the
+other, and from Tasmota back to Sonoff's firmware. There its official update
+file runs on the S60's flash laid out on a real BASICR4's partition table, as
+no whole dump of one is published. The emulator has none of its hardware but
+its button, so its wiring below is what its sources say, not what was seen.
 
-**A readout is safe, and wanted** ([`docs/readouts.md`](../../docs/readouts.md)):
-the bridge (4.4.6 or later) takes the table from 0xC000 without writing anything,
-only reads the device, and puts it back on Sonoff's firmware. The copy sent in has
-the Wi-Fi password and eWeLink identity taken out of every settings partition,
-and of the records this firmware keeps them in (its pair and factory records).
-A readout of a real one has shown its whole flash layout ([below](#files)).
+**Worth checking:** whether the relay, button and LED work, and that the
+conversion found its table where its firmware reads it (`Partition table at 0xc000`
+in the run's log).
+
+**A readout is safe** ([`docs/readouts.md`](../../docs/readouts.md)): the
+installer (bridge 4.4.6 or later) takes the table from 0xC000 and writes
+nothing; the copy sent in has the Wi-Fi password and eWeLink identity taken out
+of every settings partition, and of the records this firmware keeps them in
+(its pair and factory records). A readout of a real one has shown its whole
+flash layout ([below](#files)).
 
 ## The device
 
@@ -77,19 +81,25 @@ connect its pins with it on the mains.**
   for Sonoff's firmware or what the tool installs. The tool's copy of the table
   keeps it, as the device's own does, and so does the table a conversion
   commits on (the interim table); the temporary one leaves `esp_secure_cert`
-  out. In the emulator,
+  out. The tool knows it by
+  [`artifacts/sonoff-basicr4-partition-table.bin`](../../artifacts/README.md)
+  (`sonoff-basicr4` in [`layouts.py`](../../tools/espressif/layouts.py)). In the emulator,
   [`public_dump.py`](../../tools/espressif/emulator/public_dump.py) lays the
   S60's flash out on this table, with eWeLink's official update file in
   `ota_0`, the factory and pair records a paired one has, and its thermistor
   reading room temperature, so that it takes updates.
 - **Calibration**: none, as it has no meter.
-- **Back to Sonoff**: a readout leaves it there; the tool does not convert it yet.
-- **How it is converted**: not yet. Neither Tasmota nor ESPHome needs to change.
-  The likeliest way is for the bridge first to write a copy of its table at
-  0x8000, which Sonoff's bootloader and app never read. The interim Tasmota then
-  starts, and the tool's usual steps put ESPHome's bootloader and table in
-  place, as on any device
+- **Back to Sonoff**: the tool writes back the device's own backup, taken before
+  anything of Sonoff's is written over, its table at 0xC000 too. Without the
+  backup it cannot: its firmware keeps its eWeLink identity in records of its
+  own, which the tool keeps nowhere else, so keep the backup the run makes.
+- **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),
+  with the official Tasmota and ESPHome, unchanged, but for its table. Before
+  Tasmota goes on, the installer copies the table to 0x8000, where Tasmota,
+  ESPHome and their bootloader read it, and which Sonoff's bootloader and
+  firmware never read: a power cut at any point leaves it starting Sonoff's
+  firmware or the installer, as on any device. From there it is converted as
+  any device is, and leaving Tasmota it spends a short time on a temporary
+  table, as the TH Elite does
   ([research](../../docs/espressif-research.md#converting-a-table-at-0xc000)).
-  That copy fits: on the one read out, the bootloader ends at 0x4D70 and
-  0x8000-0xBFFF is blank.
   [`docs/adding-a-device.md`](../../docs/adding-a-device.md) says how a device is added.

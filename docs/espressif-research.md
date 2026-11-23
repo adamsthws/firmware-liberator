@@ -21,7 +21,7 @@ in [legal.md](legal.md#studying-and-emulating-the-firmware).
 | TH Elite (THR320D) | ESP32 | TH style | `FWSW-E32THR3-THR3-ESP32D0WDV3` | whole dump | converts both ways |
 | Dual R3 | ESP32 | TH style | `FWSWES-E32DR3-DUALR3-ESP32D0WDV3` | update file, on the TH Elite's flash | converts both ways |
 | NSPanel | ESP32 + PSRAM | S60 style, no `reserve` | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` | whole dump | boots; rejects a one-record file at the header ([why](../devices/sonoff-nspanel/research.md#the-nspanel-wants-three-records)) |
-| BASICR4 | ESP32-C3 | its own ([below](#flash-and-layouts)), table at 0xC000 | `FWSW-E32R4-BASICR4-ESP32C3` | update file, on the S60's flash laid out on a real one's table | starts and is read out ([below](#sonoffs-ais-sdk)); not converted ([why](#converting-a-table-at-0xc000)) |
+| BASICR4 | ESP32-C3 | its own ([below](#flash-and-layouts)), table at 0xC000 | `FWSW-E32R4-BASICR4-ESP32C3` | update file, on the S60's flash laid out on a real one's table | converts both ways, and back ([how](#converting-a-table-at-0xc000)) |
 | MINIR4 | ESP32 + PSRAM | S60 style | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` | update file | starts with the ais SDK's records and is read out ([below](#sonoffs-ais-sdk)); a conversion not tried yet |
 | M5 1C, 2C, 3C (not Matter) | ESP32 | unknown | `FWSWES-E32T5-T5-ESP32D0WDV3` | update file | goes quiet, never starts its Wi-Fi |
 
@@ -203,29 +203,51 @@ The BASICR4's bootloader and app read its partition table at 0xC000
 ([how this was found](#sonoffs-ais-sdk)). Where a program looks is built into
 it (`CONFIG_PARTITION_TABLE_OFFSET`), not passed on by the bootloader, and
 everything the tool installs is built for 0x8000: the interim Tasmota, the
-mover, the safeboot, ESPHome and its bootloader, and the bridge, which reads
-0xC000 only when 0x8000 is empty. Tasmota's Partition Wizard
-(`partition_core.be`) and the tool's plans (`plans.TABLE_ADDRESS`) write the
-table at 0x8000. This was read in the code and Tasmota's source, not tried.
+mover, the safeboot, ESPHome and its bootloader, and the bridge. Tasmota put
+in a slot under Sonoff's bootloader would find no table and restart for ever.
+Custom builds for 0xC000 would work too, but not as the official images, and
+Tasmota's Partition Wizard would write a table nothing reads.
 
-Tasmota put in a slot would start under Sonoff's bootloader, find no table or
-NVS at 0x8000, and restart for ever, so bridge 4.4.6 refuses an update on such
-a device. The likeliest way, inferred and not tried, needs no change upstream:
-the bridge first writes a copy of the 0xC000 table's entries at 0x8000 and
-reads it back. Sonoff's bootloader and app never read that
-sector, so a power cut there costs nothing. The interim Tasmota then sees the
-same partitions, and D5 puts ESPHome's bootloader in place as on any device,
-after which the device is as any other converted one. On the way from Sonoff,
-the stale copy at 0xC000 goes before the Tasmota layout's `nvs`
-(0x9000-0xDFFF) takes that range; on the way back, the backup restores both.
+So the bridge (4.4.7) copies the table: before it erases Sonoff's slot for the
+interim Tasmota, it writes the whole sector at 0xC000 to 0x8000, which Sonoff's
+bootloader and app never read, and reads it back
+([the bridge](../archive/bridge/README.md)). From then on the device has the
+same table in both places, and the conversion is the usual one, by the
+`sonoff-basicr4` layout in [`layouts.py`](../tools/espressif/layouts.py),
+whose `sonoff_table_at` says where Sonoff's firmware reads it. What the flash
+holds at each step, and what a power cut there leaves:
 
-This needs a bridge built with dangerous flash writes allowed (its sdkconfig
-aborts on them) and a BASICR4 layout in `layouts.py`. A bootloader running
-past 0x8000 would have ruled the copy out; a readout of a real one shows its
-bootloader ends at 0x4D70 and 0x8000-0xBFFF blank, so the copy fits
-([its whole layout](#flash-and-layouts)). Custom Tasmota or ESPHome builds for 0xC000 would also work, but
-not as the official images, and the Partition Wizard would write a table nothing
-reads.
+| Step | 0x8000 | 0xC000 | Starts after a power cut |
+|---|---|---|---|
+| Stock, installer, backup (C2, C3) | blank | the table | Sonoff's firmware: the bridge chooses it as it starts |
+| The copy (D1, before the upload) | blank, then the table; its first entry is written last | the table | Sonoff's firmware; a bridge started again takes 0xC000's, finding no table at 0x8000 until the copy is whole |
+| The interim Tasmota (D1, D4) | the table | the table | the bridge, or the interim Tasmota, as on any device: Sonoff's bootloader reads 0xC000, Tasmota 0x8000 |
+| ESPHome's bootloader (D5) and on | the table | the table, read by nothing | as on any device |
+| Tasmota's layout (E3) | Tasmota's table | Tasmota's settings: the recovery safeboot wipes them first | as on any device |
+
+On the way to ESPHome, 0xC000 stays as it was. On the way to Tasmota the
+commit moves everything in front of `ota_0` aside first, the Matter partitions
+too (`Layout.low`), and Tasmota's settings take the range the stale copy was
+in. Going back to Sonoff's firmware writes the table back at 0xC000 from the
+device's backup, with everything in front of its boot selection
+(`plans.back_to_sonoff`); the copy at 0x8000 stays, read by ESPHome's
+bootloader, which starts Sonoff's firmware as it does on any device. The
+copy fits: on a real one the bootloader ends at 0x4D70 and 0x8000-0xBFFF is
+blank ([its whole layout](#flash-and-layouts)).
+
+Its `ota_0` is at 0x30000, where the mover does not fit in front of Tasmota's
+app, so it leaves Tasmota through a temporary table, as the TH Elite does
+([above](#leaving-tasmota-on-a-th-style-layout)). Its settings partition is
+behind the Matter ones, at 0x1C000, with no room for a temporary boot selection
+after it, so on that table they start at `TEMPORARY_NVS`, just after the table,
+no larger than its own (`Layout.temporary_nvs`), and the Matter partitions, which
+nothing then running reads, are left out. Its own table goes back from the hub
+with the settings copied home whole (`plans.own_table_from_temporary`).
+
+Its firmware keeps its eWeLink identity in records of its own
+([below](#sonoffs-ais-sdk)), not the `frame_params` the tool keeps in the
+identity sector or rebuilds from the account (`kinds.Kind.ais_sdk`): it goes
+back to Sonoff's firmware from its backup alone.
 
 ## A device's identity and stores
 
@@ -328,7 +350,7 @@ file (its RISC-V code disassembled), it differs in what an emulated device
 needs:
 
 - **The partition table is at 0xC000**
-  ([what that means for a conversion](#converting-a-table-at-0xc000)): its
+  ([how a conversion copes](#converting-a-table-at-0xc000)): its
   `load_partitions` maps sector 0 and adds 0xC000 where the S60's adds 0x8000.
   On the S60's flash it found no table, `nvs_flash_init` returned
   `ESP_ERR_NOT_FOUND` and `espInit` aborted. The MINIR4's real table is at

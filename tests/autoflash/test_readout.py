@@ -821,9 +821,9 @@ class RunTests(unittest.TestCase):
 
     def test_a_kind_wanting_a_readout_is_read_in_full(self):
         from tools.autoflash import kinds
-        basicr4 = kinds.SONOFF_BASICR4
-        self.assertIs(basicr4.status, kinds.Status.READOUT_WANTED)
-        sent, _ = self.read("BASICR4", basicr4.stock_model, basicr4.wrapper_model, "ESP32C3")
+        minir4 = kinds.SONOFF_MINIR4
+        self.assertIs(minir4.status, kinds.Status.READOUT_WANTED)
+        sent, _ = self.read("MINIR4", minir4.stock_model, minir4.wrapper_model, "ESP32D0WD")
         self.assertIsNotNone(sent)
 
     def test_a_listed_product_under_another_firmware_name_is_sent_nothing(self):

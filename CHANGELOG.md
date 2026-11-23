@@ -16,6 +16,16 @@ check.
 
 ## 3.2.0
 
+- The Sonoff BASICR4 converts, to Tasmota or ESPHome and from either to the
+  other, and back to Sonoff's firmware from its backup. No real one has been
+  converted yet, so the go-ahead before the first write says so and asks for
+  the run's result. Its firmware reads its partition table at 0xC000, where
+  Tasmota and ESPHome do not look: the installer (bridge 4.4.7) now copies it
+  to 0x8000 before Tasmota goes on, a place Sonoff's firmware never reads, so
+  the device starts Sonoff's firmware or the installer at every point, as any
+  device does. Going back to Sonoff's firmware needs the backup the run
+  makes: its firmware keeps its eWeLink identity in records the tool keeps
+  nowhere else, so without one the tool says so before anything is written.
 - A run stopped by a transfer to or from the device that kept being cut off
   part way now says what most often causes it: the link between the router
   and the device, or a mesh node, extender or powerline adapter between them.

@@ -408,6 +408,10 @@ ESPHome keeps Sonoff's partition layout and its settings, the device's
 identity among them, and the tool writes the `sonoff` sector at the end of
 `ota_1` too
 ([Espressif research](espressif-research.md#a-devices-identity-and-stores)).
+A BASICR4 has its table twice: where its Sonoff firmware reads it, 0xC000, and
+the copy the installer made at 0x8000, which ESPHome reads
+([why](espressif-research.md#converting-a-table-at-0xc000)). It keeps no
+`sonoff` sector: its identity is in records of its own, which its backup keeps.
 
 ### A Beken device
 

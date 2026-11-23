@@ -14,7 +14,7 @@ You start it by pasting one line into a terminal; the front page has the line fo
 - [Sonoff Dual R3](https://firmwareliberator.com/devices/sonoff-dualr3): Testers wanted. Converts to Tasmota or ESPHome. A two-channel inline switch with a power meter: models DUALR3 and DUALR3 Lite.
 - [Sonoff Basic Gen5](https://firmwareliberator.com/devices/sonoff-basic-1gs): Testers wanted. Converts to OpenBeken or ESPHome. An inline switch: model BASIC-1GS, not the DIN-rail BASIC-1GSP.
 - [Sonoff NSPanel](https://firmwareliberator.com/devices/sonoff-nspanel): Not supported yet. A wall panel with a touch screen and two relays.
-- [Sonoff BASICR4](https://firmwareliberator.com/devices/sonoff-basicr4): Readout wanted. An inline switch: model BASICR4.
+- [Sonoff BASICR4](https://firmwareliberator.com/devices/sonoff-basicr4): Testers wanted. Converts to Tasmota or ESPHome. An inline switch: model BASICR4.
 - [Sonoff MINI Extreme](https://firmwareliberator.com/devices/sonoff-minir4): Readout wanted. An inline switch: model MINIR4, not the Matter MINIR4M, which cannot be converted.
 - [Sonoff M5 1-gang](https://firmwareliberator.com/devices/sonoff-m5-1c): Not supported yet. A wall switch: model M5-1C, not the Matter version, whose part number ends in W.
 - [Sonoff M5 2-gang](https://firmwareliberator.com/devices/sonoff-m5-2c): Not supported yet. A wall switch: model M5-2C, not the Matter version, whose part number ends in W.

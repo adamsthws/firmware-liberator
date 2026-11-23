@@ -1,9 +1,9 @@
 # ESPHome for the Sonoff BASICR4
 
-[`esphome.yaml`](esphome.yaml) is the ESPHome a conversion would install. The
-tool does not convert this device yet ([why](README.md#where-it-stops)), so none
-is published; to try it in the emulator, build it as [Changing it](#changing-it)
-says.
+[`esphome.yaml`](esphome.yaml) is the ESPHome the conversion installs when you
+choose ESPHome. You do not need to build it: the tool installs it pre-built,
+from [`artifacts/`](../../artifacts/README.md), and writes your Wi-Fi into it in
+memory only.
 
 ## What it reports
 
