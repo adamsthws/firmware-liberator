@@ -576,6 +576,27 @@ class ConciseTests(OutputTestCase):
             output.stage_end("complete")
         self.assertEqual(self.drawn(body), ["Stage 12 - Verifying memory layout - Complete"])
 
+    def test_a_try_of_a_stage_begun_ahead_goes_with_its_stage_line(self):
+        # A stage begun to check an interrupted step, its step then tried and
+        # failed: tried again, only the second go's line stays.
+        def body():
+            output.stage_begin(9, "Installing ESPHome")
+            mark = output.mark_before_stage()
+            output.stage_end("stopped")
+            output.tell("FAILED: cut off")
+            self.assertTrue(output.rewind(mark))
+            output.stage_begin(9, "Installing ESPHome")
+            output.stage_end("complete")
+        self.assertEqual(self.drawn(body), ["Stage 9 - Installing ESPHome - Complete"])
+
+    def test_with_no_stage_under_way_a_mark_is_where_the_screen_is(self):
+        def body():
+            output.show("Before")
+            mark = output.mark_before_stage()
+            output.show("After")
+            self.assertTrue(output.rewind(mark))
+        self.assertEqual(self.drawn(body), ["Before"])
+
     def test_a_try_inside_a_block_can_be_taken_off(self):
         def body():
             output.stage_begin(3, "Discovering the device")

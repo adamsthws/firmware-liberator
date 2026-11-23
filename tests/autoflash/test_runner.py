@@ -826,6 +826,14 @@ class ScreenTests(unittest.TestCase):
             output.start(self.log, verbose=False)
             try:
                 for step, _ in stages:
+                    if step in getattr(self, "interrupted", ()):
+                        # As run_steps checks a step a run before was cut off in.
+                        routes.begin_stage(step)
+                        output.transient_begin()
+                        output.say("")
+                        output.tell("Interrupted last time - checking whether it finished...")
+                        output.say(f"    Doing {step} again: the device does not show it finished.")
+                        output.transient_end()
                     runner.execute_with_retries(self.ctx, step)
                 runner.execute_with_retries(self.ctx, "E3")
             finally:
@@ -866,6 +874,21 @@ class ScreenTests(unittest.TestCase):
                 rows = [row.strip() for row in self.screen([("E2", stage)]).splitlines() if row.strip()]
                 self.assertEqual("Read out instead." in rows, bool(said))
                 self.assertEqual(len(rows), 3 if said else 2)   # E2's and E3's lines, and what it said
+
+    def test_a_stage_checked_after_an_interruption_then_tried_again_leaves_one_line(self):
+        # Seen in the fault suite: I1 interrupted, checked, cut off again and
+        # tried again - its first go stayed on the screen above the second.
+        tries = iter([errors.CutOff("the transfer to the installer stopped part way: did not answer"), None])
+
+        def stage(ctx):
+            failure = next(tries)
+            if failure:
+                raise failure
+            return {}
+        self.interrupted = {"E2"}
+        screen = self.screen([("E2", stage)])
+        from tools.repo import unattended_run
+        self.assertEqual(unattended_run.stage_problems(screen), [], screen)
 
     def test_a_stage_tried_again_says_retrying_while_it_runs(self):
         tries = iter([PhaseError("the device stopped the stage without reaching this computer"), None])

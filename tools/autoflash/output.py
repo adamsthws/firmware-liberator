@@ -690,6 +690,17 @@ def mark() -> Mark | None:
         return Mark(_s.rows, _s.after_stage, _s.after_blank, len(_s.blocks))
 
 
+def mark_before_stage() -> Mark | None:
+    """mark(), or, with a stage under way, where its line began: a try that
+    failed then goes with its stage line, as one the try began itself does.
+    For a stage begun ahead of its step - to check what a run cut off there
+    left (runner.run_steps) - whose step is then tried again."""
+    with _lock:
+        if _s.stage is not None and _s.stage_mark is not None:
+            return _s.stage_mark
+    return mark()
+
+
 def rewind(to: Mark | None) -> bool:
     """Take everything shown since mark() off the screen - a wrong answer and
     its question, or a try that failed - so that what comes again does not
