@@ -85,7 +85,9 @@ def install() -> None:
         finally:
             tried = TRIED[:]
             TRIED[:] = outer
-        failed = any(test is self for test, _ in result.errors + result.failures)
+        # pytest (mutation testing, docs/testing.md) gives a result of its own,
+        # with no lists of what failed: then whether the test failed is unknown.
+        failed = any(test is self for test, _ in getattr(result, "errors", []) + getattr(result, "failures", []))
         if tried and not failed:
             result.addError(self, (OutsideConnection, OutsideConnection(
                 f"the test connected to {', '.join(tried)}, beyond this computer, and the error was caught: "

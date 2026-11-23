@@ -41,6 +41,30 @@ class NoNetworkTests(unittest.TestCase):
         self.assertEqual(len(result.errors), 1)
         self.assertIn("the error was caught", result.errors[0][1])
 
+    def test_a_result_with_no_lists_of_failures_as_pytests(self):
+        # Seen running mutmut: pytest's result has addError but no errors list.
+        class Result:
+            def __init__(self):
+                self.added = []
+
+            def addError(self, test, error):
+                self.added.append(error)
+
+            def __getattr__(self, name):
+                if name in ("errors", "failures"):
+                    raise AttributeError(name)
+                return lambda *args, **kwargs: None
+
+        class Inner(unittest.TestCase):
+            def runTest(self):
+                try:
+                    NoNetworkTests.connect("192.0.2.1")
+                except BaseException:  # noqa: BLE001 - as code under test may
+                    pass
+        result = Result()
+        Inner().run(result)
+        self.assertIn("the error was caught", str(result.added[-1][1]))
+
     def test_loopback_is_this_computer(self):
         with socket.socket() as server:
             server.bind(("127.0.0.1", 0))

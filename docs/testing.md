@@ -147,7 +147,7 @@ needs pytest, which runs unittest's tests as they are):
 
 ```sh
 work=$(mktemp -d)
-git archive HEAD | tar -x -C "$work"
+git ls-files -z | tar --null -T - -c | tar -x -C "$work"   # not git archive: it leaves out tests/ (.gitattributes)
 python3 -m venv "$work/.venv"
 "$work/.venv/bin/pip" install mutmut==3.8.0 "pytest<9"   # 3.8.0 reads a pytest 8 attribute
 cat > "$work/pyproject.toml" <<EOF
