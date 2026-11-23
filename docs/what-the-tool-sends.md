@@ -29,7 +29,10 @@ stages people choose to stop at, and which devices people want supported next: s
   sends no report. If the tool itself went wrong, the place in its own code
   where it did (such as `KeyError at tools/autoflash/report.py:212`), never
   any of your values.
-- **The device:** its kind and model (such as Sonoff S60, S60TPF), the
+- **The device:** its kind and model (such as Sonoff S60, S60TPF), as far as
+  the run knew them - none for a run stopped before it found a device, at the
+  eWeLink sign-in say, and the kind alone for an update of a converted device,
+  which asks eWeLink nothing - the
   version of Sonoff's firmware it had, the name its own updater checks an
   update against (and whether it is the one the tool expects), and on an
   Espressif device its chip's revision and its flash chip's maker code and size.

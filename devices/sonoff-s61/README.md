@@ -16,6 +16,28 @@ the button toggled the relay
 **Worth checking:** whether it came back on your Wi-Fi, and whether the relay,
 button, LEDs and meter work.
 
+**What real ones have reported so far** (to release 3.1.0, from the
+[reports runs send](../../docs/what-the-tool-sends.md)): four runs on three
+S61STPF on stock 1.1.0, none converted yet.
+
+- Two, one device's run and the run carrying it on, sent the interim firmware
+  whole (B2), but it never answered on the Wi-Fi (J1). Both stopped at the
+  question to switch the device off and on, without that being done, so
+  whether its bootloader installed the image is not known: switched off and
+  on, a device still on Sonoff's firmware is told apart (arrival.until_back).
+- Two never asked for the firmware at all (B2). Runs from what looks like the
+  same computer (the same system and Python) had an S60 never reach it for its
+  installer either (C2), so the cause was most likely that computer or its
+  network, not the S61. The run said "stopped part way" and to switch the
+  device off and on; it now says the device never reached this computer, and
+  what usually stops it, as an Espressif device's installer step does.
+
+A real **S60TPG-M**, a Matter S60 on a Beken chip, reports the S61's firmware
+model `SN-BK7238-S61-01`, so the tool takes it for an S61
+(`kinds.for_account`). Its pins have not been compared with the S61's. Three
+readouts of one were stopped before the end; a readout's report does not say
+at which stage.
+
 ## The device
 
 Sonoff's Beken smart plug, sold as the **S61S** (iPlug Gen2, Matter over

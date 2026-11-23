@@ -12,6 +12,18 @@ dump of a real one is published ([what was run](#what-has-been-run)).
 **Worth checking:** what model it reports, whether the run's backup found the
 flash matching the table, and whether the relay, both inputs and the LED work.
 
+**What real ones have reported so far** (to release 3.1.0, from the
+[reports runs send](../../docs/what-the-tool-sends.md)): one BASIC-1GS, on stock
+1.0.0 - older than the 1.0.4 run in the emulator - reported the model above,
+and took the interim firmware whole through eWeLink (B2). The interim firmware
+never answered on the Wi-Fi (J1), in the run or the run carrying it on; both
+stopped at the question to switch the device off and on, without that being
+done. So it is not known whether its bootloader installed the image, whether
+its flash is 4 MB, or whether the interim firmware could read the Wi-Fi from
+1.0.0's store: switched off and on, a device still on Sonoff's firmware is
+told apart (arrival.until_back), and one that is not would need a serial
+cable to say more.
+
 ## The device
 
 Sonoff's in-line Matter over Wi-Fi switch, model **BASIC-1GS**, board
