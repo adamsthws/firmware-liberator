@@ -143,6 +143,14 @@ or [beken-research.md](beken-research.md).
    at `0x8000`, or where its firmware was built to read it: give the layout
    that place as its `sonoff_table_at`, as the BASICR4's has 0xC000, and the
    installer copies the table to `0x8000` for the firmware the tool installs.
+   The layout's table is that sector, byte for byte, as a real device holds
+   it: from a public dump, or from a real device's readout (`update_firmware.py
+   esp32 tables --table-from`), never built again from a list of its
+   partitions or a readout's summary of them, which leave out what they do not
+   name. A BASICR4 table built that way lost `esp_secure_cert`'s encrypted
+   flag, and the tool would have refused every real BASICR4. Give the layout a
+   `Seen` with the sector's SHA-256 and where it was read;
+   `tests/espressif/test_layouts.py` holds the published table to it.
    The tool refuses a real device whose table it does not know
    before it overwrites anything, so an unknown layout stops safely. To leave
    Tasmota, the mover goes at `0x20000`. If your device's `ota_0` is elsewhere,

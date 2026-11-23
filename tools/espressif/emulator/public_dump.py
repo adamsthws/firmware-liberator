@@ -121,10 +121,12 @@ class Table:
             flashmap.TABLE_SIZE, b"\xff")
 
 
-# A real BASICR4's, byte for byte (artifacts/sonoff-basicr4-partition-table.bin
-# is its sector): its Sonoff settings in nvs, the NVS partitions for Matter and
-# fctry before and after it empty, esp_secure_cert blank and flagged encrypted
-# (flags 1), which ESP-IDF ignores with flash encryption off, as it is on these.
+# A real BASICR4's, byte for byte: its entries make again the sector read from
+# one (artifacts/sonoff-basicr4-partition-table.bin), which update_firmware.py
+# holds this to, never the other way round. Its Sonoff settings in nvs, the
+# NVS partitions for Matter and fctry before and after it empty,
+# esp_secure_cert blank and flagged encrypted (flags 1), which ESP-IDF ignores
+# with flash encryption off, as it is on these.
 # The MINIR4's has not been read; its firmware runs on its donor's table.
 # Its fctry, the Matter SDK's factory data, holds made-up values here, for
 # going back to Sonoff's firmware to be seen to put it back as it was: another
@@ -388,8 +390,7 @@ def built(dump: "Dump | Update") -> tuple[bytes, bytes]:
     """The test copy's flash and eFuses, made from the fetched dump: the same
     bytes each time, for the same recipe."""
     if isinstance(dump, Update):
-        donor = S60_DUMP if dump.donor == "s60" else DUMPS[dump.donor]
-        flash = with_update(fetched(donor), dump)
+        flash = with_update(fetched(donor(dump.donor)), dump)
     else:
         flash = anonymised(fetched(dump), dump)
     if len(flash) != FLASH_SIZE:
@@ -398,6 +399,11 @@ def built(dump: "Dump | Update") -> tuple[bytes, bytes]:
     efuse = flashmap.esp32_efuse(dump.mac) if flashmap.chip_of(flash) == "esp32" else flashmap.esp32c3_efuse(
         dump.mac, flashmap.min_chip_revision(flash, flashmap.app_slots(flash)[0]))
     return flash, efuse
+
+
+def donor(key: str) -> Dump:
+    """The public dump of a key in DUMPS, or "s60" for S60_DUMP."""
+    return S60_DUMP if key == "s60" else DUMPS[key]
 
 
 def recipe(key: str, motor: str = "") -> "Dump | Update":

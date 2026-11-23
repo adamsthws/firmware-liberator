@@ -165,11 +165,14 @@ names, offsets and sizes, with no code, settings or secrets
 ([why they are kept](../docs/legal.md)). The S60's was read from a stock
 device: every conversion on its layout starts from it, the Tasmota route's
 preflight requires it byte for byte, and it is written back when a device
-leaves Tasmota's layout. `update_firmware.py esp32 tables` takes the others
-from public flash dumps (`tools/espressif/emulator/public_dump.py`), and the
-BASICR4's, of which none is published, as a real one's is, byte for byte
-(`BASICR4_TABLE` there, the emulator's copy of it), checked against the
-hashes in `tools/espressif/layouts.py`.
+leaves Tasmota's layout. `update_firmware.py esp32 tables` takes each of the
+others as a real device holds it, byte for byte: from a public flash dump
+(`tools/espressif/emulator/public_dump.py`), or, for the BASICR4, of which none
+is published, from a real one's readout (`--table-from`). None is built from a
+list of its partitions, which can leave out what a real table has. Each is
+checked against the hash read from a real device, recorded beside its layout
+in `tools/espressif/layouts.py` (`Seen`), and the emulator's stand-in for the
+BASICR4's (`BASICR4_TABLE`) is checked against it.
 
 ## Beken devices
 

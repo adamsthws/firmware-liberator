@@ -31,6 +31,24 @@ TEMPORARY_OTADATA = 0x1D000
 TEMPORARY_PHY = 0x1F000
 
 
+# Where a layout's table was read from a real device, for Seen.source: a real
+# device's readout, as against a public dump's key.
+READOUT = "readout"
+
+
+@dataclass(frozen=True)
+class Seen:
+    """A layout's table as a real device holds it: the SHA-256 of its 4096-byte
+    sector, and where that sector was read - the public dump of a device on it
+    (its key in tools/espressif/emulator/public_dump.py, or "s60" for its
+    S60_DUMP), or a real device's readout (READOUT). The table a layout pins and publishes is that sector byte for
+    byte (update_firmware.py esp32 tables), never one built again from its
+    entries: a list of them can lose what it does not say, as one that left out
+    esp_secure_cert's encrypted flag made a BASICR4 table no real one has."""
+    sha256: str
+    source: str
+
+
 @dataclass(frozen=True)
 class Layout:
     key: str
@@ -48,6 +66,7 @@ class Layout:
     # it to TABLE_AT before anything of the tool's starts, and the table stays
     # in both places until a conversion to Tasmota takes TABLE_AT's for its own.
     sonoff_table_at: int = TABLE_AT
+    seen: Seen | None = None  # its table on a real device; tests/espressif/test_layouts.py holds each to it
 
     @property
     def needs_temporary(self) -> bool:
@@ -169,13 +188,15 @@ SONOFF_DUAL_OTA = Layout(
     "sonoff-dual-ota", "artifacts/sonoff-s60-partition-table.bin",
     "f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf",
     "cfb1e1c46fa209a6c1eada92123a02847ab8e72f67c0044afbcb1c29ead4c936",
-    (0x20000, 0x210000), 0x1F0000, 0x9000, 0x1D000, 0x1F000)
+    (0x20000, 0x210000), 0x1F0000, 0x9000, 0x1D000, 0x1F000,
+    seen=Seen("f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf", "s60"))
 # As the S60's, but for the unused "reserve" entry it leaves out.
 SONOFF_NSPANEL = Layout(
     "sonoff-nspanel", "artifacts/sonoff-nspanel-partition-table.bin",
     "3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70",
     "c8d033c1da0f25fb2df05784e0a97986c8748f6907a644638fa03009ca1a26d6",
-    (0x20000, 0x210000), 0x1F0000, 0x9000, 0x1D000, 0x1F000)
+    (0x20000, 0x210000), 0x1F0000, 0x9000, 0x1D000, 0x1F000,
+    seen=Seen("3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70", "sonoff-nspanel"))
 # A larger NVS, for its history of readings, and smaller app slots: an interim
 # Tasmota must be one that fits (the Layout's slot_size says), and the mover
 # does not fit between its ota_0 and Tasmota's app, so a device on Tasmota leaves
@@ -185,7 +206,8 @@ SONOFF_TH_ELITE = Layout(
     "36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6",
     "0fc13093b8e5ea70ffd09aa04af510dad5b1aa0dece1f56e16abf4e809398865",
     (0x60000, 0x210000), 0x1A9000, 0x9000, 0x49000, 0x4B000,
-    "ae0503897ebe1598242f35c51938f76d5fce70e651a88d2d2db3097eabbf1b19")
+    "ae0503897ebe1598242f35c51938f76d5fce70e651a88d2d2db3097eabbf1b19",
+    seen=Seen("36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6", "sonoff-th-elite"))
 # Espressif's Matter SDK's, read out of a real one: unused Matter partitions in
 # front of the settings and after the slots, which are 0x1E0000 each, and its
 # firmware and bootloader built to read the table at 0xC000. The mover does not
@@ -196,7 +218,8 @@ SONOFF_BASICR4 = Layout(
     "9f77593124a323cc4e5fad5e17a8197c67d3dca7b02ac3a51a6f16be5d421ac9",
     "c9e6552f73868ce6081ef942375762f5771d705a83d3a3987e4293ceef0038bd",
     (0x30000, 0x210000), 0x1E0000, 0x1C000, 0x2C000, 0x2E000,
-    "487426198cec63faf7a3522600ecc7acb260047331909367f746175bf62aa4be", sonoff_table_at=0xC000)
+    "487426198cec63faf7a3522600ecc7acb260047331909367f746175bf62aa4be", sonoff_table_at=0xC000,
+    seen=Seen("9f77593124a323cc4e5fad5e17a8197c67d3dca7b02ac3a51a6f16be5d421ac9", READOUT))
 ALL = (SONOFF_DUAL_OTA, SONOFF_NSPANEL, SONOFF_TH_ELITE, SONOFF_BASICR4)
 
 

@@ -6,6 +6,24 @@ from tools.espressif import layouts
 from tools.espressif.safeboot import safeboot_migration
 
 
+class SeenTests(unittest.TestCase):
+    """Each layout pins the table a real device holds: its sector's hash, as
+    read from a public dump or a real device's readout, never one made again
+    from a list of entries (layouts.Seen)."""
+
+    def test_each_layouts_table_is_the_one_seen_on_a_real_device(self):
+        for layout in layouts.ALL:
+            self.assertIsNotNone(layout.seen, layout.key)
+            self.assertEqual(layout.table_sha256, layout.seen.sha256, layout.key)
+            self.assertEqual(hashlib.sha256(layout.table).hexdigest(), layout.seen.sha256, layout.key)
+
+    def test_each_says_where_it_was_read(self):
+        from tools.espressif.emulator import public_dump
+        for layout in layouts.ALL:
+            if layout.seen.source != layouts.READOUT:
+                public_dump.donor(layout.seen.source)  # a public dump's key
+
+
 class TemporaryTableTests(unittest.TestCase):
     LAYOUT = layouts.SONOFF_TH_ELITE
 

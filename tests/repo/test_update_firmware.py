@@ -1,4 +1,6 @@
 """tools/repo/update_firmware.py: what an ESPHome build is given besides its config."""
+import argparse
+import dataclasses
 import json
 import subprocess
 import tempfile
@@ -6,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tools.espressif import layouts
+from tools.espressif.emulator import public_dump
 from tools.repo import release_notes, update_firmware as uf
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -452,6 +456,80 @@ class PublishableTests(unittest.TestCase):
         self.files({"artifacts/firmware.json": "{}\n{}\n{}\n"})
         self.assertEqual(uf.unpublishable(self.base, self.commit(), cwd=self.repo),
                          [f"{uf.git('rev-parse', 'HEAD', cwd=self.repo)} is not one commit on {self.base}"])
+
+
+class TablesTests(unittest.TestCase):
+    """esp32 tables: each layout's table published as a real device's sector,
+    byte for byte, never one built from a list of its entries."""
+
+    def setUp(self):
+        self.published = {}
+        publish = mock.patch.object(uf, "publish", side_effect=lambda section, key, file, data, record:
+                                    self.published.__setitem__(file, data))
+        # A public dump stood in for by a flash holding the table published
+        # from it, where that dump has it.
+        fetched = mock.patch.object(public_dump, "fetched", side_effect=self.dump)
+        publish.start(), fetched.start()
+        self.addCleanup(mock.patch.stopall)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = Path(folder.name)
+
+    @staticmethod
+    def dump(dump):
+        key = next(key for key, each in public_dump.DUMPS.items() if each is dump)
+        flash = bytearray(b"\xff" * 0x10000)
+        flash[0x8000:0x9000] = layouts.of(key).table
+        return bytes(flash)
+
+    def given(self, data: bytes) -> Path:
+        path = self.folder / "flash.bin"
+        path.write_bytes(data)
+        return path
+
+    def test_each_is_published_as_it_was_byte_for_byte(self):
+        uf.esp32_tables({})
+        self.assertEqual(self.published, {layout.table_file: (ROOT / layout.table_file).read_bytes()
+                                          for layout in layouts.ALL if layout is not layouts.SONOFF_DUAL_OTA})
+
+    def test_a_readouts_whole_flash_gives_the_table_where_its_firmware_reads_it(self):
+        flash = bytearray(b"\xff" * 0x20000)
+        flash[0xC000:0xD000] = layouts.SONOFF_BASICR4.table
+        uf.esp32_tables({}, {"sonoff-basicr4": self.given(bytes(flash))})
+        self.assertEqual(self.published[layouts.SONOFF_BASICR4.table_file], layouts.SONOFF_BASICR4.table)
+
+    def test_a_table_built_from_its_entries_with_a_flag_lost_is_refused(self):
+        # The BASICR4's once was: esp_secure_cert's encrypted flag left out.
+        rows = tuple((*row[:5], 0) for row in public_dump.BASICR4_TABLE.partitions)
+        rebuilt = public_dump.Table(0xC000, rows).sector()
+        parse = uf.parse_partition_sector(rebuilt)  # a sound table, but not the real one
+        self.assertTrue(parse["entries"])
+        with self.assertRaisesRegex(uf.UpdateError, "not the one read from a real device"):
+            uf.esp32_tables({}, {"sonoff-basicr4": self.given(rebuilt)})
+        self.assertEqual(self.published, {})
+
+    def test_a_stand_in_that_differs_from_the_real_table_is_refused(self):
+        rows = tuple((*row[:5], 0) for row in public_dump.BASICR4_TABLE.partitions)
+        with mock.patch.object(public_dump, "BASICR4_TABLE", public_dump.Table(0xC000, rows)), \
+                mock.patch.dict(public_dump.UPDATES, {"sonoff-basicr4": dataclasses.replace(
+                    public_dump.UPDATES["sonoff-basicr4"], table=public_dump.Table(0xC000, rows))}):
+            with self.assertRaisesRegex(uf.UpdateError, "stand-in table"):
+                uf.esp32_tables({})
+
+    def test_a_sector_that_is_no_sound_table_is_refused(self):
+        table = bytearray(layouts.SONOFF_BASICR4.table)
+        table[0x400] = 0  # past the MD5 record, where all is erased
+        with self.assertRaisesRegex(uf.UpdateError, "no sound partition table"):
+            uf.esp32_tables({}, {"sonoff-basicr4": self.given(bytes(table))})
+
+    def test_a_layout_not_known_is_refused(self):
+        with self.assertRaisesRegex(uf.UpdateError, "no such layout"):
+            uf.esp32_tables({}, {"sonoff-example": self.given(b"")})
+
+    def test_table_from_is_key_equals_file(self):
+        self.assertEqual(uf.table_from("sonoff-basicr4=a/flash.bin"), ("sonoff-basicr4", Path("a/flash.bin")))
+        with self.assertRaises(argparse.ArgumentTypeError):
+            uf.table_from("flash.bin")
 
 
 if __name__ == "__main__":

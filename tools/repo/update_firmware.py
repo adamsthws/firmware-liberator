@@ -29,10 +29,12 @@
         (Kind.esphome_configs), at one version
 
     python3 tools/repo/update_firmware.py esp32 [tasmota] [bridge] [recovery] [mover] [template] [tables]
+                                             [--table-from KEY=FILE]
         what the conversion of any device with a classic ESP32 needs, each in a
         Docker image: official Tasmota's ESP32 files pinned from the release the
         ESP32-C3's are, the bridge and the recovery Safeboot built from this
-        repository's sources, the mover and its bootloader with ESPHome
+        repository's sources, the mover and its bootloader with ESPHome; and
+        Sonoff's partition tables, each a real device's sector (esp32_tables)
 
     python3 tools/repo/update_firmware.py esp32c3 [bridge] [recovery] [mover]
         the same for the ESP32-C3: its bridge, built from this repository's
@@ -1335,25 +1337,79 @@ def esp32_template(pins: dict[str, Any]) -> None:
     publish(espressif_section(pins, chips.ESP32.key), "settings_template", name, template, {})
 
 
-def esp32_tables(pins: dict[str, Any]) -> None:
-    """Sonoff's partition tables for the layouts that are not the S60's, from
-    the public dumps of devices on them, and the BASICR4's, of which none is
-    published, as the emulator's stand-in holds a real one's, byte for byte:
-    they hold nothing of any one device."""
+def real_table(data: bytes) -> bytes:
+    """The partition table's sector in `data`: a whole flash read from a
+    device, or the 4096-byte sector itself. A ValueError if it is not a table as
+    ESP-IDF writes one: its entries, the MD5 record of them, the rest erased."""
+    from tools.espressif import flashmap
+    sector = data if len(data) == TABLE_SIZE else data[flashmap.table_at(data):][:TABLE_SIZE]
+    parse_partition_sector(sector)
+    return sector
+
+
+def stand_in_table(key: str) -> bytes | None:
+    """The table the emulator's test copy of device `key` is given, where it is
+    not the dump's own: an eWeLink update's stand-in laid out on its device's
+    table (public_dump.Update.table). None where the copy keeps its dump's."""
     from tools.espressif.emulator import public_dump
-    tables = {key: public_dump.fetched(public_dump.DUMPS[key])[TABLE_OFFSET:TABLE_OFFSET + TABLE_SIZE]
-              for key in ("sonoff-nspanel", "sonoff-th-elite")}
-    tables["sonoff-basicr4"] = public_dump.BASICR4_TABLE.sector()
-    for key, table in tables.items():
-        layout = layouts.of(key)
-        if sha256_bytes(table) != layout.table_sha256:
-            raise UpdateError(f"the table made for {key} is not its layout's")
-        publish(espressif_section(pins, key), "table", layout.table_file, table, {})
+    update = public_dump.UPDATES.get(key)
+    return update.table.sector() if update is not None and update.table is not None else None
+
+
+def esp32_tables(pins: dict[str, Any], given: dict[str, Path] | None = None) -> None:
+    """Sonoff's partition tables for the layouts that are not the S60's, each
+    the sector a real device holds, byte for byte (layouts.Seen): from the
+    public dump of a device on it, or from a real device's readout - its whole
+    flash or the sector, given as --table-from KEY=FILE; without one, the table
+    published already is checked again and kept. Never a table built from a list
+    of entries, which loses what the list leaves out. Each is checked to be a
+    sound table, the one its layout pins, and the one the emulator's stand-in
+    for that device is given, byte for byte: the stand-in follows the real
+    table, never the other way round."""
+    from tools.espressif.emulator import public_dump
+    given = given or {}
+    unknown = set(given) - {layout.key for layout in layouts.ALL}
+    if unknown:
+        raise UpdateError(f"no such layout: {', '.join(sorted(unknown))}")
+    tables = {}
+    # The S60's table is the conversion's own, checked by safeboot_migration.
+    for layout in (layout for layout in layouts.ALL if layout is not layouts.SONOFF_DUAL_OTA):
+        seen = layout.seen
+        if seen is None:
+            raise UpdateError(f"{layout.key}: no table read from a real device is recorded (layouts.Seen)")
+        if layout.key in given:
+            data, source = given[layout.key].read_bytes(), str(given[layout.key])
+        elif seen.source != layouts.READOUT:
+            data, source = public_dump.fetched(public_dump.donor(seen.source)), f"the public dump ({seen.source})"
+        else:
+            data, source = layout.table, f"{layout.table_file}, as published"
+        try:
+            table = real_table(data)
+        except ValueError as exc:
+            raise UpdateError(f"{layout.key}: {source} holds no sound partition table: {exc}") from exc
+        if sha256_bytes(table) != seen.sha256 or seen.sha256 != layout.table_sha256:
+            raise UpdateError(f"{layout.key}: the table in {source} is not the one read from a real device "
+                              f"(layouts.Seen) and pinned in its layout")
+        stand_in = stand_in_table(layout.key)
+        if stand_in is not None and stand_in != table:
+            raise UpdateError(f"{layout.key}: the emulator's stand-in table (public_dump.py) differs from the "
+                              "real one: correct the stand-in")
+        tables[layout] = table
+    for layout, table in tables.items():   # none unless every one is sound
+        publish(espressif_section(pins, layout.key), "table", layout.table_file, table, {})
 
 
 ESP32_PARTS = {"tables": esp32_tables, "template": esp32_template, "tasmota": esp32_tasmota, "bridge": esp32_bridge, "recovery": esp32_recovery, "mover": esp32_mover}
 ESP32C3_PARTS = {"bridge": esp32c3_bridge, "recovery": esp32c3_recovery, "mover": esp32c3_mover}
 CHIP_PARTS = {"esp32": ESP32_PARTS, "esp32c3": ESP32C3_PARTS}
+
+
+def table_from(value: str) -> tuple[str, Path]:
+    """--table-from's KEY=FILE."""
+    key, _, file = value.partition("=")
+    if not file:
+        raise argparse.ArgumentTypeError("give it as KEY=FILE, e.g. sonoff-basicr4=flash.bin")
+    return key, Path(file)
 
 
 def command_chip(args: argparse.Namespace) -> int:
@@ -1364,7 +1420,10 @@ def command_chip(args: argparse.Namespace) -> int:
     pins = load_pins()
     for part in args.parts or parts:
         print(f"{part}:")
-        parts[part](pins)
+        if part == "tables":
+            esp32_tables(pins, dict(args.table_from))
+        else:
+            parts[part](pins)
         save_pins(pins)
     left_to_do(["artifacts/README.md: each file's row (name, SHA-256)",
                 "NOTICES.md: the files' names and sources",
@@ -1722,10 +1781,13 @@ def main(argv: list[str] | None = None) -> int:
     build_parser.set_defaults(run=command_esphome)
     esp32 = commands.add_parser("esp32", help="what any device with a classic ESP32 needs")
     esp32.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32_PARTS)} (default: all of them)")
+    esp32.add_argument("--table-from", type=table_from, action="append", default=[], metavar="KEY=FILE",
+                       help="for tables: a layout's table from a real device's readout (its flash.bin, or the "
+                            "table's 4096-byte sector)")
     esp32.set_defaults(run=command_chip)
     esp32c3 = commands.add_parser("esp32c3", help="what the ESP32-C3's devices need beyond the other commands")
     esp32c3.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32C3_PARTS)} (default: all of them)")
-    esp32c3.set_defaults(run=command_chip)
+    esp32c3.set_defaults(run=command_chip, table_from=[])
     openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken device")
     openbeken.add_argument("version", nargs="?", help="e.g. 1.18.321, a stable release to move to (default: "
                                                       "the commit pinned, else the latest release)")
