@@ -166,6 +166,16 @@
     "sonoff-m5-2c": "Sonoff M5 2-gang",
     "sonoff-m5-3c": "Sonoff M5 3-gang"
   },
+  "convertedKinds": [
+    "sonoff-s60",
+    "sonoff-s61",
+    "sonoff-pow-elite",
+    "sonoff-powct",
+    "sonoff-th-elite",
+    "sonoff-dualr3",
+    "sonoff-basic-1gs",
+    "sonoff-basicr4"
+  ],
   "readout": {
     "type": "object",
     "properties": {
@@ -1087,6 +1097,32 @@
         "unfit",
         "session_ended",
         "run_session_ended"
+      ],
+      "additionalProperties": false
+    },
+    "table_refused": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "maxLength": 64
+        },
+        "at": {
+          "type": "string",
+          "enum": [
+            "0x8000",
+            "0xc000",
+            "update-file"
+          ]
+        }
+      },
+      "required": [
+        "sha256",
+        "at"
       ],
       "additionalProperties": false
     }

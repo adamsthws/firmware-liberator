@@ -263,6 +263,7 @@ export const remove = (db, id) => [
     WHERE device_hash = devices.device_hash AND id != ?1)`).bind(id),
   db.prepare("DELETE FROM report_stages WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM report_offers WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
+  db.prepare("DELETE FROM refused_tables WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
 ];

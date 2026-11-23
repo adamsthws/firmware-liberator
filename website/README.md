@@ -229,6 +229,30 @@ tools/repo/cloudflare_tokens.py database-read-only` makes it, into
 `tools/repo/.env.infra`. The rows are people's reports: run it on your own
 computer, never from CI.
 
+### A partition table refused
+
+Before writing anything, the tool checks the device's partition table is
+the one pinned for its kind (`tools/espressif/layouts.py`), or on a Beken
+kind that Sonoff's update file holds a table `tools/beken/layouts.py` knows,
+and stops while the device can still go back if not. Its report then carries
+the table's SHA-256 and where it was read (`table_refused`, kept in
+`refused_tables`). The nightly email names each table first refused the day
+before on a kind the tool converts (`convertedKinds` in
+`api/report-schema.json`, from `devices/status.json`), once, with its kind,
+models and reports (`api/alerts.js`): the pinned table may be wrong, as the
+BASICR4's once was by one flag, or a new batch laid out otherwise, and
+every owner of one is stopped until it is fixed. An Espressif table's hash
+is of its whole sector, as `layouts.py` pins it; a Beken one's is of its
+entries as `python3 tools/beken/layouts.py FILE` prints them, with the hash.
+The reports behind it, with their models and Sonoff firmware versions:
+
+```sh
+python3 tools/repo/database.py "SELECT day, model, stock_version, chip_flash_id, at
+  FROM refused_tables JOIN reports USING (id) WHERE sha256 = '<the hash>'"
+```
+
+A readout of such a device shows its table.
+
 ### Adding a Worker
 
 The deploy token can only be given a Worker that already exists, so a new

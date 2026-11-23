@@ -96,6 +96,17 @@ class PayloadTests(RouteTestCase):
         self.assertIn(data["os"]["arch"], report_data.ARCHES)
         self.assertEqual(data["stages"]["A1"]["wait"], 75)
 
+    def test_a_refused_table_is_sent_as_its_hash_and_where_it_was_read_and_only_then(self):
+        ctx = self.ctx(device_kind="sonoff-basicr4")
+        self.assertIsNone(self.payload(ctx)["table_refused"])
+        refused = {"sha256": hashlib.sha256(b"\xff" * 0x1000).hexdigest(), "at": "0xc000"}
+        ctx.state.set_input("table_refused", refused)
+        self.assertEqual(self.payload(ctx, "failed", failure="not laid out as this tool expects")["table_refused"],
+                         refused)
+        for spoilt in ({**refused, "at": "0x9000"}, {**refused, "sha256": "12:34:56:ab:cd:ef"}, {"at": "0xc000"}):
+            ctx.state.set_input("table_refused", spoilt)
+            self.assertIsNone(self.payload(ctx, "failed")["table_refused"], spoilt)
+
     def test_the_firmware_name_the_device_checks_is_sent_and_whether_it_is_the_tools(self):
         from tools.autoflash import kinds
         for name, expected in ((kinds.SONOFF_S60.wrapper_model, True), ("FWSW-E32S60B-S60-ESP32C3FN4", False)):

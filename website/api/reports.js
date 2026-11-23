@@ -151,6 +151,9 @@ const OFFER_COLUMNS = ["ran", "why_not", "done", "due", "requests", "sent", "tak
 const OFFERS = `INSERT OR IGNORE INTO report_offers (id, ${OFFER_COLUMNS.join(", ")})
   VALUES (${Array(OFFER_COLUMNS.length + 1).fill("?").join(", ")})`;
 const offerValue = (value) => (typeof value === "boolean" ? Number(value) : value);
+// The partition table the run refused, one row a report that gives one
+// (alerts.js tells the maintainer of a new one).
+const REFUSED = "INSERT OR IGNORE INTO refused_tables (id, sha256, at) VALUES (?, ?, ?)";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -202,6 +205,9 @@ export function writes(db, report, hash, day, held = null) {
   statements.push(db.prepare(STAGES).bind(report.id, JSON.stringify(report.stages)));
   if (report.offers) {
     statements.push(db.prepare(OFFERS).bind(report.id, ...OFFER_COLUMNS.map((name) => offerValue(report.offers[name]))));
+  }
+  if (report.table_refused) {
+    statements.push(db.prepare(REFUSED).bind(report.id, report.table_refused.sha256, report.table_refused.at));
   }
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }

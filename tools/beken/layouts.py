@@ -16,6 +16,7 @@ The flash size is not asked of the stock firmware, as it says nothing of it
 from __future__ import annotations
 
 import argparse
+import hashlib
 import struct
 import sys
 from dataclasses import dataclass
@@ -129,17 +130,33 @@ def tables(app: bytes, base: int = APP_BASE) -> list[tuple[Partition, ...]]:
     return found
 
 
+def full_tables(app: bytes, base: int = APP_BASE) -> list[tuple[Partition, ...]]:
+    """The tables in an app but short walks, which are other structures that
+    happen to name a string like these."""
+    return [table for table in tables(app, base) if len(table) >= 3]
+
+
+def as_text(found: list[tuple[Partition, ...]]) -> str:
+    return " / ".join(", ".join(map(str, table)) for table in found)
+
+
 def table_of(app: bytes, base: int = APP_BASE) -> tuple[Partition, ...]:
     """The one table in an app. No table, or two that differ, is an error: the
     SDK could then choose either, and this could not say which."""
-    # Short walks are other structures that happen to name a string like these.
-    found = [table for table in tables(app, base) if len(table) >= 3]
+    found = full_tables(app, base)
     if not found:
         raise LayoutError("no partition table found in it")
     if len(found) > 1:
-        raise LayoutError("it holds %d partition tables: %s" % (
-            len(found), " / ".join(", ".join(map(str, table)) for table in found)))
+        raise LayoutError("it holds %d partition tables: %s" % (len(found), as_text(found)))
     return found[0]
+
+
+def table_sha256(app: bytes, base: int = APP_BASE) -> str:
+    """The SHA-256 of an app's tables as text (as_text), the same for every
+    app on the same table, as the entries' own bytes, which point at their
+    names, are not: a refused table's, in a run's report
+    (tools/autoflash/report_data.py table_refused), and main prints it."""
+    return hashlib.sha256(as_text(full_tables(app, base)).encode("ascii")).hexdigest()
 
 
 def known(app: bytes, base: int = APP_BASE) -> tuple[Layout, tuple[Partition, ...]]:
@@ -160,7 +177,9 @@ def main(argv: list[str] | None = None) -> int:
     for path in args.files:
         print(path.name)
         try:
-            layout, table = known(stock_points.app_of_file(path.read_bytes()))
+            app = stock_points.app_of_file(path.read_bytes())
+            print(f"  table SHA-256 {table_sha256(app)}")
+            layout, table = known(app)
             print(f"  {layout.key}, {layout.flash_size // 0x100000} MB")
             for part in table:
                 print(f"  {part}")

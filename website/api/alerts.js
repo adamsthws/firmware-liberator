@@ -14,11 +14,18 @@
 // (downloads.js) - and the token recommended only where its rate limit was why.
 // And offers taken as right whose files the cloud has not given
 // OFFER_FETCH_ALERT_DAYS after, and each as many days after (offered.js).
+// And each partition table the tool refused on a kind it converts
+// (report-schema.json's convertedKinds), told the night after it is first
+// refused there, with the models and how many reports: a model's published
+// table may be wrong, or a new batch laid out otherwise, and its owners stop
+// before anything is written. A table's hash is the same on every device of
+// a model and firmware: nothing of a sender.
 import { read } from "./counters.js";
 import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "./downloads.js";
 import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "./networks.js";
 import { OFFER_FETCH_ALERT_DAYS, OFFER_FETCHES_DAILY, OFFER_RETRY_DAYS, unfetched } from "./offered.js";
+import schema from "./report-schema.json" with { type: "json" };
 
 export const STORE_WARN = 0.75;
 
@@ -117,7 +124,28 @@ export async function alertLines(db, today, limits) {
       + "another file (website/api/offered.js). If eWeLink no longer gives a file by its link, set OFFERED_SEND to "
       + "\"files\" in website/api/wrangler.jsonc, and tools send the files again (.github/readouts.md).");
   }
+  lines.push(...await refusedTableLines(db, yesterday));
   return lines;
+}
+
+// Each table first refused `yesterday` on a kind the tool converts, by
+// people's runs alone (not the maintainer's, nor a report held for review):
+// told once, as the night after is the only one its first day is yesterday.
+async function refusedTableLines(db, yesterday) {
+  const converted = schema.convertedKinds;
+  const { results } = await db.prepare(`SELECT reports.device, refused_tables.sha256, refused_tables.at,
+      group_concat(DISTINCT reports.model) AS models, count(*) AS n
+    FROM refused_tables JOIN reports USING (id)
+    WHERE reports.tag = 'user' AND reports.quarantined = 0
+      AND reports.device IN (${converted.map(() => "?").join(", ")})
+    GROUP BY reports.device, refused_tables.sha256, refused_tables.at
+    HAVING min(reports.day) = ?
+    ORDER BY reports.device, refused_tables.sha256`).bind(...converted, yesterday).all();
+  return results.map((row) => `A partition table was refused on the ${schema.deviceNames[row.device]} `
+    + `(${row.models ? `model ${row.models.split(",").sort().join(", ")}` : "model not known"}), a kind the tool `
+    + `converts, first on ${yesterday}: ${row.n} ${row.n === 1 ? "report" : "reports"}, its SHA-256 ${row.sha256}, `
+    + `read ${row.at === "update-file" ? "from Sonoff's update file" : `at ${row.at}`}. Its published table may be `
+    + "wrong, or a new batch laid out otherwise (tools/espressif/layouts.py, tools/beken/layouts.py).");
 }
 
 // Sends the lines, if any: what was done, for the nightly job's answer.

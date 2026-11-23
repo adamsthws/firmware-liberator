@@ -19,6 +19,7 @@ from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, openbeken, records, routes, runs
 from tools.autoflash import report
+from tools.espressif import layouts as espressif_layouts
 from tools.ewelink.firmware_name import A_NAME
 from tools.ewelink.get_device_key import API
 
@@ -89,6 +90,11 @@ FAILED = "failed"
 CRASHED = "crashed"
 READOUT_RESULTS = (ACCEPTED, KEPT, NOT_NEEDED, WEBSITE_FULL, SKIPPED, NOT_READ, CANCELLED, FAILED, CRASHED)
 TEXT_LIMIT = 200
+# Where a partition table the run refused was read: an Espressif device's
+# flash, where its kind's Sonoff firmware reads it (Layout.sonoff_table_at),
+# or a Beken kind's official update file (routes/beken/images.checked).
+UPDATE_FILE = "update-file"
+TABLE_PLACES = (*sorted({f"0x{layout.sonoff_table_at:x}" for layout in espressif_layouts.ALL}), UPDATE_FILE)
 MODEL = re.compile(r"[A-Z0-9][A-Z0-9-]{0,23}")
 VERSION = re.compile(r"\d{1,4}(\.\d{1,4}){1,3}")
 OS_VERSION = re.compile(r"[A-Za-z0-9 ._()+/-]{1,48}")
@@ -341,7 +347,20 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "begun_on": begun,
         "back_after_power_cycle": back,
         "offers": offers_info(ctx),
+        "table_refused": table_refused(state),
     }
+
+
+def table_refused(state: Any) -> dict[str, str] | None:
+    """The partition table the run refused, as its SHA-256 and where it was
+    read (installer.require_known_layout, routes/beken/images.checked): None
+    for a run that refused none. A table is the same on every device of a
+    model and firmware, so its hash says nothing of the device."""
+    found = state.input("table_refused") or {}
+    sha, at = found.get("sha256"), found.get("at")
+    if not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha) and at in TABLE_PLACES):
+        return None
+    return {"sha256": sha, "at": at}
 
 
 def offers_info(ctx: Context) -> dict[str, Any]:

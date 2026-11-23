@@ -1,10 +1,12 @@
 // api/alerts.js: the maintainer's email when a limit was reached, counts only.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { alert, alertLines, STORE_WARN } from "../api/alerts.js";
 import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "../api/downloads.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "../api/networks.js";
 import { OFFER_FETCH_ALERT_DAYS } from "../api/offered.js";
+import { writes } from "../api/reports.js";
 import worker from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
 
@@ -232,3 +234,43 @@ test("several offers missing files are one line, counting them all", async () =>
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^The files of 2 offers taken as right/);
 });
+
+// A run's report that refused a table (test/fixtures/reports.json's), kept
+// as the API keeps one (reports.js writes), on `day`.
+const REFUSED = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).valid
+  .find((sample) => sample.table_refused);
+let refusals = 0;
+async function refused(bindings, day, { sha256 = REFUSED.table_refused.sha256, at = REFUSED.table_refused.at,
+  held = null, ...changes } = {}) {
+  refusals += 1;
+  const made = { ...REFUSED, ...changes, id: refusals.toString(16).padStart(16, "0"), table_refused: { sha256, at } };
+  await bindings.DB.batch(writes(bindings.DB, made, null, day, held));
+}
+
+test("a table refused on a kind the tool converts is told the night after it is first refused, never again",
+  async () => {
+    const bindings = env();
+    await refused(bindings, "2026-11-09");
+    await refused(bindings, "2026-11-09", { model: "BASICR4-B" });
+    await refused(bindings, TODAY);
+    const lines = await alertLines(bindings.DB, TODAY, LIMITS);
+    assert.deepEqual(lines, ["A partition table was refused on the Sonoff BASICR4 (model BASICR4, BASICR4-B), a "
+      + `kind the tool converts, first on 2026-11-09: 3 reports, its SHA-256 ${REFUSED.table_refused.sha256}, read `
+      + "at 0xc000. Its published table may be wrong, or a new batch laid out otherwise (tools/espressif/layouts.py, "
+      + "tools/beken/layouts.py)."]);
+    assert.deepEqual(await alertLines(bindings.DB, "2026-11-11", LIMITS), [], "told once");
+    // Another table on a kind is new, and told.
+    await refused(bindings, "2026-11-10", { sha256: "ab".repeat(32), at: "update-file", family: "beken",
+      device: "sonoff-s61", model: "S61" });
+    assert.match((await alertLines(bindings.DB, "2026-11-11", LIMITS)).join("\n"),
+      /^A partition table was refused on the Sonoff S61 \(model S61\).*: 1 report, .* read from Sonoff's update file\./);
+  });
+
+test("a table refused on a kind the tool does not convert, by the maintainer, or held for review is not told",
+  async () => {
+    const bindings = env();
+    await refused(bindings, "2026-11-09", { device: "sonoff-minir4", model: "MINIR4" });
+    await refused(bindings, "2026-11-09", { tag: "dev" });
+    await refused(bindings, "2026-11-09", { held: "words no run of the tool's would write" });
+    assert.deepEqual(await alertLines(bindings.DB, TODAY, LIMITS), []);
+  });

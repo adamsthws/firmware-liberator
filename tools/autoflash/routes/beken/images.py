@@ -117,26 +117,47 @@ def _offered_file(ctx: Context) -> bytes | None:
     return files[0].data if files else None
 
 
+class TableRefused(NothingWritten):
+    """checked()'s refusal of a file for its partition table: `sha256`, the
+    table's hash as tools/beken/layouts.py table_sha256 gives it."""
+
+    def __init__(self, message: str, sha256: str) -> None:
+        super().__init__(message)
+        self.sha256 = sha256
+
+
 def checked(kind: kinds.Kind, data: bytes, source: str) -> Official:
     """An official update file for `kind`, refused unless it holds the kind's
     firmware alone, whole, on the partition table this kind is known to be on:
     everything a conversion writes or reads goes where that table says."""
+    refused = "Its device may not be laid out as this tool expects, so nothing was written"
     try:
         ((name, version, image),) = fota_wrap.unwrap(data)
         app = rbl.unpack(image)
         if UNKNOWN_TABLE:
             app = app.replace(struct.pack("<I", 0x3E1000), struct.pack("<I", 0x1E1000))
         layout, table = layouts.known(app)
+    except layouts.LayoutError as exc:
+        raise TableRefused(f"the official update file for the {kind.name} was refused: {exc}. {refused}",
+                           layouts.table_sha256(app)) from exc
     except (ValueError, rbl.RblError) as exc:
-        raise NothingWritten(f"the official update file for the {kind.name} was refused: {exc}. Its device may not "
-                             "be laid out as this tool expects, so nothing was written") from exc
+        raise NothingWritten(f"the official update file for the {kind.name} was refused: {exc}. {refused}") from exc
     if name != kind.wrapper_model:
         raise NothingWritten(f"the official update file for the {kind.name} is for {name}, not "
                              f"{kind.wrapper_model}. Nothing was written")
     if layout.key != kind.layout:
-        raise NothingWritten(f"the official update file for the {kind.name} has the {layout.key} partition table, "
-                             f"not the {kind.layout} one expected. Nothing was written")
+        raise TableRefused(f"the official update file for the {kind.name} has the {layout.key} partition table, "
+                           f"not the {kind.layout} one expected. Nothing was written", layouts.table_sha256(app))
     return Official(image, name, version, layout, table, source)
+
+
+def note_refused(ctx: Context | None, exc: NothingWritten) -> None:
+    """A table checked() refused, for the run's report (report_data.table_refused),
+    as the Espressif route's installer.require_known_layout notes the device's:
+    the API tells the maintainer of a new one seen on a kind the tool converts."""
+    if ctx is not None and isinstance(exc, TableRefused):
+        from tools.autoflash.report_data import UPDATE_FILE   # which reads routes, and so this module
+        ctx.state.set_input("table_refused", {"sha256": exc.sha256, "at": UPDATE_FILE})
 
 
 def from_ewelink(ctx: Context | None, kind: kinds.Kind) -> Official | None:
@@ -148,6 +169,7 @@ def from_ewelink(ctx: Context | None, kind: kinds.Kind) -> Official | None:
         return checked(kind, data, OFFERED)
     except NothingWritten as exc:
         output.log_only(f"    Sonoff's firmware: {OFFERED}: {exc}")
+        note_refused(ctx, exc)
         return None
 
 
@@ -171,6 +193,9 @@ def official(kind: kinds.Kind, ctx: Context | None = None) -> Official:
         return checked(kind, public_copies.fetch(kind), PUBLIC_COPY)
     except public_copies.Unavailable as exc:
         raise NothingWritten(f"{exc}. Nothing was written") from exc
+    except TableRefused as exc:
+        note_refused(ctx, exc)
+        raise
 
 
 def first_firmware(firmware: str) -> str:

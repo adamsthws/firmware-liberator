@@ -52,6 +52,14 @@ class ReadingTests(unittest.TestCase):
         with self.assertRaisesRegex(layouts.LayoutError, "holds 2 partition tables"):
             layouts.table_of(an_app(FOUR_MB, TWO_MB))
 
+    def test_a_tables_hash_is_the_same_wherever_its_entries_point_and_differs_for_another_table(self):
+        # Spaced, or run from elsewhere, the entries' bytes differ; the table does not.
+        same = {layouts.table_sha256(an_app(FOUR_MB)), layouts.table_sha256(an_app(FOUR_MB, spaced=True)),
+                layouts.table_sha256(an_app(FOUR_MB, base=0x20000), base=0x20000)}
+        self.assertEqual(len(same), 1)
+        self.assertNotIn(layouts.table_sha256(an_app(TWO_MB)), same)
+        self.assertNotIn(layouts.table_sha256(an_app(FOUR_MB, TWO_MB)), same)
+
     def test_the_same_table_twice_is_one(self):
         self.assertEqual(len(layouts.table_of(an_app(FOUR_MB, FOUR_MB))), len(FOUR_MB))
 

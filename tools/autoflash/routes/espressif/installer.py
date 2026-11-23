@@ -495,6 +495,11 @@ def require_known_layout(ctx: Context) -> None:
     else:
         for line in device_facts.info_lines(info):
             output.log_only(f"    {line}")
+    # The table's hash and where it was read, for the run's report alone when
+    # it is refused (report_data.table_refused): the API tells the maintainer
+    # of a new one seen on a model the tool converts.
+    ctx.state.set_input("table_refused", None if known else {"sha256": hashlib.sha256(table).hexdigest(),
+                                                             "at": f"0x{at:x}"})
     if not known:
         raise Abort("this device's memory is not laid out as this tool expects, so nothing has been written "
                     "over its Sonoff firmware: switch it off and on to go back to it")

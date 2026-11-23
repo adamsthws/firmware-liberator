@@ -80,6 +80,12 @@ check.
 - A run to Tasmota whose device was switched off part way, and checked
   again just as it started, no longer stops at staging every time it is run
   again ("NVS changed since preflight"): it checks the device again first.
+- A run stopped because the device's partition table is not the one the
+  tool knows for its model, or that turns down the table in Sonoff's update
+  file for a Beken device, now sends that table's hash in its report, and
+  where it was read, so the project hears of a model's table it has wrong
+  without anyone opening an issue
+  ([what the tool sends](docs/what-the-tool-sends.md#what-a-report-holds)).
 
 ## 3.1.0
 

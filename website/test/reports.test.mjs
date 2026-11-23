@@ -221,6 +221,7 @@ const KEPT = {
       proof: "checked as the report comes in, then of no use",
       stages: "a row a stage, in report_stages",
       offers: "a row a report, in report_offers: none from a tool that sent none",
+      table_refused: "a row a report that gives one, in refused_tables",
       nth_device: "the device's place, in devices, given once",
     },
     own: ["day", "quarantined"],   // the API's, from no field
@@ -236,6 +237,7 @@ const KEPT = {
   },
   stage: { table: "report_stages", elsewhere: {}, own: ["id", "stage"] },
   offer: { table: "report_offers", elsewhere: {}, own: ["id"] },
+  refused: { table: "refused_tables", elsewhere: {}, own: ["id"] },
 };
 
 // Each field `rule` has, by its path: a nested one's as "os.arch".
@@ -256,7 +258,7 @@ function columnsFor(bindings, rule, kept) {
 test("each field of a report has a column of its own, and each column a field", () => {
   const bindings = env();
   const rules = { run: SCHEMA, readout: SCHEMA.readout, stage: SCHEMA.properties.stages.additionalProperties,
-    offer: SCHEMA.properties.offers };
+    offer: SCHEMA.properties.offers, refused: SCHEMA.properties.table_refused };
   for (const [what, rule] of Object.entries(rules)) {
     const kept = KEPT[what];
     const mapped = columnsFor(bindings, rule, kept);
@@ -303,6 +305,10 @@ test("each field of a report is kept, as the report gave it", async () => {
   check("offer", SCHEMA.properties.offers, offers, byId("report_offers"));
   assert.equal(rows(bindings, "SELECT count(*) AS n FROM report_offers")[0].n, offers.length,
     "none for a report from a tool that sent none");
+  const refused = sent.run.filter((made) => made.table_refused).map((made) => ({ ...made.table_refused, id: made.id }));
+  check("refused", SCHEMA.properties.table_refused, refused, byId("refused_tables"));
+  assert.equal(rows(bindings, "SELECT count(*) AS n FROM refused_tables")[0].n, refused.length,
+    "none for a report that refused no table, or from a tool that sends no such field");
 });
 
 test("offers' counts are held to the schema: out of range, or a word the tool never gives, turned away", async () => {

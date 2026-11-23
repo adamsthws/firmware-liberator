@@ -207,11 +207,14 @@ test("the view shows the offers sent beside runs, day by day: sent, taken, and t
     + '<td class="number">12</td><td class="number">8</td><td>25%</td><td>50%</td></tr>'), "newest first, every day");
 });
 
-test("a held report deleted takes what it said of its offers with it", async () => {
+test("a held report deleted takes what it said of its offers and a table refused with it", async () => {
   const db = env().DB;
-  const id = await offered(db, "2026-11-09", {}, {}, "held for review");
+  const id = await offered(db, "2026-11-09", {}, { table_refused: { sha256: "ab".repeat(32), at: "0x8000" } },
+    "held for review");
+  assert.equal(rows(db, "SELECT id FROM refused_tables").length, 1);
   await db.batch(admin.remove(db, id));
   assert.deepEqual(rows(db, "SELECT id FROM report_offers"), []);
+  assert.deepEqual(rows(db, "SELECT id FROM refused_tables"), []);
 });
 
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {

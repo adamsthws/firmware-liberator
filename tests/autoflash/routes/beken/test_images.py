@@ -13,7 +13,7 @@ from tests.autoflash.routes.beken.test_beken import a_context
 from tools.autoflash import errors, kinds, records
 from tools.autoflash.routes import public_copies
 from tools.autoflash.routes.beken import arrived, images, stock
-from tools.beken import fota_wrap, rbl
+from tools.beken import fota_wrap, layouts, rbl
 from tools.ewelink import ota_push
 
 
@@ -250,6 +250,29 @@ class UntestedKindTests(unittest.TestCase):
                 found = images.official(self.KIND, self.context(tmp))
                 self.assertEqual((found.image, found.source), (self.image, images.PUBLIC_COPY))
                 self.assertIn(why, logged.call_args.args[0])
+
+    def test_an_offered_files_table_refused_is_kept_for_the_report_as_the_espressif_routes_is(self):
+        image, data = self.offered(test_layouts.TWO_MB)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(images, "offered_file", return_value=data):
+            ctx = self.context(tmp)
+            images.official(self.KIND, ctx)
+            self.assertEqual(ctx.state.input("table_refused"),
+                             {"sha256": layouts.table_sha256(rbl.unpack(image)), "at": "update-file"})
+        # Refused for its name alone, its table is not.
+        _, data = self.offered(name="FWSW-01-S61-BK7238")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(images, "offered_file", return_value=data):
+            ctx = self.context(tmp)
+            images.official(self.KIND, ctx)
+            self.assertIsNone(ctx.state.input("table_refused"))
+
+    def test_the_public_copys_table_refused_is_kept_for_the_report_too(self):
+        self.use_official(test_layouts.TWO_MB)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(images, "offered_file", return_value=None):
+            ctx = self.context(tmp)
+            with self.assertRaises(images.TableRefused):
+                images.official(self.KIND, ctx)
+            self.assertEqual(ctx.state.input("table_refused"),
+                             {"sha256": layouts.table_sha256(rbl.unpack(self.image)), "at": "update-file"})
 
     def test_ewelink_is_asked_once_a_run_with_the_devices_own_id_signing_in_if_need_be(self):
         _, data = self.offered()

@@ -95,6 +95,9 @@ def schema() -> dict[str, Any]:
         # only a cancelled run's), for the API to hold any other pairing.
         "stoppedBy": list(report_data.STOPPED_BY),
         "deviceNames": {kind.key: kind.name for kind in kinds.EVERY},
+        # The kinds the tool converts (devices/status.json): a partition table
+        # refused on one is told to the maintainer (website/api/alerts.js).
+        "convertedKinds": [kind.key for kind in kinds.EVERY if kind.status.converts],
         # One device's readout's report (report_data.readout_payload): held
         # to this instead where its "kind" is "readout".
         "readout": record({
@@ -175,7 +178,11 @@ def schema() -> dict[str, Any]:
                               **{name: integer(0, offers.COUNT_LIMIT) for name in offers.COUNTS},
                               "session_ended": {"type": "boolean"},
                               "run_session_ended": {"type": ["boolean", "null"]}}),
-        }, optional=("offers",)),
+            # The partition table the run refused (report_data.table_refused):
+            # its SHA-256, and where it was read.
+            "table_refused": nullable(record({"sha256": string("^[0-9a-f]{64}$", 64),
+                                              "at": words(*report_data.TABLE_PLACES)})),
+        }, optional=("offers", "table_refused")),
     }
 
 

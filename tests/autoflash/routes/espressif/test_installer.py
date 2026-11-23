@@ -2,6 +2,7 @@
 (tools/autoflash/routes/espressif/installer.py): the bridge, the stock
 backup, and Tasmota given its Wi-Fi."""
 import collections
+import hashlib
 import tempfile
 import time
 import unittest
@@ -949,7 +950,8 @@ class StockLayoutTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
         from tools.autoflash.routes.espressif import installer
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None, set_input=lambda name, value: None))
+        self.inputs = {}
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None, set_input=self.inputs.__setitem__))
         with mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51"), \
                 mock.patch.object(installer, "bridge_info", return_value={}), \
                 mock.patch.object(installer.dump_stock_flash, "read_table", return_value=table):
@@ -958,11 +960,19 @@ class StockLayoutTests(unittest.TestCase):
     def test_sonoffs_usual_table_goes_on(self):
         from tools.espressif.safeboot.safeboot_migration import SOURCE_TABLE_FILE
         self.run_gate(SOURCE_TABLE_FILE.read_bytes())
+        self.assertIsNone(self.inputs["table_refused"], "none refused: none in the report")
 
     def test_any_other_stops_before_anything_is_written(self):
         from tools.autoflash.errors import Abort
         with self.assertRaisesRegex(Abort, "switch it off and on"):
             self.run_gate(b"\xff" * 0x1000)
+
+    def test_a_table_refused_is_kept_for_the_report_by_its_hash_and_where_it_was_read(self):
+        from tools.autoflash.errors import Abort
+        with self.assertRaises(Abort):
+            self.run_gate(b"\xff" * 0x1000)
+        self.assertEqual(self.inputs["table_refused"],
+                         {"sha256": hashlib.sha256(b"\xff" * 0x1000).hexdigest(), "at": "0x8000"})
 
     def test_a_table_is_read_where_the_kinds_sonoff_firmware_reads_it(self):
         # The BASICR4's at 0xC000, with 0x8000 blank: read there, from its backup
@@ -975,7 +985,7 @@ class StockLayoutTests(unittest.TestCase):
         from tools.espressif import layouts
         table = layouts.SONOFF_BASICR4.table
         inputs = {"device_kind": "sonoff-basicr4", "device_mac": "12:34:56:ab:cd:ef"}
-        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=lambda name, value: None))
+        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__))
         with tempfile.TemporaryDirectory() as folder:
             flash = bytearray(b"\xff" * 0x400000)
             flash[0xC000:0xD000] = table
@@ -994,6 +1004,7 @@ class StockLayoutTests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(Abort, "switch it off and on"):
                             installer.require_known_layout(ctx)
+                        self.assertEqual(inputs["table_refused"]["at"], "0xc000")
                     if found is None:
                         self.assertEqual(asked.call_args.kwargs["at"], 0xC000)
 

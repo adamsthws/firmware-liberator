@@ -33,6 +33,10 @@ stages people choose to stop at, and which devices people want supported next: s
   version of Sonoff's firmware it had, the name its own updater checks an
   update against (and whether it is the one the tool expects), and on an
   Espressif device its chip's revision and its flash chip's maker code and size.
+  If the tool turned down the device's partition table (its memory not laid
+  out as the tool expects), or the one in Sonoff's update file for it, a
+  hash of that table and where it was read, so the project hears of it: a
+  table is the same on every device of a model, so it says nothing of yours.
 - **The conversion:** the firmware it went from and to, whether a backup of
   Sonoff's firmware was taken, whether the power meter kept its calibration,
   and, going back to Sonoff's firmware, where the eWeLink identity came from

@@ -114,6 +114,26 @@
       "begun_on": null, "back_after_power_cycle": null,
       "offers": {"ran": true, "why_not": "files", "done": true, "due": 3, "requests": 1, "sent": 0, "taken": 0, "have": 0,
         "full": 0, "refused": 0, "review": 0, "unfit": 1, "session_ended": false, "run_session_ended": false}
+    },
+    {
+      "format": 1, "id": "acacacacacacacac", "proof": "1794000000:12", "tag": "user",
+      "tool": "3.2.0", "kind": "run", "result": "failed",
+      "stopped": {"step": "C3", "error": "unexpected-layout", "text": "this device's memory is not laid out as this tool expects, so nothing has been written over its Sonoff firmware: switch it off and on to go back to it", "crash_site": null},
+      "family": "espressif", "device": "sonoff-basicr4", "model": "BASICR4", "stock_version": "1.1.0",
+      "device_hash": "f1e2d3c4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff00", "firmware": "tasmota",
+      "source": "sonoff", "backup": "saved", "identity": null,
+      "os": {"family": "linux", "version": "Ubuntu 24.04", "arch": "x86-64"},
+      "python": {"version": "3.12.4", "source": "portable"}, "seconds": 300, "resumed": false,
+      "stages": {"C3": {"seconds": 60, "busy": 40, "tries": 1, "wait": 0, "setup_network": null, "power_cycles": 0}},
+      "signal": -60, "wifi_typed": false, "setup_network": false, "power_cycled": false,
+      "checks": "not-run", "meter": null, "nth_device": null,
+      "chip": {"revision": "1.0", "flash_id": "204016", "flash_mb": 4},
+      "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "none",
+        "admin": false},
+      "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "download",
+      "firmware_name": null, "firmware_name_expected": null,
+      "begun_on": null, "back_after_power_cycle": null,
+      "table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0xc000"}
     }
   ],
   "invalid": [
@@ -160,7 +180,10 @@
     {"why": "offers with a key the schema does not name", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "sent": 3, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false, "account": "owner@example.com"}}},
     {"why": "offers missing a count", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": false, "run_session_ended": false}}},
     {"why": "offers' flag as a number", "set": {"offers": {"ran": true, "why_not": null, "done": true, "due": 3, "requests": 1, "sent": 3, "taken": 1, "have": 1, "full": 1, "refused": 0, "review": 1, "unfit": 0, "session_ended": 1, "run_session_ended": false}}},
-    {"why": "offers given as null", "set": {"offers": null}}
+    {"why": "offers given as null", "set": {"offers": null}},
+    {"why": "a refused table read where no table is", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x9000"}}},
+    {"why": "a refused table's hash not 64 hex digits", "set": {"table_refused": {"sha256": "0123456789ABCDEF", "at": "0x8000"}}},
+    {"why": "a refused table with a key the schema does not name", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x8000", "table": "00ff"}}}
   ],
   "readoutValid": [
     {
