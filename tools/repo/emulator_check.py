@@ -873,7 +873,13 @@ class MotorDevice(Device):
         power_cut()
         if not self.answers():
             return "the device did not answer after a power cut"
-        found = self.settled()
+        # Just started, a firmware may answer before it can say what its
+        # outputs are: ESPHome's meter reads nothing until its first reading,
+        # which under load came after METER_SHOWS. Read again until it says.
+        cut = time.monotonic()
+        while (found := self.settled()) is None and time.monotonic() - cut < BACK_WITHIN:
+            self.note("outputs not read yet")
+            time.sleep(3)
         if found != (False, False):
             return f"after a power cut the outputs read {found}"
         return None

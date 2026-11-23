@@ -390,6 +390,12 @@ class MotorCheckTests(unittest.TestCase):
         self.assertIn("both outputs came on together",
                       self.problem("tasmota", [(True, False), (False, True), (True, True)]))
 
+    def test_outputs_not_read_yet_after_a_power_cut_are_read_again(self):
+        # Seen on ESPHome under load: its meter read nothing yet, and the check failed.
+        self.assertIsNone(self.problem("esphome", [(True, False), (False, True), None, None, (False, False)]))
+        self.assertIn("after a power cut the outputs read None",
+                      self.problem("esphome", [(True, False), (False, True), *[None] * 1000]))
+
     def test_an_output_on_after_a_power_cut_fails(self):
         self.assertIn("after a power cut",
                       self.problem("tasmota", [(True, False), (False, True), (False, True), (True, False)]))
