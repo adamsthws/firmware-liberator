@@ -66,10 +66,33 @@ FIELD = output.MARGIN + "> "
 PRESS_ANY_KEY = "Press any key"
 SUDO_PASSWORD = "This computer's password (for sudo)"
 GO_AHEAD = "Type {} to go ahead"
+# The countdown after a Ctrl-C pressed while nothing was asking (ask_after_ctrl_c).
+AFTER_CTRL_C = "You pressed Ctrl-C"
 
 QUIT_WORDS = {"q", "quit", "exit", "abort"}
 # Where one of several things can be passed by (require_word's `skip`).
 SKIP_WORDS = {"s", "skip"}
+
+
+@contextlib.contextmanager
+def _stops_at(question: str):
+    """Around a question: q or Ctrl-C there names it on what stops the run
+    (stopped_at), the innermost question's name kept where one asks within
+    another."""
+    try:
+        yield
+    except (QuitRun, KeyboardInterrupt) as exc:
+        if stopped_at(exc) is None:
+            exc.question = question
+        raise
+
+
+def stopped_at(exc: BaseException) -> str | None:
+    """The question `exc` - a QuitRun, or a KeyboardInterrupt - stopped the
+    run at, as asked: it may name the device or the account, so it is for
+    this computer alone (report_data.question_word says it in a word). None
+    where it stopped at none: a Ctrl-C while a stage was under way."""
+    return getattr(exc, "question", None)
 
 
 def hint_to_quit(tail: str = ": ") -> str:
@@ -151,17 +174,21 @@ def discard_typed_ahead() -> None:
         pass  # no console to clear: nothing was typed into it either
 
 
-def _raw(question: str, default: str | None, private: str | None = None, hint: bool = True) -> str:
-    if UNATTENDED:
-        raise _no_one_to_answer(question)
-    suffix = f" [{default}]" if default else ""
-    discard_typed_ahead()
-    answer = _read_answer(output.question(f"{question}{suffix}", hint_to_quit() if hint else ": ")).strip()
-    if private:
-        output.private(answer, private)
-    output.answered(answer)
-    if answer.lower() in QUIT_WORDS:
-        raise QuitRun("stopped at an operator prompt")
+def _raw(question: str, default: str | None, private: str | None = None, hint: bool = True,
+         name: str = "") -> str:
+    """`name`: the question as a report names it (stopped_at), where its
+    words are not its own alone ("What now"); else its words."""
+    with _stops_at(name or question):
+        if UNATTENDED:
+            raise _no_one_to_answer(question)
+        suffix = f" [{default}]" if default else ""
+        discard_typed_ahead()
+        answer = _read_answer(output.question(f"{question}{suffix}", hint_to_quit() if hint else ": ")).strip()
+        if private:
+            output.private(answer, private)
+        output.answered(answer)
+        if answer.lower() in QUIT_WORDS:
+            raise QuitRun("stopped at an operator prompt")
     if not answer and default is not None:
         return default
     return answer
@@ -423,7 +450,7 @@ class SecretLine:
 def ask_secret(prompt: str, reveal_seconds: float = 1.0) -> str:
     _ctrl_c_first()
     discard_typed_ahead()
-    with interrupt.asking():
+    with _stops_at(prompt), interrupt.asking():
         return _ask_secret(prompt, reveal_seconds)
 
 
@@ -606,7 +633,7 @@ def _ask_secret_windows(prompt: str, reveal_seconds: float) -> str:
 def wait_for_key(prompt: str = f"{PRESS_ANY_KEY} to continue", *,
                  until: Callable[[], bool] | None = None) -> None:
     _ctrl_c_first()
-    with interrupt.asking():
+    with _stops_at(prompt), interrupt.asking():
         _wait_for_key(prompt, until=until)
 
 
@@ -740,13 +767,14 @@ def ask_yes_no(
 
 
 def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[str] = (),
-               shortcuts: Mapping[str, int] | None = None) -> int:
+               shortcuts: Mapping[str, int] | None = None, name: str = "") -> int:
     """Returns the zero-based index of the chosen option.
 
     q stops the run cleanly, as at every question (hint_to_quit): no option is
     numbered for it. `shortcuts`: other answers taken, in any case, each for
     an option's index - "y" for a yes, say, or "" for Enter alone; the
-    question says which.
+    question says which. `name`: the question as a report names it, where
+    its words are another's too (_raw).
     """
     _ctrl_c_first()
     if help_lines:
@@ -756,7 +784,7 @@ def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[st
         _emit([f"{index}. {option}"])
     mark = output.mark()
     while True:
-        answer = _raw(question, None)
+        answer = _raw(question, None, name=name)
         if shortcuts and answer.lower() in shortcuts:
             return shortcuts[answer.lower()]
         try:
@@ -776,8 +804,9 @@ def ask_after_ctrl_c(why_safe: Sequence[str], carrying_on: str) -> bool:
     nothing."""
     interrupt.clear()
     output.transient_begin()
-    section("You pressed Ctrl-C", why_safe)
-    carry_on = countdown_carry_on(carrying_on)
+    section(AFTER_CTRL_C, why_safe)
+    with _stops_at(AFTER_CTRL_C):
+        carry_on = countdown_carry_on(carrying_on)
     output.transient_end()
     if carry_on:
         interrupt.note_carried_on()
@@ -796,7 +825,8 @@ def _ctrl_c_first() -> None:
         "Nothing is under way, so stopping here is safe.",
     ], "Carrying on"):
         output.log_only("Stopped at a question, as asked after Ctrl-C.")
-        raise KeyboardInterrupt
+        with _stops_at(AFTER_CTRL_C):
+            raise KeyboardInterrupt
 
 
 def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFTER) -> bool:
@@ -1126,13 +1156,15 @@ def require_word(word: str, *, skip: bool = False) -> bool:
     hint = (" " + output.styled("(s to skip this device)", output.DIM) if skip else "") + hint_to_quit()
     prompt = output.question(question, hint)
     while True:
-        answer = _read_answer(prompt).strip().lower()
-        output.answered(answer)
+        # Named as the attended suite knows it, whatever the word.
+        with _stops_at(GO_AHEAD):
+            answer = _read_answer(prompt).strip().lower()
+            output.answered(answer)
+            if answer in QUIT_WORDS:
+                raise Declined(answer)
         if answer == word.lower():
             return True
         if skip and answer in SKIP_WORDS:
             return False
-        if answer in QUIT_WORDS:
-            raise Declined(answer)
         output.rewind(mark)  # the wrong answer, and its question, off the screen
         prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", hint)

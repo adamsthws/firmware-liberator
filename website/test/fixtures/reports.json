@@ -134,6 +134,24 @@
       "firmware_name": null, "firmware_name_expected": null,
       "begun_on": null, "back_after_power_cycle": null,
       "table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0xc000"}
+    },
+    {
+      "format": 1, "id": "adadadadadadadad", "proof": "1794000000:41", "tag": "user",
+      "tool": "3.2.0", "kind": "run", "result": "cancelled",
+      "stopped": {"step": "A1", "error": "quit", "text": "", "crash_site": null, "question": "no-supported-device"},
+      "family": "espressif", "device": null, "model": null, "stock_version": null, "device_hash": null,
+      "firmware": null, "source": "sonoff", "backup": "not taken", "identity": null,
+      "os": {"family": "windows", "version": "11 (build 26100)", "arch": "x86-64"},
+      "python": {"version": "3.12.4", "source": "portable"}, "seconds": 90, "resumed": false,
+      "stages": {"A1": {"seconds": 80, "busy": 0, "tries": 1, "wait": 70, "setup_network": null, "power_cycles": 0}},
+      "signal": null, "wifi_typed": null, "setup_network": null, "power_cycled": null,
+      "checks": "not-run", "meter": null, "nth_device": null,
+      "chip": {"revision": null, "flash_id": null, "flash_mb": null},
+      "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "none",
+        "admin": false},
+      "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.cmd", "install": "download",
+      "firmware_name": null, "firmware_name_expected": null,
+      "begun_on": null, "back_after_power_cycle": null
     }
   ],
   "invalid": [
@@ -183,6 +201,7 @@
     {"why": "offers given as null", "set": {"offers": null}},
     {"why": "a refused table read where no table is", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x9000"}}},
     {"why": "a refused table's hash not 64 hex digits", "set": {"table_refused": {"sha256": "0123456789ABCDEF", "at": "0x8000"}}},
+    {"why": "a question no word names", "set": {"stopped": {"step": "A1", "error": "quit", "text": "", "crash_site": null, "question": "Which eWeLink account is this device in"}}},
     {"why": "a refused table with a key the schema does not name", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x8000", "table": "00ff"}}}
   ],
   "readoutValid": [
@@ -203,6 +222,15 @@
       "os": {"family": "windows", "version": "11 (build 26100)", "arch": "arm64"},
       "python": {"version": "unknown", "source": "other"},
       "seconds": 0, "converted_here": 0
+    },
+    {
+      "format": 1, "id": "3123456789abcdef", "proof": "1794000000:198", "tag": "user",
+      "tool": "3.2.0", "kind": "readout", "result": "cancelled", "error": null, "family": "beken",
+      "device": "sonoff-s61", "model": "S60TPG-M", "stock_model": "SN-BK7238-S60-01", "stock_version": "1.0.4",
+      "whole": null, "device_hash": "c5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
+      "os": {"family": "macos", "version": "15.1", "arch": "arm64"},
+      "python": {"version": "3.12.4", "source": "portable"},
+      "seconds": 40, "converted_here": 0, "stopped": {"step": "read", "question": "go-ahead"}
     }
   ],
   "readoutInvalid": [
@@ -216,6 +244,10 @@
     {"why": "a count below none", "set": {"converted_here": -1}},
     {"why": "a count past any sane one", "set": {"converted_here": 1000001}},
     {"why": "whole as a word", "set": {"whole": "yes"}},
-    {"why": "a run's field", "set": {"stopped": null}}
+    {"why": "a run's field", "set": {"stages": {}}},
+    {"why": "a stage no readout has", "set": {"stopped": {"step": "D1", "question": null}}},
+    {"why": "a question no word names", "set": {"stopped": {"step": "read", "question": "proceed"}}},
+    {"why": "a run's stopped, with its words", "set": {"stopped": {"step": "read", "question": null, "text": "it stopped"}}},
+    {"why": "stopped without its question", "set": {"stopped": {"step": "read"}}}
   ]
 }

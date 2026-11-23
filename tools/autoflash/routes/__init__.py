@@ -40,6 +40,9 @@ if TYPE_CHECKING:
 
 Steps = list[tuple[str, str, Callable[["Context"], dict[str, Any]]]]
 
+# The question at A3; a report names it (report_data.questions).
+WHICH_FIRMWARE = "Which firmware should the device have"
+
 # Each chip family's routes, by the name a kinds.Kind gives its family.
 FAMILIES: dict[str, ModuleType] = {"espressif": espressif, "beken": beken}
 # What a run may install, every family's together: for the command line, and
@@ -430,7 +433,7 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
         # An update says so on its option alone, keeping the settings as one does.
         labels[outdated[0]] = f"{FIRMWARES[outdated[0]]}, update to {outdated[2]}"
     try:
-        choice = prompts.ask_choice("Which firmware should the device have", [labels[name] for name in choices])
+        choice = prompts.ask_choice(WHICH_FIRMWARE, [labels[name] for name in choices])
     except prompts.NoOneToAnswer:
         output.transient_end()
         raise Abort("an unattended run needs to be told which firmware: "

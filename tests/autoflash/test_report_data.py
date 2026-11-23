@@ -136,8 +136,19 @@ class PayloadTests(RouteTestCase):
                 self.assertEqual(data["result"], "cancelled")
                 # The stage it stopped at: the first not done.
                 self.assertEqual(data["stopped"], {"step": report_data.stopped_step(ctx), "error": how, "text": "",
-                                                   "crash_site": None})
+                                                   "crash_site": None, "question": None})
                 self.assertIsNotNone(data["stopped"]["step"])
+
+    def test_a_run_stopped_at_a_question_names_it_in_a_word(self):
+        from tools.autoflash import context
+        ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
+        ctx.stopped_by, ctx.stopped_at = "quit", f"{context.EWELINK_PASSWORD.format('owner@example.com')}: "
+        data = self.payload(ctx, "cancelled")
+        self.assertEqual(data["stopped"]["question"], "ewelink-password")
+        self.assertNotIn("owner@example.com", json.dumps(data))
+        self.assertEqual(report_schema.validate(report_schema.current(), {**data, "proof": "1794000000:198"}), [])
+        # Only a run the person stopped was stopped at a question.
+        self.assertIsNone(self.payload(ctx, "failed", failure="the device stopped answering")["stopped"]["question"])
 
     def test_a_failure_is_classed_by_the_words_sent_but_for_words_cut_short(self):
         ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
@@ -357,10 +368,47 @@ class ReadoutPayloadTests(unittest.TestCase):
             self.assertEqual(report_schema.validate(schema, sent), [], result)
             self.assertEqual(sent["error"], "other" if result == report_data.FAILED else None, result)
 
+    def test_one_that_stopped_says_its_stage_and_question_as_a_run_does(self):
+        schema = report_schema.current()["readout"]
+        stopped = self.payload(outcome=report_data.CANCELLED, step="read", question="go-ahead")
+        self.assertEqual(stopped["stopped"], {"step": "read", "question": "go-ahead"})
+        failed = self.payload(outcome=report_data.FAILED, error="other", step="restore")
+        self.assertEqual(failed["stopped"], {"step": "restore", "question": None})
+        for sent in (stopped, failed):
+            self.assertEqual(report_schema.validate(schema, {**sent, "proof": "1794000000:198"}), [])
+        for ended in (report_data.ACCEPTED, report_data.SKIPPED, report_data.NOT_NEEDED):
+            self.assertIsNone(self.payload(outcome=ended, step="save")["stopped"], ended)
+
     def test_what_is_not_as_the_tool_writes_it_is_sent_as_not_known(self):
         sent = self.payload(product="a product", model="", version="v1", mac=None, whole=None)
         self.assertEqual([sent[key] for key in ("model", "stock_model", "stock_version", "device_hash", "whole", "device")],
                          [None] * 6)
+
+
+class QuestionWordTests(unittest.TestCase):
+    """The question a run or readout was stopped at, in one word for both
+    (report_data.question_word): never its words."""
+
+    def test_each_word_is_one_the_schema_allows_and_each_named_question_has_one(self):
+        named = {word for _, word in report_data.questions()}
+        self.assertEqual(sorted({*named, "other"}), sorted(report_data.QUESTION_WORDS))
+        for start, word in report_data.questions():
+            self.assertEqual(report_data.question_word(start), word, start)
+
+    def test_a1s_questions_each_have_a_word_of_their_own(self):
+        # Most runs people stop end at A1, finding the device in eWeLink.
+        from tools.autoflash import account, context
+        a1 = (context.WHICH_ACCOUNT, context.EWELINK_ACCOUNT, context.EWELINK_PASSWORD.format("owner@example.com"),
+              context.PASSWORD_REFUSED, account.NONE_SUPPORTED, account.WHICH_DEVICE, account.NOT_FOUND,
+              account.DEVICE_ADDRESS)
+        words = [report_data.question_word(question) for question in a1]
+        self.assertNotIn("other", words)
+        self.assertEqual(len(set(words)), len(a1), words)
+
+    def test_any_other_question_is_other_and_none_is_none(self):
+        self.assertEqual(report_data.question_word("Wi-Fi password for 'Home': "), "other")
+        self.assertEqual(report_data.question_word("What now"), "other")
+        self.assertIsNone(report_data.question_word(None))
 
 
 class WordTests(RouteTestCase):

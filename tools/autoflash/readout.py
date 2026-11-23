@@ -45,7 +45,7 @@ from tools.autoflash.errors import Abort, Finished, NothingWritten
 # each readout ends (report_upload.send_readout), and on the screen's at the end.
 from tools.autoflash.report_data import (
     ACCEPTED, CANCELLED, CRASHED, FAILED, KEPT, NOT_NEEDED as UNNEEDED, NOT_READ, SKIPPED,
-    WEBSITE_FULL, device_hash)
+    WEBSITE_FULL, device_hash, question_word)
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 
 if TYPE_CHECKING:
@@ -113,14 +113,20 @@ STAGES = (
 _first_stage = 1
 # The numbers the device's stages have taken so far, by key, each the next.
 _numbered: dict[str, int] = {}
+# The key of the stage under way, for where a readout stopped (Became.step):
+# None before the first, and once a device's readout ends.
+_under_way: str | None = None
+
+# The question asked where the device is not found (report_data.questions).
+NOT_FOUND = "The device was not found on this network. Its address"
 
 
 def lay_out_stages(first: int = 1) -> None:
     """Number the readout's stages from `first` - 2 in a run's readout, whose
     stage 2 found the account's devices (from_run) - its names' column as
     wide as the longest, or the run's, where that is wider."""
-    global _first_stage
-    _first_stage = first
+    global _first_stage, _under_way
+    _first_stage, _under_way = first, None
     _numbered.clear()
     output.set_stage_width(max(output.stage_width(), *(len(name) for _, name in STAGES)),
                            max(output.most_stages(), first + len(STAGES) - 1))
@@ -128,7 +134,9 @@ def lay_out_stages(first: int = 1) -> None:
 
 def begin(key: str) -> None:
     """The readout's stage `key` under way, the one before it ended first."""
+    global _under_way
     output.stage_end("complete")
+    _under_way = key
     number = _first_stage if key == "account" else _numbered.setdefault(key, _first_stage + 1 + len(_numbered))
     output.stage_begin(number, dict(STAGES)[key])
 
@@ -232,6 +240,8 @@ class Became:
     back: bool = True           # its Sonoff firmware answered again
     mac: str | None = None      # for its report's device hash, as a conversion's sends
     error: str | None = None    # how a failed one failed (failures.classify)
+    step: str | None = None     # the stage (STAGES) one stopped, failed or crashed in
+    question: str | None = None   # the question one was stopped at (report_data.QUESTION_WORDS)
     report_id: str | None = None   # its report's, once kept to send (report_upload.send_readout)
 
     @classmethod
@@ -241,6 +251,8 @@ class Became:
                    model=str((device.get("extra") or {}).get("model") or ""), **ended)
 
 
+# The outcomes of a readout that stopped part way, whose report says where (Became.step).
+STOPPED = (CANCELLED, FAILED, CRASHED)
 # Each outcome as the report on the screen says it (report_fields), in this order.
 SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Not sent", WEBSITE_FULL: "Website full",
         SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
@@ -469,7 +481,7 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
         return []
     output.transient_begin()
     address = prompts.ask_ipv4(
-        "The device was not found on this network. Its address",
+        NOT_FOUND,
         help_lines=["Its address is in your router's device list, or the eWeLink app's device info."],
         check=check)
     output.transient_end()
@@ -485,7 +497,9 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
 
     Under the readout's stage lines (STAGES): the one under way when it stops
     ends as stopped, with what it showed left under it - or skipped, for one
-    device of several passed by."""
+    device of several passed by. Its report says which stage that was, and
+    the question it was stopped at, if any (Became.step, Became.question)."""
+    global _under_way
     ctx.readout = this = Became.of(device)
     ctx.readout_device_id = str(device.get("deviceid") or "")   # to read it out again (cli.what_next)
     readouts(ctx).append(this)
@@ -503,8 +517,8 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
             this.detail = this.detail or str(exc)
         output.stage_end("skipped" if batch is not None else "stopped")
         raise
-    except (prompts.QuitRun, KeyboardInterrupt):
-        this.outcome = CANCELLED
+    except (prompts.QuitRun, KeyboardInterrupt) as exc:
+        this.outcome, this.question = CANCELLED, question_word(prompts.stopped_at(exc))
         output.stage_end("stopped")
         raise
     except Abort as exc:
@@ -516,6 +530,9 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         output.stage_end("stopped")
         raise
     finally:
+        if this.outcome in STOPPED:
+            this.step = _under_way
+        _under_way = None
         report_upload.send_readout(ctx, this, time.monotonic() - started - (output.waited() - waited))
     output.stage_end("complete")
     return said

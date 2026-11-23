@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import cli, credentials, hostsys, interrupt, output, prompts, records, routes, runs
+from tools.autoflash import cli, context, credentials, hostsys, interrupt, output, prompts, records, routes, runs
 from tools.autoflash.routes.beken import images as beken_images
 from tools.autoflash.routes.espressif import identity, installer, sonoff_firmware
 from tools.autoflash.routes.espressif import images as espressif_images
@@ -464,6 +464,38 @@ class CtrlCEndsTheSittingTests(unittest.TestCase):
 
     def test_in_a_conversion(self):
         self.assertTrue(self.stopped_by(lambda ctx: cli.convert(ctx, []), "cmd_run"))
+
+
+class StoppedAtAQuestionTests(unittest.TestCase):
+    """q or Ctrl-C at a question outside any step (the eWeLink sign-in, say)
+    is kept for the run's report, as one in a step is (runner)."""
+
+    def test_the_question_is_kept_however_it_was_stopped(self):
+        from types import SimpleNamespace
+
+        def at_the_sign_in(stop):
+            def asked(_ctx):
+                with prompts._stops_at(context.WHICH_ACCOUNT):
+                    raise stop
+            return asked
+        for stop in (prompts.QuitRun("q"), KeyboardInterrupt()):
+            ctx = SimpleNamespace(args=SimpleNamespace(verbose=False, send=None, unattended=False), dir=Path("/x"),
+                                  state=mock.Mock(), readouts=[])
+            with self.subTest(stop=type(stop).__name__), \
+                    mock.patch.object(cli.signup, "SITTING", cli.signup.Sitting()), \
+                    mock.patch.object(cli.output, "start"), mock.patch.object(cli.output, "finish"), \
+                    mock.patch.object(cli.output, "tell"), mock.patch.object(cli.output, "say"), \
+                    mock.patch.object(cli.output, "log_only"), mock.patch.object(cli.output, "stage_end"), \
+                    mock.patch.object(cli.firewall, "release_firewall"), mock.patch.object(cli.firewall, "say_quit"), \
+                    mock.patch.object(cli, "log_run_choice"), mock.patch.object(cli.report_upload, "begin"), \
+                    mock.patch.object(cli, "stopped_report", return_value=None), \
+                    mock.patch.object(cli, "issue_alone", return_value=False), \
+                    mock.patch.object(cli, "stopped_by", return_value=None), \
+                    mock.patch.object(cli.runner, "stopped_mid_send", return_value=False), \
+                    mock.patch.object(cli.offers, "drop"), \
+                    mock.patch.object(cli, "cmd_run", side_effect=at_the_sign_in(stop)):
+                self.assertEqual(cli.convert(ctx, []), 130)
+                self.assertEqual(ctx.stopped_at, context.WHICH_ACCOUNT)
 
 
 class RunTurnedReadoutFailedTests(unittest.TestCase):

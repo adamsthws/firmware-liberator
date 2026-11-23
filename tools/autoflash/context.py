@@ -54,6 +54,9 @@ from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkErro
 WHICH_ACCOUNT = "Which eWeLink account is this device in"
 EWELINK_ACCOUNT = "eWeLink account email or phone number"
 EWELINK_PASSWORD = "eWeLink password for {}"
+# What a report calls the question after eWeLink refused the password
+# (report_data.questions), its words those of other questions.
+PASSWORD_REFUSED = "What now, with the eWeLink password refused"
 
 # Digits written as a phone number is (spaces, dashes, dots, brackets, a +):
 # at least six, the fewest a number without its country code is likely to have.
@@ -161,8 +164,10 @@ class Context:
         self.cut_off = False  # whether that was a transfer to or from the device cut off (runner.cut_off_hint)
         self.running_step: str | None = None  # the step under way (runner.execute)
         self.redoing_interrupted: set[str] = set()  # steps a run before this one was cut off in, done again
-        # How the person stopped the run, for its report (report_data.STOPPED_BY).
+        # How the person stopped the run, for its report (report_data.STOPPED_BY),
+        # and the question they stopped it at, as asked (prompts.stopped_at).
         self.stopped_by: str | None = None
+        self.stopped_at: str | None = None
         # Where in the tool's code the last stage to fail went wrong, for an
         # unexpected error (runner.crash_site).
         self.crash_site: str | None = None
@@ -361,7 +366,7 @@ class Context:
                 choice = prompts.ask_choice("What now", [
                     "Type the password again",
                     "Use a different eWeLink account",
-                ])
+                ], name=PASSWORD_REFUSED)
                 output.transient_end()
                 if choice == 1:
                     self.forget_account()

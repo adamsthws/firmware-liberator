@@ -986,6 +986,61 @@ class PowerWarningTests(unittest.TestCase):
         self.assertEqual(written, ["prompts.py"])
 
 
+class StoppedAtTests(unittest.TestCase):
+    """q or Ctrl-C at a question names it on what stops the run
+    (prompts.stopped_at), for its report to say in a word
+    (report_data.question_word): where people stop, at which question."""
+
+    # Each kind of question, how it reads its answer, and the name it stops with.
+    KINDS = {
+        "text": (lambda: prompts.ask_text("eWeLink account email"), "_read_answer", "eWeLink account email"),
+        "yes or no": (lambda: prompts.ask_yes_no("Use it anyway"), "_read_answer", "Use it anyway (y/n)"),
+        "choice": (lambda: prompts.ask_choice("Which device is this run for", ["a", "b"]), "_read_answer",
+                   "Which device is this run for"),
+        "word": (lambda: prompts.require_word(prompts.CONSENT_WORD), "_read_answer", prompts.GO_AHEAD),
+        "key": (lambda: prompts.wait_for_key(), "_wait_for_key", f"{prompts.PRESS_ANY_KEY} to continue"),
+        "password": (lambda: prompts.ask_secret("Wi-Fi password: "), "_ask_secret", "Wi-Fi password: "),
+    }
+
+    def stopped(self, question, reader, how):
+        with mock.patch.object(prompts, "UNATTENDED", False), \
+             mock.patch.object(prompts, "discard_typed_ahead"), mock.patch.object(prompts, "_emit"), \
+             mock.patch.object(prompts.output, "tell"), mock.patch.object(prompts.output, "answered"), \
+             mock.patch.object(prompts.output, "question", return_value=""), \
+             mock.patch.object(prompts, reader, side_effect=how):
+            try:
+                question()
+            except (prompts.QuitRun, KeyboardInterrupt) as exc:
+                return prompts.stopped_at(exc)
+        self.fail("not stopped")
+
+    def test_q_and_ctrl_c_at_every_kind_of_question_name_it(self):
+        for kind, (question, reader, named) in self.KINDS.items():
+            quit_there = (lambda *_args, **_kwargs: "q") if reader == "_read_answer" else prompts.QuitRun("q")
+            for how, stop in (("q", quit_there), ("ctrl-c", KeyboardInterrupt)):
+                with self.subTest(kind=kind, how=how):
+                    self.assertEqual(self.stopped(question, reader, stop), named)
+
+    def test_a_question_whose_words_are_shared_is_named_by_its_name(self):
+        def ask():
+            return prompts.ask_choice("What now", ["Look again"], name="What now, with nothing found")
+        self.assertEqual(self.stopped(ask, "_read_answer", lambda *_: "q"), "What now, with nothing found")
+
+    def test_stopped_after_a_ctrl_c_before_a_question_names_the_ctrl_c_not_the_question(self):
+        from tools.autoflash import interrupt
+        self.addCleanup(interrupt.clear)
+        interrupt._state["first"] = 1.0   # pressed earlier, not yet asked about
+        with mock.patch.object(prompts.sys.stdin, "isatty", return_value=True), \
+             mock.patch.object(prompts.sys.stdout, "isatty", return_value=True), \
+             mock.patch.object(prompts, "countdown_carry_on", return_value=False), \
+             mock.patch.object(prompts, "section"):
+            self.assertEqual(self.stopped(self.KINDS["word"][0], "_read_answer", lambda *_: "proceed"),
+                             prompts.AFTER_CTRL_C)
+
+    def test_a_ctrl_c_while_nothing_asks_names_no_question(self):
+        self.assertIsNone(prompts.stopped_at(KeyboardInterrupt()))
+
+
 if __name__ == "__main__":
     unittest.main()
 

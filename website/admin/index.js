@@ -264,6 +264,7 @@ export const remove = (db, id) => [
   db.prepare("DELETE FROM report_stages WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM report_offers WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM refused_tables WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
+  db.prepare("DELETE FROM stop_questions WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
 ];
@@ -336,6 +337,9 @@ export const SYSTEM_NAMES = { all: "All systems", windows: "Windows", macos: "ma
 
 // A report's device kind, as a person calls it (report-schema.json); "" for none.
 const deviceName = (row) => schema.deviceNames[row.device] ?? row.device ?? "";
+// Where a run or readout stopped: its step, how, and the question it was
+// stopped at (stop_questions), where each is known.
+const stoppedAt = (row) => [row.step, row.error, row.question && `at ${row.question}`].filter(Boolean).join(" ");
 
 // Everything the view shows, in a fixed few queries.
 export async function gather(env, now) {
@@ -350,14 +354,20 @@ export async function gather(env, now) {
   const [folded] = await all("SELECT max(day) AS day FROM folded");
   return {
     today, counters, devices, lastFolded: folded?.day ?? null,
-    held: await all(`SELECT held_reports.id, held_reports.day, why, device, model, tool, result, step, error, text, tag
-      FROM held_reports JOIN reports ON reports.id = held_reports.id ORDER BY held_reports.day DESC LIMIT 100`),
+    held: await all(`SELECT held_reports.id, held_reports.day, why, device, model, tool, result, step, error, text, tag,
+        question
+      FROM held_reports JOIN reports ON reports.id = held_reports.id LEFT JOIN stop_questions USING (id)
+      ORDER BY held_reports.day DESC LIMIT 100`),
     heldGroups: await all(`SELECT held_reports.day, why, ${NAMED} AS named, max(device) AS device, count(*) AS n
       FROM held_reports JOIN reports ON reports.id = held_reports.id GROUP BY held_reports.day, why, named
       ORDER BY held_reports.day DESC, n DESC`),
     recent: await all(`SELECT day, tag, tool, result, step, error, text, device, model, firmware, source, os_family, seconds, quarantined,
-        crash_site, firmware_name, firmware_name_expected AS name_expected
-      FROM reports ORDER BY day DESC LIMIT 40`),
+        crash_site, firmware_name, firmware_name_expected AS name_expected, question
+      FROM reports LEFT JOIN stop_questions USING (id) ORDER BY day DESC LIMIT 40`),
+    recentReadouts: await all(`SELECT day, tag, tool, result, step, error, question, device, model, stock_model,
+        stock_version, whole, os_family, seconds, quarantined
+      FROM readout_reports LEFT JOIN readout_steps USING (id) LEFT JOIN stop_questions USING (id)
+      ORDER BY day DESC LIMIT 40`),
     week: await all(`SELECT day, ${OUTCOMES.map(([, results], at) =>
       `sum(result IN (${results.map((result) => `'${result}'`).join(", ")})) AS o${at}`).join(", ")}
       FROM reports WHERE day >= ? AND quarantined = 0 GROUP BY day ORDER BY day`, since(13)),
@@ -561,7 +571,7 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + (data.heldGroups.length > 1 || data.heldGroups[0]?.n > 1 ? table([["Day", "day"], ["Why", "why"],
         ["Device", (row) => deviceName(row) || row.named], ["Held", "n", "number"], ["", releaseAll, "html"]],
       data.heldGroups, "") : "")
-      + table([["Day", "day"], ["Why", "why"], ["Device", deviceName], ["Model", "model"], ["Result", "result"], ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")],
+      + table([["Day", "day"], ["Why", "why"], ["Device", deviceName], ["Model", "model"], ["Result", "result"], ["Stopped", stoppedAt],
         ["Words", "text", "text"], ["", (row) => action(row.id, "release", "Release") + " " + action(row.id, "delete", "Delete", true), "html"]],
       data.held, "Nothing held.")
       + `</section>`,
@@ -676,11 +686,19 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + `</section>`,
     `<section class="card"><h2>The latest reports</h2><p class="sub">The newest 40, held ones marked. At most ${number(DEVICE_DAILY)} a day of one device are taken.</p>`
       + table([["Day", "day"], ["Tag", "tag"], ["Tool", "tool"], ["Result", (row) => row.result + (row.quarantined ? " (held)" : "")],
-        ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")], ["Device", deviceName], ["Model", "model"], ["To", "firmware"], ["From", "source"],
+        ["Stopped", stoppedAt], ["Device", deviceName], ["Model", "model"], ["To", "firmware"], ["From", "source"],
         ["System", "os_family"], ["Seconds", "seconds", "number"], ["Words", "text", "text"], ["Went wrong at", "crash_site", "text"],
         // The name the device's updater checks; one not the tool's may turn its update down.
         ["Firmware name", (row) => (row.firmware_name ?? "") + (row.name_expected === 0 ? " (not the tool's)" : "")]],
         data.recent, "No reports yet.")
+      + `</section>`,
+    `<section class="card" id="readout-reports"><h2>The latest readout reports</h2><p class="sub">The newest 40, one
+      a device read out, held ones marked: where one stopped, the stage it was in and the question it was stopped at.</p>`
+      + table([["Day", "day"], ["Tag", "tag"], ["Tool", "tool"], ["Result", (row) => row.result + (row.quarantined ? " (held)" : "")],
+        ["Stopped", stoppedAt], ["Device", deviceName], ["Model", "model"], ["Sonoff model", "stock_model"],
+        ["Sonoff version", "stock_version"], ["Whole", (row) => (row.whole === null ? "" : row.whole ? "yes" : "no")],
+        ["System", "os_family"], ["Seconds", "seconds", "number"]],
+      data.recentReadouts, "No readout reports yet.")
       + `</section>`,
   ];
   return shellPage("Admin", `<div class="admin"><div class="top"><h1>Admin</h1><span class="who">`

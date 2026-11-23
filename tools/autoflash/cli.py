@@ -819,7 +819,8 @@ def convert(ctx: Context, given: list[str]) -> int:
     try:
         code = cmd_run(ctx)
         return code
-    except QuitRun:
+    except QuitRun as stopped:
+        ctx.stopped_at = prompts.stopped_at(stopped)   # for its report
         output.stage_end("stopped")
         code = 130
         return code
@@ -836,7 +837,8 @@ def convert(ctx: Context, given: list[str]) -> int:
         runner.tell_how_to_carry_on()
         code, ending = 1, "crashed"
         return code
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as stopped:
+        ctx.stopped_at = prompts.stopped_at(stopped)   # for its report
         signup.stopped()
         closed = interrupt.window_closed()
         try:

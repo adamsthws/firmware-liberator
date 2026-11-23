@@ -402,6 +402,60 @@
         "type": "integer",
         "minimum": 0,
         "maximum": 1000000
+      },
+      "stopped": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "step": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "account",
+              "locate",
+              "probe",
+              "fetch",
+              "read",
+              "restore",
+              "save",
+              null
+            ]
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "which-account",
+              "ewelink-account",
+              "ewelink-password",
+              "password-refused",
+              "no-supported-device",
+              "which-device",
+              "not-found",
+              "device-address",
+              "which-device-here",
+              "which-readout",
+              "which-firmware",
+              "go-ahead",
+              "press-a-key",
+              "computer-password",
+              "after-ctrl-c",
+              "other",
+              null
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "question"
+        ],
+        "additionalProperties": false
       }
     },
     "required": [
@@ -537,6 +591,31 @@
           ],
           "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,59} at tools/[A-Za-z0-9_./-]{1,120}\\.py:[0-9]{1,6}$",
           "maxLength": 200
+        },
+        "question": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "which-account",
+            "ewelink-account",
+            "ewelink-password",
+            "password-refused",
+            "no-supported-device",
+            "which-device",
+            "not-found",
+            "device-address",
+            "which-device-here",
+            "which-readout",
+            "which-firmware",
+            "go-ahead",
+            "press-a-key",
+            "computer-password",
+            "after-ctrl-c",
+            "other",
+            null
+          ]
         }
       },
       "required": [

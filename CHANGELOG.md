@@ -86,6 +86,12 @@ check.
   where it was read, so the project hears of a model's table it has wrong
   without anyone opening an issue
   ([what the tool sends](docs/what-the-tool-sends.md#what-a-report-holds)).
+- Reports now record where a run or readout stopped: a run you stop at a
+  question says which one, and a readout's report says the stage it stopped
+  in and the question too, as a conversion's does. The question goes as a
+  fixed word (such as `which-account` or `go-ahead`), never the question's
+  words or your answer. The website keeps them (migration 0003)
+  ([what the tool sends](docs/what-the-tool-sends.md#what-a-report-holds)).
 - A device on Tasmota given by its address (`--device-ip`), or whose Tasmota
   has a web password, is now taken for the kind of device its template names.
   Before, the run took any such device for an S60, and its report named no

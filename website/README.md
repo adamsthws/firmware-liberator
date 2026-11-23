@@ -229,6 +229,23 @@ tools/repo/cloudflare_tokens.py database-read-only` makes it, into
 `tools/repo/.env.infra`. The rows are people's reports: run it on your own
 computer, never from CI.
 
+### Where runs and readouts stop
+
+A run's report says the step it stopped at (`reports.step`); a readout's,
+the stage it was in (`readout_steps`, from `readout.STAGES`), for one
+cancelled, failed or crashed. Either stopped at a question by the person
+says which, as a word (`report_data.QUESTION_WORDS`, kept in
+`stop_questions`, one vocabulary for both): A1's questions each have their
+own, as most runs stopped there. A report from 3.1.0 or before says no
+question, nor a readout's stage. The admin view's latest reports and latest
+readout reports show them; for the questions A1 stops at:
+
+```sh
+python3 tools/repo/database.py "SELECT question, count(*) AS runs FROM reports
+  LEFT JOIN stop_questions USING (id) WHERE result = 'cancelled' AND step = 'A1'
+  AND tag = 'user' GROUP BY question ORDER BY runs DESC"
+```
+
 ### A partition table refused
 
 Before writing anything, the tool checks the device's partition table is

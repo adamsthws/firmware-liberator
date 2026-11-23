@@ -29,7 +29,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import failures, join, kinds, offers, records, report, report_data, report_upload, routes  # noqa: E402
+from tools.autoflash import (failures, join, kinds, offers, readout, records, report, report_data,  # noqa: E402
+                             report_upload, routes)
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -81,6 +82,8 @@ def schema() -> dict[str, Any]:
         "seconds": integer(0, 7 * 86400),
     }
     model = nullable(string(f"^{report_data.MODEL.pattern}$", 24))
+    # The question a run or readout was stopped at, in a word (report_data.question_word).
+    question = nullable(words(*report_data.QUESTION_WORDS))
     return {
         "$comment": "Written by tools/repo/report_schema.py: change that, not this.",
         "maxBytes": MAX_BYTES,
@@ -116,7 +119,11 @@ def schema() -> dict[str, Any]:
             **machine,
             # How many devices this computer has converted: bounded only to keep it sane.
             "converted_here": integer(0, report_data.NTH_DEVICE_LIMIT),
-        }),
+            # Where one cancelled, failed or crashed stopped: its stage, and
+            # the question it was stopped at.
+            "stopped": nullable(record({"step": nullable(words(*(key for key, _ in readout.STAGES))),
+                                        "question": question})),
+        }, optional=("stopped",)),
         **record({
             **shared,
             "kind": words("run"),
@@ -128,7 +135,8 @@ def schema() -> dict[str, Any]:
                 "text": string("^[ -~]*$", report_data.TEXT_LIMIT),
                 # Where in the tool's code an unexpected error came from.
                 "crash_site": nullable(string(f"^{report_data.CRASH_SITE.pattern}$", 200)),
-            })),
+                "question": question,
+            }, optional=("question",))),
             "family": nullable(words(*routes.FAMILIES)),
             "device": nullable(words(*(kind.key for kind in kinds.EVERY))),
             "model": model,

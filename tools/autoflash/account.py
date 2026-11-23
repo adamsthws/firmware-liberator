@@ -220,6 +220,14 @@ def reached(devices: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     return devices
 
 
+# A1's questions as a report names them (report_data.questions): each "What
+# now" by what it follows.
+NONE_SUPPORTED = "What now, with no supported device in the account"
+WHICH_DEVICE = "More than one device in the account is on this network. Which one is this run for"
+NOT_FOUND = "What now, with the device not found on this network"
+DEVICE_ADDRESS = "The device's address"
+
+
 def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
     """The address of the device to convert, from the account's on this network."""
     started = time.monotonic()
@@ -240,7 +248,7 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
                 "Use a different eWeLink account",
                 "Type the device's address myself",
                 *(["Read out my device, to help add support for it"] if devices else []),
-            ])
+            ], name=NONE_SUPPORTED)
             output.transient_end()
             if choice == 3:
                 from tools.autoflash import readout  # it builds on the routes, which import this
@@ -257,7 +265,7 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
             if found:
                 output.transient_begin()
                 choice = prompts.ask_choice(
-                    "More than one device in the account is on this network. Which one is this run for",
+                    WHICH_DEVICE,
                     [f"{describe_device(sighting.device)} at {sighting.ip}" for sighting in found],
                 )
                 output.transient_end()
@@ -296,12 +304,12 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
                 "Look again",
                 "Use a different eWeLink account",
                 "Type the device's address myself",
-            ])
+            ], name=NOT_FOUND)
             output.transient_end()
         if choice == 2:
             output.transient_begin()  # gone once answered, as the menu was
             ip = prompts.ask_ipv4(
-                "The device's address",
+                DEVICE_ADDRESS,
                 help_lines=["Its address is in your router's device list, or the eWeLink app's device info."],
                 check=device_at({device.mac for device in supported if device.mac}),
             )

@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import device, errors, firewall, join, output, prompts, report, routes, runner, runs
+from tools.autoflash import device, errors, firewall, join, output, prompts, report, report_data, routes, runner, runs
 from tools.autoflash import safety_locks, unlock
 from tools.autoflash.phases import PhaseError
 from tools.autoflash.routes import espressif, update
@@ -1212,6 +1212,25 @@ class UnexpectedErrorTests(unittest.TestCase):
         self.assertIs(state.data["steps"]["E2"]["nothing_written"], True)
         ended.assert_called_once_with("stopped")
         self.assertNotIn("FAILED", " ".join(str(call.args[0]) for call in told.call_args_list))
+
+    def test_q_at_a_question_in_a_step_is_kept_for_the_runs_report(self):
+        # Seen: many runs stopped in A1, and nothing to tell at which question.
+        from types import SimpleNamespace
+        from tools.autoflash import account
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        ctx = SimpleNamespace(state=RunState.open(Path(directory.name)), dry_run=False)
+
+        def asked(_ctx):
+            with prompts._stops_at(account.NONE_SUPPORTED):
+                raise prompts.QuitRun("stopped at an operator prompt")
+        title, _ = routes.STEP_INDEX["A1"]
+        with mock.patch.dict(routes.STEP_INDEX, {"A1": (title, asked)}), \
+             mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
+             mock.patch.object(output, "say"):
+            self.assertEqual(runner.execute(ctx, "A1"), 130)
+        self.assertEqual(ctx.stopped_at, account.NONE_SUPPORTED)
+        self.assertEqual(report_data.question_word(ctx.stopped_at), "no-supported-device")
 
     def test_a_device_that_never_connected_stops_the_step_with_the_firewall_hint(self):
         from tools.autoflash.phases import DeviceNeverConnected

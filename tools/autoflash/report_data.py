@@ -18,7 +18,7 @@ import re
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, openbeken, records, routes, runs
-from tools.autoflash import report
+from tools.autoflash import prompts, report
 from tools.espressif import layouts as espressif_layouts
 from tools.ewelink.firmware_name import A_NAME
 from tools.ewelink.get_device_key import API
@@ -90,6 +90,50 @@ FAILED = "failed"
 CRASHED = "crashed"
 READOUT_RESULTS = (ACCEPTED, KEPT, NOT_NEEDED, WEBSITE_FULL, SKIPPED, NOT_READ, CANCELLED, FAILED, CRASHED)
 TEXT_LIMIT = 200
+# The question a run or a readout was stopped at - q, Ctrl-C, or stop after
+# a Ctrl-C - as its report's stopped "question" says it, the same for both
+# (question_word): A1's each its own, as most stopped runs stop there. "other"
+# for a question not named here.
+QUESTION_WORDS = ("which-account", "ewelink-account", "ewelink-password", "password-refused",
+                  "no-supported-device", "which-device", "not-found", "device-address", "which-device-here",
+                  "which-readout", "which-firmware", "go-ahead", "press-a-key", "computer-password",
+                  "after-ctrl-c", "other")
+
+
+def questions() -> tuple[tuple[str, str], ...]:
+    """Each question QUESTION_WORDS names, as (how it begins as asked or
+    named - prompts.stopped_at - and its word), but "other". Named where
+    each is asked, in modules that build on this one."""
+    from tools.autoflash import account, context, readout
+    from tools.autoflash.routes import source
+    return (
+        (context.WHICH_ACCOUNT, "which-account"),
+        (context.EWELINK_ACCOUNT, "ewelink-account"),
+        (context.EWELINK_PASSWORD.split("{")[0], "ewelink-password"),
+        (context.PASSWORD_REFUSED, "password-refused"),
+        (account.NONE_SUPPORTED, "no-supported-device"),
+        (account.WHICH_DEVICE, "which-device"),
+        (account.NOT_FOUND, "not-found"),
+        (account.DEVICE_ADDRESS, "device-address"),
+        (readout.NOT_FOUND, "device-address"),
+        (source.CHOOSE, "which-device-here"),
+        (readout.CHOOSE, "which-readout"),
+        (routes.WHICH_FIRMWARE, "which-firmware"),
+        (prompts.GO_AHEAD, "go-ahead"),
+        (prompts.PRESS_ANY_KEY, "press-a-key"),
+        (prompts.SUDO_PASSWORD, "computer-password"),
+        (prompts.AFTER_CTRL_C, "after-ctrl-c"),
+    )
+
+
+def question_word(question: str | None) -> str | None:
+    """The word a report gives the question a run or readout was stopped at
+    (prompts.stopped_at): never its words, which may name the device or the
+    account. None where it stopped at none."""
+    if question is None:
+        return None
+    return next((word for start, word in questions() if question.startswith(start)), "other")
+
 # Where a partition table the run refused was read: an Espressif device's
 # flash, where its kind's Sonoff firmware reads it (Layout.sonoff_table_at),
 # or a Beken kind's official update file (routes/beken/images.checked).
@@ -242,6 +286,10 @@ def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str,
         "python": python_info(),
         "seconds": max(0, min(int(seconds), 7 * 86400)),
         "converted_here": min(records.converted_here(), NTH_DEVICE_LIMIT),
+        # Where one stopped, failed or crashed: the stage (readout.STAGES), and
+        # the question it was stopped at, as a run's report says them.
+        "stopped": ({"step": became.step, "question": became.question}
+                    if became.outcome in (CANCELLED, FAILED, CRASHED) else None),
     }
 
 
@@ -256,7 +304,7 @@ def outcome(ctx: Context, ending: str) -> tuple[str, dict[str, Any] | None]:
     if ending == "cancelled":
         # Where people stop, and how: no words, as nothing went wrong.
         return ending, {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": "",
-                        "crash_site": None}
+                        "crash_site": None, "question": question_word(getattr(ctx, "stopped_at", None))}
     reason = ctx.last_failure or ""
     text = plain(reason)
     # The class what stopped it said (errors.Abort's failure), else classed by
@@ -271,7 +319,8 @@ def outcome(ctx: Context, ending: str) -> tuple[str, dict[str, Any] | None]:
                     else said if said in failures.CLASSES
                     else failures.classify(reason if text.endswith("...") else text),
                     "text": text,
-                    "crash_site": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
+                    "crash_site": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None,
+                    "question": None}
 
 
 def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending: str,

@@ -24,7 +24,9 @@ stages people choose to stop at, and which devices people want supported next: s
   device came from, or stopped; if stopped, at which stage, the kind of
   problem (such as "the device stopped answering"), and the tool's message
   about it, with any addresses taken out. If you stop it yourself, the stage
-  you stopped at and how: q at a question, Ctrl-C, or closing the window.
+  you stopped at and how: q at a question, Ctrl-C, or closing the window,
+  and if you stopped at a question, which one, as a word (such as
+  `which-account` or `go-ahead`), never its words or your answer.
   Nothing else is asked of you, and a run you stop before its first stage
   sends no report. If the tool itself went wrong, the place in its own code
   where it did (such as `KeyError at tools/autoflash/report.py:212`), never
@@ -48,7 +50,9 @@ stages people choose to stop at, and which devices people want supported next: s
   accepted by the website, kept on your computer unsent, not needed (one like
   it is in already), turned away as the website was full, not read as the
   device now runs other firmware, skipped, stopped by you, or failed, with
-  the kind of problem - the device's kind, its model and the name and version
+  the kind of problem; one stopped or failed part way says the stage it was
+  in, and the question you stopped it at, as a conversion's does - the
+  device's kind, its model and the name and version
   of its Sonoff firmware, whether its whole memory was read, and how long it
   took. Never the readout itself, nor its reference.
 - **Before a readout, the question whether one is wanted:** the device's

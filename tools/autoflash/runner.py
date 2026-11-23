@@ -105,6 +105,7 @@ def _execute(ctx: Context, step: str) -> int:
             ctx.state.mark(step, ATTEMPTED, nothing_written=False)
         captured = handler(ctx)
     except QuitRun as stopped:
+        ctx.stopped_at = prompts.stopped_at(stopped)   # for its report
         if isinstance(stopped, Declined):
             # Nothing written: the run is not offered back as one that wrote
             # to its device (cli.wrote_to_device).
@@ -634,6 +635,7 @@ def run_steps(ctx: Context) -> int:
             continue
         if code == 0 and stop_here_after_ctrl_c(step):
             ctx.stopped_by = "ctrl-c"   # for its report (cli.stopped_by)
+            ctx.stopped_at = prompts.AFTER_CTRL_C
             firewall.close_firewall_rules(ctx)
             return 130
         if code == 0 and step == routes.FAMILY.POINT_OF_NO_RETURN and ctx.research_bridge:

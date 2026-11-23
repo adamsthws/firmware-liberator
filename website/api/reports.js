@@ -154,6 +154,11 @@ const offerValue = (value) => (typeof value === "boolean" ? Number(value) : valu
 // The partition table the run refused, one row a report that gives one
 // (alerts.js tells the maintainer of a new one).
 const REFUSED = "INSERT OR IGNORE INTO refused_tables (id, sha256, at) VALUES (?, ?, ?)";
+// Where a run or readout stopped, beyond its own table's columns (migration
+// 0003): the question it was stopped at, and a readout's stage, one row each
+// a report that gives one.
+const QUESTION = "INSERT OR IGNORE INTO stop_questions (id, question) VALUES (?, ?)";
+const READOUT_STEP = "INSERT OR IGNORE INTO readout_steps (id, step) VALUES (?, ?)";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -189,7 +194,14 @@ export function writes(db, report, hash, day, held = null) {
       report.model, report.stock_model, report.stock_version, flag(report.whole), hash, report.os.family, report.os.version,
       report.os.arch, report.python.version, report.python.source, report.seconds, report.converted_here,
       Number(held !== null));
-    return held === null ? [statement] : [statement, db.prepare(HOLD).bind(report.id, day, held)];
+    const statements = [statement];
+    if (report.stopped?.step) {
+      statements.push(db.prepare(READOUT_STEP).bind(report.id, report.stopped.step));
+    }
+    if (report.stopped?.question) {
+      statements.push(db.prepare(QUESTION).bind(report.id, report.stopped.question));
+    }
+    return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
   }
   const statements = [db.prepare(INSERT).bind(...Object.values(COLUMNS(report, hash, day, held)))];
   // A run the person stopped makes no device's record: those count the runs
@@ -208,6 +220,9 @@ export function writes(db, report, hash, day, held = null) {
   }
   if (report.table_refused) {
     statements.push(db.prepare(REFUSED).bind(report.id, report.table_refused.sha256, report.table_refused.at));
+  }
+  if (report.stopped?.question) {
+    statements.push(db.prepare(QUESTION).bind(report.id, report.stopped.question));
   }
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }

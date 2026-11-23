@@ -117,6 +117,20 @@ test("a held report and a recent one say the device kind as well as the model", 
   assert.match(html.split("The latest reports")[1], /<td>Sonoff S60<\/td><td>S60TPG<\/td>/);
 });
 
+test("the latest reports and readout reports say the question each was stopped at, a readout its stage too", async () => {
+  const bindings = env();
+  const samples = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8"));
+  const run = samples.valid.find((sample) => sample.stopped?.question);
+  const readout = samples.readoutValid.find((sample) => sample.stopped?.question);
+  await bindings.DB.batch([...writes(bindings.DB, run, "a".repeat(64), "2026-11-09"),
+    ...writes(bindings.DB, readout, "b".repeat(64), "2026-11-09")]);
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(html.split("The latest reports")[1].split("</section>")[0],
+    new RegExp(`<td>${run.stopped.step} quit at ${run.stopped.question}</td>`));
+  assert.match(html.split('id="readout-reports">')[1].split("</section>")[0],
+    new RegExp(`<td>cancelled</td><td>${readout.stopped.step} at ${readout.stopped.question}</td>`));
+});
+
 test("the view lists the keys a later whole readout disagrees with, unsettled", async () => {
   const { bindings, db } = await held();
   const add = db.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review,

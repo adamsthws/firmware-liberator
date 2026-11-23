@@ -383,6 +383,20 @@ firmware` lists the offered files under `readouts/firmware/`: each one
 `fetched` from its link, its bytes there, or a `mark` of one a readout holds,
 with that readout's object.
 
+- **Where readouts stop.** Each device's readout sends a report as it ends
+  (`readout_reports`; `report_data.readout_payload`). One cancelled, failed
+  or crashed says the stage it was in (`readout.STAGES`, kept in
+  `readout_steps`) and, where the person stopped it at a question, which one
+  (`report_data.QUESTION_WORDS`, kept in `stop_questions`, as a run's is).
+  The admin view's latest readout reports show both; by device:
+
+  ```sh
+  python3 tools/repo/database.py "SELECT day, tool, model, result, step, question
+    FROM readout_reports LEFT JOIN readout_steps USING (id) LEFT JOIN stop_questions USING (id)
+    WHERE result IN ('cancelled', 'failed', 'crashed') ORDER BY day DESC"
+  ```
+
+  Reports from 3.1.0 and before say neither.
 - **Reviewing.** `readouts.py review` lists the readouts waiting, by key,
   with an odd one's fingerprint marked; `approve ID` or `reject ID` settles
   one. A rejected one frees its place for another sender's.

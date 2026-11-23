@@ -32,7 +32,7 @@ class AskOnExitTests(unittest.TestCase):
         the screen was told, and the options offered."""
         typed = iter(answers)
 
-        def answer(question, default, private=None, hint=True):
+        def answer(question, default, private=None, hint=True, name=""):
             given = next(typed)
             if isinstance(given, BaseException):
                 raise given

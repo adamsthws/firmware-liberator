@@ -685,6 +685,50 @@ class RunTests(unittest.TestCase):
                                            "7 Saving the readout", "complete"])
         self.assertEqual(self.stages[:2], ["2 Locating the device on your network", "complete"])
 
+    def test_its_report_says_the_stage_and_question_it_stopped_at_on_either_family(self):
+        # Seen: three readouts of one Beken device, all cancelled, and nothing
+        # to tell where. Each family's read stops at its go-ahead alike.
+        from tools.autoflash import kinds, report_upload
+
+        def stopped_at_the_go_ahead(*_args, **_kwargs):
+            with prompts._stops_at(prompts.GO_AHEAD):
+                raise prompts.Declined("q")
+
+        def restoring_then(raised):
+            def read(*_args, **_kwargs):
+                readout.restoring()
+                raise raised
+            return read
+        for product, kind, chip in (("S60TPG", kinds.SONOFF_S60, "ESP32C3"),
+                                    ("S61STPF", kinds.SONOFF_S61, "BK7238")):
+            asked = account.Asked("1.2.0", kind.stock_model, product, [], {}, "1000abcdef")
+            # (what the read raises, its outcome, its stage, its question)
+            cases = ((stopped_at_the_go_ahead, readout.CANCELLED, "read", "go-ahead"),
+                     (KeyboardInterrupt(), readout.CANCELLED, "read", None),
+                     (restoring_then(errors.Abort("the device stopped answering")), readout.FAILED, "restore", None),
+                     (None, readout.ACCEPTED, None, None))
+            for raised, outcome, step, question in cases:
+                sent = []
+                with self.subTest(kind.key, outcome=outcome, step=step), learned(kind.wrapper_model, chip), \
+                        mock.patch.object(report_upload, "send_readout",
+                                          side_effect=lambda ctx, became, seconds: sent.append(
+                                              (became.outcome, became.step, became.question))), \
+                        mock.patch.object(account, "ask_account", return_value=asked), \
+                        mock.patch.object(account, "already_converting"), \
+                        mock.patch.object(runs, "hold_device"), \
+                        mock.patch.object(readout_beken, "stock_from_offered", return_value=object()), \
+                        mock.patch.object(readout_espressif, "read_and_anonymise",
+                                          side_effect=raised, return_value=({}, True)), \
+                        mock.patch.object(readout_beken, "read_and_anonymise",
+                                          side_effect=raised, return_value=({}, True)), \
+                        mock.patch.object(readout, "send", return_value="r-1"), \
+                        mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"):
+                    try:
+                        readout.run(self.ctx, record(product, kind.stock_model))
+                    except BaseException:   # noqa: BLE001 - each as the readout ends it
+                        pass
+                    self.assertEqual(sent, [(outcome, step, question)])
+
     def test_the_stage_under_way_stops_with_the_readout(self):
         from tools.autoflash import kinds
         s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
