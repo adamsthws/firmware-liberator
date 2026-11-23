@@ -102,6 +102,30 @@ def fetched(dump: "Dump | Update") -> bytes:
 
 
 @dataclass(frozen=True)
+class Table:
+    """A device's own partition table: where its firmware reads it, and its
+    entries (label, type, subtype, offset, size)."""
+    at: int
+    partitions: tuple[tuple[str, int, int, int, int], ...]
+
+
+# A real BASICR4's, read out of one: its Sonoff settings in nvs, the NVS
+# partitions for Matter and fctry before and after it empty, esp_secure_cert
+# blank. The MINIR4's has not been read; its firmware runs on its donor's table.
+BASICR4_TABLE = Table(0xC000, (
+    ("esp_secure_cert", 0x3F, 0x06, 0xD000, 0x2000),
+    ("nvs_matter", 1, 2, 0x10000, 0x6000),
+    ("nvs_matter_bkp", 1, 2, 0x16000, 0x6000),
+    ("nvs", 1, 2, 0x1C000, 0x10000),
+    ("otadata", 1, 0, 0x2C000, 0x2000),
+    ("phy_init", 1, 1, 0x2E000, 0x1000),
+    ("ota_0", 0, 0x10, 0x30000, 0x1E0000),
+    ("ota_1", 0, 0x11, 0x210000, 0x1E0000),
+    ("fctry", 1, 2, 0x3F0000, 0x6000),
+))
+
+
+@dataclass(frozen=True)
 class Update:
     """eWeLink's public firmware update for a device no whole dump of which is
     published: run on a stock device of the same chip's flash in place of that
@@ -114,7 +138,7 @@ class Update:
     stock_model: str   # what its firmware calls itself, read from it
     uiid: int = 0      # eWeLink's number for its kind, where it differs from the donor's or its firmware checks it
     settings: str = ""  # Sonoff's user settings (user_usual) for it, where the donor's are not its own
-    table_at: int = flashmap.TABLE_AT  # where its firmware reads the partition table
+    table: "Table | None" = None  # its own partition table, where it differs from the donor's
     ais_sdk: bool = False  # its firmware is Sonoff's ais SDK, which keeps its own records (ais_rows)
 
     @property
@@ -130,12 +154,13 @@ S60_DUMP = Dump("Sonoff_S60TPG_UK_Plug_ESP32-C3_SM-049_1.2.0.bin",
                 "a638d7251c20a20ff14cf0eef9be3058bedd26ed80e260d7d0107d6b2599dff4", 0xF0)
 UPDATES = {
     # Built with the S60 bootloader's ESP-IDF (v4.4.2-dirty), but for a table at
-    # 0xC000 (its load_partitions maps sector 0 and adds 0xC000). Its uiid is
+    # 0xC000 (its load_partitions maps sector 0 and adds 0xC000): the S60's
+    # flash is laid out on a real BASICR4's table. Its uiid is
     # SonoffLAN's (DEVICES.md), which has the S60's as the S60's settings do; the
     # MINIR4's, below, is the same.
     "sonoff-basicr4": Update("SONOFF_BASICR4_(FWSW-E32R4-BASICR4-ESP32C3)_ESP32-C3_v1.1.0_user1.bin",
                              "cd4bbf2b08d9918a920d81c3ed2cef6e546673fd2c280106fd6852528866ac4a", 5,
-                             "s60", "SN-ESP32C3-BASICR4-01", 138, table_at=0xC000, ais_sdk=True),
+                             "s60", "SN-ESP32C3-BASICR4-01", 138, table=BASICR4_TABLE, ais_sdk=True),
     "sonoff-minir4": Update("SONOFF_MINIR4_(FWSW-E32R4-MINIR4-ESP32D0WDR2V3)_ESP32_v1.2.0_user1.bin",
                             "c881ddd667bc9d8c6905acf30051a1f2e4270c4be2dcfcfa39a5bfdd137c6ec0", 6,
                             "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01", 138, ais_sdk=True),
@@ -285,45 +310,38 @@ def c_lui(register: int, upper: int) -> bytes:
     return (0x6001 | (register << 7) | (upper << 2)).to_bytes(2, "little")
 
 
-def table_moved(flash: bytes, to: int) -> bytes:
-    """An S60 flash as a device built for its partition table at `to` would have
-    it: its bootloader reading it there and nothing where it was. The settings
-    partition, which covers `to` on the S60, starts after it instead and keeps
-    its end; nothing else moves. A real one's layout past the table is not
-    known, so this is the least a table at `to` needs."""
+def relaid(flash: bytes, table: Table) -> bytes:
+    """An S60 flash as a device with `table` has it: its bootloader reading the
+    table where that device's does, and each partition of the S60's of a label
+    the table has where the table puts it. One the S60 has not (the BASICR4's
+    nvs_matter, say) is left empty, as on a real one, and so are the apps: the
+    update's firmware goes in after."""
     bootloader_end = appimage.parse(flash).length
     if hashlib.sha256(flash[:bootloader_end]).hexdigest() != S60_BOOTLOADER_SHA256:
         raise SystemExit("the donor's bootloader is not the S60's this knows how to move the table for")
     old = flashmap.table_at(flash)
-    out = bytearray(flash)
+    out = bytearray(flash[:old]).ljust(len(flash), b"\xff")
     for at, register in S60_BOOTLOADER_TABLE_AT:
         if out[at:at + 2] != c_lui(register, old >> 12):
             raise SystemExit(f"the S60's bootloader does not read its table at 0x{old:x}")
-        out[at:at + 2] = c_lui(register, to >> 12)
+        out[at:at + 2] = c_lui(register, table.at >> 12)
     boot = bytearray(out[:bootloader_end])
     appimage.reseal(boot, appimage.parse(boot))
     out[:bootloader_end] = boot
 
-    settings = flashmap.nvs(flash)
-    start, end = to + flashmap.TABLE_SIZE, settings.offset + settings.size
-    if not settings.offset <= to < end:
-        raise SystemExit(f"0x{to:x} is not in the settings partition, which this moves out of its way")
-    kept = flash[settings.offset:settings.offset + end - start]
-    if flash[settings.offset + len(kept):end].count(0xFF) != end - settings.offset - len(kept):
-        raise SystemExit("the settings do not fit after the moved table")
+    donor = {partition.label: partition for partition in flashmap.partitions(flash)}
     entries = b""
-    for at in range(old, old + flashmap.TABLE_SIZE, flashmap.ENTRY_SIZE):
-        entry = bytearray(flash[at:at + flashmap.ENTRY_SIZE])
-        if entry[:2] != flashmap.ENTRY_MAGIC:
-            break
-        if struct.unpack_from("<I", entry, 4)[0] == settings.offset:
-            struct.pack_into("<II", entry, 4, start, end - start)
-        entries += entry
-    table = entries + b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest()
-    out[old:old + flashmap.TABLE_SIZE] = b"\xff" * flashmap.TABLE_SIZE
-    out[settings.offset:end] = b"\xff" * (end - settings.offset)
-    out[to:to + flashmap.TABLE_SIZE] = table.ljust(flashmap.TABLE_SIZE, b"\xff")
-    out[start:end] = kept
+    for label, kind, subtype, offset, size in table.partitions:
+        entries += (flashmap.ENTRY_MAGIC + bytes([kind, subtype]) + struct.pack("<II", offset, size)
+                    + label.encode().ljust(16, b"\0") + bytes(4))
+        if label not in donor or kind == flashmap.TYPE_APP:
+            continue
+        kept = flash[donor[label].offset:donor[label].offset + donor[label].size]
+        if kept[size:].count(0xFF) != len(kept[size:]):
+            raise SystemExit(f"the S60's {label} does not fit the table's")
+        out[offset:offset + min(size, len(kept))] = kept[:size]
+    out[table.at:table.at + flashmap.TABLE_SIZE] = (
+        entries + b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest()).ljust(flashmap.TABLE_SIZE, b"\xff")
     return bytes(out)
 
 
@@ -334,8 +352,8 @@ def with_update(donor: bytes, update: Update) -> bytes:
     app = firmware[build_vendor_ota.WRAPPER_SIZE:]
     added = ais_rows(update) if update.ais_sdk else ()
     flash = bytearray(anonymised(donor, update, update.stock_model, update.uiid, update.settings, added))
-    if update.table_at != flashmap.table_at(flash):
-        flash = bytearray(table_moved(flash, update.table_at))
+    if update.table:
+        flash = bytearray(relaid(flash, update.table))
     first, second = flashmap.app_slots(flash)[:2]
     if len(app) > first.size:
         raise SystemExit(f"{update.file} does not fit the donor's slot")

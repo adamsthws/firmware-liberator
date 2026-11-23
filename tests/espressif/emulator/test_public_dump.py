@@ -44,41 +44,48 @@ def s60_like() -> tuple[bytearray, str]:
     return flash, hashlib.sha256(boot).hexdigest()
 
 
-class TableMoved(unittest.TestCase):
-    def moved(self, flash: bytearray, sha256: str) -> bytes:
+class Relaid(unittest.TestCase):
+    def relaid(self, flash: bytearray, sha256: str, table: public_dump.Table = public_dump.BASICR4_TABLE) -> bytes:
         with mock.patch.object(public_dump, "S60_BOOTLOADER_SHA256", sha256):
-            return public_dump.table_moved(bytes(flash), 0xC000)
+            return public_dump.relaid(bytes(flash), table)
 
     def test_the_bootloader_reads_it_where_it_went_and_still_starts(self):
-        out = self.moved(*s60_like())
+        out = self.relaid(*s60_like())
         for at, register in public_dump.S60_BOOTLOADER_TABLE_AT:
             self.assertEqual(out[at:at + 2], public_dump.c_lui(register, 0xC))
         self.assertTrue(appimage.verify(out, appimage.parse(out)))
 
-    def test_only_the_settings_move_out_of_its_way(self):
-        out = self.moved(*s60_like())
+    def test_it_has_a_real_basicr4s_table_and_the_s60s_settings_in_its_nvs(self):
+        flash, sha256 = s60_like()
+        flash = flash.ljust(public_dump.FLASH_SIZE, b"\x5a")  # the S60's apps, which do not stay
+        out = self.relaid(flash, sha256)
+        self.assertEqual(len(out), public_dump.FLASH_SIZE)
         self.assertEqual(flashmap.table_at(out), 0xC000)
-        self.assertEqual(out[0x8000:0x9000], b"\xff" * 0x1000)
-        self.assertEqual([(p.label, p.offset, p.size) for p in flashmap.partitions(out)],
-                         [("nvs", 0xD000, 0xC000), ("reserve", 0x19000, 0x4000), ("otadata", 0x1D000, 0x2000),
-                          ("ota_0", 0x20000, 0x10000)])
-        self.assertEqual(out[0xD000:0x10000], b"\x5a" * 0x3000)
+        self.assertEqual(out[0x8000:0xC000], b"\xff" * 0x4000)
+        self.assertEqual([(p.label, p.type, p.subtype, p.offset, p.size) for p in flashmap.partitions(out)],
+                         list(public_dump.BASICR4_TABLE.partitions))
+        self.assertEqual(flashmap.nvs(out).offset, 0x1C000)
+        self.assertEqual(out[0x1C000:0x1F000], b"\x5a" * 0x3000)
+        self.assertEqual(out[0x2C000:0x2E000], flash[0x1D000:0x1F000])  # otadata
+        for label in ("nvs_matter", "nvs_matter_bkp", "fctry", "ota_0"):
+            partition = next(p for p in flashmap.partitions(out) if p.label == label)
+            self.assertEqual(out[partition.offset:partition.offset + partition.size].count(0xFF), partition.size)
 
     def test_its_checksum_row_is_esp_idfs(self):
-        table = self.moved(*s60_like())[0xC000:0xD000]
-        entries = table[:4 * flashmap.ENTRY_SIZE]
+        table = self.relaid(*s60_like())[0xC000:0xD000]
+        entries = table[:len(public_dump.BASICR4_TABLE.partitions) * flashmap.ENTRY_SIZE]
         self.assertEqual(table[len(entries):len(entries) + 32], b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest())
 
     def test_settings_that_would_not_fit_stop_it(self):
         flash, sha256 = s60_like()
-        flash[0x18000] = 0
-        with self.assertRaisesRegex(SystemExit, "do not fit"):
-            self.moved(flash, sha256)
+        small = public_dump.Table(0xC000, (("nvs", 1, 2, 0x10000, 0x2000),))
+        with self.assertRaisesRegex(SystemExit, "does not fit"):
+            self.relaid(flash, sha256, small)
 
     def test_another_bootloader_stops_it(self):
         flash, _ = s60_like()
         with self.assertRaisesRegex(SystemExit, "not the S60's"):
-            self.moved(flash, "0" * 64)
+            self.relaid(flash, "0" * 64)
 
     def test_compressed_lui_is_encoded_as_the_s60s_bootloader_has_it(self):
         self.assertEqual(public_dump.c_lui(10, 0x8), bytes.fromhex("2165"))  # c.lui a0,0x8

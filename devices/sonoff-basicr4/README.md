@@ -10,15 +10,14 @@ Its firmware keeps its partition table at 0xC000, and its bootloader reads it
 there. Tasmota and ESPHome, like the tool's own programs, are built to look for
 it at 0x8000, so the tool does not convert it yet, and turns it down as it does
 any device it does not know. Its stock firmware starts in the emulator, on a
-stand-in flash with its table moved there, and is read out.
+stand-in flash laid out on a real one's table, and is read out.
 
 **A readout is safe, and wanted** ([`docs/readouts.md`](../../docs/readouts.md)):
 the bridge (4.4.6 or later) takes the table from 0xC000 without writing anything,
 only reads the device, and puts it back on Sonoff's firmware. The copy sent in has
-the Wi-Fi password and eWeLink identity taken out of the records this firmware
-keeps them in (its pair and factory records). It would show what nobody has seen:
-the whole table, of which the stand-in guesses everything past the table itself
-(`nvs` from 0xD000, the rest as the S60's).
+the Wi-Fi password and eWeLink identity taken out of every settings partition,
+and of the records this firmware keeps them in (its pair and factory records).
+A readout of a real one has shown its whole flash layout ([below](#files)).
 
 ## The device
 
@@ -26,9 +25,9 @@ Sonoff's ESP32-C3 inline switch, model **BASICR4**.
 
 | | |
 |---|---|
-| Chip | ESP32-C3 |
+| Chip | ESP32-C3: revision 0.4 on the one read out |
 | Firmware name | `FWSW-E32R4-BASICR4-ESP32C3` |
-| Flash | 4 MB by the header of its official update file; nobody has read one here |
+| Flash | 4 MB: flash id 0x204016 on the one read out, as the header of its official update file says |
 | Stock model | `SN-ESP32C3-BASICR4-01`, 1.1.0 in the public file |
 | Relay | GPIO4 |
 | LED | GPIO6: lit high by the Tasmota template, lit low by the ESPHome sources |
@@ -56,10 +55,26 @@ connect its pins with it on the mains.**
   [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py), without MagicSwitch.
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says
   what it reports.
-- **Flash layout**: its partition table is at 0xC000; the rest is not known. In
-  the emulator, [`public_dump.py`](../../tools/espressif/emulator/public_dump.py)
-  puts eWeLink's official update file on the S60's flash with its table moved
-  there, the factory and pair records a paired one has, and its thermistor
+- **Flash layout**: read from a real one. Its bootloader ends at 0x4D70,
+  0x8000-0xBFFF is blank (erased), and its partition table is at 0xC000:
+
+  | Partition | Type, subtype | Offset | Size | On the one read out |
+  |---|---|---|---|---|
+  | `esp_secure_cert` | 0x3f, 0x06 | 0xD000 | 0x2000 | blank |
+  | `nvs_matter` | data, nvs | 0x10000 | 0x6000 | empty |
+  | `nvs_matter_bkp` | data, nvs | 0x16000 | 0x6000 | empty |
+  | `nvs` | data, nvs | 0x1C000 | 0x10000 | all of Sonoff's settings, its pair and factory records among them, and ESP-IDF's Wi-Fi settings |
+  | `otadata` | data, ota | 0x2C000 | 0x2000 | |
+  | `phy_init` | data, phy | 0x2E000 | 0x1000 | |
+  | `ota_0` | app, ota_0 | 0x30000 | 0x1E0000 | |
+  | `ota_1` | app, ota_1 | 0x210000 | 0x1E0000 | |
+  | `fctry` | data, nvs | 0x3F0000 | 0x6000 | empty |
+
+  It is the layout of Espressif's Matter SDK, but its Matter partitions are
+  unused: the firmware keeps everything in `nvs`. In the emulator,
+  [`public_dump.py`](../../tools/espressif/emulator/public_dump.py) lays the
+  S60's flash out on this table, with eWeLink's official update file in
+  `ota_0`, the factory and pair records a paired one has, and its thermistor
   reading room temperature, so that it takes updates.
 - **Calibration**: none, as it has no meter.
 - **Back to Sonoff**: a readout leaves it there; the tool does not convert it yet.
@@ -69,6 +84,6 @@ connect its pins with it on the mains.**
   starts, and the tool's usual steps put ESPHome's bootloader and table in
   place, as on any device
   ([research](../../docs/espressif-research.md#converting-a-table-at-0xc000)).
-  It waits on a readout of a real one, for the rest of its table and the length
-  of its bootloader, which must end below 0x8000.
+  That copy fits: on the one read out, the bootloader ends at 0x4D70 and
+  0x8000-0xBFFF is blank.
   [`docs/adding-a-device.md`](../../docs/adding-a-device.md) says how a device is added.

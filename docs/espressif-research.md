@@ -21,7 +21,7 @@ in [legal.md](legal.md#studying-and-emulating-the-firmware).
 | TH Elite (THR320D) | ESP32 | TH style | `FWSW-E32THR3-THR3-ESP32D0WDV3` | whole dump | converts both ways |
 | Dual R3 | ESP32 | TH style | `FWSWES-E32DR3-DUALR3-ESP32D0WDV3` | update file, on the TH Elite's flash | converts both ways |
 | NSPanel | ESP32 + PSRAM | S60 style, no `reserve` | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` | whole dump | boots; rejects a one-record file at the header ([why](../devices/sonoff-nspanel/research.md#the-nspanel-wants-three-records)) |
-| BASICR4 | ESP32-C3 | table at 0xC000; the rest unknown | `FWSW-E32R4-BASICR4-ESP32C3` | update file, on the S60's flash with its table moved | starts and is read out ([below](#sonoffs-ais-sdk)); not converted ([why](#converting-a-table-at-0xc000)) |
+| BASICR4 | ESP32-C3 | its own ([below](#flash-and-layouts)), table at 0xC000 | `FWSW-E32R4-BASICR4-ESP32C3` | update file, on the S60's flash laid out on a real one's table | starts and is read out ([below](#sonoffs-ais-sdk)); not converted ([why](#converting-a-table-at-0xc000)) |
 | MINIR4 | ESP32 + PSRAM | S60 style | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` | update file | starts with the ais SDK's records and is read out ([below](#sonoffs-ais-sdk)); a conversion not tried yet |
 | M5 1C, 2C, 3C (not Matter) | ESP32 | unknown | `FWSWES-E32T5-T5-ESP32D0WDV3` | update file | goes quiet, never starts its Wi-Fi |
 
@@ -42,7 +42,9 @@ Matter is not itself the lock (the S61 carries a full Matter stack, and its
 updater checks integrity only): Espressif's secure boot on an ESP32 Matter
 build is, and any of these shows it before anything is written:
 
-- the partition labels `esp_secure_cert`, `nvs_matter` or `fctry`;
+- the partition labels `esp_secure_cert`, `nvs_matter` or `fctry`, though not
+  alone: a BASICR4 has all three, unused, and is not locked (the bridge ran on
+  it and read its flash out in the clear);
 - `secure boot v2` or `flash encryption is enabled` in a serial boot log;
 - `Download mode is disabled` with GPIO0 held low;
 - a dump with no readable partition table.
@@ -51,19 +53,22 @@ Each backup logs the fuses too ([below](#what-a-backup-logs)).
 
 ## Flash and layouts
 
-| Partition | S60 style | TH style | Locked Matter |
-|---|---|---|---|
-| `esp_secure_cert` | | | `0xf000`, `0x2000` |
-| `nvs_matter`, `nvs_matter_bkp` | | | `0x11000`, `0x17000` |
-| `nvs` | `0x9000`, `0x10000` | `0x9000`, `0x40000` | `0x1d000`, `0xf000` |
-| `reserve` | `0x19000`, `0x4000` | | |
-| `otadata` | `0x1d000`, `0x2000` | `0x49000`, `0x2000` | `0x2c000`, `0x2000` |
-| `phy_init` | `0x1f000`, `0x1000` | `0x4b000`, `0x1000` | `0x2e000`, `0x1000` |
-| `ota_0` | `0x20000`, `0x1f0000` | `0x60000`, `0x1a9000` | `0x30000`, `0x1e0000` |
-| `ota_1` | `0x210000`, `0x1f0000` | `0x210000`, `0x1a9000` | `0x210000`, `0x1e0000` |
-| `fctry` | | | `0x3f0000`, `0x6000` |
+| Partition | S60 style | TH style | Locked Matter | BASICR4 (table at `0xc000`) |
+|---|---|---|---|---|
+| `esp_secure_cert` | | | `0xf000`, `0x2000` | `0xd000`, `0x2000` |
+| `nvs_matter`, `nvs_matter_bkp` | | | `0x11000`, `0x17000` | `0x10000`, `0x16000`, `0x6000` each |
+| `nvs` | `0x9000`, `0x10000` | `0x9000`, `0x40000` | `0x1d000`, `0xf000` | `0x1c000`, `0x10000` |
+| `reserve` | `0x19000`, `0x4000` | | | |
+| `otadata` | `0x1d000`, `0x2000` | `0x49000`, `0x2000` | `0x2c000`, `0x2000` | `0x2c000`, `0x2000` |
+| `phy_init` | `0x1f000`, `0x1000` | `0x4b000`, `0x1000` | `0x2e000`, `0x1000` | `0x2e000`, `0x1000` |
+| `ota_0` | `0x20000`, `0x1f0000` | `0x60000`, `0x1a9000` | `0x30000`, `0x1e0000` | `0x30000`, `0x1e0000` |
+| `ota_1` | `0x210000`, `0x1f0000` | `0x210000`, `0x1a9000` | `0x210000`, `0x1e0000` | `0x210000`, `0x1e0000` |
+| `fctry` | | | `0x3f0000`, `0x6000` | `0x3f0000`, `0x6000` |
 
-All three are 4 MB, with `ota_1` at `0x210000`. They are a pattern to guess
+All four are 4 MB, with `ota_1` at `0x210000`. A table can hold more than one
+NVS partition, as the BASICR4's does: the firmware's settings are in the one
+labelled `nvs` (`flashmap.nvs()`), and a readout takes the owner's secrets out
+of every one (`scrub.py`). They are a pattern to guess
 from, not to assume: the Dual R3, first guessed S60 style, showed TH style in a
 real one's boot log. So after its backup a device's table is compared, by hash,
 with the one its kind expects, and a run that finds another stops before
@@ -215,10 +220,10 @@ the stale copy at 0xC000 goes before the Tasmota layout's `nvs`
 (0x9000-0xDFFF) takes that range; on the way back, the backup restores both.
 
 This needs a bridge built with dangerous flash writes allowed (its sdkconfig
-aborts on them), a BASICR4 layout in `layouts.py`, and first a readout of a real
-one: if its bootloader runs past 0x8000 (a guessed reason for 0xC000,
-[below](#sonoffs-ais-sdk)), a table there would overwrite it, and the conversion
-must refuse. Custom Tasmota or ESPHome builds for 0xC000 would also work, but
+aborts on them) and a BASICR4 layout in `layouts.py`. A bootloader running
+past 0x8000 would have ruled the copy out; a readout of a real one shows its
+bootloader ends at 0x4D70 and 0x8000-0xBFFF blank, so the copy fits
+([its whole layout](#flash-and-layouts)). Custom Tasmota or ESPHome builds for 0xC000 would also work, but
 not as the official images, and the Partition Wizard would write a table nothing
 reads.
 
@@ -424,8 +429,9 @@ needs:
   ESP-IDF 5, whose `load_partitions` differs, so their table's place is not
   known. 0xC000 is ESP-IDF's place for a table when the bootloader needs more
   than 32 KB (secure boot, flash encryption) and the default in Espressif's
-  Matter SDK; that the BASICR4 was built from Sonoff's Matter-era project for
-  that reason is a guess.
+  Matter SDK. A real BASICR4's bootloader ends at 0x4D70, and its table has the
+  Matter SDK's partitions, unused, so it was built from Sonoff's Matter-era
+  project rather than for a larger bootloader.
 
 On the classic ESP32, only the NSPanel's firmware reads its ADC: it alone links
 `esp_adc_cal`, for its room thermistor (GPIO38, ADC1 channel 2), and only
@@ -616,8 +622,6 @@ ESP32 says revision 0.0. A real chip's answer has not been seen.
   eWeLink's model number for it (160 to 162) moved it, and the only whole M5
   dump published is the encrypted Matter one ([above](#locked-devices)), with
   nothing to compare.
-- The BASICR4's whole partition table, and whether its bootloader runs past
-  0x8000 ([why](#converting-a-table-at-0xc000)).
 - Whether the real eWeLink accepts a device whose identity was
   [rebuilt from its account record](#a-devices-identity-and-stores).
 - How a Dual R3 out of the box is set to
