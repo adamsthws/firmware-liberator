@@ -140,6 +140,17 @@ patch `0006`:
 | QEMU (lcgamboa) | [#21](https://github.com/lcgamboa/qemu/pull/21) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/21?label=) | A UART on REF_TICK, as Arduino-ESP32 runs it, held received bytes 64 times its RX timeout |
 | QEMU (Espressif) | [#212](https://github.com/espressif/qemu/pull/212) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/212?label=) | The same, and a UART on REF_TICK running 40 times too fast, which hid it |
 
+A flash write also searched the whole object tree for the classic ESP32's
+flash-encryption device on every SPI transaction and cache sync, which
+thousands of searches made about three times slower than the C3 emulator's
+write. The machine now links the device once, as it links the interrupt
+matrix's CPUs:
+
+| Project | Pull request | Status | What it fixes |
+|---|---|---|---|
+| QEMU (lcgamboa) | [#24](https://github.com/lcgamboa/qemu/pull/24) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/24?label=) | Each SPI transaction and cache sync searched the whole object tree for the flash-encryption device, so a flash write made thousands of searches: the device is now linked once |
+| QEMU (Espressif) | [#216](https://github.com/espressif/qemu/pull/216) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/216?label=) | The same change where the code came from; a classic ESP32 flash write about twice as fast |
+
 <br>
 
 ## OpenBeken on a 4 MB BK7238
