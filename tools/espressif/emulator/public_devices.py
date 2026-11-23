@@ -24,7 +24,8 @@
         the published ones (PUBLISHED), checked, into captures/: what a
         checkout with no backup, such as a GitHub Actions runner, tests from
 
-Both use emulators --instances (default 1,2), two at a time.
+make and test use the two emulators --instances names, else two free ones
+(tools/repo/emulator_instances.py chosen).
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds  # noqa: E402
-from tools.repo import emulator_stats  # noqa: E402
+from tools.repo import emulator_instances, emulator_stats  # noqa: E402
 
 SAVED = ROOT / "captures/emulation/saved"
 # The public devices as published: one xz-compressed tar of the two, named by
@@ -338,7 +339,7 @@ def command_fetch(_args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     emulator_stats.mark("check")   # its runs not taken for ones by hand
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
+    parser.add_argument("--instances", help="make, test: the two emulators to use (default: two free ones)")
     commands = parser.add_subparsers(dest="command", required=True)
     make = commands.add_parser("make", help="make the public starting devices (needs the real dump)")
     make.add_argument("--device", required=True, help="the test copy's MAC (copy_device.py)")
@@ -350,9 +351,11 @@ def main(argv: list[str] | None = None) -> int:
     publish.set_defaults(run=command_publish)
     commands.add_parser("fetch", help="the published public devices, into captures/").set_defaults(run=command_fetch)
     args = parser.parse_args(argv)
-    args.instances = [int(n) for n in args.instances.split(",")][:2]
-    if len(args.instances) != 2:
-        parser.error("--instances needs two")
+    given = [int(n) for n in args.instances.split(",")] if args.instances else None
+    if given is not None and len(given) != len(WAYS):
+        parser.error(f"--instances needs {len(WAYS)}, such as 3,4")
+    if args.run in (command_make, command_test):
+        args.instances = emulator_instances.chosen("espressif", given, len(WAYS))
     return args.run(args)
 
 

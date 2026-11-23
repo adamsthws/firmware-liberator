@@ -196,5 +196,69 @@ class ClaimTests(unittest.TestCase):
         self.assertEqual([line for line in emulator_instances.claims() if line.startswith("espressif")], [])
 
 
+class FreeTests(unittest.TestCase):
+    """What a device's check runs on when given none (emulator_check.py):
+    the first instances free here, claimed."""
+
+    def setUp(self):
+        own_locks(self)
+
+    def test_one_running_or_claimed_by_another_is_passed_over(self):
+        held_elsewhere(self, "espressif", 2)
+        with docker_ps("autoflash-emu-1", "autoflash-beken-emu-3"):
+            self.assertEqual(emulator_instances.take_free("espressif", 2), [3, 4])
+        self.assertEqual(sorted(emulator_instances.HELD), [("espressif", 3), ("espressif", 4)])
+
+    def test_one_claimed_between_the_look_and_the_claim_is_passed_over(self):
+        # Two checks started at once both saw 1 free; the one that claimed it second takes the next.
+        held_elsewhere(self, "espressif", 1)
+        with docker_ps(), mock.patch.object(emulator_instances, "claimed_elsewhere", return_value=set()):
+            self.assertEqual(emulator_instances.take_free("espressif", 2), [2, 3])
+
+    def test_none_free_is_refused(self):
+        with docker_ps(*(f"autoflash-emu-{n}" for n in range(2, emulator_instances.LAST + 1))), \
+                self.assertRaises(SystemExit) as refused:
+            emulator_instances.take_free("espressif", 2)
+        self.assertIn("fewer than 2 espressif emulator instances are free here", str(refused.exception))
+        self.assertEqual(emulator_instances.HELD, {})
+
+    def test_two_checks_started_at_once_get_different_ones(self):
+        # Each holds its claim until told to end, as a check does while it runs.
+        script = ("import os, sys; from pathlib import Path; from tools.repo import emulator_instances as e; "
+                  "e.LOCKS = Path(sys.argv[1]); e.running = lambda family: set(); "
+                  "print(e.take_free('espressif', 2), flush=True); sys.stdin.read()")
+        root = Path(__file__).resolve().parents[2]
+        env = {**emulator_instances.os.environ, "AUTOFLASH_EMU_NO_CLAIMS": "0"}
+        checks = [subprocess.Popen([sys.executable, "-c", script, str(emulator_instances.LOCKS)], cwd=root, env=env,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) for _ in range(2)]
+        try:
+            taken = [check.stdout.readline().strip() for check in checks]
+        finally:
+            for check in checks:
+                check.communicate("", timeout=60)
+        self.assertEqual(sorted(taken), ["[1, 2]", "[3, 4]"])
+
+    def test_those_given_are_refused_where_another_runs_one_naming_free_ones(self):
+        with docker_ps("autoflash-emu-1"), self.assertRaises(SystemExit) as refused:
+            emulator_instances.chosen("espressif", [1, 2], 2)
+        self.assertIn("espressif emulator instance 1 already running here: give --instances 2,3 to keep clear "
+                      "of it, or leave out --instances for free ones, or stop it", str(refused.exception))
+        held_elsewhere(self, "espressif", 5)
+        with docker_ps(), self.assertRaises(SystemExit) as refused:
+            emulator_instances.chosen("espressif", [5, 6], 2)
+        self.assertIn("5 claimed by another suite here", str(refused.exception))
+        self.assertIn("give --instances 1,2", str(refused.exception))
+        with docker_ps():
+            self.assertEqual(emulator_instances.chosen("espressif", [7, 8], 2), [7, 8])
+        self.assertIn(("espressif", 8), emulator_instances.HELD)
+
+    def test_those_chosen_are_said(self):
+        import io
+        from contextlib import redirect_stdout
+        with docker_ps("autoflash-emu-1"), redirect_stdout(io.StringIO()) as said:
+            self.assertEqual(emulator_instances.chosen("espressif", None, 2), [2, 3])
+        self.assertEqual(said.getvalue(), "Emulator instances 2, 3: the first free here.\n")
+
+
 if __name__ == "__main__":
     unittest.main()

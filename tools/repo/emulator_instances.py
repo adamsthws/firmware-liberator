@@ -13,7 +13,11 @@ script, it lists the claims on this computer - each suite's number, its
 process and its checkout - so a suite started detached is stopped by its
 own process alone:
 
-    python3 tools/repo/emulator_instances.py"""
+    python3 tools/repo/emulator_instances.py
+
+A device's check (tools/repo/emulator_check.py, and what it runs) is given
+none: it claims free ones itself (chosen), so two started at once on one
+computer never share them."""
 
 from __future__ import annotations
 
@@ -128,35 +132,79 @@ def first_free(taken: set[int], count: int) -> int | None:
     return first if first + count - 1 <= LAST else None
 
 
-def refuse_taken(family: str, numbers: Iterable[int]) -> None:
-    """SystemExit, naming a free first instance, where any of `numbers` is
-    already running or above LAST - or where an OLD_SETTINGS variable is set, which no
-    longer chooses them."""
+def given_as(option: str, first: int, count: int) -> str:
+    """`count` instances from `first` on, as `option` gives them: a suite's
+    --first-instance N, a check's --instances N,M."""
+    if option == "--first-instance":
+        return f"--first-instance {first}"
+    return f"{option} {','.join(map(str, range(first, first + count)))}"
+
+
+def refuse_taken(family: str, numbers: Iterable[int], option: str = "--first-instance") -> None:
+    """SystemExit, naming free instances as `option` gives them, where any of
+    `numbers` is already running or above LAST - or where an OLD_SETTINGS
+    variable is set, which no longer chooses them."""
     old = [name for name in OLD_SETTINGS if name in os.environ]
     if old:
         raise SystemExit(f"{', '.join(old)} is no longer read: unset it and give --first-instance "
                          f"{os.environ[old[0]]} instead")
     wanted = sorted(set(numbers))
+    # A check chooses free ones itself where it is given none (chosen).
+    or_none = f", or leave out {option} for free ones" if option != "--first-instance" else ""
     outside = [n for n in wanted if not 1 <= n <= LAST]
     if outside:
+        limit = (f"so give a --first-instance at most {LAST - len(wanted) + 1} for {len(wanted)}"
+                 if option == "--first-instance" else f"so give {option} within it{or_none}")
         raise SystemExit(f"{family} emulator instance{'s' if len(outside) > 1 else ''} "
-                         f"{', '.join(map(str, outside))} out of range: the emulator takes 1-{LAST}, "
-                         f"so give a --first-instance at most {LAST - len(wanted) + 1} for {len(wanted)}")
+                         f"{', '.join(map(str, outside))} out of range: the emulator takes 1-{LAST}, {limit}")
     taken = running(family)
     clash = [n for n in wanted if n in taken]
     if clash:
         free = first_free(taken, len(wanted))
-        instead = f"give --first-instance {free} to keep clear of it, or stop it" if free \
+        instead = f"give {given_as(option, free, len(wanted))} to keep clear of it{or_none}, or stop it" if free \
             else "stop it, or run fewer at once"
         raise SystemExit(f"{family} emulator instance{'s' if len(clash) > 1 else ''} "
                          f"{', '.join(map(str, clash))} already running here: {instead}")
     claimed = claim(family, wanted)
     if claimed:
         free = first_free(taken | claimed_elsewhere(family), len(wanted))
-        instead = f"give --first-instance {free} to keep clear of it" if free else "run fewer at once"
+        instead = f"give {given_as(option, free, len(wanted))} to keep clear of it{or_none}" if free \
+            else "run fewer at once"
         raise SystemExit(f"{family} emulator instance{'s' if len(claimed) > 1 else ''} "
                          f"{', '.join(map(str, claimed))} claimed by another suite here "
                          f"(python3 tools/repo/emulator_instances.py lists them): {instead}")
+
+
+def take_free(family: str, count: int) -> list[int]:
+    """The lowest `count` instances of `family` neither running nor claimed
+    by another process, claimed for this one: SystemExit where fewer are
+    free. One another process claims between the look and the claim - two
+    started at once - is passed over for the next."""
+    passed: set[int] = set()
+    while True:
+        in_use = running(family) | claimed_elsewhere(family) | passed
+        free = [n for n in range(1, LAST + 1) if n not in in_use][:count]
+        if len(free) < count:
+            raise SystemExit(f"fewer than {count} {family} emulator instances are free here "
+                             "(python3 tools/repo/emulator_instances.py lists the claims): run fewer at once")
+        lost = claim(family, free)
+        if not lost:
+            return free
+        passed.update(lost)
+
+
+def chosen(family: str, given: list[int] | None, count: int, option: str = "--instances") -> list[int]:
+    """The `count` instances of `family` a device's check runs on, claimed for
+    this process as long as it runs: those `given` with `option`, refused where
+    one is in use (refuse_taken), else free ones (take_free), which are said:
+    another suite's may have kept them from 1 and 2, and they number its logs."""
+    if given is not None:
+        refuse_taken(family, given, option)
+        return list(given)
+    numbers = take_free(family, count)
+    print(f"Emulator instance{'s' if count > 1 else ''} {', '.join(map(str, numbers))}: the first free here.",
+          flush=True)
+    return numbers
 
 
 def add_first_instance(parser: argparse.ArgumentParser, default: int = 1, commands: str = "") -> None:

@@ -19,6 +19,13 @@ from tools.repo import emulator_check as check
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def setUpModule():
+    # No other run's emulators here, whatever this computer runs.
+    patch = mock.patch.object(check.emulator_instances, "running", return_value=set())
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
+
+
 def keys(changed):
     return {job["device"] for job in check.jobs(changed)}
 
@@ -177,6 +184,54 @@ class CoresTests(unittest.TestCase):
                 self.assertEqual(check.check_device(kinds.find(key), [3, 4]), 0)
             self.assertEqual("2 emulators at once need 4 cores" in said.getvalue(), short)
             self.assertEqual(ran.called, key == "sonoff-dualr3")
+
+
+class InstancesTests(unittest.TestCase):
+    """Which emulators a check runs on: those --instances names, else the
+    first free here, never 1 and 2 beside another suite's (emulator_instances)."""
+
+    def test_a_check_given_none_runs_on_the_first_free(self):
+        with mock.patch.object(check.emulator_instances, "running", return_value={1, 3}), \
+                mock.patch.object(check, "check_public_dump", return_value=0) as ran, redirect_stdout(io.StringIO()) as said:
+            self.assertEqual(check.check_device(kinds.find("sonoff-dualr3"), None), 0)
+        self.assertEqual(ran.call_args.args[1], [2, 4])
+        self.assertIn("Emulator instances 2, 4: the first free here.", said.getvalue())
+
+    def test_one_given_that_another_runs_is_refused_naming_free_ones(self):
+        with mock.patch.object(check.emulator_instances, "running", return_value={1}), \
+                mock.patch.object(check, "check_public_dump") as ran, self.assertRaises(SystemExit) as refused:
+            check.check_device(kinds.find("sonoff-dualr3"), [1, 2])
+        ran.assert_not_called()
+        self.assertIn("espressif emulator instance 1 already running here: give --instances 2,3",
+                      str(refused.exception))
+        self.assertIn("or leave out --instances for free ones", str(refused.exception))
+
+    def test_the_suites_run_for_a_check_given_none_choose_their_own(self):
+        # They claim them for as long as they run: a claim here would refuse them.
+        with mock.patch.object(check.subprocess, "call", return_value=0) as call, \
+                mock.patch.object(check, "ROOT", Path("/nowhere")):
+            self.assertEqual(check.check_device(kinds.find("sonoff-s60"), None), 0)
+        self.assertEqual([command[-1] for command in (c.args[0] for c in call.call_args_list)], ["fetch", "test"])
+        self.assertFalse([c for c in call.call_args_list if "--instances" in c.args[0]])
+        with mock.patch.object(check.subprocess, "run"), mock.patch.object(check.subprocess, "call", return_value=0) as call:
+            self.assertEqual(check.check_device(kinds.find("sonoff-s61"), None), 0)
+        self.assertEqual(call.call_args.args[0][1:], ["check"])
+
+    def test_back_runs_on_one(self):
+        with mock.patch.object(check, "missing_packages", return_value=None), \
+                mock.patch.object(check.emulator_instances, "running", return_value={1}), \
+                mock.patch.object(check, "check_back", return_value=0) as back, redirect_stdout(io.StringIO()):
+            self.assertEqual(check.main(["sonoff-dualr3", "--back"]), 0)
+            self.assertEqual(back.call_args.args[1], 2)
+            self.assertEqual(check.main(["sonoff-dualr3", "--back", "--instances", "5"]), 0)
+            self.assertEqual(back.call_args.args[1], 5)
+
+    def test_as_many_as_it_runs_are_asked_for(self):
+        for argv in (["sonoff-dualr3", "--instances", "3"], ["sonoff-dualr3", "--instances", "3,4,5"],
+                     ["sonoff-dualr3", "--back", "--instances", "3,4"]):
+            with self.subTest(argv), mock.patch("sys.stderr", io.StringIO()) as said, self.assertRaises(SystemExit):
+                check.main(argv)
+            self.assertIn("--instances needs", said.getvalue())
 
 
 class BekenCheckTests(unittest.TestCase):

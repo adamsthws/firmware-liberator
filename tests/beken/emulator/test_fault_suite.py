@@ -569,14 +569,14 @@ class CheckTests(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(fault_suite, "check_way", side_effect=RuntimeError("the device did not start")), \
                 redirect_stdout(io.StringIO()) as out:
-            self.assertEqual(fault_suite.check(), 1)
+            self.assertEqual(fault_suite.check([1, 2]), 1)
         self.assertIn("FAIL", out.getvalue())
         self.assertIn("the device did not start", out.getvalue())
 
     def test_only_ways_that_got_to_their_end_pass(self):
         from unittest import mock
         with mock.patch.object(fault_suite, "check_way", return_value=0):
-            self.assertEqual(fault_suite.check(), 0)
+            self.assertEqual(fault_suite.check([1, 2]), 0)
 
     def test_each_way_runs_on_the_emulator_asked_for(self):
         # So two devices' checks run side by side on one computer (emulator_check.py --instances).
@@ -586,9 +586,20 @@ class CheckTests(unittest.TestCase):
                 self.assertEqual(fault_suite.main(["check", "--instances", "3,4"]), 0)
             self.assertEqual(sorted(call.args for call in way.call_args_list),
                              sorted(zip((3, 4), fault_suite.CHECK_WAYS)))
-            with mock.patch.object(fault_suite, "check_way", return_value=0) as way:
+            with mock.patch.object(fault_suite, "check_way", return_value=0) as way, \
+                    mock.patch.object(fault_suite.emulator_instances, "running", return_value={1, 3}):
                 self.assertEqual(fault_suite.main(["check"]), 0)
-        self.assertEqual(sorted(call.args[0] for call in way.call_args_list), [1, 2])
+        # None asked for: the first free here, not 1 and 2 beside another suite's.
+        self.assertEqual(sorted(call.args[0] for call in way.call_args_list), [2, 4])
+
+    def test_emulators_asked_for_that_another_runs_are_refused(self):
+        from unittest import mock
+        with mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                mock.patch.object(fault_suite.emulator_instances, "running", return_value={3}), \
+                mock.patch.object(fault_suite, "check_way") as way, self.assertRaises(SystemExit) as refused:
+            fault_suite.main(["check", "--instances", "3,4"])
+        way.assert_not_called()
+        self.assertIn("beken emulator instance 3 already running here: give --instances 1,2", str(refused.exception))
 
     def test_one_emulator_for_two_ways_is_refused(self):
         import io

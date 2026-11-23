@@ -11,10 +11,10 @@ does for the Espressif devices.
     fault_suite.py prep-update [--first-instance N]
                                         the update scenarios' starting devices: on OpenBeken
                                         and on ESPHome as an earlier release converts them
-    fault_suite.py check [--instances 1,2]
+    fault_suite.py check [--instances N,M]
                                         the final firmware, with no faults: each installed
                                         from Sonoff's, then each device taken to the other,
-                                        on the two emulators numbered
+                                        on the two emulators numbered, else on two free ones
                                         (tools/repo/emulator_check.py)
     fault_suite.py list                 every scenario
     fault_suite.py list quick           those of a routine run (QUICK_OUTAGES)
@@ -1963,11 +1963,10 @@ def board_inputs(kind: kinds.Kind) -> dict[str, tuple[int, ...]]:
     return board.inputs(kind.key)
 
 
-def check(instances: tuple[int, ...] = (1, 2)) -> int:
+def check(instances: list[int]) -> int:
     """The final firmware of every way, side by side, each on its emulator of
-    `instances`: no faults, no account. A way passes only by getting to its
-    end: one whose thread raised has failed."""
-    emulator_instances.refuse_taken("beken", instances)
+    `instances` (claimed: emulator_instances.chosen): no faults, no account. A
+    way passes only by getting to its end: one whose thread raised has failed."""
     failed = [1] * len(CHECK_WAYS)
     emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="check", device=STATS_DEVICE.key,
                          total=sum(map(len, CHECK_WAYS)), planned=sum(map(len, CHECK_WAYS)), cloud="stub", workers=2)
@@ -2032,11 +2031,13 @@ def main(argv: list[str]) -> int:
     elif command == "check":
         import argparse
         parser = argparse.ArgumentParser(prog="fault_suite.py check")
-        parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
-        numbers = parser.parse_args(argv[1:]).instances.split(",")
-        if len(numbers) != len(CHECK_WAYS) or not all(number.isdigit() for number in numbers):
+        parser.add_argument("--instances", help="the two emulators to use (default: two free ones)")
+        given = parser.parse_args(argv[1:]).instances
+        numbers = given.split(",") if given else None
+        if numbers is not None and (len(numbers) != len(CHECK_WAYS) or not all(n.isdigit() for n in numbers)):
             parser.error(f"--instances needs {len(CHECK_WAYS)} numbers, such as 3,4")
-        return check(tuple(map(int, numbers)))
+        return check(emulator_instances.chosen("beken", None if numbers is None else [int(n) for n in numbers],
+                                               len(CHECK_WAYS)))
     elif command == "list":
         if argv[1:] not in ([], ["openbeken"], ["quick"]):
             print("list takes openbeken or quick", file=sys.stderr)

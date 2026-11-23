@@ -7,11 +7,12 @@ for every device the tool converts, so a new one has it by being added.
         change since COMMIT could affect, or every one that has something to run
         from (NOTHING_TO_RUN names those that have not); a device with a motor
         mode once more for each of its motor copies (--motor)
-    .venv/bin/python -I tools/repo/emulator_check.py DEVICE [--instances 1,2]
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE [--instances N,M]
         its check: each final firmware installed, then each device taken to the
         other, two ways side by side (a way goes on as soon as its own run is
-        done), on the two emulators numbered: two devices checked at once on one
-        computer each need their own, and the cores for them
+        done), on the two emulators numbered, else on the first two free here,
+        claimed while it runs (emulator_instances.chosen), so checks started
+        at once on one computer never share one; they need the cores for them
         (cpu_load.EMULATOR_CORES), which it warns of. Nothing here needs a secret or an
         account: an S60 starts from the published public devices, any other
         Espressif device from its public dump on the cloud stub, an S61 from
@@ -20,7 +21,7 @@ for every device the tool converts, so a new one has it by being added.
         (rebuilt_flash). On the firmware each way ends on, the device's
         button and wall switches are pressed, each to switch its relay
         (Device.inputs_problem).
-    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [COPY] [--instances 1,2]
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --motor [COPY] [--instances N,M]
         the same for a device with a motor mode, from its test copy set up to
         drive a motor (public_dump.MOTOR_COPIES: calibrated, its travel timed,
         its outputs reversed and its wall switches hold to run and swapped;
@@ -34,7 +35,7 @@ for every device the tool converts, so a new one has it by being added.
         carry across; Tasmota there then given a rule of its owner's in Rule1
         and the tool run on it again, which must leave the rule as it is
         (owner_rule_problem)
-    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --back [--instances 1]
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --back [--instances N]
         an Espressif device with a public dump taken to Tasmota, its own
         partitions behind its app slots (Layout.after_slots) written over as
         Tasmota's filesystem may write them, then back to Sonoff's firmware,
@@ -60,7 +61,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds, motor as motor_setup, tasmota_rules  # noqa: E402
-from tools.repo import cpu_load, emulator_buttons, emulator_stats  # noqa: E402
+from tools.repo import cpu_load, emulator_buttons, emulator_instances, emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
 # publishes it, and the variable that says where the tool pulls it from.
@@ -994,33 +995,40 @@ def rebuilt_flash(kind: kinds.Kind) -> Path:
     return out
 
 
-def check_beken(kind: kinds.Kind, instances: list[int]) -> int:
+def check_beken(kind: kinds.Kind, numbers: list[str]) -> int:
     """A Beken device: the S61 from upstream's public dump, any other from its
-    rebuilt flash. Its logs are kept as an Espressif device's are (LOGS)."""
+    rebuilt flash, on the emulators `numbers` gives (--instances N,M), else on
+    free ones the suite claims. Its logs are kept as an Espressif device's are
+    (LOGS)."""
     subprocess.run([str(ROOT / "tools/beken/emulator/beken-emu.sh"), "dump"], check=True)
     env = {name: value for name, value in os.environ.items() if name != "AUTOFLASH_BEKEN_EMU_FLASH"}
     env["AUTOFLASH_BEKEN_EMU_SUITE_DIR"] = str(LOGS / kind.key)
     if rebuilt(kind):
         env["AUTOFLASH_BEKEN_EMU_FLASH"] = str(rebuilt_flash(kind))
         env["AUTOFLASH_BEKEN_EMU_FLASH_DEVICE"] = kind.key   # whose runs its emulator stats are
-    return subprocess.call([str(ROOT / "tools/beken/emulator/fault_suite.py"), "check",
-                            "--instances", ",".join(map(str, instances))], env=env)
+    return subprocess.call([str(ROOT / "tools/beken/emulator/fault_suite.py"), "check", *numbers], env=env)
 
 
-def check_device(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:
-    short = cpu_load.cores_short([kind.chip] * len(instances))
+# The emulators a device's check runs side by side: one for each way.
+SIDE_BY_SIDE = len(ESPRESSIF_WAYS)
+
+
+def check_device(kind: kinds.Kind, instances: list[int] | None, motor: str = "") -> int:
+    """`kind`'s check on `instances`, else on free ones: chosen here, or by the
+    suite run for it, which claims them for as long as it runs."""
+    short = cpu_load.cores_short([kind.chip] * SIDE_BY_SIDE)
     if short:
         print(short, flush=True)
+    numbers = ["--instances", ",".join(map(str, instances))] if instances else []
     if family_of(kind) == "beken":
-        return check_beken(kind, instances)
+        return check_beken(kind, numbers)
     from tools.espressif.emulator import public_dump
     if motor or kind.key in public_dump.DUMPS or kind.key in public_dump.UPDATES:
-        return check_public_dump(kind, instances, motor)
+        return check_public_dump(kind, emulator_instances.chosen("espressif", instances, SIDE_BY_SIDE), motor)
     # The public devices, made from a device's own backup, hold nothing of Sonoff's.
     devices = str(ROOT / "tools/espressif/emulator/public_devices.py")
-    numbers = ["--instances", ",".join(map(str, instances))]
     fetched = (ROOT / "captures/emulation/saved/public-pre-final-esphome").exists() or \
-        subprocess.call([sys.executable, "-I", devices, *numbers, "fetch"]) == 0
+        subprocess.call([sys.executable, "-I", devices, "fetch"]) == 0
     return subprocess.call([sys.executable, "-I", devices, *numbers, "test"]) if fetched else 1
 
 
@@ -1029,7 +1037,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("device", help="list, or a device's key")
     parser.add_argument("--changed-since", help="list: only what a change since this commit could affect")
-    parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
+    parser.add_argument("--instances", help="the emulators to use, two (one with --back), such as 3,4 "
+                                             "(default: the first free here)")
     parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated", "one-button"),
                         help="a test copy of the device that drives a motor (public_dump.MOTOR_COPIES)")
     parser.add_argument("--back", action="store_true",
@@ -1047,13 +1056,16 @@ def main(argv: list[str] | None = None) -> int:
         from tools.espressif.emulator import public_dump
         if family_of(kind) != "espressif" or kind.key not in {**public_dump.DUMPS, **public_dump.UPDATES}:
             parser.error(f"--back is for an Espressif device with a public dump, not {kind.key}")
+    given = [int(n) for n in args.instances.split(",")] if args.instances else None
+    if given is not None and len(given) != (1 if args.back else SIDE_BY_SIDE):
+        parser.error(f"--instances needs {'one' if args.back else SIDE_BY_SIDE}, such as {'3' if args.back else '3,4'}")
     missing = missing_packages(kind)
     if missing:
         print(missing, file=sys.stderr)
         return 2
     if args.back:
-        return check_back(kind, int(args.instances.split(",")[0]))
-    return check_device(kind, [int(n) for n in args.instances.split(",")][:2], args.motor)
+        return check_back(kind, emulator_instances.chosen("espressif", given, 1)[0])
+    return check_device(kind, given, args.motor)
 
 
 # What an Espressif device's check needs beyond the standard library: ESP-IDF's

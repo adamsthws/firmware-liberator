@@ -241,6 +241,9 @@ backup.
   the emulator takes (`emulator_instances.LAST`). A suite claims its
   instances for as long as it runs, its emulators stopped between scenarios
   included, and one asked for an instance another suite claims refuses too.
+  A device's check (`tools/repo/emulator_check.py`) needs no number: it
+  claims the first free instances itself, so checks started at once never
+  share one; it refuses those `--instances` names where one is in use.
   To see the claims on your computer - each suite's process and checkout,
   so you stop only your own - run `python3 tools/repo/emulator_instances.py`.
   To see how far batches on several computers have got, copy their
