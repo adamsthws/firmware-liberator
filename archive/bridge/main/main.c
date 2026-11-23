@@ -69,7 +69,10 @@
  * slots, and the input pins' levels.  All read-only.
  *
  * 4.4.7: the station keeps its radio awake, with no modem sleep:
- * start_station.
+ * start_station.  And on a device whose table is at 0xC000 it no longer only
+ * reads: /update first copies that table to 0x8000, where everything the tool
+ * installs looks for it, and /tasmota-settings saves Tasmota's settings as on
+ * any device: copy_later_table.
  */
 
 #include <stdarg.h>
@@ -379,10 +382,9 @@ static void info_gpio(size_t *used)
  * at 0xC000, and its bootloader reads it there; this bridge, as ESP-IDF builds
  * it, reads 0x8000. Where that holds no table and 0xC000 one whose MD5 record
  * matches, the bridge takes the device's own table from there, registering each
- * entry before anything looks for a partition: nothing is written to flash.
- * Nothing but Sonoff's firmware starts on such a device yet, so the bridge then
- * only reads it, and refuses anything that would write over it. */
+ * entry before anything looks for a partition: nothing is written to flash. */
 #define LATER_TABLE_OFFSET 0xC000
+#define TABLE_SECTOR 0x1000
 static bool s_later_table;
 
 static void register_later_table(void)
@@ -420,14 +422,6 @@ static void register_later_table(void)
     }
     s_later_table = true;
     ESP_LOGI(TAG, "partition table read from 0x%x: %u entries", LATER_TABLE_OFFSET, (unsigned)count);
-}
-
-static esp_err_t refuse_on_later_table(httpd_req_t *req)
-{
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_set_status(req, "409 Conflict");
-    return httpd_resp_sendstr(req, "This device's partition table is at 0xC000, where nothing but Sonoff's "
-                                   "firmware starts yet: only reading it. Nothing was written.\n");
 }
 
 /* What a backup cannot tell, as plain "name: value" lines.  Read-only: nothing
@@ -530,9 +524,6 @@ static bool query_number(const char *query, const char *key, size_t *value)
  * as it would without settings - under that name. */
 static esp_err_t tasmota_settings_handler(httpd_req_t *req)
 {
-    if (s_later_table) {
-        return refuse_on_later_table(req);
-    }
     char query[96];
     size_t pool, pool_size, ssid_index, password_index, crc;
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
@@ -623,10 +614,57 @@ static esp_err_t upload_error(httpd_req_t *req, const char *message)
 
 static esp_err_t upload(httpd_req_t *req);
 
+/* Before an upload on such a device, its table's whole sector copied to 0x8000,
+ * where everything the tool installs looks for it - Tasmota, ESPHome and their
+ * bootloader - so that the firmware uploaded starts.  Sonoff's bootloader and
+ * firmware read only 0xC000, left as it is, so the device starts as before
+ * whatever happens here.  The first entry is written last: until it is, 0x8000
+ * holds no table, and a power cut part way leaves this bridge, started again,
+ * taking the table from 0xC000 as before.  This write needs
+ * CONFIG_SPI_FLASH_DANGEROUS_WRITE_ALLOWED (sdkconfig.defaults). */
+static esp_err_t copy_later_table(void)
+{
+    static uint8_t table[TABLE_SECTOR];
+    uint8_t written[256];
+    esp_err_t err = esp_flash_read(NULL, table, LATER_TABLE_OFFSET, sizeof(table));
+    bool same = err == ESP_OK;
+    for (size_t at = 0; same && at < sizeof(table); at += sizeof(written)) {
+        same = esp_flash_read(NULL, written, CONFIG_PARTITION_TABLE_OFFSET + at, sizeof(written)) == ESP_OK &&
+               memcmp(written, table + at, sizeof(written)) == 0;
+    }
+    if (err != ESP_OK || same) {
+        return err;
+    }
+    const size_t first = sizeof(esp_partition_info_t);
+    err = esp_flash_erase_region(NULL, CONFIG_PARTITION_TABLE_OFFSET, sizeof(table));
+    if (err == ESP_OK) {
+        err = esp_flash_write(NULL, table + first, CONFIG_PARTITION_TABLE_OFFSET + first, sizeof(table) - first);
+    }
+    if (err == ESP_OK) {
+        err = esp_flash_write(NULL, table, CONFIG_PARTITION_TABLE_OFFSET, first);
+    }
+    for (size_t at = 0; err == ESP_OK && at < sizeof(table); at += sizeof(written)) {
+        err = esp_flash_read(NULL, written, CONFIG_PARTITION_TABLE_OFFSET + at, sizeof(written));
+        if (err == ESP_OK && memcmp(written, table + at, sizeof(written)) != 0) {
+            err = ESP_ERR_INVALID_CRC;
+        }
+    }
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "partition table copied from 0x%x to 0x%x", LATER_TABLE_OFFSET, CONFIG_PARTITION_TABLE_OFFSET);
+    }
+    return err;
+}
+
 static esp_err_t update_handler(httpd_req_t *req)
 {
     if (s_later_table) {
-        return refuse_on_later_table(req);
+        esp_err_t err = copy_later_table();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "partition table not copied to 0x%x: %s", CONFIG_PARTITION_TABLE_OFFSET,
+                     esp_err_to_name(err));
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            return httpd_resp_sendstr(req, "Could not copy the partition table to 0x8000. Nothing was erased.\n");
+        }
     }
     s_uploading = true;
     esp_err_t result = upload(req);

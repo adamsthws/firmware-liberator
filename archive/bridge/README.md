@@ -97,9 +97,10 @@ partitions at all and stopped on an assertion, over and over, with Sonoff's
 bootloader starting it each time. Where 0x8000 holds no table and 0xC000 one
 whose MD5 record matches, it registers that table's entries itself
 (`esp_partition_register_external`) before anything looks for a partition:
-nothing is written. It then only reads - `/flash`, `/info`, `/restart` - and
-refuses `/update` and `/tasmota-settings` (409), as Tasmota and ESPHome look
-for the table at 0x8000. `/info` says where the table is. ESP-IDF's own MD5
+nothing is written. 4.4.6 then only read - `/flash`, `/info`, `/restart` - and
+refused `/update` and `/tasmota-settings` (409), as Tasmota and ESPHome look
+for the table at 0x8000; 4.4.7 converts it (below). `/info` says where the
+table is. ESP-IDF's own MD5
 check is off (`sdkconfig.defaults`), as with it a blank 0x8000 fails every
 partition lookup; the bridge checks the 0xC000 table's MD5 itself.
 
@@ -114,6 +115,20 @@ ESP-IDF has no sdkconfig setting for it, so the bridge sets it each time it
 starts the station. The bridge runs on mains for one conversion, so sleeping
 saves nothing. The emulator does not model power saving, so it shows only
 that nothing else changed.
+
+4.4.7 also converts a device whose table is at 0xC000, where 4.4.6 only read
+it. `/tasmota-settings` saves Tasmota's settings in the partition labelled
+`nvs`, as on any device, and `/update` first copies the whole sector holding
+the 0xC000 table to 0x8000 (`copy_later_table`), where Tasmota, ESPHome and
+their bootloader look for it, and reads it back; one that does not read back
+is answered 500, with nothing erased. Sonoff's bootloader and firmware read
+only 0xC000, which stays as it is, so the device starts Sonoff's firmware, or
+the bridge, as before at every point. The first entry is written last: until
+it is, 0x8000 holds no table, so a bridge started after a power cut part way
+takes the table from 0xC000 again. The copy needs
+`CONFIG_SPI_FLASH_DANGEROUS_WRITE_ALLOWED` (`sdkconfig.defaults`), as ESP-IDF
+otherwise aborts on a write near the table. A readout never sends `/update`,
+so it still writes nothing.
 
 From 4.4.2 every build has the read-only `GET /flash` (the whole chip, with
 its size in `X-Flash-Size`), `GET /flash-sha256` (the SHA-256 of the whole

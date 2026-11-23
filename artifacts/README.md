@@ -12,8 +12,8 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 
 | File | Purpose | SHA-256 |
 |---|---|---|
-| `autoflash-bridge-esp32c3-4.4.7.ota` | [The bridge](#the-bridge) for an ESP32-C3, wrapped for the stock updater with the S60's model | `76ea60e27969f2c56c98976344b9a733f68dde43c4a98d2bf350bc401fb2f4c9` |
-| `autoflash-bridge-esp32-4.4.7.bin` | The bridge for a classic ESP32, as a plain app the run wraps for each device's model | `3806d575a6049a08726495fa09006a65f79f15c2147287acb437099af234c334` |
+| `autoflash-bridge-esp32c3-4.4.7.ota` | [The bridge](#the-bridge) for an ESP32-C3, wrapped for the stock updater with the S60's model | `ad17d6de7f451874670352a014e7f5e66721c7e33e62bce2fede925a27dbea88` |
+| `autoflash-bridge-esp32-4.4.7.bin` | The bridge for a classic ESP32, as a plain app the run wraps for each device's model | `6e6ecb8f37799fecf26c33c2100b38d2a704a24f2fc15cdd9c74dbbc82a7be19` |
 | `tasmota32c3-bluetooth.bin` | [The Berry-capable Tasmota](#the-interim-tasmota-and-its-settings-templates) an ESP32-C3 runs for a while on its original partition layout: the exact file the successful migrations used, from Tasmota's moving `install/firmware` branch ([source](../NOTICES.md#tasmota-derived-firmware)) | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 on an ESP32-C3 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |
 | `tasmota-settings-template-esp32-15.6.0.0.bin` | The same for a classic ESP32 | `7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49` |
@@ -50,8 +50,8 @@ part way, and its status page then says `fallback: none`. Failing to join, it
 raises its own open network, `autoflash-recovery-XXXX` (the last two bytes of
 the device's Wi-Fi MAC), and tries the home one again every three minutes
 while nobody is joined to it. On a device whose partition table is at 0xC000
-(the BASICR4's) it only reads, as nothing but Sonoff's firmware starts there
-yet. [`../archive/bridge/README.md`](../archive/bridge/README.md) has its
+(the BASICR4's) it copies that table to 0x8000 before it takes Tasmota, so
+that Tasmota starts. [`../archive/bridge/README.md`](../archive/bridge/README.md) has its
 source and endpoints. 4.4.6 and 4.4.7 have been tested in the emulator, and
 bridges up to 4.4.5 on real devices too.
 

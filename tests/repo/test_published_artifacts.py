@@ -98,6 +98,26 @@ class PublishedArtifactTests(unittest.TestCase):
             image = (ROOT / chip.pin("bridge")["file"]).read_bytes()
             self.assertTrue(b"The stock slot no longer holds firmware that can start" in image, chip.label)
 
+    def test_on_a_table_at_0xc000_an_upload_copies_it_where_tasmota_reads_it_first(self):
+        # The BASICR4's: Tasmota, ESPHome and their bootloader read 0x8000. The
+        # copy comes before anything is erased, its first entry written last, so
+        # that 0x8000 holds no table until the copy is whole.
+        import re
+        from tools.espressif import chips
+        from tools.autoflash.runs import ROOT
+        source = (ROOT / "archive/bridge/main/main.c").read_text(encoding="utf-8")
+        self.assertNotIn("refuse_on_later_table", source)
+        update = re.search(r"static esp_err_t update_handler\(httpd_req_t \*req\)\n\{.*?\n\}\n", source, re.DOTALL)[0]
+        self.assertLess(update.index("copy_later_table()"), update.index("upload(req)"))
+        copy = re.search(r"static esp_err_t copy_later_table\(void\)\n\{.*?\n\}\n", source, re.DOTALL)[0]
+        self.assertLess(copy.index("table + first,"), copy.index("table, CONFIG_PARTITION_TABLE_OFFSET, first"))
+        self.assertIn("CONFIG_SPI_FLASH_DANGEROUS_WRITE_ALLOWED=y",
+                      (ROOT / "archive/bridge/sdkconfig.defaults").read_text(encoding="utf-8").splitlines())
+        for chip in chips.ALL:
+            image = (ROOT / chip.pin("bridge")["file"]).read_bytes()
+            self.assertIn(b"Could not copy the partition table to 0x8000. Nothing was erased.", image, chip.label)
+            self.assertNotIn(b"only reading it. Nothing was written.", image, chip.label)
+
     def test_every_handler_fits_the_servers_table(self):
         # Beyond max_uri_handlers registering fails, and the bridge stops at start-up.
         import re
