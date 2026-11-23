@@ -5,7 +5,8 @@ for every device the tool converts, so a new one has it by being added.
     python -I tools/repo/emulator_check.py list [--changed-since COMMIT]
         as JSON, the devices to check and the emulator image each needs: those a
         change since COMMIT could affect, or every one that has something to run
-        from (NOTHING_TO_RUN names those that have not)
+        from (NOTHING_TO_RUN names those that have not); a device with a motor
+        mode once more for each of its motor copies (--motor)
     .venv/bin/python -I tools/repo/emulator_check.py DEVICE [--instances 1,2]
         its check: each final firmware installed, then each device taken to the
         other, two ways side by side (a way goes on as soon as its own run is
@@ -105,8 +106,18 @@ def changed_since(commit: str) -> list[str] | None:
 
 
 def jobs(changed: list[str] | None) -> list[dict[str, str]]:
-    return [{"device": kind.key, "family": family_of(kind), **EMULATORS[family_of(kind)]}
-            for kind in kinds.READY if kind.key not in NOTHING_TO_RUN and (changed is None or affected(kind, changed))]
+    """Each device's check, and a device with a motor mode's motor checks
+    beside it, one job each (public_dump.MOTOR_COPIES): each runs on a
+    runner of its own, so none waits for another. `name` tells them apart."""
+    from tools.espressif.emulator import public_dump
+    found = []
+    for kind in kinds.READY:
+        if kind.key in NOTHING_TO_RUN or (changed is not None and not affected(kind, changed)):
+            continue
+        job = {"device": kind.key, "name": kind.key, "family": family_of(kind), **EMULATORS[family_of(kind)]}
+        found += [job, *({**job, "motor": copy, "name": f"{kind.key} motor{'' if copy == 'motor' else ' ' + copy}"}
+                         for copy in public_dump.MOTOR_COPIES.get(kind.key, ()))]
+    return found
 
 
 def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:

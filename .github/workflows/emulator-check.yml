@@ -141,10 +141,13 @@ jobs:
           [ "$EVERY" != true ] && [ -n "$BASE" ] || since=()
           echo "jobs=$(python3 -I tools/repo/emulator_check.py list "${since[@]}")" >> "$GITHUB_OUTPUT"
 
+  # Each device's check, and a Dual R3's in motor mode (--motor) beside it, one
+  # runner for each motor copy: run one after another, they would take as long
+  # as all of them.
   device:
     needs: devices
     if: ${{ needs.devices.outputs.jobs != '[]' }}
-    name: emulator (${{ matrix.device }})
+    name: emulator (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -156,6 +159,8 @@ jobs:
         include: ${{ fromJSON(needs.devices.outputs.jobs) }}
     env:
       DEVICE: ${{ matrix.device }}
+      MOTOR: ${{ matrix.motor }}
+      NAME: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -201,9 +206,9 @@ jobs:
           EMULATOR_STATS_CLIENT_SECRET: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && secrets.EMULATOR_STATS_CLIENT_SECRET || '' }}
         run: |
           set -o pipefail
-          .venv/bin/python -I tools/repo/emulator_check.py "$DEVICE" | tee test.txt
+          .venv/bin/python -I tools/repo/emulator_check.py "$DEVICE" ${MOTOR:+--motor "$MOTOR"} | tee test.txt
           {
-            echo "### $DEVICE's final firmware on the emulator"
+            echo "### $NAME's final firmware on the emulator"
             echo
             echo '```'
             cat test.txt
@@ -213,7 +218,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: emulator-logs-${{ matrix.device }}
+          name: emulator-logs-${{ matrix.name }}
           path: |
             captures/emulation/public-devices/
             captures/emulation/device-check/

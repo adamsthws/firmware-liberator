@@ -21,7 +21,9 @@ for you, what a run tells you, and what to do when it does not boot.
 - **Give it a run in CI.** A device the tool converts has its own run of the
   `emulator-check` workflow, from its public dump: each final firmware, then
   each device taken to the other
-  ([emulator_check.py](../tools/repo/emulator_check.py)). A Beken device with
+  ([emulator_check.py](../tools/repo/emulator_check.py)); one with a motor mode
+  has a run for each of its motor copies beside it
+  ([a motor](emulator.md#a-motor)). A Beken device with
   no public dump has its run from a flash rebuilt from the S61's dump and its
   official file, once that file is pinned ([its steps](#the-steps-beken)). One with
   nothing to run from is named in that file's `NOTHING_TO_RUN`, or a test

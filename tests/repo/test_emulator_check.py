@@ -81,6 +81,29 @@ class WhichDevicesTests(unittest.TestCase):
             self.assertEqual(found, {kind.key for kind in kinds.READY if kind.chip == chip} - check.NOTHING_TO_RUN, chip)
         self.assertNotIn("sonoff-s60", keys(["devices/esp32/mover.yaml"]))
 
+    def test_a_device_with_a_motor_mode_has_a_job_for_each_motor_copy_beside_its_own(self):
+        from tools.espressif.emulator import public_dump
+        found = check.jobs(["devices/sonoff-dualr3/esphome.yaml"])
+        self.assertEqual([job.get("motor", "") for job in found], ["", *public_dump.MOTOR_COPIES["sonoff-dualr3"]])
+        self.assertEqual([job["name"] for job in found], ["sonoff-dualr3", "sonoff-dualr3 motor",
+                                                          "sonoff-dualr3 motor calibrated", "sonoff-dualr3 motor one-button"])
+        # The workflow runs each as DEVICE --motor COPY: a copy --motor takes.
+        with mock.patch.object(check, "missing_packages", return_value=None), \
+                mock.patch.object(check, "check_public_dump", return_value=0) as ran:
+            for job in found[1:]:
+                self.assertEqual(check.main([job["device"], "--motor", job["motor"]]), 0)
+                self.assertEqual(ran.call_args.args[2], job["motor"])
+        every = check.jobs(None)
+        self.assertEqual(len({job["name"] for job in every}), len(every), "each job's logs are kept under its name")
+        self.assertFalse([job for job in every if job.get("motor") and not kinds.find(job["device"]).motor_mode])
+
+    def test_the_workflow_runs_a_motor_job_as_its_motor_copy_under_its_own_name(self):
+        workflow = (ROOT / ".github/workflows/emulator-check.yml").read_text(encoding="utf-8")
+        self.assertIn('emulator_check.py "$DEVICE" ${MOTOR:+--motor "$MOTOR"}', workflow)
+        self.assertIn("MOTOR: ${{ matrix.motor }}", workflow)
+        self.assertIn("name: emulator (${{ matrix.name }})", workflow)
+        self.assertIn("name: emulator-logs-${{ matrix.name }}", workflow)
+
     def test_nothing_a_conversion_runs_checks_nothing(self):
         self.assertEqual(keys(["docs/testing.md", "tests/repo/test_layout.py", "website/src/site.mjs"]), set())
 

@@ -497,7 +497,9 @@ start, the tool's rule in `Rule2` where the mode needs one, and the
 switches must move the motor so; ESPHome then reads them from there. Each
 look is logged with its time in
 `captures/emulation/device-check/sonoff-dualr3-COPY/N-FIRMWARE-motor.log`,
-the owner's rule's in `N-tasmota-owner.log`.
+the owner's rule's in `N-tasmota-owner.log`. The `emulator-check` workflow
+runs each copy's check as a job of its own, beside the Dual R3's relay-mode
+check, whenever it checks the Dual R3 (`emulator_check.py list`).
 
 Before that, the check read Tasmota's relays five times, a second apart,
 after each move, and took the last look. The close then ran back from where
