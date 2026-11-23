@@ -151,6 +151,15 @@ matrix's CPUs:
 | QEMU (lcgamboa) | [#24](https://github.com/lcgamboa/qemu/pull/24) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/24?label=) | Each SPI transaction and cache sync searched the whole object tree for the flash-encryption device, so a flash write made thousands of searches: the device is now linked once |
 | QEMU (Espressif) | [#216](https://github.com/espressif/qemu/pull/216) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/216?label=) | The same change where the code came from; a classic ESP32 flash write about twice as fast |
 
+A store to the ESP32's or ESP32-S3's random number register, which QEMU
+gave a read callback only, stopped QEMU with a crash. A firmware whose stack
+had already gone wrong reached it from its panic handler:
+
+| Project | Pull request | Status | What it fixes |
+|---|---|---|---|
+| QEMU (lcgamboa) | [#25](https://github.com/lcgamboa/qemu/pull/25) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/25?label=) | A write to the read-only random number register crashed QEMU: it is now ignored and logged as a guest error |
+| QEMU (Espressif) | [#217](https://github.com/espressif/qemu/pull/217) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/217?label=) | The same change where the code came from |
+
 <br>
 
 ## OpenBeken on a 4 MB BK7238
