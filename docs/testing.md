@@ -1618,6 +1618,9 @@ back has run on a real S60TPG: every write read back, the final check of the
 device on Tasmota matching all four regions, and the relay and power meter
 checked through each firmware.
 
+A Dual R3 that drives a motor has a checklist for its owner, to run once it
+is converted: [checking it on your motor](../devices/sonoff-dualr3/README.md#checking-it-on-your-motor).
+
 ## Related
 
 [Fixes sent upstream](upstream-contributions.md): the bugs this testing found

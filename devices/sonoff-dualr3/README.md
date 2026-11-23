@@ -20,7 +20,9 @@ digits with no separators, as the emulator's stand-in for eWeLink saw: the
 tool finds the device on your network by that MAC, written either way.
 
 **Worth checking:** whether both relays, the wall switches, the button and the
-LED work, and which meter chip yours has.
+LED work, and which meter chip yours has. On a motor,
+[these checks](#checking-it-on-your-motor) cover what the conversion carries
+across.
 
 ## The device
 
@@ -141,6 +143,60 @@ reversal and the wall-switch modes mean was seen in the emulator's Sonoff firmwa
 ([research](../../docs/espressif-research.md#the-dual-r3s-work-mode)); how the
 times suit a real motor, with its own limit switches, is for its owner to
 check.
+
+## Checking it on your motor
+
+Once the tool has converted a Dual R3 that drives a motor, these checks show
+whether everything carried across. Each says what you should see.
+
+1. **Be ready to stop it.** Every check below moves the motor. Keep people,
+   pets and anything in the way clear of the curtain, blind, awning or gate,
+   stay where you can see it, and know where to cut the device's power. A
+   wrong direction or travel time can run the motor to its end: if it has no
+   limit switches, stop it yourself before it gets there.
+2. **Read what the tool said.** Once it has set up the new firmware, `Motor
+   mode carried across: Switches are ...` names the wall-switch mode it set,
+   which should be the one you had in Sonoff's app. The line after it gives your travel
+   times, carried from Sonoff's calibration, or, for a motor never
+   calibrated, tells you to time it: both ways then start at the short
+   `DEFAULT_TRAVEL` in [`motor.py`](../../tools/autoflash/motor.py), so the
+   motor stops early. `Tasmota drives the motor already` means a device
+   already on Tasmota was set up for its motor and left as it was.
+3. **Open, stop, close**, from Home Assistant's cover (`Motor` on ESPHome) or
+   the device's own web page, at its address such as `http://192.168.99.50`
+   (on Tasmota, its console's `ShutterOpen1`, `ShutterStop1` and
+   `ShutterClose1` too). Open should open, close should close, and stop
+   should stop it at once.
+   If open closes it, the direction did not carry across: report it, and on
+   ESPHome turn `Reverse direction` over meanwhile.
+4. **The travel time.** Run it from one end to the other: it should stop
+   about at the end. If it stops short or runs on, time a full run and set
+   `ShutterOpenDuration1` and `ShutterCloseDuration1` in Tasmota's console,
+   or `Open duration` and `Close duration` in Home Assistant on ESPHome.
+5. **Never both outputs on.** Ask it to close while it opens: it should stop
+   before it turns round, and each channel's power, in Home Assistant or on
+   the web page, should never show both drawing at once.
+6. **A power cut while it moves.** Start it moving, cut the device's power,
+   and switch it back on: the motor should stay still.
+7. **The wall switches**, as you had them in Sonoff's app. As push-buttons:
+   S1 opens and S2 closes as you let go, and either stops it while it runs.
+   As hold to run: it moves while you hold S1 or S2 and stops as you let go.
+   As one push-button: each press opens, stops, closes and stops in turn.
+   With them swapped in the app, S2 opens and S1 closes here too. On ESPHome
+   `Wall switches` and `Swap wall switches` show what was set.
+8. **The button** on the device: each press starts the motor or stops it.
+9. **Your own Tasmota rules.** Type `Rule1`, `Rule2` and `Rule3` in Tasmota's
+   console: a rule of yours should be there as you wrote it, and the tool's,
+   for push-buttons or one push-button, in a set that was empty. If the tool
+   said the switches are hold to run, not the mode you had, all three held
+   rules of yours: empty one and run the tool again.
+
+**If something is wrong**, cut the power if the motor is moving, then open
+an issue at [firmwareliberator.com/issues](https://firmwareliberator.com/issues):
+which check, which firmware, what you saw, and the run's log
+([where it is](../../docs/troubleshooting.md), safe to share). If every
+check passes, nothing more is needed: the run's report has told the project
+how the conversion went.
 
 ## Files
 
