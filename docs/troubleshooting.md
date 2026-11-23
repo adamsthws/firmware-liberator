@@ -53,10 +53,13 @@ afterwards, within the one permission question. Running the terminal as
 administrator is not needed: the tool asks for administrator rights itself,
 only for its firewall rule.
 
-**"the installer was not delivered" ("Device did not connect")**
+**"the installer was not delivered" ("Device did not connect")**, or on a
+Beken device **"the device fetched 0 of ... bytes: it never reached this
+computer"**
 
-Sonoff's firmware took the update and tried to fetch the installer from your
-computer, but none of its connections reached the tool. It goes offline in
+Sonoff's firmware took the update and tried to fetch the installer (on a Beken
+device, the firmware itself) from your computer, but none of its connections
+reached the tool. It goes offline in
 eWeLink as it starts, keeps trying for up to a few minutes, then restarts and is
 back in eWeLink, unchanged, about five minutes after the command. Nothing was
 written: send it again once it is back, after finding what stopped it.

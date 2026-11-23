@@ -289,6 +289,20 @@ class ReadWholeFlashTests(unittest.TestCase):
             with self.assertRaises(errors.StoppedPartWay) as stopped:
                 rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
         self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
+        # None of it asked for: the device never reached this computer, as a
+        # conversion's B2 says it (firewall.never_fetched).
+        none = SimpleNamespace(sent=True, complete=False, bytes_served=0, error=None, interrupted=False)
+        with mock.patch.object(rb, "readout_image", return_value=b"image"), \
+                mock.patch.object(rb.fota_wrap, "wrap", return_value=b"wrapped"), \
+                mock.patch.object(rb.firewall, "choose_port", return_value=8088), \
+                mock.patch.object(rb.firewall, "ensure_firewall"), mock.patch.object(rb.output, "say"), \
+                mock.patch.object(rb.safety_locks, "say_lock_back"), \
+                mock.patch.object(rb.firewall, "firewall_hint", return_value=["the firewall"]), \
+                mock.patch.object(rb.firewall.prompts, "section") as shown, \
+                mock.patch.object(rb.ota_push, "deliver", return_value=none):
+            with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 0 of .*never reached this computer"):
+                rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
+        shown.assert_called_once_with("The firmware was not delivered", ["the firewall"])
         # Stopped as asked - Ctrl-C twice, the window closed - it stops so.
         with mock.patch.object(rb, "readout_image", return_value=b"image"), \
                 mock.patch.object(rb.fota_wrap, "wrap", return_value=b"wrapped"), \

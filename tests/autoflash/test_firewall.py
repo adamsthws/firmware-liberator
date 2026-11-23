@@ -153,6 +153,19 @@ class FirewallHintTests(unittest.TestCase):
         self.assertNotIn("address", self.hint())
         self.assertIn("192.0.2.20, given with --listen-ip", self.hint("192.0.2.20"))
 
+
+class NeverFetchedTests(unittest.TestCase):
+    def test_only_a_send_none_of_which_was_asked_for_is_put_down_to_the_device_not_reaching_here(self):
+        def delivery(**fields):
+            return types.SimpleNamespace(**{"complete": False, "bytes_served": 0, "error": None, **fields})
+        for fields, expected in (({}, True), ({"bytes_served": 100}, False), ({"complete": True}, False),
+                                 ({"error": "Cloud rejected upgrade command: error 410"}, False)):
+            with self.subTest(fields=fields), \
+                    mock.patch.object(firewall, "firewall_hint", return_value=["the firewall"]), \
+                    mock.patch.object(prompts, "section") as shown:
+                self.assertIs(firewall.never_fetched(object(), delivery(**fields)), expected)
+            self.assertEqual(shown.called, expected)
+
 if __name__ == "__main__":
     unittest.main()
 

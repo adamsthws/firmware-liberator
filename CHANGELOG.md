@@ -96,6 +96,11 @@ check.
 - A run no longer crashes as it looks for your device when another device on
   your network answers with something that is not a proper web page (one
   that sends the request back, say): that device is passed over.
+- A Beken device that never fetches its new firmware from your computer, on
+  a conversion or a readout, is now said to have never reached your computer,
+  with what usually stops it: a firewall, a guest network, or a router that
+  keeps Wi-Fi devices apart. Before, the run said the delivery stopped part
+  way and to switch the device off and on, which does not help.
 
 ## 3.1.0
 

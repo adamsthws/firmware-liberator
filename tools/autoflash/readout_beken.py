@@ -123,6 +123,10 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
         arrival.power_cycle(ctx, "The firmware was turned down", arrival.BUSY_LINES, "send it again")
         if not arrival.online_in_ewelink(ctx, device["deviceid"]):
             raise Abort(arrival.BUSY)
+    if firewall.never_fetched(ctx, delivered):
+        raise StoppedPartWay(
+            f"the device fetched 0 of {len(container):,} bytes: it never reached this computer to ask for "
+            "them. It keeps its Sonoff firmware: run the readout again once it can, as said above")
     if not delivered.complete:
         # A power cut or the Wi-Fi going part way, as a conversion's B2
         # (stock.py): the device keeps Sonoff's firmware.

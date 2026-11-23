@@ -5,7 +5,7 @@ let the device reach them for the run, closed again when it ends.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import hostsys, interrupt, output, prompts
 from tools.autoflash.errors import Abort
@@ -165,6 +165,19 @@ def firewall_hint(ctx: Context) -> list[str]:
     if advice:
         lines += ["", *advice]
     return lines
+
+
+def never_fetched(ctx: Context, delivered: Any) -> bool:
+    """Whether a send through eWeLink (`delivered`, an ota_push.Delivery) that
+    reached the device - it was sent, unrefused - had none of the file asked
+    for, the command sent again meanwhile: the device never reached this
+    computer, and firewall_hint is shown, as the Espressif route's C2 shows it
+    (installer.bridge_failure_advice). A send cut off part way is what
+    switching the device off and on mends; this one is not."""
+    if delivered.complete or delivered.bytes_served or delivered.error:
+        return False
+    prompts.section("The firmware was not delivered", firewall_hint(ctx))
+    return True
 
 
 def close_firewall_rules(ctx: Context) -> None:

@@ -190,6 +190,10 @@ def step_push(ctx: Context) -> dict[str, Any]:
         arrival.power_cycle(ctx, "The firmware was turned down", arrival.BUSY_LINES, "send it again")
         if not arrival.online_in_ewelink(ctx, device["deviceid"]):
             raise Abort(arrival.BUSY)
+    if firewall.never_fetched(ctx, delivered):
+        raise StoppedPartWay(
+            f"the device fetched 0 of {len(container):,} bytes: it never reached this computer to ask for "
+            "them. It keeps its Sonoff firmware: try again once it can, as said above")
     if not delivered.complete:
         # Sent, and some of it may be on the device: the device says what it runs
         # when the step is asked about (evidence_pushed). A power cut part way

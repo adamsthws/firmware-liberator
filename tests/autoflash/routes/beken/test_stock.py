@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.routes.beken.test_beken import a_context
-from tools.autoflash import detect, errors, kinds, records
+from tools.autoflash import detect, errors, failures, kinds, records
 from tools.autoflash.routes.beken import images, stock
 from tools.beken import fota_wrap, interim_marker, layouts, rbl
 from tools.ewelink import ota_push
@@ -281,6 +281,21 @@ class FromStockTests(unittest.TestCase):
                 # part way in the fault suite), and the step left attempted.
                 with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 100 of .*switch it off and on"):
                     stock.step_push(ctx)
+            # None of it asked for, the command sent (again, as ota_push does):
+            # the device never reached this computer - the firewall, a guest
+            # network - as C2 says, not a cut off that switching it off and on
+            # mends (seen on users' runs, told to switch it off and on).
+            with mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(stock.firewall, "firewall_hint", return_value=["the firewall"]), \
+                    mock.patch.object(stock.firewall.prompts, "section") as shown, \
+                    mock.patch.object(ota_push, "deliver",
+                                      return_value=ota_push.Delivery(sent=True, complete=False, bytes_served=0)):
+                with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 0 of .*never reached this computer") \
+                        as stopped:
+                    stock.step_push(ctx)
+            shown.assert_called_once_with("The firmware was not delivered", ["the firewall"])
+            self.assertNotIn("switch it off and on", str(stopped.exception))
+            self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
             # Ctrl-C twice, or the window closed, as it sends: the run stops as
             # asked, not a delivery that failed (seen in the fault suite's hangup:
             # the next run never said the window had been closed).
