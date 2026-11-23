@@ -7,7 +7,7 @@ import unittest
 import zlib
 
 from tests.espressif.test_inspect_stock_nvs import entry, page, variable
-from tools.espressif import ais_records, scrub
+from tools.espressif import ais_records, flashmap, layouts, scrub
 
 SSID = b"ExampleNet"
 OLD_SSID = b"OldNetwork-2"        # a network the device was on before: its entry replaced since
@@ -185,28 +185,15 @@ class AisTests(unittest.TestCase):
         self.assertEqual(bad_checksums(out), [])
 
 
-def table_entry(label: bytes, kind: int, subtype: int, offset: int, size: int) -> bytes:
-    return (scrub.flashmap.ENTRY_MAGIC + bytes([kind, subtype]) + struct.pack("<II", offset, size)
-            + label.ljust(16, b"\0") + bytes(4))
-
-
-# A real BASICR4's table, at 0xC000: its settings are in the partition labelled
-# nvs, after two NVS partitions of its own for Matter, left empty, and its
-# fctry, also empty, is one more after the apps.
-BASICR4_TABLE = (("esp_secure_cert", 0x3F, 0x06, 0xD000, 0x2000), ("nvs_matter", 1, 2, 0x10000, 0x6000),
-                 ("nvs_matter_bkp", 1, 2, 0x16000, 0x6000), ("nvs", 1, 2, 0x1C000, 0x10000),
-                 ("otadata", 1, 0, 0x2C000, 0x2000), ("phy_init", 1, 1, 0x2E000, 0x1000),
-                 ("ota_0", 0, 0x10, 0x30000, 0x1E0000), ("ota_1", 0, 0x11, 0x210000, 0x1E0000),
-                 ("fctry", 1, 2, 0x3F0000, 0x6000))
-
-
 def basicr4_flash(**settings: bytes) -> bytes:
-    """A whole flash laid out as a real BASICR4's, each partition named in
-    `settings` holding those NVS pages."""
+    """A whole flash laid out on a real BASICR4's table, the one published
+    (its settings in nvs, after the Matter SDK's nvs_matter and nvs_matter_bkp,
+    and its fctry after the apps), each partition named in `settings` holding
+    those NVS pages."""
+    layout = layouts.SONOFF_BASICR4
     image = bytearray(b"\xff" * 0x400000)
-    table = b"".join(table_entry(label.encode(), *rest) for label, *rest in BASICR4_TABLE)
-    image[0xC000:0xC000 + len(table)] = table
-    offsets = {label: offset for label, _, _, offset, _ in BASICR4_TABLE}
+    image[layout.sonoff_table_at:layout.sonoff_table_at + flashmap.TABLE_SIZE] = layout.table
+    offsets = {partition.label: partition.offset for partition in flashmap.partitions(bytes(image))}
     for label, pages in settings.items():
         image[offsets[label]:offsets[label] + len(pages)] = pages
     return bytes(image)
@@ -235,10 +222,10 @@ class FirmwareTests(unittest.TestCase):
     def test_a_password_the_firmware_holds_is_left_in_the_firmware(self):
         # A real S60's setup-network password is in its app: it is Sonoff's, the
         # same on every device, and the app must stay byte for byte to start.
-        table = (scrub.flashmap.ENTRY_MAGIC + bytes([0, 0x10]) + struct.pack("<II", 0x20000, 0x10000)
+        table = (flashmap.ENTRY_MAGIC + bytes([0, 0x10]) + struct.pack("<II", 0x20000, 0x10000)
                  + b"ota_0".ljust(16, b"\0") + bytes(4))
         image = bytearray(flash().ljust(0x30000, b"\xff"))
-        image[scrub.flashmap.TABLE_AT:scrub.flashmap.TABLE_AT + len(table)] = table
+        image[flashmap.TABLE_AT:flashmap.TABLE_AT + len(table)] = table
         image[0x20100:0x20100 + len(NOW)] = NOW
         image[0x20200:0x20200 + len(APIKEY)] = APIKEY
         out = scrub.identity(scrub.wifi(bytes(image))[0])[0]
