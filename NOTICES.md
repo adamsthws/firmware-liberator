@@ -122,11 +122,13 @@ default settings for the ESP32-C3 and the classic ESP32, with no network
 details in them, captured from a running Tasmota.
 
 `artifacts/sonoff-s60-partition-table.bin`,
-`artifacts/sonoff-nspanel-partition-table.bin` and
-`artifacts/sonoff-th-elite-partition-table.bin` are the standard ESP-IDF
+`artifacts/sonoff-nspanel-partition-table.bin`,
+`artifacts/sonoff-th-elite-partition-table.bin` and
+`artifacts/sonoff-basicr4-partition-table.bin` are the standard ESP-IDF
 partition tables those Sonoff models ship with: partition names, offsets and
 sizes, with no code or settings ([why they are kept](docs/legal.md)). The
-S60's was read from a stock device; the others come from public dumps in
+S60's and the BASICR4's were each read from a stock device; the others come
+from public dumps in
 [openshwprojects/FlashDumps](https://github.com/openshwprojects/FlashDumps/tree/4d3556605da2ce101382a01b6fb7d84e68c3df2a/IoT/ESP32).
 
 `website/api/held-words.json`, the words for which the project's API holds a

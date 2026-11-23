@@ -148,6 +148,35 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
             plans.own_table_from_temporary(b"\0" * SECTOR, layout)
 
+    def test_a_basicr4_leaves_tasmota_with_its_settings_from_just_after_the_table(self):
+        # Its own settings are behind partitions of its own: the temporary table
+        # has them where the TH Elite's are, and all from there to the mover cleared.
+        layout = layouts.SONOFF_BASICR4
+        mover, table = images.mover_for("Home", "pw", chips.ESP32C3), images.leaving_table(kinds.SONOFF_BASICR4)
+        plan = plans.leave_tasmota(mover, table, layout)
+        self.assertEqual(plan.steps[1], plans.Erase(layouts.TEMPORARY_NVS, layouts.MOVER_AT - layouts.TEMPORARY_NVS))
+        self.assertEqual(plan.final_table_sha256(), layout.temporary_sha256)
+        with self.assertRaisesRegex(plans.PlanError, "settings do not fit"):
+            plans.leave_tasmota(mover, table, layout, settings=b"\x01" * (layout.nvs_size + 1))
+
+    def test_a_basicr4_takes_its_settings_home_from_the_temporary_table(self):
+        layout = layouts.SONOFF_BASICR4
+        plan = plans.own_table_from_temporary(images.sonoff_table(kinds.SONOFF_BASICR4), layout)
+        self.assertEqual((plan.table_sha256, plan.final_table_sha256(), plan.running),
+                         (layout.temporary_sha256, layout.table_sha256, 1))
+        # The selection of ota_1 first, then the settings copied whole to their
+        # own place - over the temporary selection and the start of the temporary
+        # ota_0 - and the table last.
+        self.assertEqual(plan.steps[0], plans.Write("otadata", layout.otadata, whole=True))
+        self.assertEqual(plan.steps[1], plans.Copy(layouts.TEMPORARY_NVS, layout.nvs, layout.nvs_size))
+        self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
+        copied = range(layout.nvs, layout.nvs + layout.nvs_size)
+        self.assertIn(layouts.TEMPORARY_OTADATA, copied)
+        self.assertIn(layouts.MOVER_AT, copied)
+        # Its own ota_0's start, in the temporary one's app, erased.
+        self.assertIn(plans.Erase(layout.phy, layout.ota[0] + SECTOR - layout.phy), plan.steps)
+        self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
+
     def test_putting_sonoffs_layout_back_copies_the_settings_home_then_the_table(self):
         plan = plans.sonoff_layout_back(images.sonoff_table())
         self.assertEqual((plan.table_sha256, plan.running, plan.restart),
@@ -247,6 +276,42 @@ class BackToSonoffTests(unittest.TestCase):
         broken[0x8000] ^= 1
         with self.assertRaisesRegex(plans.PlanError, "not a backup"):
             plans.back_to_sonoff(bytes(broken), running=1)
+
+
+class BasicR4BackToSonoffTests(unittest.TestCase):
+    """Its firmware reads its table at 0xC000, behind which its own partitions
+    come before its settings."""
+
+    LAYOUT = layouts.SONOFF_BASICR4
+
+    def backup(self):
+        flash = bytearray(b"\xff" * 0x400000)
+        flash[0xC000:0xD000] = self.LAYOUT.table
+        flash[0xD000:0x2C000] = bytes(range(256)) * (0x1F000 // 256)
+        at = self.LAYOUT.ota[0]
+        flash[at:at + 4] = b"\xe9\x01\x02\x2f"
+        flash[at + 80:at + 112] = b"esp32_fw".ljust(32, b"\0")
+        return bytes(flash)
+
+    def test_its_table_goes_back_where_its_firmware_reads_it_with_all_in_front_of_its_boot_selection(self):
+        from unittest import mock
+        backup = self.backup()
+        with mock.patch.object(plans, "app_length", return_value=0x163090):
+            first, second = plans.back_to_sonoff(backup, running=1, layout=self.LAYOUT)
+        self.assertEqual(first.steps[0].address, self.LAYOUT.ota[0])
+        self.assertIn(plans.Write("table", 0xC000, whole=True), second.steps)
+        self.assertEqual(second.blobs["table"], self.LAYOUT.table)
+        self.assertIn(plans.Write("settings", 0xD000), second.steps)
+        self.assertEqual(second.blobs["settings"], backup[0xD000:self.LAYOUT.otadata])
+        self.assertEqual(second.final_table_sha256(), self.LAYOUT.table_sha256)  # 0x8000's copy stays
+        for plan in (first, second):
+            self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
+
+    def test_a_backup_with_no_table_at_0xc000_is_refused(self):
+        backup = bytearray(self.backup())
+        backup[0x8000:0x9000], backup[0xC000:0xD000] = backup[0xC000:0xD000], b"\xff" * SECTOR
+        with self.assertRaisesRegex(plans.PlanError, "not a backup"):
+            plans.back_to_sonoff(bytes(backup), running=1, layout=self.LAYOUT)
 
 
 class PlanCheckTests(unittest.TestCase):

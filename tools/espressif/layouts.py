@@ -15,10 +15,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TABLE_ENTRY_SIZE = 32
+SECTOR = 0x1000
+# Where the table is read by everything the tool installs - Tasmota, ESPHome,
+# the mover and ESPHome's bootloader, all built by ESP-IDF's default - and by
+# Sonoff's own firmware but the BASICR4's (Layout.sonoff_table_at).
+TABLE_AT = 0x8000
 # Where a device leaving Tasmota takes the mover: in front of Tasmota's app, over
 # its safeboot, which is all that has room. A layout whose ota_0 is not here
-# leaves through a temporary table with it here (Layout.temporary_table).
+# leaves through a temporary table with it here (Layout.temporary_table), its
+# settings from just after the table, its boot selection and PHY data after them.
 MOVER_AT = 0x20000
+TEMPORARY_NVS = TABLE_AT + SECTOR
 TEMPORARY_OTADATA = 0x1D000
 TEMPORARY_PHY = 0x1F000
 
@@ -35,6 +42,11 @@ class Layout:
     otadata: int
     phy: int
     temporary_sha256: str = ""  # temporary_table's, reviewed; for a layout that needs one
+    # Where Sonoff's bootloader and firmware read the table: TABLE_AT, but for
+    # firmware built to read it elsewhere (the BASICR4's). The installer copies
+    # it to TABLE_AT before anything of the tool's starts, and the table stays
+    # in both places until a conversion to Tasmota takes TABLE_AT's for its own.
+    sonoff_table_at: int = TABLE_AT
 
     @property
     def needs_temporary(self) -> bool:
@@ -46,14 +58,37 @@ class Layout:
         return self.temporary_sha256 if self.needs_temporary else self.table_sha256
 
     @property
+    def low(self) -> int:
+        """Where the first of what sits before ota_0 starts: the settings, but on
+        a layout with partitions in front of them (the BASICR4's Matter ones)."""
+        return min(offset for _, _, _, offset, _, _ in self.partitions() if offset < self.ota[0])
+
+    @property
     def low_size(self) -> int:
         """Settings, boot selection and PHY data: all that sits before ota_0."""
-        return self.ota[0] - self.nvs
+        return self.ota[0] - self.low
 
     @property
     def moved_low(self) -> int:
         """Where a commit keeps a copy of them: the end of what ota_0 can reach."""
         return self.ota[1] - self.low_size
+
+    @property
+    def nvs_size(self) -> int:
+        return next(size for label, _, _, _, size, _ in self.partitions() if label == "nvs")
+
+    @property
+    def temporary_nvs(self) -> tuple[int, int]:
+        """Where the temporary table keeps the settings, and how many: from just
+        after the table, no more than the device's own NVS holds, so that they
+        can go there whole (plans.own_table_from_temporary)."""
+        return TEMPORARY_NVS, min(TEMPORARY_OTADATA - TEMPORARY_NVS, self.nvs_size)
+
+    @property
+    def leaving_nvs(self) -> tuple[int, int]:
+        """Where the settings are, and how many, on the table a device leaving
+        Tasmota is given."""
+        return self.temporary_nvs if self.needs_temporary else (self.nvs, self.nvs_size)
 
     @property
     def table(self) -> bytes:
@@ -78,7 +113,7 @@ class Layout:
         rows = []
         for label, kind, subtype, offset, size, flags in self.partitions():
             if offset < self.ota[0]:
-                offset = self.moved_low + offset - self.nvs
+                offset = self.moved_low + offset - self.low
             elif label == "ota_0":
                 size = self.moved_low - self.ota[0] - 0x9000
             rows.append((label, kind, subtype, offset, size, flags))
@@ -90,13 +125,16 @@ class Layout:
 
     def temporary_partitions(self) -> tuple[tuple[str, int, int, int, int, int], ...]:
         """Its table with ota_0 where the mover goes, up to ota_1, which stays where
-        it is, and the settings and boot selection in what is left in front of it."""
-        where = {"nvs": (self.nvs, TEMPORARY_OTADATA - self.nvs),
+        it is, and the settings and boot selection in what is left in front of it.
+        A partition of its own there besides (the BASICR4's Matter ones) is left
+        out: nothing the device runs on this table reads it."""
+        where = {"nvs": self.temporary_nvs,
                  "otadata": (TEMPORARY_OTADATA, TEMPORARY_PHY - TEMPORARY_OTADATA),
                  "phy_init": (TEMPORARY_PHY, MOVER_AT - TEMPORARY_PHY),
                  "ota_0": (MOVER_AT, self.ota[1] - MOVER_AT)}
         return tuple((label, kind, subtype, *where.get(label, (offset, size)), flags)
-                     for label, kind, subtype, offset, size, flags in self.partitions())
+                     for label, kind, subtype, offset, size, flags in self.partitions()
+                     if label in where or offset >= MOVER_AT)
 
     def temporary_table(self) -> bytes:
         """What a device leaving Tasmota has between Tasmota's table and its own, when
@@ -106,12 +144,15 @@ class Layout:
         return self._table_of(self.temporary_partitions())
 
     def _table_of(self, rows: tuple[tuple[str, int, int, int, int, int], ...]) -> bytes:
-        table = bytearray(self.table)
-        for index, (_, _, _, offset, size, _) in enumerate(rows):
-            struct.pack_into("<II", table, index * TABLE_ENTRY_SIZE + 4, offset, size)
-        md5_at = len(rows) * TABLE_ENTRY_SIZE
-        table[md5_at + 16:md5_at + 32] = hashlib.md5(table[:md5_at]).digest()
-        return bytes(table)
+        """Its table with `rows` for entries, each as its own entry with that
+        offset and size, the MD5 record made again after them."""
+        table = self.table
+        own = {label: table[index * TABLE_ENTRY_SIZE:(index + 1) * TABLE_ENTRY_SIZE]
+               for index, (label, *_) in enumerate(self.partitions())}
+        entries = b"".join(own[label][:4] + struct.pack("<II", offset, size) + own[label][12:]
+                           for label, _, _, offset, size, _ in rows)
+        md5 = b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest()
+        return (entries + md5).ljust(len(table), b"\xff")
 
 
 SONOFF_DUAL_OTA = Layout(
@@ -135,7 +176,18 @@ SONOFF_TH_ELITE = Layout(
     "0fc13093b8e5ea70ffd09aa04af510dad5b1aa0dece1f56e16abf4e809398865",
     (0x60000, 0x210000), 0x1A9000, 0x9000, 0x49000, 0x4B000,
     "ae0503897ebe1598242f35c51938f76d5fce70e651a88d2d2db3097eabbf1b19")
-ALL = (SONOFF_DUAL_OTA, SONOFF_NSPANEL, SONOFF_TH_ELITE)
+# Espressif's Matter SDK's, read out of a real one: unused Matter partitions in
+# front of the settings and after the slots, which are 0x1E0000 each, and its
+# firmware and bootloader built to read the table at 0xC000. The mover does not
+# fit between its ota_0 and Tasmota's app, so a device on Tasmota leaves through
+# a temporary table, which leaves the Matter partitions out.
+SONOFF_BASICR4 = Layout(
+    "sonoff-basicr4", "artifacts/sonoff-basicr4-partition-table.bin",
+    "9f77593124a323cc4e5fad5e17a8197c67d3dca7b02ac3a51a6f16be5d421ac9",
+    "c9e6552f73868ce6081ef942375762f5771d705a83d3a3987e4293ceef0038bd",
+    (0x30000, 0x210000), 0x1E0000, 0x1C000, 0x2C000, 0x2E000,
+    "487426198cec63faf7a3522600ecc7acb260047331909367f746175bf62aa4be", sonoff_table_at=0xC000)
+ALL = (SONOFF_DUAL_OTA, SONOFF_NSPANEL, SONOFF_TH_ELITE, SONOFF_BASICR4)
 
 
 def of(key: str) -> Layout:

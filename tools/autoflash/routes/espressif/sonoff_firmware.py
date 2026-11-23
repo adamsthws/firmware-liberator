@@ -19,7 +19,7 @@ import urllib.request
 import zlib
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import hostsys, kinds, output, plans
+from tools.autoflash import hostsys, kinds, output
 from tools.autoflash.routes import public_copies
 from tools.espressif import chips
 from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, parse_esp_image
@@ -129,13 +129,14 @@ def official_app(ctx: Context, kind: kinds.Kind, identity: Identity, layout: Lay
 
 
 def flash_of(table: bytes, settings: bytes, app: bytes, layout: Layout) -> bytes:
-    """What a backup of the device would hold of it: Sonoff's table, its settings
-    and its firmware in the first slot, the rest erased - so that the plans that
-    write a backup back write this the same way (plans.back_to_sonoff)."""
+    """What a backup of the device would hold of it: Sonoff's table, where its
+    firmware reads it, its settings and its firmware in the first slot, the
+    rest erased - so that the plans that write a backup back write this the
+    same way (plans.back_to_sonoff)."""
     if len(settings) > layout.otadata - layout.nvs:
         raise FirmwareError("the settings do not fit the device's layout")
     flash = bytearray(b"\xff" * FLASH_SIZE)
-    flash[plans.TABLE_ADDRESS:plans.TABLE_ADDRESS + len(table)] = table
+    flash[layout.sonoff_table_at:layout.sonoff_table_at + len(table)] = table
     flash[layout.nvs:layout.nvs + len(settings)] = settings
     flash[layout.ota[0]:layout.ota[0] + len(app)] = app
     return bytes(flash)

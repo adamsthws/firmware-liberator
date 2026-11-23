@@ -194,13 +194,14 @@ class IncompleteDump(OSError):
     """The flash arrived short, so nothing from it is worth keeping."""
 
 
-def read_table(host: str, timeout: float = 60.0) -> bytes:
-    """The device's partition table, from the start of the bridge's `GET /flash`."""
+def read_table(host: str, timeout: float = 60.0, at: int = PARTITION_TABLE) -> bytes:
+    """The sector at `at` - the device's partition table, where its firmware
+    reads it - from the start of the bridge's `GET /flash`."""
     with urllib.request.urlopen(f"http://{host}/flash", timeout=timeout) as response:
-        start = response.read(PARTITION_TABLE + OTA_SECTOR)
-    if len(start) != PARTITION_TABLE + OTA_SECTOR:
+        start = response.read(at + OTA_SECTOR)
+    if len(start) != at + OTA_SECTOR:
         raise OSError("the flash stopped short of the partition table")
-    return start[PARTITION_TABLE:]
+    return start[at:]
 
 
 def device_sha256(host: str) -> str | None:

@@ -36,6 +36,9 @@ def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
     in its settings, or in the sector at the top of its flash, which outlasts
     the startup firmware wiping the settings on the way here - else rebuilt
     from its eWeLink account record. Says which."""
+    if kind.ais_sdk:
+        raise NothingWritten(f"there is no backup of this device's Sonoff firmware on this computer, and "
+                             f"{identity.AIS_SDK}")
     layout = images.layout_of(kind)
     kept = identity.from_settings(ctx, layout) or identity.kept_in_sector(ctx)
     found = kept or identity.from_account(ctx, kind)
@@ -47,7 +50,7 @@ def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
              "its eWeLink account's record of it (its id, key, model and kind)")
     try:
         app, source = sonoff_firmware.official_app(ctx, kind, found, layout)
-        settings = sonoff_identity.nvs(found, identity.nvs_size(layout), ctx.wifi())
+        settings = sonoff_identity.nvs(found, layout.nvs_size, ctx.wifi())
         flash = sonoff_firmware.flash_of(images.sonoff_table(kind), settings, app, layout)
     except (sonoff_firmware.FirmwareError, sonoff_identity.IdentityError, images.ImageError) as exc:
         raise NothingWritten(f"Sonoff's firmware cannot be put back without a backup: {exc}") from exc

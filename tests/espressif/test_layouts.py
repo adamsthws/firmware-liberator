@@ -48,5 +48,38 @@ class TemporaryTableTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(layout.temporary_table()).hexdigest(), layout.temporary_sha256)
 
 
+class BasicR4Tests(unittest.TestCase):
+    """Its firmware reads its table at 0xC000, and its own partitions come
+    before its settings: the commit moves them too, and the temporary table
+    leaves them out."""
+    LAYOUT = layouts.SONOFF_BASICR4
+
+    def test_its_tables_are_the_reviewed_ones_and_sound(self):
+        for table, sha256 in ((self.LAYOUT.table, self.LAYOUT.table_sha256),
+                              (self.LAYOUT.interim_table(), self.LAYOUT.interim_sha256),
+                              (self.LAYOUT.temporary_table(), self.LAYOUT.temporary_sha256)):
+            self.assertEqual(hashlib.sha256(table).hexdigest(), sha256)
+            safeboot_migration.parse_partition_sector(table)  # no overlaps, all inside the flash
+        self.assertEqual(self.LAYOUT.sonoff_table_at, 0xC000)
+        self.assertEqual(layouts.by_table(self.LAYOUT.table_sha256), self.LAYOUT)
+
+    def test_the_commit_moves_all_in_front_of_ota_0_from_its_first_partition(self):
+        self.assertEqual(self.LAYOUT.low, 0xD000)
+        moved = {row[0]: row for row in self.LAYOUT.interim_partitions()}
+        own = {row[0]: row for row in self.LAYOUT.partitions()}
+        for label in ("esp_secure_cert", "nvs_matter", "nvs_matter_bkp", "nvs", "otadata", "phy_init"):
+            self.assertEqual(moved[label][3] - own[label][3], self.LAYOUT.moved_low - self.LAYOUT.low, label)
+        self.assertEqual(self.LAYOUT.moved_low + self.LAYOUT.low_size, self.LAYOUT.ota[1])
+
+    def test_its_temporary_table_has_only_what_runs_on_it_and_settings_that_fit_its_own(self):
+        rows = {row[0]: row for row in self.LAYOUT.temporary_partitions()}
+        self.assertEqual(set(rows), {"nvs", "otadata", "phy_init", "ota_0", "ota_1", "fctry"})
+        self.assertEqual(rows["nvs"][3:5], (layouts.TEMPORARY_NVS, self.LAYOUT.nvs_size))
+        self.assertEqual(rows["ota_0"][3], layouts.MOVER_AT)
+        self.assertEqual(rows["ota_1"], {row[0]: row for row in self.LAYOUT.partitions()}["ota_1"])
+        # Copied home whole, they come from nowhere they go to.
+        self.assertLessEqual(layouts.TEMPORARY_NVS + self.LAYOUT.nvs_size, self.LAYOUT.nvs)
+
+
 if __name__ == "__main__":
     unittest.main()

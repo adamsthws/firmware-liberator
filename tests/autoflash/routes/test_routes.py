@@ -9,6 +9,7 @@ from unittest import mock
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
 from tools.autoflash import cli, errors, kinds, prompts, routes
 from tools.autoflash.device import DeviceError
+from tools.autoflash.errors import Abort
 from tools.autoflash.routes import beken, espressif, update
 from tools.autoflash.routes.espressif import identity
 from tools.autoflash.state import DONE, RunState
@@ -279,7 +280,7 @@ class BekenTargetTests(unittest.TestCase):
                             routes.settle_route(ctx)
 
     def test_sonoff_without_a_backup_uses_what_the_device_keeps_or_the_account(self):
-        ctx = SimpleNamespace()
+        ctx = SimpleNamespace(state=self.state(device_kind="sonoff-s60"))
         # On Tasmota, the identity it keeps, read off it: no sign-in needed.
         with mock.patch.object(identity, "kept_in_sector", return_value="kept"), \
                 mock.patch.object(identity, "account_record", side_effect=AssertionError("not asked")):
@@ -299,6 +300,17 @@ class BekenTargetTests(unittest.TestCase):
                 said = espressif.sonoff_without_backup(ctx, "esphome")
                 self.assertIn("the Sonoff identity the device keeps", said)
                 self.assertEqual("eWeLink account" in said, record is not None)
+
+    def test_a_device_on_sonoffs_ais_sdk_goes_back_to_it_from_its_backup_alone(self):
+        # Its identity is in records of its own, which nothing but its backup keeps:
+        # what an account's record rebuilds would leave it unknown to eWeLink.
+        ctx = SimpleNamespace(state=self.state(device_kind="sonoff-basicr4"))
+        with mock.patch.object(kinds, "ALL", kinds.EVERY), \
+                mock.patch.object(identity, "kept_in_sector", side_effect=AssertionError("not asked")), \
+                mock.patch.object(identity, "account_record", side_effect=AssertionError("not asked")):
+            for source in ("tasmota", "esphome"):
+                with self.subTest(source=source), self.assertRaisesRegex(Abort, "records of its own"):
+                    espressif.sonoff_without_backup(ctx, source)
 
     def test_an_s61_run_with_no_firmware_chosen_has_the_start_alone(self):
         state = self.state(device_kind="sonoff-s61", source="esphome")

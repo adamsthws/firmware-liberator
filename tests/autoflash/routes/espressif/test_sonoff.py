@@ -96,6 +96,19 @@ class RebuiltTests(Fixture):
                 self.assertIn("no record", told.call_args_list[0].args[0])
                 (self.tmp / "run" / "autoflash-state.json").unlink()
 
+    def test_a_device_on_sonoffs_ais_sdk_with_no_backup_goes_back_where_it_came_from(self):
+        # What the account's record rebuilds is frame_params, which its
+        # firmware does not read: nothing is written, whatever the device keeps.
+        from tools.autoflash import kinds, routes
+        ctx = self.ctx(b"\xff" * 0x400000, device_kind="sonoff-basicr4", source="tasmota", firmware="sonoff")
+        ctx.account_devices = mock.Mock(side_effect=AssertionError("not the account"))
+        with mock.patch.object(kinds, "ALL", kinds.EVERY), mock.patch.object(routes, "go_on_instead"), \
+                mock.patch.object(hub, "run_plan") as run, mock.patch.object(output, "tell") as told:
+            result = sonoff.step_sonoff_restore(ctx)
+        run.assert_not_called()
+        self.assertEqual(result["put_back"], "tasmota")
+        self.assertIn("records of its own", told.call_args_list[0].args[0])
+
     def test_a_firmware_that_cannot_be_fetched_goes_back_too(self):
         from tools.autoflash import routes
         ctx = self.ctx(b"\xff" * 0x400000, source="esphome", firmware="sonoff")

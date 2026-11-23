@@ -32,7 +32,6 @@ from tools.autoflash.routes import update
 from tools.autoflash.routes.arrival import NotBack, until_back
 from tools.autoflash.routes.espressif import hub, identity
 from tools.espressif import nvs_image, sonoff_identity
-from tools.espressif.layouts import TEMPORARY_OTADATA
 from tools.espressif.safeboot.prepare_imprinted_bundle import BundleError, startup_image
 from tools.autoflash.routes.espressif import images
 
@@ -145,6 +144,8 @@ def settings_to_carry(ctx: Context, layout: Layout) -> bytes | None:
     computer - so the next firmware has it as Sonoff's firmware kept it. None
     where there is neither: the region is cleared, as before. A sector that
     cannot be read is passed by: it is still there for going back."""
+    if kinds.of_run(ctx.state).ais_sdk:
+        return None  # it keeps none of it (identity.AIS_SDK)
     try:
         kept = identity.kept_in_sector(ctx)
     except (DeviceError, OSError):
@@ -155,7 +156,7 @@ def settings_to_carry(ctx: Context, layout: Layout) -> bytes | None:
     if kept is None:
         output.tell("    No Sonoff identity or backup here: going back to Sonoff will need eWeLink.")
         return None
-    size = TEMPORARY_OTADATA - layout.nvs if layout.needs_temporary else identity.nvs_size(layout)
+    size = layout.leaving_nvs[1]
     output.say(f"    The device's Sonoff identity, {where}, goes into the settings of the next firmware.")
     return nvs_image.used(sonoff_identity.nvs(kept, size))
 

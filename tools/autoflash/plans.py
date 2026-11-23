@@ -344,13 +344,16 @@ def leave_tasmota(mover: bytes, table: bytes, layout: Layout = SONOFF_DUAL_OTA, 
     if tasmota_table not in TASMOTA_TABLES:
         raise PlanError("that is not a Tasmota layout this tool converts to")
     blobs = {"mover": mover, "table": table}
-    clear: list = [Erase(layout.nvs, MOVER_AT - layout.nvs)]
+    nvs, size = layout.leaving_nvs
+    # On Sonoff's own table, the room up to its boot selection, its reserve too.
+    room = size if layout.needs_temporary else layout.otadata - nvs
+    clear: list = [Erase(nvs, MOVER_AT - nvs)]
     if settings:
         written = len(padded(settings))
-        if layout.nvs + written > (TEMPORARY_OTADATA if layout.needs_temporary else layout.otadata):
+        if written > room:
             raise PlanError("the settings do not fit where the next layout keeps them")
         blobs["settings"] = settings
-        clear = [Write("settings", layout.nvs), Erase(layout.nvs + written, MOVER_AT - layout.nvs - written)]
+        clear = [Write("settings", nvs), Erase(nvs + written, MOVER_AT - nvs - written)]
     return Plan(
         name="leave_tasmota", title="the mover", table_sha256=tasmota_table, running=0,
         steps=[Write("mover", MOVER_AT), *clear, Write("table", TABLE_ADDRESS, whole=True)],
@@ -368,17 +371,29 @@ def own_table_from_temporary(sonoff_table: bytes, layout: Layout) -> Plan:
     one goes last of all but the table, after what it could start: a power cut
     between the two finds no selection and no ota_0, and the bootloader starts
     ota_1, the next valid slot. The table is written last, as ever.
+
+    A layout whose settings start elsewhere (the BASICR4's, behind partitions
+    of its own) has them copied there whole instead, over the temporary boot
+    selection, PHY data and the start of ota_0, which the copy leaves no longer
+    an app: a power cut part way finds no selection, and no ota_0 that is whole,
+    and starts ota_1 on the temporary table, its settings still where they were.
     """
     if sha256(sonoff_table) != layout.table_sha256:
         raise PlanError("that is not Sonoff's partition table")
+    nvs, size = layout.temporary_nvs
+    if nvs == layout.nvs:
+        settings = [Erase(MOVER_AT, layout.otadata - MOVER_AT)]
+        cleared = [Erase(TEMPORARY_OTADATA, MOVER_AT - TEMPORARY_OTADATA)]
+    else:
+        settings, cleared = [Copy(nvs, layout.nvs, size)], []
     return Plan(
         name="own_table", title="the device's own memory layout", table_sha256=layout.temporary_sha256, running=1,
         steps=[
             Write("otadata", layout.otadata, whole=True),
-            Erase(MOVER_AT, layout.otadata - MOVER_AT),
+            *settings,
             # Its phy data, and the start of its ota_0, which would look like an app.
             Erase(layout.phy, layout.ota[0] + SECTOR - layout.phy),
-            Erase(TEMPORARY_OTADATA, MOVER_AT - TEMPORARY_OTADATA),
+            *cleared,
             Write("table", TABLE_ADDRESS, whole=True),
         ],
         blobs={"otadata": otadata_selecting(1), "table": sonoff_table},
@@ -400,7 +415,7 @@ def sonoff_layout_back(sonoff_table: bytes, layout: Layout = SONOFF_DUAL_OTA) ->
         raise PlanError("that is not Sonoff's partition table")
     return Plan(
         name="sonoff_layout", title="Sonoff's layout", table_sha256=layout.interim_sha256, running=1,
-        steps=[Copy(layout.moved_low, layout.nvs, layout.low_size),
+        steps=[Copy(layout.moved_low, layout.low, layout.low_size),
                Write("table", TABLE_ADDRESS, whole=True)],
         blobs={"table": sonoff_table},
     ).check()
@@ -436,9 +451,15 @@ def back_to_sonoff(backup: bytes, running: int, layout: Layout = SONOFF_DUAL_OTA
 
     Sonoff's app is more than one phase may write, so it is split across two;
     nothing the first writes is used until the second sets the boot selection.
-    The bootloader stays ESPHome's: Sonoff's firmware starts under it.
+    The bootloader stays ESPHome's: Sonoff's firmware starts under it, and its
+    table stays at TABLE_ADDRESS. All that sits before its boot selection goes
+    back as the backup has it: its settings, and any partitions in front of
+    them (the BASICR4's). Sonoff's firmware built to read its table elsewhere
+    (the BASICR4's, at 0xC000) has it written back there too: Tasmota's
+    settings may have taken that place.
     """
-    if len(backup) != 0x400000 or sha256(backup[TABLE_ADDRESS:TABLE_ADDRESS + SECTOR]) != layout.table_sha256:
+    table = backup[layout.sonoff_table_at:layout.sonoff_table_at + SECTOR]
+    if len(backup) != 0x400000 or sha256(table) != layout.table_sha256:
         raise PlanError("that is not a backup of a device on Sonoff's layout")
     slot = stock_slot(backup, layout)
     if slot == running:
@@ -446,9 +467,13 @@ def back_to_sonoff(backup: bytes, running: int, layout: Layout = SONOFF_DUAL_OTA
     address = layout.ota[slot]
     app = backup[address:address + app_length(backup[address:address + layout.slot_size])]
     half = len(padded(app[:len(app) // 2]))
-    settings = backup[layout.nvs:layout.otadata]
+    settings = backup[layout.low:layout.otadata]
     phy = backup[layout.phy:layout.phy + SECTOR]
     blobs = {"sonoff": app, "settings": settings, "phy": phy}
+    elsewhere = []
+    if layout.sonoff_table_at != TABLE_ADDRESS:
+        blobs["table"] = table
+        elsewhere = [Write("table", layout.sonoff_table_at, whole=True)]
     if slot == 0:
         select = Erase(layout.otadata, OTADATA_SIZE)
     else:
@@ -463,7 +488,7 @@ def back_to_sonoff(backup: bytes, running: int, layout: Layout = SONOFF_DUAL_OTA
         name="sonoff_rest", title="Sonoff's firmware and settings", table_sha256=layout.table_sha256,
         running=running,
         steps=[Write("sonoff", address + half, half, len(app) - half),
-               Write("settings", layout.nvs), Write("phy", layout.phy, whole=True), select],
+               *elsewhere, Write("settings", layout.low), Write("phy", layout.phy, whole=True), select],
         blobs=blobs,
     ).check()
     return [first, second]

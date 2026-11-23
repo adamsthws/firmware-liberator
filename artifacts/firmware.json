@@ -285,6 +285,13 @@
         "size": 4096,
         "sha256": "3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70"
       }
+    },
+    "sonoff-basicr4": {
+      "table": {
+        "file": "artifacts/sonoff-basicr4-partition-table.bin",
+        "size": 4096,
+        "sha256": "9f77593124a323cc4e5fad5e17a8197c67d3dca7b02ac3a51a6f16be5d421ac9"
+      }
     }
   },
   "beken": {

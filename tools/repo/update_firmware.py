@@ -1337,13 +1337,17 @@ def esp32_template(pins: dict[str, Any]) -> None:
 
 def esp32_tables(pins: dict[str, Any]) -> None:
     """Sonoff's partition tables for the layouts that are not the S60's, from
-    the public dumps of devices on them: they hold nothing of any one device."""
+    the public dumps of devices on them, and the BASICR4's, of which none is
+    published, as the emulator's stand-in holds a real one's, byte for byte:
+    they hold nothing of any one device."""
     from tools.espressif.emulator import public_dump
-    for key, dump in (("sonoff-nspanel", "sonoff-nspanel"), ("sonoff-th-elite", "sonoff-th-elite")):
+    tables = {key: public_dump.fetched(public_dump.DUMPS[key])[TABLE_OFFSET:TABLE_OFFSET + TABLE_SIZE]
+              for key in ("sonoff-nspanel", "sonoff-th-elite")}
+    tables["sonoff-basicr4"] = public_dump.BASICR4_TABLE.sector()
+    for key, table in tables.items():
         layout = layouts.of(key)
-        table = public_dump.fetched(public_dump.DUMPS[dump])[TABLE_OFFSET:TABLE_OFFSET + TABLE_SIZE]
         if sha256_bytes(table) != layout.table_sha256:
-            raise UpdateError(f"the public dump's table is not the {key} layout's")
+            raise UpdateError(f"the table made for {key} is not its layout's")
         publish(espressif_section(pins, key), "table", layout.table_file, table, {})
 
 

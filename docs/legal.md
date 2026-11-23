@@ -66,11 +66,12 @@ now or later.
   or its history. The firmware files committed are this project's own builds,
   builds of Tasmota, ESPHome and OpenBeken, and a few data files
   ([NOTICES.md](../NOTICES.md) lists their sources and licences).
-- Three of those data files are Sonoff's partition tables, each the standard
+- Four of those data files are Sonoff's partition tables, each the standard
   ESP-IDF table a model ships with: a short list of partition names, offsets
   and sizes, with no code or settings in it. The S60's,
-  `artifacts/sonoff-s60-partition-table.bin`, was read from a stock device;
-  the NSPanel's and the TH Elite's come from public flash dumps
+  `artifacts/sonoff-s60-partition-table.bin`, and the BASICR4's were each
+  read from a stock device; the NSPanel's and the TH Elite's come from public
+  flash dumps
   ([the artifact notes](../artifacts/README.md#sonoffs-partition-tables)). The
   tool needs them to check a device's layout, and to put it back when the
   device returns to Sonoff's firmware.

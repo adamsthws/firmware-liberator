@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.autoflash import kinds
-from tools.espressif import ais_records, flashmap
+from tools.espressif import ais_records, flashmap, layouts
 from tools.espressif.emulator import appimage, public_dump
 
 DUMP = public_dump.Dump("d.bin", "0" * 64, 0xAB)
@@ -63,13 +63,20 @@ class Relaid(unittest.TestCase):
         self.assertEqual(flashmap.table_at(out), 0xC000)
         self.assertEqual(out[0x8000:0xC000], b"\xff" * 0x4000)
         self.assertEqual([(p.label, p.type, p.subtype, p.offset, p.size) for p in flashmap.partitions(out)],
-                         list(public_dump.BASICR4_TABLE.partitions))
+                         [row[:5] for row in public_dump.BASICR4_TABLE.partitions])
         self.assertEqual(flashmap.nvs(out).offset, 0x1C000)
         self.assertEqual(out[0x1C000:0x1F000], b"\x5a" * 0x3000)
         self.assertEqual(out[0x2C000:0x2E000], flash[0x1D000:0x1F000])  # otadata
         for label in ("nvs_matter", "nvs_matter_bkp", "fctry", "ota_0"):
             partition = next(p for p in flashmap.partitions(out) if p.label == label)
             self.assertEqual(out[partition.offset:partition.offset + partition.size].count(0xFF), partition.size)
+
+    def test_its_table_is_the_published_one_byte_for_byte(self):
+        # A real one's table is checked against it before anything is written,
+        # so a stand-in that differs (esp_secure_cert's encrypted flag, say)
+        # would let the emulator pass what a real device refuses.
+        out = self.relaid(*s60_like())
+        self.assertEqual(out[0xC000:0xD000], layouts.SONOFF_BASICR4.table)
 
     def test_its_checksum_row_is_esp_idfs(self):
         table = self.relaid(*s60_like())[0xC000:0xD000]
@@ -78,7 +85,7 @@ class Relaid(unittest.TestCase):
 
     def test_settings_that_would_not_fit_stop_it(self):
         flash, sha256 = s60_like()
-        small = public_dump.Table(0xC000, (("nvs", 1, 2, 0x10000, 0x2000),))
+        small = public_dump.Table(0xC000, (("nvs", 1, 2, 0x10000, 0x2000, 0),))
         with self.assertRaisesRegex(SystemExit, "does not fit"):
             self.relaid(flash, sha256, small)
 

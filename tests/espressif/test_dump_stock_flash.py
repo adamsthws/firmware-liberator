@@ -170,5 +170,27 @@ class DeviceHashTests(unittest.TestCase):
         self.assertIsNone(report["matches_device"])
 
 
+class ReadTableTests(unittest.TestCase):
+    """The table read off the start of the bridge's /flash, where the device's
+    firmware reads it: 0x8000, or 0xC000 for the BASICR4's."""
+
+    def table(self, image, **where):
+        import io
+        from unittest import mock
+        reply = mock.MagicMock()
+        reply.__enter__.return_value = io.BytesIO(image)
+        with mock.patch("urllib.request.urlopen", return_value=reply):
+            return dump_stock_flash.read_table("192.0.2.51", **where)
+
+    def test_the_sector_where_it_is_asked_for(self):
+        image = bytes(flash())
+        self.assertEqual(self.table(image), image[0x8000:0x9000])
+        self.assertEqual(self.table(image, at=0xC000), image[0xC000:0xD000])
+
+    def test_a_flash_that_stops_short_of_it_is_refused(self):
+        with self.assertRaisesRegex(OSError, "stopped short"):
+            self.table(bytes(0xC800), at=0xC000)
+
+
 if __name__ == "__main__":
     unittest.main()

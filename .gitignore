@@ -61,6 +61,7 @@ __pycache__/
 !artifacts/esphome-sonoff-dualr3-motor-imprintable-2026.10.0-4.bin
 !artifacts/autoflash-recovery-safeboot-esp32c3-imprintable-ece36fd964c1.bin
 !artifacts/autoflash-recovery-safeboot-esp32-imprintable-f1a25251f775.bin
+!artifacts/sonoff-basicr4-partition-table.bin
 
 # Answers for unattended runs: the eWeLink password, perhaps sudo's (see .env.example).
 .env

@@ -104,24 +104,35 @@ def fetched(dump: "Dump | Update") -> bytes:
 @dataclass(frozen=True)
 class Table:
     """A device's own partition table: where its firmware reads it, and its
-    entries (label, type, subtype, offset, size)."""
+    entries (label, type, subtype, offset, size, flags)."""
     at: int
-    partitions: tuple[tuple[str, int, int, int, int], ...]
+    partitions: tuple[tuple[str, int, int, int, int, int], ...]
+
+    def sector(self) -> bytes:
+        """The table's flash sector, as ESP-IDF's gen_esp32part lays one out: its
+        entries, the MD5 record after them, the rest erased."""
+        entries = b"".join(flashmap.ENTRY_MAGIC + bytes([kind, subtype]) + struct.pack("<II", offset, size)
+                           + label.encode().ljust(16, b"\0") + struct.pack("<I", flags)
+                           for label, kind, subtype, offset, size, flags in self.partitions)
+        return (entries + b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest()).ljust(
+            flashmap.TABLE_SIZE, b"\xff")
 
 
-# A real BASICR4's, read out of one: its Sonoff settings in nvs, the NVS
-# partitions for Matter and fctry before and after it empty, esp_secure_cert
-# blank. The MINIR4's has not been read; its firmware runs on its donor's table.
+# A real BASICR4's, byte for byte (artifacts/sonoff-basicr4-partition-table.bin
+# is its sector): its Sonoff settings in nvs, the NVS partitions for Matter and
+# fctry before and after it empty, esp_secure_cert blank and flagged encrypted
+# (flags 1), which ESP-IDF ignores with flash encryption off, as it is on these.
+# The MINIR4's has not been read; its firmware runs on its donor's table.
 BASICR4_TABLE = Table(0xC000, (
-    ("esp_secure_cert", 0x3F, 0x06, 0xD000, 0x2000),
-    ("nvs_matter", 1, 2, 0x10000, 0x6000),
-    ("nvs_matter_bkp", 1, 2, 0x16000, 0x6000),
-    ("nvs", 1, 2, 0x1C000, 0x10000),
-    ("otadata", 1, 0, 0x2C000, 0x2000),
-    ("phy_init", 1, 1, 0x2E000, 0x1000),
-    ("ota_0", 0, 0x10, 0x30000, 0x1E0000),
-    ("ota_1", 0, 0x11, 0x210000, 0x1E0000),
-    ("fctry", 1, 2, 0x3F0000, 0x6000),
+    ("esp_secure_cert", 0x3F, 0x06, 0xD000, 0x2000, 1),
+    ("nvs_matter", 1, 2, 0x10000, 0x6000, 0),
+    ("nvs_matter_bkp", 1, 2, 0x16000, 0x6000, 0),
+    ("nvs", 1, 2, 0x1C000, 0x10000, 0),
+    ("otadata", 1, 0, 0x2C000, 0x2000, 0),
+    ("phy_init", 1, 1, 0x2E000, 0x1000, 0),
+    ("ota_0", 0, 0x10, 0x30000, 0x1E0000, 0),
+    ("ota_1", 0, 0x11, 0x210000, 0x1E0000, 0),
+    ("fctry", 1, 2, 0x3F0000, 0x6000, 0),
 ))
 
 
@@ -330,18 +341,14 @@ def relaid(flash: bytes, table: Table) -> bytes:
     out[:bootloader_end] = boot
 
     donor = {partition.label: partition for partition in flashmap.partitions(flash)}
-    entries = b""
-    for label, kind, subtype, offset, size in table.partitions:
-        entries += (flashmap.ENTRY_MAGIC + bytes([kind, subtype]) + struct.pack("<II", offset, size)
-                    + label.encode().ljust(16, b"\0") + bytes(4))
+    for label, kind, _, offset, size, _ in table.partitions:
         if label not in donor or kind == flashmap.TYPE_APP:
             continue
         kept = flash[donor[label].offset:donor[label].offset + donor[label].size]
         if kept[size:].count(0xFF) != len(kept[size:]):
             raise SystemExit(f"the S60's {label} does not fit the table's")
         out[offset:offset + min(size, len(kept))] = kept[:size]
-    out[table.at:table.at + flashmap.TABLE_SIZE] = (
-        entries + b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest()).ljust(flashmap.TABLE_SIZE, b"\xff")
+    out[table.at:table.at + flashmap.TABLE_SIZE] = table.sector()
     return bytes(out)
 
 

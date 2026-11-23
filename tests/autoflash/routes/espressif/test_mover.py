@@ -599,6 +599,14 @@ class CarriedOffTasmotaTests(Fixture):
             mover.settings_to_carry(ctx, layout)
         self.assertEqual(built.call_args.args[1], TEMPORARY_OTADATA - layout.nvs)
 
+    def test_a_device_on_sonoffs_ais_sdk_carries_none(self):
+        # Its identity is in records of its own, which nothing here rebuilds.
+        self.back_up()
+        ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)), device_kind="sonoff-basicr4")
+        with mock.patch.object(kinds, "ALL", kinds.EVERY), \
+                mock.patch.object(identity, "kept_in_sector", side_effect=AssertionError("not read")):
+            self.assertIsNone(mover.settings_to_carry(ctx, images.layout_of(kinds.SONOFF_BASICR4)))
+
     def test_with_neither_the_region_is_cleared_as_before(self):
         self.assertIsNone(mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60)))
 

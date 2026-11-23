@@ -71,7 +71,13 @@ connect its pins with it on the mains.**
   | `fctry` | data, nvs | 0x3F0000 | 0x6000 | empty |
 
   It is the layout of Espressif's Matter SDK, but its Matter partitions are
-  unused: the firmware keeps everything in `nvs`. In the emulator,
+  unused: the firmware keeps everything in `nvs`. `esp_secure_cert` is marked
+  encrypted (flags 1), though flash encryption is off: ESP-IDF, 4.4 and 5.x
+  alike, treats no partition as encrypted then, so the mark changes nothing
+  for Sonoff's firmware or what the tool installs. The tool's copy of the table
+  keeps it, as the device's own does, and so does the table a conversion
+  commits on (the interim table); the temporary one leaves `esp_secure_cert`
+  out. In the emulator,
   [`public_dump.py`](../../tools/espressif/emulator/public_dump.py) lays the
   S60's flash out on this table, with eWeLink's official update file in
   `ota_0`, the factory and pair records a paired one has, and its thermistor

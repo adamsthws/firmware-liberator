@@ -9,6 +9,7 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import account, esphome as esphome, kinds
 from tools.autoflash.device import DeviceError
+from tools.autoflash.errors import Abort
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import bundle, hub, identity, installer, mover, sonoff, tasmota
 from tools.autoflash.routes.espressif.evidence import ATTEMPTED_EVIDENCE, DESTRUCTIVE_STEPS  # noqa: F401
@@ -30,6 +31,9 @@ def sonoff_without_backup(ctx: Context, source: str) -> str | None:
     keep it too - in that sector and in Sonoff's settings - but only the
     interim Tasmota can read them (R1 does): with no record in the account,
     the run goes on counting on them, as a device this tool converted has them."""
+    if kinds.of_run(ctx.state).ais_sdk:
+        raise Abort("this device cannot go back to Sonoff's firmware: there is no backup of it on this computer, "
+                    f"and {identity.AIS_SDK}")
     try:
         kept = source in ("tasmota", "untemplated") and identity.kept_in_sector(ctx) is not None
     except (DeviceError, OSError):

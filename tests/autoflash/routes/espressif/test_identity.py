@@ -144,6 +144,15 @@ class KeepIdentityTests(Fixture):
         self.assertEqual(plan.steps, [plans.Write("identity", sonoff_identity.SECTOR_AT, whole=True)])
         self.assertEqual(sonoff_identity.from_sector(plan.blobs["identity"]), IDENTITY)
 
+    def test_a_device_on_sonoffs_ais_sdk_keeps_none_but_its_backup(self):
+        # Its identity is in records of its own, not frame_params: nothing kept
+        # here, said, and Sonoff's layout put back all the same.
+        self.back_up()
+        with mock.patch.object(kinds, "ALL", kinds.EVERY):
+            result, plan = self.run_k1(self.ctx(b"\xff" * 0x400000, device_kind="sonoff-basicr4"))
+        self.assertEqual((result["kept"], plan, self.order), (False, None, ["layout back"]))
+        self.assertIn("records of its own", output.say.call_args.args[0])
+
     def test_from_the_devices_own_settings_with_no_backup(self):
         flash, _ = stock_flash()
         flash = bytearray(flash)

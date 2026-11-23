@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from tools.espressif.layouts import Layout
 
 
+# Why a device whose firmware is Sonoff's ais SDK (kinds.Kind.ais_sdk) goes
+# back to Sonoff's firmware only from its backup.
+AIS_SDK = ("its Sonoff firmware keeps its identity in records of its own, which this tool keeps only "
+           "in the device's backup")
+
+
 # Testing (cli.py --simulate-no-identity): a device that keeps no Sonoff identity
 # - in its settings or its sector - and is in no eWeLink account, as one
 # another tool converted and that was then removed from the app.
@@ -42,17 +48,13 @@ def from_backup(ctx: Context) -> Identity | None:
         return None
 
 
-def nvs_size(layout: Layout) -> int:
-    return next(size for label, _, _, _, size, _ in layout.partitions() if label == "nvs")
-
-
 def from_settings(ctx: Context, layout: Layout) -> Identity | None:
     """The identity in the settings of a device on Sonoff's layout, read through
     the Berry Tasmota: Sonoff's own, kept by ESPHome, or put there as it left
     Tasmota. A read that fails raises: a device that did not answer may keep one."""
     if SIMULATE_NONE:
         return None
-    return sonoff_identity.from_nvs(ctx.device.read_nvs(layout.nvs, nvs_size(layout)))
+    return sonoff_identity.from_nvs(ctx.device.read_nvs(layout.nvs, layout.nvs_size))
 
 
 def kept_in_sector(ctx: Context) -> Identity | None:
@@ -133,6 +135,9 @@ def step_keep_identity(ctx: Context) -> dict[str, Any]:
     kind = kinds.of_run(ctx.state)
     layout = images.layout_of(kind)
     hub.sonoff_layout_back(ctx)
+    if kind.ais_sdk:
+        output.say(f"Left out: {AIS_SDK}.")
+        return {"kept": False, "skipped": "ais SDK"}
     identity, where = for_tasmota(ctx, layout)
     if identity is None:
         output.tell("    No Sonoff identity or backup here: going back to Sonoff will need eWeLink.")

@@ -477,15 +477,17 @@ def require_known_layout(ctx: Context) -> None:
     cycle, so here that costs nothing."""
     mac = ctx.state.input("device_mac")
     backup = records.find_backup(mac) if mac else None
+    layout = layouts.of(kinds.of_run(ctx.state).layout)
+    at = layout.sonoff_table_at  # where Sonoff's firmware reads it: a device laid out otherwise has none there
     try:
         if backup:
-            table = (backup.directory / "flash.bin").read_bytes()[plans.TABLE_ADDRESS:plans.TABLE_ADDRESS + plans.SECTOR]
+            table = (backup.directory / "flash.bin").read_bytes()[at:at + plans.SECTOR]
         else:
-            table = dump_stock_flash.read_table(reach_bridge(ctx))
+            table = dump_stock_flash.read_table(reach_bridge(ctx), at=at)
     except OSError as exc:
         output.log_only(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
         return
-    known = hashlib.sha256(table).hexdigest() == layouts.of(kinds.of_run(ctx.state).layout).table_sha256
+    known = hashlib.sha256(table).hexdigest() == layout.table_sha256
     info = bridge_info(ctx)
     note_hardware(ctx, info, backup)
     if backup:

@@ -166,6 +166,11 @@ class Kind:
     # its relays (the Dual R3's motor mode): the mode is carried across
     # (tools/autoflash/motor.py), and its ESPHome has a build of its own for it.
     motor_mode: bool = False
+    # Whether its stock firmware is Sonoff's ais SDK, which keeps its eWeLink
+    # identity in records of its own (tools/espressif/ais_records.py), not the
+    # frame_params tools/espressif/sonoff_identity.py keeps and rebuilds: it
+    # goes back to Sonoff's firmware from its backup alone.
+    ais_sdk: bool = False
 
     @property
     def status(self) -> Status:
@@ -465,10 +470,8 @@ SONOFF_BASICR4 = Kind(
     tasmota_gpio=(0, 0, 0, 0, 224, 0, 544, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
-    # A stand-in: its table is at 0xC000 and the rest of it is not known
-    # (devices/sonoff-basicr4/README.md). A readout of a real one decides its
-    # layout before it is converted; require_known_layout stops a run until then.
-    layout="sonoff-dual-ota",
+    # Read out of a real one, its table at 0xC000 (devices/sonoff-basicr4/README.md).
+    layout="sonoff-basicr4",
     has_meter=False,
     has_relay=True,
     sensors=(),
@@ -478,6 +481,7 @@ SONOFF_BASICR4 = Kind(
     # under 580 mV, takes itself to be overheating and refuses updates (error 407).
     # This reads about 1 V, as such a divider does at room temperature.
     adc_readings=(("adc1_ch3", 2700),),
+    ais_sdk=True,
 )
 
 SONOFF_MINIR4 = Kind(
@@ -506,6 +510,7 @@ SONOFF_MINIR4 = Kind(
     sensors=(),
     product_model_decides=True,
     example_product_model="MINIR4",
+    ais_sdk=True,
 )
 
 SONOFF_DUALR3 = Kind(

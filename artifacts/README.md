@@ -34,6 +34,7 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 | `sonoff-s60-partition-table.bin` | [Sonoff's partition table](#sonoffs-partition-tables) of the S60, and of every device on its layout | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
 | `sonoff-nspanel-partition-table.bin` | Sonoff's partition table of the NSPanel: the S60's without its unused `reserve` entry | `3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70` |
 | `sonoff-th-elite-partition-table.bin` | Sonoff's partition table of the TH Elite, with a larger NVS and smaller app slots | `36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6` |
+| `sonoff-basicr4-partition-table.bin` | Sonoff's partition table of the BASICR4, Espressif's Matter SDK's, which its firmware reads at 0xC000 | `9f77593124a323cc4e5fad5e17a8197c67d3dca7b02ac3a51a6f16be5d421ac9` |
 | `openbeken-sonoff-s61-1.18.320-2.rbl` | [OpenBeken for the S61](#beken-devices), with the 4 MB table, the hook before an OTA's restart, the tool's OpenBeken driver and the S61's table for it; a run to ESPHome sends it as the interim firmware, with a marker for its app after it | `4faef4259545557d2eee7e12499cb24c89c51e443cb987d7ad90d5f7d0bf68c1` |
 | `esphome-sonoff-s61-2026.10.0-4.rbl` | ESPHome for the S61, on LibreTiny. Nothing is written into it: its first boot reads the device's Wi-Fi and meter calibration from the stock store | `583ce81572f81be40882765bcdf07be0f03dbaa1f0c81dfa9f130861d05ed091` |
 | `openbeken-sonoff-basic-1gs-1.18.320-1.rbl` | OpenBeken for the Basic Gen5, built as the S61's with that device's table for the driver | `5129951d1e89b06f4c5c7e39a0d01b081010d338c562d78c6e422f7175965952` |
@@ -164,8 +165,10 @@ names, offsets and sizes, with no code, settings or secrets
 device: every conversion on its layout starts from it, the Tasmota route's
 preflight requires it byte for byte, and it is written back when a device
 leaves Tasmota's layout. `update_firmware.py esp32 tables` takes the others
-from public flash dumps (`tools/espressif/emulator/public_dump.py`), checked
-against the hashes in `tools/espressif/layouts.py`.
+from public flash dumps (`tools/espressif/emulator/public_dump.py`), and the
+BASICR4's, of which none is published, as a real one's is, byte for byte
+(`BASICR4_TABLE` there, the emulator's copy of it), checked against the
+hashes in `tools/espressif/layouts.py`.
 
 ## Beken devices
 

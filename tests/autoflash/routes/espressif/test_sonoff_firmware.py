@@ -132,6 +132,12 @@ class SonoffFirmwareTests(unittest.TestCase):
         self.assertEqual(plans.stock_slot(flash, layout), 0)
         self.assertEqual(second.blobs["settings"][:len(settings)], settings)
 
+    def test_the_table_is_where_the_devices_sonoff_firmware_reads_it(self):
+        layout = images.layout_of(kinds.SONOFF_BASICR4)
+        flash = sonoff_firmware.flash_of(layout.table, b"\x5a" * 0x1000, SONOFF_APP, layout)
+        self.assertEqual(flash[0xC000:0xD000], layout.table)
+        self.assertEqual(set(flash[0x8000:0x9000]), {0xFF})
+
     def test_settings_filling_their_partition_fit_and_a_byte_more_does_not(self):
         layout = images.layout_of(kinds.SONOFF_S60)
         room = layout.otadata - layout.nvs

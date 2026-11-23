@@ -953,6 +953,39 @@ class StockLayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(Abort, "switch it off and on"):
             self.run_gate(b"\xff" * 0x1000)
 
+    def test_a_table_is_read_where_the_kinds_sonoff_firmware_reads_it(self):
+        # The BASICR4's at 0xC000, with 0x8000 blank: read there, from its backup
+        # or the installer, it goes on; a device of the kind with another stops.
+        from types import SimpleNamespace
+        from unittest import mock
+        from tools.autoflash import kinds, records
+        from tools.autoflash.errors import Abort
+        from tools.autoflash.routes.espressif import installer
+        from tools.espressif import layouts
+        table = layouts.SONOFF_BASICR4.table
+        inputs = {"device_kind": "sonoff-basicr4", "device_mac": "12:34:56:ab:cd:ef"}
+        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=lambda name, value: None))
+        with tempfile.TemporaryDirectory() as folder:
+            flash = bytearray(b"\xff" * 0x400000)
+            flash[0xC000:0xD000] = table
+            (Path(folder) / "flash.bin").write_bytes(flash)
+            backup = SimpleNamespace(directory=Path(folder))
+            for found, read, known in ((backup, None, True), (None, table, True),
+                                       (None, layouts.SONOFF_DUAL_OTA.table, False)):
+                with self.subTest(backup=bool(found), known=known), mock.patch.object(kinds, "ALL", kinds.EVERY), \
+                        mock.patch.object(records, "find_backup", return_value=found), \
+                        mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51"), \
+                        mock.patch.object(installer, "bridge_info", return_value={}), \
+                        mock.patch.object(installer, "log_device_facts"), \
+                        mock.patch.object(installer.dump_stock_flash, "read_table", return_value=read) as asked:
+                    if known:
+                        installer.require_known_layout(ctx)
+                    else:
+                        with self.assertRaisesRegex(Abort, "switch it off and on"):
+                            installer.require_known_layout(ctx)
+                    if found is None:
+                        self.assertEqual(asked.call_args.kwargs["at"], 0xC000)
+
 
 class HardwareNoteTests(unittest.TestCase):
     """C3 - the chip's revision and the flash chip, kept for the run's report."""

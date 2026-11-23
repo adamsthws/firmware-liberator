@@ -370,7 +370,7 @@ class MigrationState:
             "TARGET_TABLE_SHA256": self.target_table_sha256,
             "OFFICIAL_TABLE_SHA256": OFFICIAL_TABLE_SHA256,
             "INTERIM_TABLE_SHA256": self.layout.interim_sha256,
-            "LOW_REGIONS_OFFSET": str(self.layout.nvs),
+            "LOW_REGIONS_OFFSET": str(self.layout.low),
             "LOW_REGIONS_SIZE": str(self.layout.low_size),
             "MOVED_LOW_OFFSET": str(self.layout.moved_low),
             "OLD_OTADATA": str(self.layout.otadata),
