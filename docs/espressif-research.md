@@ -243,6 +243,10 @@ after it, so on that table they start at `TEMPORARY_NVS`, just after the table,
 no larger than its own (`Layout.temporary_nvs`), and the Matter partitions, which
 nothing then running reads, are left out. Its own table goes back from the hub
 with the settings copied home whole (`plans.own_table_from_temporary`).
+Its `fctry`, behind its apps, is where Tasmota's filesystem goes: going back
+to Sonoff's firmware writes it back from the backup (`Layout.after_slots`),
+with the settings and before the boot selection, as it does the Matter
+partitions in front of them.
 
 Its firmware keeps its eWeLink identity in records of its own
 ([below](#sonoffs-ais-sdk)), not the `frame_params` the tool keeps in the

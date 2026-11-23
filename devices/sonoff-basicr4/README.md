@@ -86,11 +86,17 @@ connect its pins with it on the mains.**
   (`sonoff-basicr4` in [`layouts.py`](../../tools/espressif/layouts.py)). In the emulator,
   [`public_dump.py`](../../tools/espressif/emulator/public_dump.py) lays the
   S60's flash out on this table, with eWeLink's official update file in
-  `ota_0`, the factory and pair records a paired one has, and its thermistor
-  reading room temperature, so that it takes updates.
+  `ota_0`, the factory and pair records a paired one has, its thermistor
+  reading room temperature, so that it takes updates, and made-up values in
+  `fctry`, to see them put back.
 - **Calibration**: none, as it has no meter.
 - **Back to Sonoff**: the tool writes back the device's own backup, taken before
-  anything of Sonoff's is written over, its table at 0xC000 too. Without the
+  anything of Sonoff's is written over, its table at 0xC000 too, and all its
+  partitions besides its apps: the Matter ones in front of its settings, and
+  `fctry` behind its apps, where Tasmota's filesystem goes. `fctry` is the
+  Matter SDK's factory data (its certificates, pairing code and vendor and
+  product IDs): empty on the one read out, but Sonoff's firmware may come to
+  use it, and another may hold data there. Without the
   backup it cannot: its firmware keeps its eWeLink identity in records of its
   own, which the tool keeps nowhere else, so keep the backup the run makes.
 - **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),

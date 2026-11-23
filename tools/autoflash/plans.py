@@ -454,9 +454,12 @@ def back_to_sonoff(backup: bytes, running: int, layout: Layout = SONOFF_DUAL_OTA
     The bootloader stays ESPHome's: Sonoff's firmware starts under it, and its
     table stays at TABLE_ADDRESS. All that sits before its boot selection goes
     back as the backup has it: its settings, and any partitions in front of
-    them (the BASICR4's). Sonoff's firmware built to read its table elsewhere
-    (the BASICR4's, at 0xC000) has it written back there too: Tasmota's
-    settings may have taken that place.
+    them (the BASICR4's); so do its own partitions behind the app slots
+    (Layout.after_slots, the BASICR4's fctry), where Tasmota's filesystem
+    went. Sonoff's firmware built to read its table elsewhere (the BASICR4's,
+    at 0xC000) has it written back there too: Tasmota's settings may have
+    taken that place. A power cut before the boot selection leaves the device
+    starting the Tasmota it ran, on the same table, and this written again.
     """
     table = backup[layout.sonoff_table_at:layout.sonoff_table_at + SECTOR]
     if len(backup) != 0x400000 or sha256(table) != layout.table_sha256:
@@ -474,6 +477,10 @@ def back_to_sonoff(backup: bytes, running: int, layout: Layout = SONOFF_DUAL_OTA
     if layout.sonoff_table_at != TABLE_ADDRESS:
         blobs["table"] = table
         elsewhere = [Write("table", layout.sonoff_table_at, whole=True)]
+    behind = []
+    for label, offset, size in layout.after_slots:
+        blobs[label] = backup[offset:offset + size]
+        behind.append(Write(label, offset))
     if slot == 0:
         select = Erase(layout.otadata, OTADATA_SIZE)
     else:
@@ -488,7 +495,7 @@ def back_to_sonoff(backup: bytes, running: int, layout: Layout = SONOFF_DUAL_OTA
         name="sonoff_rest", title="Sonoff's firmware and settings", table_sha256=layout.table_sha256,
         running=running,
         steps=[Write("sonoff", address + half, half, len(app) - half),
-               *elsewhere, Write("settings", layout.low), Write("phy", layout.phy, whole=True), select],
+               *elsewhere, Write("settings", layout.low), Write("phy", layout.phy, whole=True), *behind, select],
         blobs=blobs,
     ).check()
     return [first, second]

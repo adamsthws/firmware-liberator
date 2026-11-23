@@ -67,7 +67,8 @@ class Relaid(unittest.TestCase):
         self.assertEqual(flashmap.nvs(out).offset, 0x1C000)
         self.assertEqual(out[0x1C000:0x1F000], b"\x5a" * 0x3000)
         self.assertEqual(out[0x2C000:0x2E000], flash[0x1D000:0x1F000])  # otadata
-        for label in ("nvs_matter", "nvs_matter_bkp", "fctry", "ota_0"):
+        self.assertEqual(out[0x3F0000:0x3F6000], public_dump.BASICR4_FCTRY)  # made up
+        for label in ("nvs_matter", "nvs_matter_bkp", "ota_0"):
             partition = next(p for p in flashmap.partitions(out) if p.label == label)
             self.assertEqual(out[partition.offset:partition.offset + partition.size].count(0xFF), partition.size)
 

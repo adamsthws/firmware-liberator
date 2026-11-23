@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds, records  # noqa: E402
-from tools.espressif import ais_records, build_vendor_ota, flashmap  # noqa: E402
+from tools.espressif import ais_records, build_vendor_ota, flashmap, nvs_image  # noqa: E402
 from tools.espressif.emulator import appimage, copy_device, rewrite_nvs  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 
@@ -107,6 +107,9 @@ class Table:
     entries (label, type, subtype, offset, size, flags)."""
     at: int
     partitions: tuple[tuple[str, int, int, int, int, int], ...]
+    # Made-up contents (label, bytes) for a partition of its own the donor
+    # lacks, where it is otherwise left erased.
+    made_up: tuple[tuple[str, bytes], ...] = ()
 
     def sector(self) -> bytes:
         """The table's flash sector, as ESP-IDF's gen_esp32part lays one out: its
@@ -123,6 +126,13 @@ class Table:
 # fctry before and after it empty, esp_secure_cert blank and flagged encrypted
 # (flags 1), which ESP-IDF ignores with flash encryption off, as it is on these.
 # The MINIR4's has not been read; its firmware runs on its donor's table.
+# Its fctry, the Matter SDK's factory data, holds made-up values here, for
+# going back to Sonoff's firmware to be seen to put it back as it was: another
+# BASICR4 may have data there, and Tasmota's filesystem covers it.
+BASICR4_FCTRY = nvs_image.build((
+    nvs_image.Item("chip-factory", "serial-num", "string", b"MADE-UP-0001"),
+    nvs_image.Item("chip-factory", "dac-cert", "blob", bytes(range(256)) * 2),
+), 0x6000)
 BASICR4_TABLE = Table(0xC000, (
     ("esp_secure_cert", 0x3F, 0x06, 0xD000, 0x2000, 1),
     ("nvs_matter", 1, 2, 0x10000, 0x6000, 0),
@@ -133,7 +143,7 @@ BASICR4_TABLE = Table(0xC000, (
     ("ota_0", 0, 0x10, 0x30000, 0x1E0000, 0),
     ("ota_1", 0, 0x11, 0x210000, 0x1E0000, 0),
     ("fctry", 1, 2, 0x3F0000, 0x6000, 0),
-))
+), made_up=(("fctry", BASICR4_FCTRY),))
 
 
 @dataclass(frozen=True)
@@ -348,6 +358,9 @@ def relaid(flash: bytes, table: Table) -> bytes:
         if kept[size:].count(0xFF) != len(kept[size:]):
             raise SystemExit(f"the S60's {label} does not fit the table's")
         out[offset:offset + min(size, len(kept))] = kept[:size]
+    offsets = {label: offset for label, _, _, offset, _, _ in table.partitions}
+    for label, data in table.made_up:
+        out[offsets[label]:offsets[label] + len(data)] = data
     out[table.at:table.at + flashmap.TABLE_SIZE] = table.sector()
     return bytes(out)
 

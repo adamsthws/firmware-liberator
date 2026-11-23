@@ -34,6 +34,11 @@ for every device the tool converts, so a new one has it by being added.
         carry across; Tasmota there then given a rule of its owner's in Rule1
         and the tool run on it again, which must leave the rule as it is
         (owner_rule_problem)
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE --back [--instances 1]
+        an Espressif device with a public dump taken to Tasmota, its own
+        partitions behind its app slots (Layout.after_slots) written over as
+        Tasmota's filesystem may write them, then back to Sonoff's firmware,
+        after which they must be as its test copy has them (back_problem)
 """
 
 from __future__ import annotations
@@ -118,6 +123,62 @@ def jobs(changed: list[str] | None) -> list[dict[str, str]]:
         found += [job, *({**job, "motor": copy, "name": f"{kind.key} motor{'' if copy == 'motor' else ' ' + copy}"}
                          for copy in public_dump.MOTOR_COPIES.get(kind.key, ()))]
     return found
+
+
+# What Tasmota's filesystem is taken to have written over the device's own
+# partitions behind its app slots, before it goes back to Sonoff's firmware.
+TASMOTA_WROTE = 0x42
+
+
+def check_back(kind: kinds.Kind, instance: int) -> int:
+    """An Espressif device from its public dump, on the cloud stub, taken to
+    Tasmota, then back to Sonoff's firmware (back_problem)."""
+    from tools.espressif.emulator import fault_suite, public_dump, public_devices
+
+    public_dump.make(kind.key)
+    dump = public_dump.recipe(kind.key)
+    stub = ("--stub-cloud", f"--device={dump.mac}")
+    folder = LOGS / f"{kind.key}-back"
+    saved = f"check-{kind.key}-{instance}-back"
+    try:
+        converted, said = public_devices.run(instance, None, "tasmota", saved, folder / f"{instance}-tasmota.log",
+                                             kind=kind, extra=(*stub, "--fresh"))
+        print(f"{'PASS' if converted else 'FAIL'}  {kind.key} from Sonoff's to tasmota: {said}", flush=True)
+        if not converted:
+            return 1
+        layout = layout_of(kind)
+        flash = bytearray((public_devices.SAVED / saved / "flash.bin").read_bytes())
+        for _, offset, size in layout.after_slots:
+            flash[offset:offset + size] = bytes([TASMOTA_WROTE]) * size
+        (public_devices.SAVED / saved / "flash.bin").write_bytes(flash)
+        converted, said = public_devices.run(instance, saved, "sonoff", None, folder / f"{instance}-sonoff.log",
+                                             kind=kind, extra=(*stub, "--keep"))
+        problem = back_problem(public_dump.built(dump)[0], instance, layout) if converted else None
+        print(f"{'PASS' if converted and not problem else 'FAIL'}  {kind.key} on tasmota to Sonoff's: "
+              f"{said}{', but ' + problem if problem else ''}", flush=True)
+        if converted and not problem:
+            print(f"PASS  {kind.key} back on Sonoff's has its partitions behind its slots as before: "
+                  f"{', '.join(label for label, _, _ in layout.after_slots) or 'it has none'}", flush=True)
+        return 0 if converted and not problem else 1
+    finally:
+        subprocess.run(["docker", "stop", fault_suite.name(instance)], capture_output=True, check=False)
+        subprocess.run(["rm", "-rf", str(public_devices.SAVED / saved)], check=False)
+
+
+def layout_of(kind: kinds.Kind):
+    from tools.autoflash.routes.espressif import images
+    return images.layout_of(kind)
+
+
+def back_problem(stock: bytes, instance: int, layout) -> str | None:
+    """What of the device's own partitions behind its app slots, on emulator
+    `instance` back on Sonoff's firmware, is not as its test copy `stock` has
+    them; None if all is."""
+    from tools.espressif.emulator import fault_suite
+    flash = (fault_suite.EMU / f"state-{instance}" / "flash.bin").read_bytes()
+    differ = [label for label, offset, size in layout.after_slots
+              if flash[offset:offset + size] != stock[offset:offset + size]]
+    return f"{', '.join(differ)} not as before" if differ else None
 
 
 def check_public_dump(kind: kinds.Kind, instances: list[int], motor: str = "") -> int:
@@ -971,6 +1032,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
     parser.add_argument("--motor", nargs="?", const="motor", default="", choices=("motor", "calibrated", "one-button"),
                         help="a test copy of the device that drives a motor (public_dump.MOTOR_COPIES)")
+    parser.add_argument("--back", action="store_true",
+                        help="to Tasmota and back to Sonoff's firmware, on the first emulator (check_back)")
     args = parser.parse_args(argv)
     if args.device == "list":
         print(json.dumps(jobs(changed_since(args.changed_since) if args.changed_since else None)))
@@ -980,10 +1043,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"no such device: {args.device}; list says which there are")
     if args.motor and not kind.motor_mode:
         parser.error(f"{kind.key} has no motor mode")
+    if args.back:
+        from tools.espressif.emulator import public_dump
+        if family_of(kind) != "espressif" or kind.key not in {**public_dump.DUMPS, **public_dump.UPDATES}:
+            parser.error(f"--back is for an Espressif device with a public dump, not {kind.key}")
     missing = missing_packages(kind)
     if missing:
         print(missing, file=sys.stderr)
         return 2
+    if args.back:
+        return check_back(kind, int(args.instances.split(",")[0]))
     return check_device(kind, [int(n) for n in args.instances.split(",")][:2], args.motor)
 
 

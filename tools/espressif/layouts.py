@@ -15,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TABLE_ENTRY_SIZE = 32
+APP_TYPE = 0  # an entry's type: app, else data
 SECTOR = 0x1000
 # Where the table is read by everything the tool installs - Tasmota, ESPHome,
 # the mover and ESPHome's bootloader, all built by ESP-IDF's default - and by
@@ -72,6 +73,15 @@ class Layout:
     def moved_low(self) -> int:
         """Where a commit keeps a copy of them: the end of what ota_0 can reach."""
         return self.ota[1] - self.low_size
+
+    @property
+    def after_slots(self) -> tuple[tuple[str, int, int], ...]:
+        """Its own partitions behind the app slots (label, offset, size): the
+        BASICR4's fctry, the Matter SDK's factory data, where Tasmota's
+        filesystem goes. Going back to Sonoff's firmware writes them back from
+        the backup, as it does all in front of ota_0."""
+        return tuple((label, offset, size) for label, kind, _, offset, size, _ in self.partitions()
+                     if kind != APP_TYPE and offset >= self.ota[0])
 
     @property
     def nvs_size(self) -> int:

@@ -71,6 +71,12 @@ class BasicR4Tests(unittest.TestCase):
             self.assertEqual(moved[label][3] - own[label][3], self.LAYOUT.moved_low - self.LAYOUT.low, label)
         self.assertEqual(self.LAYOUT.moved_low + self.LAYOUT.low_size, self.LAYOUT.ota[1])
 
+    def test_behind_its_slots_is_fctry_and_nothing_else_has_anything(self):
+        self.assertEqual(self.LAYOUT.after_slots, (("fctry", 0x3F0000, 0x6000),))
+        for layout in layouts.ALL:
+            if layout is not self.LAYOUT:
+                self.assertEqual(layout.after_slots, (), layout.key)
+
     def test_its_temporary_table_has_only_what_runs_on_it_and_settings_that_fit_its_own(self):
         rows = {row[0]: row for row in self.LAYOUT.temporary_partitions()}
         self.assertEqual(set(rows), {"nvs", "otadata", "phy_init", "ota_0", "ota_1", "fctry"})

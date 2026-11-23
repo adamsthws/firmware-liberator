@@ -111,6 +111,35 @@ class WhichDevicesTests(unittest.TestCase):
         self.assertIsNone(check.changed_since("0" * 40))
 
 
+class BackTests(unittest.TestCase):
+    """Back to Sonoff's firmware: its own partitions behind its app slots as before."""
+
+    def problem(self, flash: bytes, stock: bytes) -> str | None:
+        from tools.espressif import layouts
+        from tools.espressif.emulator import fault_suite
+        with tempfile.TemporaryDirectory() as emu:
+            (Path(emu) / "state-91").mkdir()
+            (Path(emu) / "state-91" / "flash.bin").write_bytes(flash)
+            with mock.patch.object(fault_suite, "EMU", Path(emu)):
+                return check.back_problem(stock, 91, layouts.SONOFF_BASICR4)
+
+    def test_fctry_as_the_test_copy_has_it_passes_and_written_over_fails(self):
+        stock = bytearray(b"\xff" * 0x400000)
+        stock[0x3F0000:0x3F6000] = b"\x5a" * 0x6000
+        self.assertIsNone(self.problem(bytes(stock), bytes(stock)))
+        over = bytearray(stock)
+        over[0x3F0000:0x3F6000] = bytes([check.TASMOTA_WROTE]) * 0x6000
+        self.assertEqual(self.problem(bytes(over), bytes(stock)), "fctry not as before")
+
+    def test_only_a_device_with_a_public_dump(self):
+        # Refused as a wrong argument, before the packages are looked for: on a
+        # computer without them, as without the virtual environment.
+        with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit), \
+                mock.patch("sys.stderr", io.StringIO()), mock.patch.dict(os.environ), \
+                mock.patch.object(check, "missing_packages", return_value="a package is missing"):
+            check.main(["sonoff-s60", "--back"])
+
+
 class WaysTests(unittest.TestCase):
     def test_each_final_firmware_then_the_other(self):
         self.assertEqual(check.ESPRESSIF_WAYS, (("tasmota", "esphome"), ("esphome", "tasmota")))

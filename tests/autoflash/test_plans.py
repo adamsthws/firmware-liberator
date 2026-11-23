@@ -268,6 +268,20 @@ class BackToSonoffTests(unittest.TestCase):
         with self.assertRaisesRegex(plans.PlanError, "running from"):
             self.plans_for(stock_slot=1, running=1)
 
+    def test_on_a_layout_with_nothing_behind_its_slots_it_writes_what_it_always_has(self):
+        # The S60's, the NSPanel's and the TH Elite's: their app, settings, PHY
+        # data and boot selection, and nothing else.
+        for layout in (layouts.SONOFF_DUAL_OTA, layouts.SONOFF_NSPANEL, layouts.SONOFF_TH_ELITE):
+            self.assertEqual(layout.after_slots, (), layout.key)
+        first, second = self.plans_for(stock_slot=0, running=1)
+        half = first.steps[0].length
+        self.assertEqual(first.steps, [plans.Write("sonoff", plans.SONOFF_OTA[0], 0, half)])
+        self.assertEqual(second.steps, [
+            plans.Write("sonoff", plans.SONOFF_OTA[0] + half, half, 0x163874 - half),
+            plans.Write("settings", 0x9000), plans.Write("phy", 0x1F000, whole=True),
+            plans.Erase(plans.SONOFF_OTADATA, plans.OTADATA_SIZE)])
+        self.assertEqual(set(second.blobs), {"sonoff", "settings", "phy"})
+
     def test_a_backup_of_something_else_is_refused(self):
         flash, _ = stock_flash()
         with self.assertRaisesRegex(plans.PlanError, "not a backup"):
@@ -306,6 +320,27 @@ class BasicR4BackToSonoffTests(unittest.TestCase):
         self.assertEqual(second.final_table_sha256(), self.LAYOUT.table_sha256)  # 0x8000's copy stays
         for plan in (first, second):
             self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
+
+    def test_its_partitions_behind_the_slots_go_back_as_the_backup_has_them(self):
+        # fctry, the Matter SDK's factory data, empty on the one read out, is
+        # where Tasmota's filesystem goes: made-up data stands for what another
+        # might hold.
+        from unittest import mock
+        backup = bytearray(self.backup())
+        backup[0x3F0000:0x3F6000] = bytes(range(255, -1, -1)) * (0x6000 // 256)
+        flash = bytearray(backup)
+        flash[0x3B0000:0x3FF000] = b"\x42" * 0x4F000  # Tasmota's filesystem
+        with mock.patch.object(plans, "app_length", return_value=0x163090):
+            first, second = plans.back_to_sonoff(bytes(backup), running=1, layout=self.LAYOUT)
+        for plan in (first, second):
+            for step in plan.steps:
+                if isinstance(step, plans.Write):
+                    start, length = plan.span(step)
+                    flash[step.address:step.address + length] = plan.blobs[step.blob][start:start + length]
+        self.assertEqual(flash[0x3F0000:0x3F6000], backup[0x3F0000:0x3F6000])
+        # Before the boot selection, so a power cut leaves Tasmota starting.
+        self.assertEqual(second.steps[-2], plans.Write("fctry", 0x3F0000))
+        self.assertLessEqual(second.busy_estimate(), plans.BUSY_LIMIT)
 
     def test_a_backup_with_no_table_at_0xc000_is_refused(self):
         backup = bytearray(self.backup())
