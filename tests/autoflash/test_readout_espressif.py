@@ -1,6 +1,7 @@
 """A readout of an Espressif device: only the bridge sent to the device, and
 only once PROCEED is typed."""
 import hashlib
+import json
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -247,6 +248,23 @@ class FirmwareOfTests(unittest.TestCase):
 
     def test_a_flash_with_no_table_has_none(self):
         self.assertEqual(readout_espressif.firmware_of(b"\xff" * 0x10000), {})
+
+    def test_a_table_without_flags_digests_as_earlier_tools_did(self):
+        # The website hashes this: readouts of such a table from this tool and
+        # earlier ones, which read no flags, must still agree.
+        rows = [["nvs", 1, 2, 0x9000, 0x5000], ["ota_0", 0, 0x10, 0x10000, 0x80000],
+                ["ota_1", 0, 0x11, 0x90000, 0x80000]]
+        self.assertEqual(readout_espressif.firmware_of(flash_with([self.SONOFF, self.BRIDGE]))["table"],
+                         hashlib.sha256(json.dumps(rows).encode()).hexdigest())
+
+    def test_a_flag_set_tells_two_tables_apart(self):
+        # The BASICR4's esp_secure_cert is flagged encrypted: a table alike
+        # but for that is not the same table.
+        plain = flash_with([self.SONOFF, self.BRIDGE])
+        flagged = bytearray(plain)
+        flagged[0x8000 + 28] = 1
+        self.assertNotEqual(readout_espressif.firmware_of(plain)["table"],
+                            readout_espressif.firmware_of(bytes(flagged))["table"])
 
     def test_a_read_that_does_not_come_through_says_why_plainly(self):
         # As the Beken readout says it (test_readout_beken).

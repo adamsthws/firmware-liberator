@@ -82,6 +82,14 @@ class LinesTests(unittest.TestCase):
         self.assertIn("FWSW-E32EX-EXAMPLE-ESP32D0WDV3", shown)
         self.assertIn("Secure boot: off", shown)
 
+    def test_a_partitions_flags_are_shown_where_set(self):
+        data = bytearray(flash())
+        data[0x8000 + 28] = 1  # encrypted, as the BASICR4's esp_secure_cert
+        shown = device_facts.lines(bytes(data), None)
+        flagged = [line for line in shown if line.startswith("Partition:") and line.endswith(", flags 0x1")]
+        self.assertEqual(len(flagged), 1, shown)
+        self.assertEqual(len([line for line in shown if "flags" in line]), 1, shown)
+
     def test_a_classic_esp32s_revision_is_at_least_without_the_bridges_word(self):
         shown = device_facts.lines(flash(), bytes(flashmap.ESP32_EFUSE_SIZE))
         self.assertIn("Chip revision: at least 0", shown)

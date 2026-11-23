@@ -41,6 +41,10 @@ class Partition:
     subtype: int
     offset: int
     size: int
+    # The entry's last word: bit 0 encrypted, bit 1 read-only (ESP-IDF's
+    # PART_FLAG_*). The BASICR4's esp_secure_cert has 1; a table rebuilt
+    # without it is not the device's (layouts.Seen).
+    flags: int = 0
 
 
 def table_at(flash: bytes) -> int:
@@ -74,7 +78,9 @@ def partitions(flash: bytes) -> list[Partition]:
         if entry[:2] != ENTRY_MAGIC:
             break
         offset, size = struct.unpack_from("<II", entry, 4)
-        found.append(Partition(entry[12:28].split(b"\0", 1)[0].decode("ascii"), entry[2], entry[3], offset, size))
+        flags = struct.unpack_from("<I", entry, 28)[0]
+        found.append(Partition(entry[12:28].split(b"\0", 1)[0].decode("ascii"), entry[2], entry[3], offset, size,
+                               flags))
     return found
 
 

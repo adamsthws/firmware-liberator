@@ -89,8 +89,10 @@ def lines(flash: bytes, efuse: bytes | None, info: dict[str, str] | None = None)
         found.append(f"Flash encryption: {'on' if fuses['flash_encryption'] else 'off'}")
     try:
         for part in flashmap.partitions(flash):
+            # Flags only where set, so a table without any reads as before they were.
+            flags = f", flags {part.flags:#x}" if part.flags else ""
             found.append(f"Partition: {part.label} type {part.type:#04x}/{part.subtype:#04x} "
-                         f"at {part.offset:#x}, {part.size:#x} bytes")
+                         f"at {part.offset:#x}, {part.size:#x} bytes{flags}")
         found.insert(1, f"Partition table at {flashmap.table_at(flash):#x}")
         for slot in flashmap.app_slots(flash):
             found.append(f"App in {slot.label}: {_app(flash, slot)}")

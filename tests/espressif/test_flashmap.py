@@ -60,6 +60,11 @@ class Dump(unittest.TestCase):
 
         self.assertEqual(flashmap.table_sector(bytes(flash)), bytes(flash[0xC000:0xD000]))
 
+    def test_each_entrys_flags_are_read(self):
+        flash = bytearray(flash_with(0x1000, 0))
+        flash[0x8000 + 28] = 1  # nvs: encrypted
+        self.assertEqual([p.flags for p in flashmap.partitions(bytes(flash))], [1, 0])
+
     def test_the_table_sector_is_whole_as_read(self):
         flash = flash_with(0x1000, 0)
         self.assertEqual(flashmap.table_sector(flash), flash[0x8000:0x9000])

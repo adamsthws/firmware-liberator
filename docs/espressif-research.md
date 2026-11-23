@@ -591,10 +591,11 @@ same wrapper inside its
 ## What a backup logs
 
 `tools/espressif/device_facts.py` logs the chip and its revision, secure boot,
-flash encryption, the flash size, the partition table, and each app's version,
-ESP-IDF and firmware name, on screen too when the table is not a known one. A
-classic ESP32's eFuse file cannot tell revision 2 from 3, so from the file alone
-it logs "at least".
+flash encryption, the flash size, the partition table (an entry's flags too
+where any are set, as on the BASICR4's `esp_secure_cert`, flagged encrypted),
+and each app's version, ESP-IDF and firmware name, on screen too when the
+table is not a known one. A classic ESP32's eFuse file cannot tell revision 2
+from 3, so from the file alone it logs "at least".
 
 The run also asks the installer's `GET /info` once, logging the exact chip
 revision in place of "at least", then `Installer says` lines with the chip and

@@ -84,7 +84,13 @@ def firmware_of(flash: bytes) -> dict[str, Any]:
     build. Not the owner's settings, nor what lies past an app in its slot,
     which differ from device to device."""
     try:
-        table = [[p.label, p.type, p.subtype, p.offset, p.size] for p in flashmap.partitions(flash)]
+        # Each entry's flags only where set: a table without any digests as
+        # it did before they were read, so the website, which hashes this,
+        # still takes whole readouts from this tool and earlier ones of such
+        # a table to agree; one with a flag set (the BASICR4's) is told apart
+        # from a table that differs from it only there.
+        table = [[p.label, p.type, p.subtype, p.offset, p.size, *([p.flags] if p.flags else [])]
+                 for p in flashmap.partitions(flash)]
         slots = flashmap.app_slots(flash)
     except ValueError:
         return {}
