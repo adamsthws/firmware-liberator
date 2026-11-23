@@ -146,6 +146,13 @@ class ClaimTests(unittest.TestCase):
     def setUp(self):
         own_locks(self)
 
+    def test_the_tests_read_no_claim_another_suite_holds(self):
+        # Tests run beside other suites' emulators: their claims must not change what a test is given.
+        held_elsewhere(self, "espressif", 2)
+        with mock.patch.dict(emulator_instances.os.environ, {"AUTOFLASH_EMU_NO_CLAIMS": "1"}):
+            self.assertEqual(emulator_instances.claims(), [])
+            self.assertEqual(emulator_instances.claimed_elsewhere("espressif"), set())
+
     def test_a_number_another_suite_holds_is_refused_while_its_emulator_is_stopped(self):
         # Seen: a suite restarting its emulator between scenarios left a gap
         # docker ps could not show, and another suite took its number.

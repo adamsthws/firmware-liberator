@@ -99,7 +99,11 @@ def claim(family: str, numbers: Iterable[int]) -> list[int]:
 
 def claims() -> list[str]:
     """Each claim held on this computer: family and number, the process
-    holding it, its checkout, and since when."""
+    holding it, its checkout, and since when. None where AUTOFLASH_EMU_NO_CLAIMS=1:
+    the tests make no claims and read none, so another suite's on the same
+    computer never changes which instances they are given."""
+    if os.environ.get("AUTOFLASH_EMU_NO_CLAIMS") == "1":
+        return []
     found = []
     for path in sorted(LOCKS.glob("*.lock")) if LOCKS.is_dir() else []:
         with open(path, encoding="utf-8") as handle:
