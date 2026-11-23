@@ -132,42 +132,100 @@ class ReadInfoTests(unittest.TestCase):
             self.assertIsNone(self.answers(effect), effect)
 
 
-class DeviceHashTests(unittest.TestCase):
-    """A backup is checked byte for byte against the device's own hash of its flash."""
+class Bridge:
+    """A bridge on this computer: GET /flash streams `image` in chunks, as the
+    bridge does, cut off after `cut_after` bytes where set (the connection
+    closed with no final chunk); /flash-sha256 answers `on_device`'s hash, or
+    404 as a bridge before 4.4.2 does where it is None."""
 
-    def read(self, on_device):
-        import hashlib
-        import urllib.error
-        from unittest import mock
-        from tools.espressif import dump_stock_flash
-        image = bytes(flash())
-        answers = {
-            "/flash": (image, {"X-Flash-Size": str(len(image))}),
-            "/efuse": (b"E" * 16, {}),
-        }
+    def __init__(self, image: bytes, on_device=lambda digest: digest, cut_after: int | None = None) -> None:
+        import http.server
+        import threading
+        bridge = self
+        self.image, self.on_device, self.cut_after = image, on_device, cut_after
 
-        def fetch(host, path, timeout=60.0):
-            if path == "/flash-sha256":
-                if on_device is None:
-                    raise urllib.error.HTTPError(path, 404, "Not Found", {}, None)
-                return (on_device(hashlib.sha256(image).hexdigest()) + "\n").encode(), {}
-            return answers[path]
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
 
-        with mock.patch.object(dump_stock_flash, "fetch", side_effect=fetch):
-            return dump_stock_flash.read_dump("bridge")
+            def log_message(self, *args) -> None:
+                pass
+
+            def do_GET(self) -> None:
+                if self.path == "/flash":
+                    self.send_response(200)
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.send_header("X-Flash-Size", str(len(bridge.image)))
+                    self.end_headers()
+                    sent = 0
+                    for at in range(0, len(bridge.image), 0x1000):
+                        if bridge.cut_after is not None and sent >= bridge.cut_after:
+                            self.close_connection = True
+                            return
+                        chunk = bridge.image[at:at + 0x1000]
+                        self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+                        sent += len(chunk)
+                    self.wfile.write(b"0\r\n\r\n")
+                    return
+                if self.path == "/flash-sha256" and bridge.on_device is not None:
+                    body = (bridge.on_device(hashlib.sha256(bridge.image).hexdigest()) + "\n").encode()
+                elif self.path == "/efuse":
+                    body = b"E" * 16
+                else:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.host = f"127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class ReadDumpTests(unittest.TestCase):
+    """The whole flash read from a bridge, and checked byte for byte against
+    the device's own hash of it."""
+
+    def read(self, **bridge_args):
+        bridge = Bridge(bytes(flash()), **bridge_args)
+        self.addCleanup(bridge.close)
+        self.progress = []
+        return dump_stock_flash.read_dump(bridge.host, lambda done, of: self.progress.append((done, of)))
 
     def test_a_backup_that_matches_the_device_says_so(self):
-        _, _, report = self.read(lambda digest: digest.upper())
+        image, efuse, report = self.read(on_device=lambda digest: digest.upper())
+        self.assertEqual(image, bytes(flash()))
+        self.assertEqual(efuse, b"E" * 16)
         self.assertIs(report["matches_device"], True)
+        self.assertEqual(self.progress[-1], (FLASH_SIZE, FLASH_SIZE))
 
     def test_a_backup_that_differs_from_the_device_is_refused(self):
-        from tools.espressif.dump_stock_flash import IncompleteDump
-        with self.assertRaises(IncompleteDump):
-            self.read(lambda digest: "0" * 64)
+        with self.assertRaises(dump_stock_flash.IncompleteDump):
+            self.read(on_device=lambda digest: "0" * 64)
 
     def test_an_older_bridge_leaves_it_unchecked(self):
-        _, _, report = self.read(None)
+        _, _, report = self.read(on_device=None)
         self.assertIsNone(report["matches_device"])
+
+    def test_a_read_cut_off_part_way_says_how_far_it_got(self):
+        # Seen on a real device at C3: the reply cut short raised
+        # http.client.IncompleteRead, which is no OSError, and escaped the
+        # backup's own tries.
+        with self.assertRaisesRegex(dump_stock_flash.IncompleteDump, "cut off after 1,048,576 bytes"):
+            self.read(cut_after=0x100000)
+
+    def test_a_bridge_that_does_not_answer_is_an_incomplete_dump(self):
+        import socket
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        with self.assertRaises(dump_stock_flash.IncompleteDump):
+            dump_stock_flash.read_dump(f"127.0.0.1:{port}")
 
 
 class ReadTableTests(unittest.TestCase):

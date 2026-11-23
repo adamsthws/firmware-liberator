@@ -29,13 +29,14 @@ import urllib.error
 import urllib.request
 import zlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.espressif.analyze_vendor_ota import parse_esp_image  # noqa: E402
 from tools.autoflash import records  # noqa: E402
+from tools.autoflash.errors import NETWORK_ERRORS  # noqa: E402
 from tools.espressif import flashmap  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -216,19 +217,53 @@ def device_sha256(host: str) -> str | None:
     return body.decode("ascii", "replace").strip().lower()
 
 
-def read_dump(host: str) -> tuple[bytes, bytes, dict[str, Any]]:
+# How much of the flash is read between progress reports.
+READ_CHUNK = 0x10000
+
+
+def read_flash(host: str, progress: Callable[[int, int], None] | None = None) -> bytes:
+    """The whole flash from the bridge's `GET /flash`, as it streams, with
+    `progress(done, of)` in bytes. A bridge streams the whole chip, with no
+    way to begin part way, so a read cut off is said as such, with how far it
+    got (IncompleteDump), for the caller to read again whole."""
+    done = 0
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(f"http://{host}/flash", timeout=300) as response:
+            declared = int(response.headers.get("X-Flash-Size", "0"))
+            chunks = []
+            while chunk := response.read(READ_CHUNK):
+                chunks.append(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, declared)
+    except urllib.error.HTTPError:
+        raise
+    except NETWORK_ERRORS as exc:
+        # http.client.IncompleteRead among them, which is no OSError: seen on a
+        # real device at C3, it escaped the backup's own tries.
+        raise IncompleteDump(f"the read was cut off after {done:,} bytes ({type(exc).__name__}: {exc})") from exc
+    if declared == 0 or done != declared:
+        raise IncompleteDump(f"received {done:,} of {declared:,} bytes")
+    return b"".join(chunks)
+
+
+def read_dump(host: str, progress: Callable[[int, int], None] | None = None) -> tuple[bytes, bytes, dict[str, Any]]:
     """The whole flash and the eFuse registers from a bridge at `host`, checked
-    byte for byte against the device's own hash of its flash where it has one."""
-    flash, headers = fetch(host, "/flash", timeout=300)
-    declared = int(headers.get("X-Flash-Size", "0"))
-    if declared == 0 or len(flash) != declared:
-        raise IncompleteDump(f"received {len(flash):,} of {declared:,} bytes")
-    on_device = device_sha256(host)
+    byte for byte against the device's own hash of its flash where it has one.
+    `progress` is read_flash's. Any request cut off is an IncompleteDump."""
+    flash = read_flash(host, progress)
+    try:
+        on_device = device_sha256(host)
+        efuse, _ = fetch(host, "/efuse", timeout=10)
+    except urllib.error.HTTPError:
+        raise
+    except NETWORK_ERRORS as exc:
+        raise IncompleteDump(f"the device did not answer after the read ({type(exc).__name__}: {exc})") from exc
     received = hashlib.sha256(flash).hexdigest()
     if on_device is not None and on_device != received:
         raise IncompleteDump(f"what arrived (SHA-256 {received[:16]}...) is not what is on "
                              f"the device ({on_device[:16]}...)")
-    efuse, _ = fetch(host, "/efuse", timeout=10)
     report = check(flash)
     report["efuse_sha256"] = hashlib.sha256(efuse).hexdigest()
     # True: identical to the device's flash, by its own hash; None: not checkable.

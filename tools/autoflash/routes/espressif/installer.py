@@ -601,7 +601,14 @@ def read_for_backup(host: str) -> tuple[bytes, bytes, dict[str, Any]]:
     if SIMULATED_BACKUP_FAILURES > 0:
         SIMULATED_BACKUP_FAILURES -= 1
         raise OSError("simulated failure (--simulate-backup-failure)")
-    return dump_stock_flash.read_dump(host)
+
+    def progress(done: int, total: int) -> None:
+        output.progress(f"backing up: {done // 1024:,} of {total // 1024:,} KiB")
+
+    try:
+        return dump_stock_flash.read_dump(host, progress)
+    finally:
+        output.progress_clear()
 
 
 def backup_failed(problem: str) -> int:

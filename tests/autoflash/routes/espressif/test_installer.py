@@ -736,7 +736,7 @@ class StockBackupTests(unittest.TestCase):
         asked = []
         self.read_from = []
 
-        def read(host):
+        def read(host, progress=None):
             self.read_from.append(host)
             outcome = next(outcomes)
             if isinstance(outcome, Exception):
@@ -778,6 +778,17 @@ class StockBackupTests(unittest.TestCase):
         self.back_up([OSError("timed out"), self.dump])
         self.assertEqual(self.read_from, ["192.0.2.51", "192.168.4.1"])
         self.assertIn("stock_backup", self.inputs)
+
+    def test_a_read_cut_off_is_read_again_its_progress_shown(self):
+        # Seen on a real device: the reply cut short, which went past these tries.
+        from tools.espressif.dump_stock_flash import IncompleteDump
+        self.back_up([IncompleteDump("the read was cut off after 1,048,576 bytes"), self.dump])
+        self.assertIn("stock_backup", self.inputs)
+        with mock.patch.object(dump_stock_flash, "read_dump", return_value=self.dump) as read, \
+                mock.patch.object(output, "progress") as shown, mock.patch.object(output, "progress_clear"):
+            installer.read_for_backup("192.0.2.51")
+            read.call_args.args[1](0x100000, 0x400000)
+        shown.assert_called_once_with("backing up: 1,024 of 4,096 KiB")
 
     def test_a_bridge_that_cannot_read_flash_means_no_backup(self):
         import urllib.error
@@ -828,7 +839,7 @@ class StockBackupTests(unittest.TestCase):
 
     def test_the_backup_stage_reads_through_the_bridge(self):
         result, reach, read = self.stage()
-        read.assert_called_once_with("192.0.2.51")
+        self.assertEqual([call.args[0] for call in read.call_args_list], ["192.0.2.51"])
         self.assertEqual(result, {"outcome": "saved", "stage_outcome": "complete"})
         self.assertIn("sonoff-backup", self.inputs["stock_backup"])
         self.layout_checked.assert_called_once_with(self.ctx)   # before D1 writes over Sonoff's firmware
