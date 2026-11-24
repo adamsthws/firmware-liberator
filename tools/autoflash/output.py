@@ -163,10 +163,18 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
 _IPV4 = re.compile(r"(?<![\w.-])\d{1,3}(?:\.\d{1,3}){3}(?![\w.(-])")
 
 
+# Shorter than this, a value is replaced only where it stands quoted as the
+# tool writes a Wi-Fi name ('...'): anywhere, it would mangle ordinary words,
+# and in double quotes too, the JSON a device answers ("POWER":"1").
+SHORT_PRIVATE = 3
+
+
 def private(value: object, label: str) -> None:
-    """Keep `value` out of the log from now on, written as <label> instead."""
+    """Keep `value` out of the log from now on, written as <label> instead: a
+    value shorter than SHORT_PRIVATE only where it stands in the tool's own
+    quotes ('...')."""
     text = str(value or "").strip()
-    if len(text) < 3:  # too short to replace without mangling ordinary words
+    if not text:
         return
     with _lock:
         _private[text] = label
@@ -175,7 +183,10 @@ def private(value: object, label: str) -> None:
 def scrub(text: str) -> str:
     """`text` as the log may hold it: see private()."""
     for value in sorted(_private, key=len, reverse=True):
-        text = text.replace(value, f"<{_private[value]}>")
+        if len(value) >= SHORT_PRIVATE:
+            text = text.replace(value, f"<{_private[value]}>")
+        else:
+            text = text.replace(f"'{value}'", f"'<{_private[value]}>'")
     for pattern, replacement in _PATTERNS:
         text = pattern.sub(replacement, text)
     text = _IPV4.sub(_public_ip, text)

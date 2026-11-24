@@ -2508,10 +2508,17 @@ class ScrubTests(PrivacyTestCase):
         self.assertEqual(output.scrub("joined 'Home & Garden 2G' with hunter22; Kitchen answered"),
                          "joined '<wifi-name>' with <wifi-password>; <device-name> answered")
 
-    def test_too_short_to_replace_safely_is_not_registered(self):
+    def test_a_short_value_is_replaced_where_it_stands_quoted(self):
+        # A Wi-Fi name of one or two characters reached the run's log whole.
         output.private("ab", "wifi-name")
         output.private(None, "wifi-name")
-        self.assertEqual(output.scrub("ab cd"), "ab cd")
+        self.assertEqual(output.scrub("joined 'ab' at last; ab cd and abc kept"),
+                         "joined '<wifi-name>' at last; ab cd and abc kept")
+
+    def test_a_short_value_in_a_devices_json_is_left_as_it_is(self):
+        # A Wi-Fi name "1" made a device's {"POWER":"1"} read {"POWER":"<wifi-name>"}.
+        output.private("1", "wifi-name")
+        self.assertEqual(output.scrub('{"POWER":"1"} for \'1\''), '{"POWER":"1"} for \'<wifi-name>\'')
 
 
 class LogFileTests(PrivacyTestCase):
