@@ -324,6 +324,22 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual(free.call_args.args[1:], ("t", "beken", 2))
         self.assertEqual(run.call_args.args[1:], ("t", "suite --first-instance 7 --detach", False))
 
+    def prep(self, *more):
+        with mock.patch.object(remote_tree, "free", return_value=1) as free, \
+                mock.patch.object(remote_tree.Remote, "run", return_value=mock.Mock(returncode=1)), \
+                mock.patch.object(remote_tree, "run", return_value=0) as run:
+            self.assertEqual(remote_tree.main(["host", "prep", "t", "beken", *more]), 0)
+        return free, run.call_args.args[2]
+
+    def test_a_prep_runs_on_the_first_free_instance_or_the_one_given(self):
+        # Seen: preps took 1 to 3, which another session there may hold.
+        free, command = self.prep()
+        free.assert_called_once()
+        self.assertIn("--first-instance 1 ", command)
+        free, command = self.prep("--first-instance", "81")
+        free.assert_not_called()
+        self.assertIn("--first-instance 81 ", command)
+
     def test_each_family_has_a_prep(self):
         for family, command in remote_tree.PREP.items():
             with self.subTest(family=family):

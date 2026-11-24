@@ -7,7 +7,7 @@ nor a device's backup lost.
 
     tools/repo/remote_tree.py HOST send NAME [REF]
     tools/repo/remote_tree.py HOST devices NAME --from DIR MAC...
-    tools/repo/remote_tree.py HOST prep NAME espressif|beken [--device MAC] [--again]
+    tools/repo/remote_tree.py HOST prep NAME espressif|beken [--device MAC] [--first-instance N] [--again]
     tools/repo/remote_tree.py HOST run NAME [--emulators N --family F] [--detach] -- COMMAND...
     tools/repo/remote_tree.py HOST fetch NAME
     tools/repo/remote_tree.py HOST remove NAME [--no-fetch]
@@ -26,7 +26,8 @@ venv module.
 folder on that machine, into the tree's, each backup's files as hard links:
 the backup is not copied twice nor ever written, and removing the tree
 leaves it where it was. `prep` runs the family's fault-suite prep once
-(again after --again). `run` starts COMMAND in the tree, `{first}` in it
+(again after --again), on the first free emulator instance or N, where
+others are kept clear of. `run` starts COMMAND in the tree, `{first}` in it
 the first of N free emulator instances (emulator_instances), and waits for
 it unless --detach; its output is in ~/autoflash-trees/NAME.runs/ there.
 `fetch` copies back to captures/emulation/kept/HOST-NAME/ (scenario_times.KEPT),
@@ -447,6 +448,9 @@ def main(argv: list[str] | None = None) -> int:
     one.add_argument("name")
     one.add_argument("family", choices=sorted(PREP))
     one.add_argument("--device", help="espressif: the device's MAC, in the tree's captures/devices")
+    one.add_argument("--first-instance", type=int, metavar="N",
+                     help="the emulator instance it runs on, not the first free one: clear of those another "
+                          "session there uses (the suite refuses one in use)")
     one.add_argument("--again", action="store_true", help="made again, though made before")
     one = commands.add_parser("run", help="a command in the tree")
     one.add_argument("name")
@@ -476,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.again and remote.run(f"[ -f {marker} ]", check=False).returncode == 0:
             print(f"{args.family} saved starts already made in {args.name} (--again to make them anew)")
             return 0
-        first = free(remote, args.name, args.family, PREP_EMULATORS[args.family])
+        first = args.first_instance or free(remote, args.name, args.family, PREP_EMULATORS[args.family])
         command = PREP[args.family].format(device=args.device, first=first)
         return run(remote, args.name, f"{command} && touch {PREPPED.format(family=args.family)}", detach=False)
     elif args.command == "run":

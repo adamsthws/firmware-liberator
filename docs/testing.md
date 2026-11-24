@@ -875,6 +875,7 @@ or `--ssh-config FILE`:
 tools/repo/remote_tree.py HOST send try                  # this branch, only what it lacks sent
 tools/repo/remote_tree.py HOST devices try --from SOMEWHERE/captures/devices 12:34:56:ab:cd:ef
 tools/repo/remote_tree.py HOST prep try espressif --device 12:34:56:ab:cd:ef   # once
+    # (--first-instance N: on N, not the first free one, clear of another session's)
 tools/repo/remote_tree.py HOST run try --family espressif --emulators 4 -- \
     tools/espressif/emulator/fault_suite.py --stub-cloud --first-instance {first} batch all.txt.2
 tools/repo/remote_tree.py HOST fetch try                 # to captures/emulation/kept/HOST-try/
