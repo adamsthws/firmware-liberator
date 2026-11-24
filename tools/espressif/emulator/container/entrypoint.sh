@@ -24,9 +24,10 @@ if [ -z "$user" ]; then
 fi
 SUDO_PASSWORD=autoflash
 echo "$user:$SUDO_PASSWORD" | chpasswd
+# sudo takes the last rule that matches, so the NOPASSWD one comes after ALL.
 printf '%s\n' "Defaults lecture=never" \
-    "$user ALL=(root) NOPASSWD: /opt/autoflash-emu/bin/wifi-root" \
-    "$user ALL=(ALL) ALL" > /etc/sudoers.d/autoflash-emu
+    "$user ALL=(ALL) ALL" \
+    "$user ALL=(root) NOPASSWD: /opt/autoflash-emu/bin/wifi-root" > /etc/sudoers.d/autoflash-emu
 chmod 0440 /etc/sudoers.d/autoflash-emu
 home=$(getent passwd "$user" | cut -d: -f6)
 

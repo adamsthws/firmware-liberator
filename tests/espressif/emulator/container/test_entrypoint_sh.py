@@ -1,5 +1,5 @@
-"""entrypoint.sh, the emulator container's start: what of the stub reaches the
-readout API beside it."""
+"""entrypoint.sh, the emulator container's start: who may use sudo without a
+password, and what of the stub reaches the readout API beside it."""
 
 import re
 import shutil
@@ -11,6 +11,20 @@ from tools.autoflash import firewall
 from tools.ewelink.stub_cloud import stub_server
 
 ENTRYPOINT = Path(__file__).resolve().parents[4] / "tools/espressif/emulator/container/entrypoint.sh"
+
+
+class SudoTests(unittest.TestCase):
+    """sudo asks for the password everywhere but the emulator's own Wi-Fi
+    switching (wifi-root), as a desktop's Wi-Fi menu asks for nothing."""
+
+    def test_the_wifi_rule_comes_after_the_rule_that_asks(self):
+        """sudo takes the last rule that matches: with the ALL rule last,
+        `wifi join` asked for the password."""
+        text = ENTRYPOINT.read_text(encoding="utf-8")
+        written = re.search(r"(?ms)^printf '%s\\n' (.*?)> /etc/sudoers\.d/autoflash-emu$", text)
+        self.assertIsNotNone(written)
+        rules = re.findall(r'"\$user ([^"]*)"', written.group(1))
+        self.assertEqual(rules, ["ALL=(ALL) ALL", "ALL=(root) NOPASSWD: /opt/autoflash-emu/bin/wifi-root"])
 
 
 class StubToTheApiTests(unittest.TestCase):
