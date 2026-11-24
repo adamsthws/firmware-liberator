@@ -8,8 +8,8 @@
     "check": "node --test checks/built.mjs"
   },
   "devDependencies": {
-    "@astrojs/sitemap": "3.7.4",
-    "astro": "7.4.1",
-    "wrangler": "4.151.2"
+    "@astrojs/sitemap": "3.7.5",
+    "astro": "7.4.12",
+    "wrangler": "4.162.0"
   }
 }
