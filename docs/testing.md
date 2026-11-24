@@ -1146,7 +1146,7 @@ emulated ones started from the public S61s dump
 (`beken-emu.sh --instance N device`,
 [its README](../tools/beken/emulator/README.md)), each on a home Wi-Fi of its
 own with the local eWeLink stub, so nothing reaches the internet and every
-scenario can run side by side. It has 582 scenarios.
+scenario can run side by side. It has 583 scenarios.
 
 #### What it covers (Beken)
 
