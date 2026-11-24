@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 19:49:14 +0000
+Subject: [PATCH] esp32, esp32s3: ignore writes to the RNG data register
+
+The data register of the ESP32 and ESP32-S3 random number generators is
+read-only, but each device gave its memory region a read callback only.
+A guest store to the register then called the NULL write callback, and
+QEMU stopped with SIGSEGV.
+
+Give both devices a write callback that drops the write and reports it
+as a guest error, as a read-only register should behave.
+
+Offered upstream as lcgamboa/qemu#25, and to Espressif's QEMU, where the
+device comes from, as espressif/qemu#217.
+---
+ hw/misc/esp32_rng.c   | 10 ++++++++++
+ hw/misc/esp32s3_rng.c | 10 ++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/hw/misc/esp32_rng.c b/hw/misc/esp32_rng.c
+index 9df49de..6b5360e 100644
+--- a/hw/misc/esp32_rng.c
++++ b/hw/misc/esp32_rng.c
+@@ -25,8 +25,18 @@ static uint64_t esp32_rng_read(void *opaque, hwaddr addr, unsigned int size)
+     return r;
+ }
+ 
++static void esp32_rng_write(void *opaque, hwaddr addr, uint64_t value,
++                            unsigned int size)
++{
++    /* The data register is read-only: the write has no effect. */
++    qemu_log_mask(LOG_GUEST_ERROR, "%s: write of 0x%" PRIx64
++                  " to read-only RNG data register ignored\n",
++                  __func__, value);
++}
++
+ static const MemoryRegionOps esp32_rng_ops = {
+     .read =  esp32_rng_read,
++    .write = esp32_rng_write,
+     .endianness = DEVICE_LITTLE_ENDIAN,
+ };
+ 
+diff --git a/hw/misc/esp32s3_rng.c b/hw/misc/esp32s3_rng.c
+index c4fed3d..a7869ed 100644
+--- a/hw/misc/esp32s3_rng.c
++++ b/hw/misc/esp32s3_rng.c
+@@ -25,8 +25,18 @@ static uint64_t esp32s3_rng_read(void *opaque, hwaddr addr, unsigned int size)
+     return r;
+ }
+ 
++static void esp32s3_rng_write(void *opaque, hwaddr addr, uint64_t value,
++                              unsigned int size)
++{
++    /* The data register is read-only: the write has no effect. */
++    qemu_log_mask(LOG_GUEST_ERROR, "%s: write of 0x%" PRIx64
++                  " to read-only RNG data register ignored\n",
++                  __func__, value);
++}
++
+ static const MemoryRegionOps esp32s3_rng_ops = {
+     .read =  esp32s3_rng_read,
++    .write = esp32s3_rng_write,
+     .endianness = DEVICE_LITTLE_ENDIAN,
+ };
+ 
+-- 
+2.43.0
+

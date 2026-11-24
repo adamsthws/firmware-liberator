@@ -154,7 +154,8 @@ moves past the merge:
 
 A store to the ESP32's or ESP32-S3's random number register, which QEMU
 gave a read callback only, stopped QEMU with a crash. A firmware whose stack
-had already gone wrong reached it from its panic handler:
+had already gone wrong reached it from its panic handler. The emulator
+carries #25 as its patch `0009`:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|

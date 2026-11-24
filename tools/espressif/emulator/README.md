@@ -257,13 +257,21 @@ fork's source, make the change, and regenerate them.
   Offered as
   [lcgamboa/qemu #24](https://github.com/lcgamboa/qemu/pull/24) and
   [espressif/qemu #216](https://github.com/espressif/qemu/pull/216).
+- **`0009-esp32-rng-register-writes-ignored.patch` - a write to the random
+  number register no longer stops QEMU.** The register is read-only, and the
+  fork gave it no write callback, so a store to it crashed QEMU (SIGSEGV).
+  The write is now dropped and logged as a guest error (`-d guest_errors`).
+  No firmware the tool installs is known to write it; a test app that read
+  flash with its cache bus off did, from its panic handler. Offered as
+  [lcgamboa/qemu #25](https://github.com/lcgamboa/qemu/pull/25) and
+  [espressif/qemu #217](https://github.com/espressif/qemu/pull/217).
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 after the
 pinned commit, on 7 November 2026 (`2d075b740`), so `0001`-`0003` drop out on a
 commit after that, and `0006` on one after lcgamboa merged #21 on 14 November
 2026 (`885a6e7`); lcgamboa merged #22 and #23 on 22 November 2026 (`564205350`, `fac9a4689`), so
 `0005` and `0007` drop out on a commit after `fac9a4689`.
-`0008` drops out once lcgamboa merges #24.
+`0008` and `0009` drop out once lcgamboa merges #24 and #25.
 Replace `0004` with
 [espressif/qemu #183](https://github.com/espressif/qemu/pull/183) (or
 lcgamboa's copy of it, once there): written for Espressif's `esp32.c`, its
