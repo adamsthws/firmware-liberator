@@ -405,6 +405,17 @@ class EndProblemsTests(unittest.TestCase):
         right = REPORT.replace("From:     Sonoff", "From:    Sonoff")
         self.assertIn("the report's right-hand column does not line up", self.problems(right + HAT))
 
+    def test_a_devices_own_lines_laid_out_as_a_report_are_none(self):
+        # Seen after a cut-off Safeboot restore (G1): its result, then what the
+        # device said, wrapped under its value, was judged a report out of line.
+        restore = """
+     RESTORE RESULT: FAIL
+     THE DEVICE SAYS: migration_refused: POST /capture/factory-sha/0 returned HTTP 409 after 1
+                      attempts
+
+"""
+        self.assertEqual(self.problems(restore + REPORT + HAT, ""), [])
+
     def test_a_conversions_columns_out_of_balance_are_found(self):
         longer = REPORT.replace("     Checks:    Pass                                  Signal:   -23 dBm\n",
                                 "                                                      Signal:   -23 dBm\n")

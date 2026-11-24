@@ -467,7 +467,10 @@ REPORT_INDENT = 4
 
 def _reports(rows: list[str]) -> list[list[tuple[int, str]]]:
     """Each report on the screen: its rows, by index - a block of rows each
-    a report's, two or more of them labelled, none of them links."""
+    a report's, two or more of them labelled, one with the tool's version
+    (report.VERSION), none of them links. A device's own lines laid out alike
+    ("RESTORE RESULT: FAIL", then "THE DEVICE SAYS: ...") are no report."""
+    from tools.autoflash.report import VERSION
     blocks, block = [], []
     for index, row in enumerate(rows + [""]):
         # A report's rows are set in from the margin (report.report_screen); a
@@ -477,8 +480,9 @@ def _reports(rows: list[str]) -> list[list[tuple[int, str]]]:
                             or (block and _indent(row) > _indent(block[0][1]))):
             block.append((index, row))
             continue
-        labelled = [row for _, row in block if REPORT_CELL.match(row.strip())]
-        if len(labelled) >= 2 and not any("://" in row for _, row in block) \
+        labelled = [REPORT_CELL.match(row.strip()) for _, row in block]
+        labelled = [cell["label"] for cell in labelled if cell]
+        if len(labelled) >= 2 and VERSION in labelled and not any("://" in row for _, row in block) \
                 and not any(QUIT_HINT in row for _, row in block):
             blocks.append(block)
         block = []

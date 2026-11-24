@@ -276,7 +276,7 @@ def report_fields(done: list[Became]) -> list[tuple[str, str]]:
     any were. How it ended is the line above it (end), and each device's
     under it (report_devices)."""
     fields = [
-        ("Liberator", __version__),
+        (report.VERSION, __version__),
         ("OS", report.computer_description()),
         ("Python", report.python_description()),
         ("Devices", str(len(done))),

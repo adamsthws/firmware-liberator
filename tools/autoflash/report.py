@@ -234,7 +234,7 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         ("Result", result),
         ("Firmware", routes.FIRMWARES[firmware] if firmware else "not chosen"),
         ("From", converted_from(ctx, firmware, stock_version)),
-        ("Liberator", __version__),
+        (VERSION, __version__),
         ("Model", model or "__"),
         # How it went, never where it is or which device: the path holds the MAC.
         # A run from a converted device takes none: one is there or not.
@@ -324,6 +324,10 @@ def answer(value: str) -> str:
     return value[:1].upper() + value[1:]
 
 
+# The first answer of every report, a run's and a readout's alike: the tool's
+# version. A screen's block of "Label: value" rows is a report only with it
+# (unattended_run._reports), not the device's own output laid out alike.
+VERSION = "Liberator"
 # Where each answer goes on the screen: the device's on the right, the run's
 # and this computer's on the left.  The fault suites read each answer up to
 # the gap after it, wherever it is (tools/espressif/emulator/fault_suite.py).
