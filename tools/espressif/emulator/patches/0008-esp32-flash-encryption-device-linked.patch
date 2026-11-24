@@ -1,0 +1,172 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 14:00:00 +0000
+Subject: [PATCH] esp32: link the flash encryption device, do not search
+ for it
+
+The classic ESP32's SPI controllers and its DPORT cache model found the
+flash encryption device with a search of the whole object tree on every
+use: once per SPI transaction, and once per cache sync, which a cache
+enable runs. A flash write made thousands of such searches. On a 26 KB
+erase and write the classic ESP32 took about 190 ms, the ESP32-C3's
+similar traffic about 65 ms.
+
+The machines (esp32.c and esp32_picsimlab.c) now link the device into
+the DPORT and each SPI controller before they are realized, as they do
+the interrupt matrix's CPUs, and the devices use their own pointer. The
+search is removed: nothing else used it. An ESP32 machine always has the
+device, so the pointer is never NULL.
+
+Timed with an ESP-IDF app that erases 7 sectors and writes 26 KB, the write
+takes a median of 75 ms on dual core and 69 ms on single core, against a
+median of 206 ms and 196 ms before (three runs of three rounds each).
+
+Offered upstream as lcgamboa/qemu#24, and to Espressif's QEMU, where the
+search comes from, as espressif/qemu#216.
+---
+ hw/misc/esp32_dport.c             | 4 +++-
+ hw/ssi/esp32_spi.c                | 4 +++-
+ hw/xtensa/esp32.c                 | 2 ++
+ hw/xtensa/esp32_picsimlab.c       | 2 ++
+ include/hw/misc/esp32_dport.h     | 1 +
+ include/hw/misc/esp32_flash_enc.h | 7 -------
+ include/hw/ssi/esp32_spi.h        | 2 ++
+ 7 files changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/hw/misc/esp32_dport.c b/hw/misc/esp32_dport.c
+index 7f62e4c..c79fba1 100644
+--- a/hw/misc/esp32_dport.c
++++ b/hw/misc/esp32_dport.c
+@@ -247,7 +247,7 @@ static void esp32_cache_data_sync(Esp32CacheRegionState* crs)
+         return;
+     }
+ 
+-    Esp32FlashEncryptionState * flash_enc = esp32_flash_encryption_find();
++    Esp32FlashEncryptionState * flash_enc = crs->cache->dport->flash_enc;
+     bool decrypt = (flash_enc != NULL && esp32_flash_decryption_enabled(flash_enc));
+ 
+     uint8_t* cache_data = (uint8_t*) memory_region_get_ram_ptr(&crs->mem);
+@@ -467,6 +467,8 @@ static void esp32_dport_init(Object *obj)
+ 
+ static Property esp32_dport_properties[] = {
+     DEFINE_PROP_DRIVE("flash", Esp32DportState, flash_blk),
++    DEFINE_PROP_LINK("flash_enc", Esp32DportState, flash_enc, TYPE_ESP32_FLASH_ENCRYPTION,
++                     Esp32FlashEncryptionState *),
+     DEFINE_PROP_BOOL("has_psram", Esp32DportState, has_psram, false),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+diff --git a/hw/ssi/esp32_spi.c b/hw/ssi/esp32_spi.c
+index 831801f..cb0a1d1 100644
+--- a/hw/ssi/esp32_spi.c
++++ b/hw/ssi/esp32_spi.c
+@@ -247,7 +247,7 @@ static inline int bitlen_to_bytes(uint32_t val)
+ 
+ static void maybe_encrypt_data(Esp32SpiState *s)
+ {
+-    Esp32FlashEncryptionState* flash_enc = esp32_flash_encryption_find();
++    Esp32FlashEncryptionState* flash_enc = s->flash_enc;
+     if (esp32_flash_encryption_enabled(flash_enc)) {
+         esp32_flash_encryption_get_result(flash_enc, &s->data_reg[0], 8);
+     }
+@@ -511,6 +511,8 @@ static void esp32_spi_init(Object *obj)
+ static Property esp32_spi_properties[] = {
+     DEFINE_PROP_BOOL("xfer_32_bits",Esp32SpiState,xfer_32_bits,false),
+     DEFINE_PROP_BOOL("use_cs",Esp32SpiState,use_cs,false),
++    DEFINE_PROP_LINK("flash_enc", Esp32SpiState, flash_enc, TYPE_ESP32_FLASH_ENCRYPTION,
++                     Esp32FlashEncryptionState *),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+ 
+diff --git a/hw/xtensa/esp32.c b/hw/xtensa/esp32.c
+index 082b3b8..68034f3 100644
+--- a/hw/xtensa/esp32.c
++++ b/hw/xtensa/esp32.c
+@@ -334,6 +334,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
+         qdev_realize(DEVICE(&s->cpu[i]), NULL, &error_fatal);
+     }
+ 
++    object_property_set_link(OBJECT(&s->dport), "flash_enc", OBJECT(&s->flash_enc), &error_abort);
+     qdev_realize(DEVICE(&s->dport), &s->periph_bus, &error_fatal);
+     MemoryRegion* dport_mem = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dport), 0);
+ 
+@@ -468,6 +469,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
+     object_property_set_bool(OBJECT(&s->spi[2]),"use_cs",true, &error_abort);
+     object_property_set_bool(OBJECT(&s->spi[3]),"use_cs",true, &error_abort);
+     for (int i = 0; i < ESP32_SPI_COUNT; ++i) {        
++        object_property_set_link(OBJECT(&s->spi[i]), "flash_enc", OBJECT(&s->flash_enc), &error_abort);
+         qdev_realize(DEVICE(&s->spi[i]), &s->periph_bus, &error_fatal);
+ 
+         esp32_soc_add_periph_device(sys_mem, &s->spi[i], spi_base[i]);
+diff --git a/hw/xtensa/esp32_picsimlab.c b/hw/xtensa/esp32_picsimlab.c
+index d8a199d..3d25a35 100644
+--- a/hw/xtensa/esp32_picsimlab.c
++++ b/hw/xtensa/esp32_picsimlab.c
+@@ -528,6 +528,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
+         qdev_realize(DEVICE(&s->cpu[i]), NULL, &error_fatal);
+     }
+ 
++    object_property_set_link(OBJECT(&s->dport), "flash_enc", OBJECT(&s->flash_enc), &error_abort);
+     qdev_realize(DEVICE(&s->dport), &s->periph_bus, &error_fatal);
+     MemoryRegion* dport_mem = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dport), 0);
+ 
+@@ -662,6 +663,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
+     object_property_set_bool(OBJECT(&s->spi[2]),"use_cs",true, &error_abort);
+     object_property_set_bool(OBJECT(&s->spi[3]),"use_cs",true, &error_abort);
+     for (int i = 0; i < ESP32_SPI_COUNT; ++i) {        
++        object_property_set_link(OBJECT(&s->spi[i]), "flash_enc", OBJECT(&s->flash_enc), &error_abort);
+         qdev_realize(DEVICE(&s->spi[i]), &s->periph_bus, &error_fatal);
+ 
+         esp32_soc_add_periph_device(sys_mem, &s->spi[i], spi_base[i]);
+diff --git a/include/hw/misc/esp32_dport.h b/include/hw/misc/esp32_dport.h
+index 655bcde..392e888 100644
+--- a/include/hw/misc/esp32_dport.h
++++ b/include/hw/misc/esp32_dport.h
+@@ -60,6 +60,7 @@ typedef struct Esp32DportState {
+     Esp32CacheState cache_state[ESP32_CPU_COUNT];
+     MemoryRegion psram;         /* Shared between the CPUs: the actual memory region for PSRAM */
+     BlockBackend *flash_blk;
++    Esp32FlashEncryptionState *flash_enc;
+     qemu_irq appcpu_stall_req;
+     qemu_irq appcpu_reset_req;
+     qemu_irq clk_update_req;
+diff --git a/include/hw/misc/esp32_flash_enc.h b/include/hw/misc/esp32_flash_enc.h
+index 70de111..3c526e9 100644
+--- a/include/hw/misc/esp32_flash_enc.h
++++ b/include/hw/misc/esp32_flash_enc.h
+@@ -32,13 +32,6 @@ typedef struct Esp32FlashEncryptionState {
+ 
+ } Esp32FlashEncryptionState;
+ 
+-/* returns NULL unless there is exactly one device */
+-static inline Esp32FlashEncryptionState *esp32_flash_encryption_find(void)
+-{
+-    Object *o = object_resolve_path_type("", TYPE_ESP32_FLASH_ENCRYPTION, NULL);
+-    return o ? ESP32_FLASH_ENCRYPTION(o) : NULL;
+-}
+-
+ bool esp32_flash_encryption_enabled(struct Esp32FlashEncryptionState* s);
+ bool esp32_flash_decryption_enabled(struct Esp32FlashEncryptionState* s);
+ void esp32_flash_encryption_get_result(struct Esp32FlashEncryptionState* s, uint32_t* dst, size_t dst_words);
+diff --git a/include/hw/ssi/esp32_spi.h b/include/hw/ssi/esp32_spi.h
+index 662b002..ef53df5 100644
+--- a/include/hw/ssi/esp32_spi.h
++++ b/include/hw/ssi/esp32_spi.h
+@@ -3,6 +3,7 @@
+ #include "hw/hw.h"
+ #include "hw/registerfields.h"
+ #include "hw/ssi/ssi.h"
++#include "hw/misc/esp32_flash_enc.h"
+ 
+ #define TYPE_ESP32_SPI "ssi.esp32.spi"
+ #define ESP32_SPI(obj) OBJECT_CHECK(Esp32SpiState, (obj), TYPE_ESP32_SPI)
+@@ -22,6 +23,7 @@ typedef struct Esp32SpiState {
+     QEMUTimer spi_timer;
+     bool xfer_32_bits;
+     bool use_cs;
++    Esp32FlashEncryptionState *flash_enc;
+     uint32_t addr_reg;
+     uint32_t ctrl_reg;
+     uint32_t status_reg;
+-- 
+2.43.0
+

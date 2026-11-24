@@ -144,7 +144,8 @@ A flash write also searched the whole object tree for the classic ESP32's
 flash-encryption device on every SPI transaction and cache sync, which
 thousands of searches made about three times slower than the C3 emulator's
 write. The machine now links the device once, as it links the interrupt
-matrix's CPUs:
+matrix's CPUs. The emulator carries #24 as its patch `0008` until its pin
+moves past the merge:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|

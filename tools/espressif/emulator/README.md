@@ -241,12 +241,29 @@ fork's source, make the change, and regenerate them.
   `qom-set /machine/gpio gpio9 false` presses an S60's button.
   [The board](#the-devices-board-boardpy) sets them. Merged as
   lcgamboa/qemu#22 (22 November 2026).
+- **`0008-esp32-flash-encryption-device-linked.patch` - a classic ESP32
+  writes its flash about twice as fast.** Its SPI controllers and its cache
+  found the flash-encryption device by searching the whole object tree, once
+  per SPI transaction and once per cache sync, so a flash write made
+  thousands of searches. The machines now link the device into each before
+  it is realized. A 26 KB erase and write in an ESP-IDF test app took a
+  median of 206 ms before and 75 ms after. In the tool's own runs on a POW
+  Elite (two at once on a 4-core computer, nothing else running, two checks
+  before and two after, medians): the 4 MB backup read took 22.4 s before
+  and 16.1 s after, the interim firmware's 800 KB flash-to-flash copy 11.4 s
+  and 4.0 s (69 and 197 KB/s), and the step on the device that writes
+  ESPHome's bootloader and reads it back 1.5 s and 1.1 s. D5 as a whole,
+  mostly the tool's own work, did not get shorter (3.6 s, then 3.9 s).
+  Offered as
+  [lcgamboa/qemu #24](https://github.com/lcgamboa/qemu/pull/24) and
+  [espressif/qemu #216](https://github.com/espressif/qemu/pull/216).
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 after the
 pinned commit, on 7 November 2026 (`2d075b740`), so `0001`-`0003` drop out on a
 commit after that, and `0006` on one after lcgamboa merged #21 on 14 November
 2026 (`885a6e7`); lcgamboa merged #22 and #23 on 22 November 2026 (`564205350`, `fac9a4689`), so
 `0005` and `0007` drop out on a commit after `fac9a4689`.
+`0008` drops out once lcgamboa merges #24.
 Replace `0004` with
 [espressif/qemu #183](https://github.com/espressif/qemu/pull/183) (or
 lcgamboa's copy of it, once there): written for Espressif's `esp32.c`, its
@@ -477,6 +494,7 @@ Each fix is general, not per device:
 | `This chip is revision 0` on an ESP32-C3 | emulated eFuses too old | the revision the app's header asks for |
 | QEMU killed part way through a download, which looks like the device restarting | its container held under 256 MB | 350 MB for a classic ESP32 |
 | Tasmota finds no CSE7761 ("C61: Rx none") | a UART on REF_TICK held what it received 64 times its RX timeout | `patches/0006` |
+| A flash write about three times as slow as an ESP32-C3's, the 4 MB backup read 22 s | every SPI transaction and cache sync searched the whole object tree for the flash-encryption device | `patches/0008` |
 
 ## Debugging
 
