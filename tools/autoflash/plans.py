@@ -430,10 +430,18 @@ def otadata_selecting(slot: int) -> bytes:
 
 
 def stock_slot(backup: bytes, layout: Layout = SONOFF_DUAL_OTA) -> int:
-    """Which of the backup's app slots holds Sonoff's own firmware."""
+    """Which of the backup's app slots holds Sonoff's own firmware: the one
+    holding it, or, where both do - a device Sonoff's own update has updated
+    keeps the release before in its other slot, as the S60TPG's public dump
+    does - the one its boot selection starts, or with none, the first, as
+    the bootloader takes it."""
+    from tools.espressif.dump_stock_flash import selected_ota_slot   # it builds on this module
     # The project name in the app's description, 80 bytes into the image.
     found = [index for index, address in enumerate(layout.ota)
              if backup[address + 80:address + 112].split(b"\0")[0] == b"esp32_fw"]
+    if len(found) > 1:
+        selected = selected_ota_slot(backup[layout.otadata:layout.otadata + OTADATA_SIZE], len(layout.ota))
+        found = [0 if selected is None else selected]
     if len(found) != 1:
         raise PlanError("the backup does not hold exactly one Sonoff firmware")
     return found[0]

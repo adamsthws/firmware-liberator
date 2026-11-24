@@ -264,6 +264,26 @@ class BackToSonoffTests(unittest.TestCase):
         self.assertEqual(second.steps[-1], plans.Write("otadata", plans.SONOFF_OTADATA, whole=True))
         self.assertEqual(second.blobs["otadata"], plans.otadata_selecting(1))
 
+    def test_with_sonoffs_firmware_in_both_slots_it_is_the_one_selected(self):
+        # A device Sonoff's update updated keeps the release before in its
+        # other slot (the S60TPG's public dump): a backup of it taken whole
+        # holds two, and was refused.
+        flash = bytearray(stock_flash(stock_slot=1)[0])
+        flash[plans.SONOFF_OTA[0] + 80:plans.SONOFF_OTA[0] + 112] = b"esp32_fw".ljust(32, b"\0")
+        flash[plans.SONOFF_OTADATA:plans.SONOFF_OTADATA + plans.OTADATA_SIZE] = plans.otadata_selecting(1)
+        self.assertEqual(plans.stock_slot(bytes(flash)), 1)
+        flash[plans.SONOFF_OTADATA:plans.SONOFF_OTADATA + plans.OTADATA_SIZE] = plans.otadata_selecting(0)
+        self.assertEqual(plans.stock_slot(bytes(flash)), 0)
+        # No selection: the first, as the bootloader starts it.
+        flash[plans.SONOFF_OTADATA:plans.SONOFF_OTADATA + plans.OTADATA_SIZE] = b"\xff" * plans.OTADATA_SIZE
+        self.assertEqual(plans.stock_slot(bytes(flash)), 0)
+
+    def test_with_no_sonoff_firmware_there_is_none(self):
+        flash = bytearray(stock_flash(stock_slot=0)[0])
+        flash[plans.SONOFF_OTA[0] + 80:plans.SONOFF_OTA[0] + 112] = b"other".ljust(32, b"\0")
+        with self.assertRaisesRegex(plans.PlanError, "exactly one Sonoff firmware"):
+            plans.stock_slot(bytes(flash))
+
     def test_it_never_writes_the_slot_the_device_runs_from(self):
         with self.assertRaisesRegex(plans.PlanError, "running from"):
             self.plans_for(stock_slot=1, running=1)
