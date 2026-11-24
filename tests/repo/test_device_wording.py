@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # Where "plug" is someone else's word.
 THEIRS = [
     r"Sonoff_S61s_EUPlug_WBBK_01P_V1", r"Sonoff_S60TPG_UK_Plug_ESP32", r"iPlug",   # Sonoff's names
+    r"BK7231T_Tuya_BN-LINK_Plug_WB2S_1\.0\.3", r"BK7231N_Tuya_Plug_TSL-PS-F4U-01-W_1\.1\.17",
+    r"RTL8720CF_Tuya_Eightree_ET31_UKPlug_",             # public Tuya dumps, named by whoever dumped them
     r"[Ss]mart[- ]plugs?",                                # what the S60 and S61 are sold as
     r"mdastPlugins",                                      # Astro's option
     r"emulator-public-plugs", r"public-plugs-(?:[0-9a-f]{12}|<hash>)\.tar\.xz",   # a release already published

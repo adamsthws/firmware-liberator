@@ -7,7 +7,7 @@ in [devices/](../devices/README.md).
 
 ## By chip family
 
-Both pages have the same sections, where the family has something to say: its
+The Espressif and Beken pages have the same sections, where the family has something to say: its
 devices, their flash and layouts, a device's identity and stores, the cloud,
 the update path, what a backup logs, the stock firmware in the emulator, tools
 and methods, and questions still open.
@@ -19,6 +19,9 @@ and methods, and questions still open.
 - [Beken research](beken-research.md): the eWeLink firmware on the BK7238
   devices: its flash and stores, its cloud and update format, its pairing in
   the emulator, and the route to OpenBeken and ESPHome.
+- [Tuya research](tuya-research.md): whether a Tuya / Smart Life device can be
+  converted over the air as an eWeLink one is, the keys that stops it, and the
+  chips and dumps studied.
 
 ## By device
 
