@@ -138,6 +138,22 @@ class BackTests(unittest.TestCase):
         over[0x3F0000:0x3F6000] = bytes([check.TASMOTA_WROTE]) * 0x6000
         self.assertEqual(self.problem(bytes(over), bytes(stock)), "fctry not as before")
 
+    def test_only_what_tasmotas_filesystem_left_untouched_is_written_over(self):
+        # A sector Tasmota wrote is its LittleFS's: spoilt, Tasmota formats it
+        # again and loses its settings, so the device is no longer on the home
+        # network to be taken back (a check once failed so).
+        from tools.espressif import layouts
+        stock = bytearray(b"\xff" * 0x400000)
+        stock[0x3F0000:0x3F6000] = b"\x5a" * 0x6000
+        on_tasmota = bytearray(stock)
+        on_tasmota[0x3F2000:0x3F3000] = b"\x77" * 0x1000   # a block of Tasmota's filesystem
+        flash = check.written_over(bytes(on_tasmota), bytes(stock), layouts.SONOFF_BASICR4)
+        self.assertEqual(flash[0x3F2000:0x3F3000], b"\x77" * 0x1000)
+        mark = bytes([check.TASMOTA_WROTE])
+        self.assertEqual(flash[0x3F0000:0x3F2000] + flash[0x3F3000:0x3F6000], mark * 0x5000)
+        self.assertEqual(flash[:0x3F0000] + flash[0x3F6000:], bytes(on_tasmota[:0x3F0000] + on_tasmota[0x3F6000:]))
+        self.assertEqual(self.problem(flash, bytes(stock)), "fctry not as before")
+
     def test_only_a_device_with_a_public_dump(self):
         # Refused as a wrong argument, before the packages are looked for: on a
         # computer without them, as without the virtual environment.

@@ -61,6 +61,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds, motor as motor_setup, tasmota_rules  # noqa: E402
+from tools.espressif import layouts  # noqa: E402
 from tools.repo import cpu_load, emulator_buttons, emulator_instances, emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
@@ -131,6 +132,22 @@ def jobs(changed: list[str] | None) -> list[dict[str, str]]:
 TASMOTA_WROTE = 0x42
 
 
+def written_over(flash: bytes, stock: bytes, layout) -> bytes:
+    """`flash`, a device on Tasmota, with TASMOTA_WROTE over each sector of its
+    own partitions behind its app slots still as its test copy `stock` has it.
+    A sector Tasmota has written is its filesystem's (LittleFS, which erases a
+    block before it uses one, so never reads one it has not written) and is
+    left as it is: written over, the filesystem is spoilt and formatted again
+    as Tasmota starts, and Tasmota's settings, a file there, go with it."""
+    flash = bytearray(flash)
+    for _, offset, size in layout.after_slots:
+        for at in range(offset, offset + size, layouts.SECTOR):
+            end = min(at + layouts.SECTOR, offset + size)
+            if flash[at:end] == stock[at:end]:
+                flash[at:end] = bytes([TASMOTA_WROTE]) * (end - at)
+    return bytes(flash)
+
+
 def check_back(kind: kinds.Kind, instance: int) -> int:
     """An Espressif device from its public dump, on the cloud stub, taken to
     Tasmota, then back to Sonoff's firmware (back_problem)."""
@@ -148,13 +165,12 @@ def check_back(kind: kinds.Kind, instance: int) -> int:
         if not converted:
             return 1
         layout = layout_of(kind)
-        flash = bytearray((public_devices.SAVED / saved / "flash.bin").read_bytes())
-        for _, offset, size in layout.after_slots:
-            flash[offset:offset + size] = bytes([TASMOTA_WROTE]) * size
+        stock = public_dump.built(dump)[0]
+        flash = written_over((public_devices.SAVED / saved / "flash.bin").read_bytes(), stock, layout)
         (public_devices.SAVED / saved / "flash.bin").write_bytes(flash)
         converted, said = public_devices.run(instance, saved, "sonoff", None, folder / f"{instance}-sonoff.log",
                                              kind=kind, extra=(*stub, "--keep"))
-        problem = back_problem(public_dump.built(dump)[0], instance, layout) if converted else None
+        problem = back_problem(stock, instance, layout) if converted else None
         print(f"{'PASS' if converted and not problem else 'FAIL'}  {kind.key} on tasmota to Sonoff's: "
               f"{said}{', but ' + problem if problem else ''}", flush=True)
         if converted and not problem:
