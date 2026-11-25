@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, kinds, names, prompts, unlock
+from tools.autoflash import detect, esphome, kinds, names, plans, prompts, unlock
+from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import installer
 from tools.autoflash.routes.espressif import images
@@ -146,11 +147,30 @@ def evidence_by_what_answers(finished: set[str], not_yet: set[str]):
     return evidence
 
 
+def not_on_its_own_table(ctx: "Context") -> bool:
+    """Whether the device, on a Tasmota, is still on the temporary layout it
+    left Tasmota through or the interim one a commit stopped part way left
+    (hub.sonoff_layout_back): seen, a run killed as D5 wrote the device's own
+    table back found ESPHome's bootloader in place from an earlier
+    conversion, took D5 for done, and every R1 after was refused."""
+    layout = images.layout_of(kinds.of_run(ctx.state))
+    try:
+        table = ctx.device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR)
+    except (DeviceError, OSError):
+        return False
+    return table in {layout.temporary_sha256, layout.interim_sha256} - {""}
+
+
 def evidence_bootloader(ctx: "Context") -> tuple[bool | None, str]:
     chip = images.chip_of(kinds.of_run(ctx.state))
     image = images.published_bootloader(chip)
     actual = ctx.device.sha_region(chip.bootloader_at, len(image))
     if actual == images.bootloader_file(chip)[2]:
+        if not_on_its_own_table(ctx):
+            # D5 writes the device's own table back first (hub.sonoff_layout_back);
+            # its bootloader may be ESPHome's from an earlier conversion.
+            return False, ("ESPHome's bootloader is in place, but the device is not back on its own\n"
+                           "  memory layout yet, so this step has to be done again.")
         return True, "ESPHome's bootloader is in place, so this step did finish."
     return False, "The device still has its old bootloader, so this step has to be done again."
 
