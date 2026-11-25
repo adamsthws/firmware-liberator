@@ -14,6 +14,19 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
+## 3.2.1
+
+- A run stopped while the bootloader step was putting a TH Elite's own
+  partition table back is now carried on properly. Before, the next run
+  took the step for done, as ESPHome's bootloader was already there, and
+  going back to Sonoff's firmware was then refused every time.
+- Going back to Sonoff's firmware works from a backup that holds Sonoff's
+  firmware in both app slots, as a device Sonoff has updated does: the slot
+  its boot selection starts is written back. Before, such a backup was
+  refused.
+- A Wi-Fi name of one or two characters is kept out of the run's log, as
+  longer ones are.
+
 ## 3.2.0
 
 - The Sonoff BASICR4 converts, to Tasmota or ESPHome and from either to the
