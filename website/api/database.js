@@ -14,10 +14,14 @@
 //   alone (CREATE ... IF NOT EXISTS) can be run again: one that changes any,
 //   cut off part way, stops the next `apply` at what it had done already
 //   (duplicate column name, no such table). Run the statements it had left
-//   by hand, in the D1 console, then its row into d1_migrations.
+//   by hand, in the D1 console, then its row into d1_migrations; or take the
+//   database back to where it was, with the command `apply` showed before it
+//   ran that migration (D1's Time Travel).
 // - `apply` comes before the push that deploys the Worker needing it. That
 //   Worker answers 503 until the migration is there (ready, below); the one
-//   deployed before may fail, between the two, on what a migration took away.
+//   deployed before may fail, between the two, on what a migration took
+//   away: a report it refuses then, the tool keeps and sends at its next
+//   start (tools/autoflash/report_upload.py).
 
 // The newest migration this code needs (test/database.test.mjs holds it to
 // the newest file in migrations/).

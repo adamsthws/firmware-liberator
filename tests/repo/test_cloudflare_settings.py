@@ -131,6 +131,8 @@ class FakeCloudflare:
             if self.migrations is None:
                 raise cs.SettingsError(f"POST {QUERY}: HTTP 400: no such table: d1_migrations: SQLITE_ERROR")
             return [{"results": [{"name": name} for name in self.migrations], "success": True}]
+        if path == f"{DATABASES}/u1/time_travel/bookmark":
+            return {"bookmark": "00000001-00000002-00004e2f-0a83ea2f"}
         if method != "GET":
             self.sent.append((method, path, body))
             if method == "DELETE" and path.startswith(f"{ZONE}/rulesets/"):
@@ -949,6 +951,22 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual([path for _, path, _ in self.fake.sent], [QUERY])
         self.assertEqual(self.fake.migrations, cs.migration_files())
 
+    def test_before_a_migration_that_changes_tables_the_point_to_restore_to_is_shown(self):
+        # One cut off part way cannot be run again: the database goes back to its bookmark.
+        changing = [name for name in cs.migration_files()
+                    if cs.D1_CHANGES.search((cs.MIGRATIONS / name).read_text(encoding="utf-8"))]
+        self.assertIn("0004_report_details_as_columns.sql", changing)
+        self.assertNotIn("0001_initial.sql", changing)
+        self.fake.migrations = self.fake.migrations[:cs.migration_files().index(changing[0])]
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 0, out)
+        restore = f"wrangler d1 time-travel restore {cs.D1_DATABASE} --bookmark=00000001-00000002-00004e2f-0a83ea2f"
+        self.assertEqual(out.count(restore), len(changing), out)
+        self.assertLess(out.index(f"before migration {changing[0]}: to undo it, {restore}"),
+                        out.index(f"migration {changing[0]}: set"))
+        self.fake.migrations = None
+        self.assertNotIn("time-travel", run(self.fake, "apply")[1].split("0004_")[0], "none before one that only makes tables")
+
     def test_a_database_never_migrated_is_migrated(self):
         self.fake.migrations = None
         self.assertEqual(run(self.fake, "apply")[0], 0)
@@ -1001,11 +1019,11 @@ class DatabaseTests(unittest.TestCase):
             fake.migrations = [earlier for earlier in cs.migration_files() if earlier < name]
             with mock.patch.object(cs, "api", fake), mock.patch.object(cs, "bound_database_id", lambda config=None: "u1"):
                 changes = [change for _, _, change in cs.database_differences("a1")]
-            sql = changes[0][2]["sql"]
+            changing = callable(changes[0])   # run_changing, with what it sends
+            sql = (changes[0].args[2] if changing else changes[0])[2]["sql"]
             db.executescript(sql)
-            body = sql[:sql.rindex("INSERT INTO d1_migrations")]
-            if not re.search(r"^\s*(ALTER|UPDATE|DROP|INSERT|DELETE)\b", body, re.I | re.M):
-                db.executescript(body)   # the migration itself, again
+            if not changing:
+                db.executescript(sql[:sql.rindex("INSERT INTO d1_migrations")])   # the migration itself, again
         self.assertEqual([row[0] for row in db.execute("SELECT name FROM d1_migrations ORDER BY id")],
                          cs.migration_files())
 

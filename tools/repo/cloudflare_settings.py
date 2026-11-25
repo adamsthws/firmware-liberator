@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import functools
 import getpass
 import ipaddress
 import json
@@ -136,6 +137,9 @@ API_WRANGLER = ROOT / "website" / "api" / "wrangler.jsonc"
 ADMIN_WRANGLER = ROOT / "website" / "admin" / "wrangler.jsonc"
 MIGRATIONS = ROOT / "website" / "api" / "migrations"
 D1_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
+# A migration that changes what is there (website/api/database.js): it cannot
+# be run again, so the point to restore the database to is shown before it.
+D1_CHANGES = re.compile(r"^\s*(ALTER|UPDATE|DROP|INSERT|DELETE)\b", re.I | re.M)
 D1_MIGRATIONS_TABLE = ("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                        "name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);")
 
@@ -377,7 +381,7 @@ TOKENS: dict[str, dict[str, Any]] = {
         },
         "account": {
             "Workers R2 Storage Write": "READOUTS_BUCKET and STATS_BUCKET: made, the figures' domain, no lifecycle rule",
-            "D1 Write": "database_differences: the API's database made, and each migration run",
+            "D1 Write": "database_differences: the API's database made, its bookmark read, and each migration run",
             "Email Routing Addresses Write": "email_differences: the destination address",
             "Email Sending Write": "onboard_sending: the domain onboarded for sending",
             "Account API Tokens Read": "token_differences: each token's permissions",
@@ -1309,10 +1313,23 @@ def database_differences(account: str) -> list[tuple[str, str, Any]]:
         return found
     for name in files[len(applied):]:
         sql = (MIGRATIONS / name).read_text(encoding="utf-8")
+        send = ("POST", query, {"sql": f"{D1_MIGRATIONS_TABLE}\n{sql}\n"
+                                       f"INSERT INTO d1_migrations (name) VALUES ('{name}');"})
         found.append((f"D1 {D1_DATABASE} migration {name}", "has not been run",
-                      ("POST", query, {"sql": f"{D1_MIGRATIONS_TABLE}\n{sql}\n"
-                                              f"INSERT INTO d1_migrations (name) VALUES ('{name}');"})))
+                      functools.partial(run_changing, f"{path}/{uuid}", name, send) if D1_CHANGES.search(sql) else send))
     return found
+
+
+def run_changing(database: str, name: str, send: tuple[str, str, Any]) -> list[str]:
+    """Run a migration that changes what is there, the database's bookmark
+    (D1's Time Travel) shown first: cut off part way, or wrong, the database
+    goes back to it, for as long as the plan keeps one."""
+    bookmark = api(f"{database}/time_travel/bookmark")["bookmark"]
+    print(f"  D1 {D1_DATABASE} before migration {name}: to undo it, "
+          f"wrangler d1 time-travel restore {D1_DATABASE} --bookmark={bookmark}")
+    method, path, body = send
+    api(path, method, body)
+    return []
 
 
 def create_database(account: str) -> list[str]:
