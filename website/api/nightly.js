@@ -25,9 +25,12 @@
 //   emulator.js), each day a run came in for since the last night.
 // - Before a day is folded, a device's reports that day far above its usual
 //   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
-//   SPIKE_DAYS before) are held for review (held_reports): a flood of
-//   made-up reports of one device, or a real rush the maintainer releases
-//   (reports.released: never counted towards a spike or held again). A
+//   SPIKE_DAYS before) from few senders (over SPIKE_PER_SENDER each, of those
+//   reports.js counted that day: spikeSender) are held for review
+//   (held_reports): a flood of made-up reports of one device. A real rush is
+//   many senders, a few reports each, and is not held; one held all the
+//   same, the maintainer releases (reports.released: never counted towards a
+//   spike or held again). A
 //   device is its kind (NAMED), so a flood naming no model, or a new one in
 //   each report, is one; one of no kind, by its model.
 // The work is done in SQL, on the database's side, in a fixed few queries:
@@ -50,7 +53,18 @@ export const SPIKE_TIMES = 5;
 export const SPIKE_SMALLEST = 25;
 // At most this many devices' days held a night, so a night's queries stay few.
 export const SPIKE_MOST = 10;
+// A day far above usual is a flood only with more reports than this to each
+// sender: a real rush's first days had about four each, over 9 to 27 senders.
+export const SPIKE_PER_SENDER = 10;
 export const SPIKE_WHY = "a day far above usual for its device";
+// The counter of one sender's reports of one device (NAMED) on one day, as
+// reports.js counts them: `sender`, 32 characters of a keyed hash of all
+// three and its address, so it ties that sender to nothing else, not even to
+// its own other days or devices. Gone with the other day counts, after
+// COUNTER_DAYS.
+const SPIKE_SENDER = "spike-sender:";
+export const spikeSender = (day, sender, named) => `${SPIKE_SENDER}${day}:${sender}:${named}`;
+const SPIKE_SENDER_NAMED = spikeSender("2026-01-01", "0".repeat(32), "").length + 1;
 // What a spike is counted by: a report's kind, else its model (and the admin
 // view's releasing all of one held, admin/index.js releaseAll).
 export const NAMED = "coalesce(device, model)";
@@ -155,7 +169,9 @@ export function pruning(db, today) {
 
 // The (day, named) pairs of the days about to be folded whose reports are far
 // above that device's usual over the SPIKE_DAYS before (`named`: its kind,
-// else its model; NAMED): two queries, whatever the number of days.
+// else its model; NAMED), and from few senders: three queries, whatever the
+// number of days. A day with no sender counted (their counts gone, a day
+// unfolded by hand after COUNTER_DAYS) is held as from few.
 export async function spikes(db, today) {
   const { results: days } = await db.prepare(`SELECT day, ${NAMED} AS named, count(*) AS n FROM reports
     WHERE day IN (${UNFOLDED}) AND tag = 'user' AND quarantined = 0 AND released = 0 AND ${NAMED} IS NOT NULL
@@ -171,7 +187,11 @@ export async function spikes(db, today) {
     GROUP BY day, named`).bind(daysBefore(first, SPIKE_DAYS), today).all();
   const usual = (row) => before.filter((other) => other.named === row.named && other.day < row.day
     && other.day >= daysBefore(row.day, SPIKE_DAYS)).reduce((sum, other) => sum + other.n, 0) / SPIKE_DAYS;
-  return days.filter((row) => row.n > SPIKE_TIMES * Math.max(usual(row), 1)).slice(0, SPIKE_MOST)
+  const { results: counted } = await db.prepare(`SELECT day, substr(name, ?1) AS named, count(*) AS senders
+    FROM counters WHERE name GLOB '${SPIKE_SENDER}*' AND count > 0 GROUP BY day, named`).bind(SPIKE_SENDER_NAMED).all();
+  const senders = (row) => counted.find((other) => other.day === row.day && other.named === row.named)?.senders ?? 0;
+  return days.filter((row) => row.n > SPIKE_TIMES * Math.max(usual(row), 1) && row.n > SPIKE_PER_SENDER * senders(row))
+    .slice(0, SPIKE_MOST)
     .map((row) => ({ day: row.day, named: row.named, n: row.n }));
 }
 

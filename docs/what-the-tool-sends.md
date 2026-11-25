@@ -171,7 +171,10 @@ each step took - for seven days, so that the maintainer can look into a
 failure; neither is used for anything else. The server
 itself uses your address only to limit how many reports one computer can
 send: it holds the address in memory for a minute, and counts it for the day
-as a scrambled code deleted after a week. So that a made-up model name cannot
+as a scrambled code deleted after a week. It counts your day's reports of
+each kind of device the same way, under another such code that ties you to
+nothing else, to tell many people converting a device on one day from one
+computer sending made-up reports. So that a made-up model name cannot
 be put on the public figures by one computer, it also notes, for each model a
 report names, a scrambled code of your address and that model, which ties
 you to nothing else; it is deleted once enough people have named that model,

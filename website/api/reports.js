@@ -26,7 +26,10 @@
 //   sender (sender.js: an IPv6 address by its /48), counted under a keyed
 //   hash (SENDER_KEY) of its address, never the address, and DEVICE_DAILY a
 //   day for one device; past the first two, the rest wait for another day
-//   ("later"), so no one computer can flood the figures.
+//   ("later"), so no one computer can flood the figures. Each sender's
+//   reports of one device a day are counted too, from a network that counts
+//   (networks.js), under a hash of their own (nightly.js spikeSender): the
+//   nightly job tells a real rush, many senders, from a flood by them.
 // - Nothing is taken (503) while INGEST is not "on": index.js checks it for
 //   every path, before this.
 // - One no run of the tool's would write (review.js) is held for review:
@@ -41,6 +44,7 @@ import schema from "./report-schema.json" with { type: "json" };
 import { validate } from "./report-schema.js";
 import { heldFor, holdsHeldWords } from "./review.js";
 import { countedNetwork } from "./networks.js";
+import { spikeSender } from "./nightly.js";
 import { senderAddress } from "./sender.js";
 
 export const MAX_BODY = 1024 * 1024;
@@ -145,6 +149,8 @@ const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, resu
   converted_here, quarantined, step, question, stock_check)
   VALUES (${Array(24).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
+const SPIKE_SENDER = `INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)
+  ON CONFLICT (name) DO UPDATE SET count = count + excluded.count`;
 // What a run's report says of the offers sent beside it (its "offers",
 // counts and flags alone; none from a tool that sent none), one row a
 // report: whether they load eWeLink or come before the run's sign-in ended,
@@ -317,9 +323,24 @@ export async function reports(request, env, now = new Date()) {
   const models = [...new Set(kept.filter(([report, , held]) => held === null && report.tag === "user" && report.model)
     .map(([report]) => report.model))];
   const namings = await Promise.all(models.map((model) => naming(env, request, model, day)));
+  // The runs' reports counted, by device as a spike is counted (nightly.js
+  // NAMED), each device's noted as this sender's that day.
+  const devices = new Map();
+  for (const [report, , held] of kept) {
+    const named = report.device ?? report.model;
+    if (held === null && report.tag === "user" && named && !isReadout(report)) {
+      devices.set(named, (devices.get(named) ?? 0) + 1);
+    }
+  }
+  const senders = devices.size && (await countedNetwork(env, request)) !== null
+    ? await Promise.all([...devices].map(async ([named, count]) => env.DB.prepare(SPIKE_SENDER).bind(
+      spikeSender(day, (await keyed(env.SENDER_KEY, `spike|${day}|${named}|${senderAddress(request)}`)).slice(0, 32), named),
+      day, count)))
+    : [];
   if (kept.length) {
     try {
-      await env.DB.batch([...kept.flatMap(([report, hash, held]) => writes(env.DB, report, hash, day, held)), ...namings]);
+      await env.DB.batch([...kept.flatMap(([report, hash, held]) => writes(env.DB, report, hash, day, held)), ...namings,
+        ...senders]);
     } catch (error) {
       await release(env.DB, reportsOn(day), 0, kept.length);
       await release(env.DB, sender, 0, kept.length);

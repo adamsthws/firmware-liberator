@@ -531,6 +531,25 @@ test("a spike released is counted the next night and not held again, though more
   assert.deepEqual(rows(bindings, "SELECT count(*) AS n FROM reports WHERE quarantined = 0"), [{ n: 30 }]);
 });
 
+// `n` senders' counts of `named` on `day`, as reports.js keeps them.
+const sentBy = (bindings, day, n, named = "sonoff-s60") => Array.from({ length: n }, (_, at) =>
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, 3, 0)")
+    .run(night.spikeSender(day, String(at).padStart(32, "0"), named), day));
+
+test("a day far above usual from many senders is a rush, not held; from few, a flood", async () => {
+  const rush = env();
+  await many(rush.DB, "2026-11-09", 71);
+  sentBy(rush, "2026-11-09", 8);
+  sentBy(rush, "2026-11-08", 30);                  // another day's senders
+  sentBy(rush, "2026-11-09", 30, "sonoff-s61");    // and another device's count for nothing
+  assert.deepEqual((await night.nightly(rush, NIGHT)).held, [], `71 from 8: under ${night.SPIKE_PER_SENDER} each`);
+  assert.equal(rows(rush, "SELECT sum(n) AS n FROM daily_totals WHERE day = '2026-11-09'")[0].n, 71, "counted");
+  const flood = env();
+  await many(flood.DB, "2026-11-09", 71);
+  sentBy(flood, "2026-11-09", 7);
+  assert.deepEqual((await night.nightly(flood, NIGHT)).held, [{ day: "2026-11-09", named: "sonoff-s60", n: 71 }]);
+});
+
 test("a busy model at its usual pace is not held, and five times it is", async () => {
   const at = (day) => new Date(Date.parse("2026-10-12T00:00:00Z") + day * 86_400_000).toISOString().slice(0, 10);
   const bindings = env();

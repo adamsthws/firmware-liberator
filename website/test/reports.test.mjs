@@ -531,6 +531,29 @@ test("a sender is counted under a keyed hash, never its address", async () => {
   assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM counters")).includes("198.51.100.23"));
 });
 
+test("a sender's reports of each device are counted for the day, from a network that counts alone", async () => {
+  const bindings = env();
+  const from = (asn, reports, address = "198.51.100.23") => {
+    const request = post({ reports }, {}, address);
+    Object.defineProperty(request, "cf", { value: { asn } });
+    return api.reports(request, bindings, NOW);
+  };
+  const counted = () => rows(bindings, "SELECT name, count FROM counters WHERE name LIKE 'spike-sender:%'")
+    .map((row) => [row.name.replace(/:[0-9a-f]{32}:/, ":<sender>:"), row.count]).sort();
+  await from(64500, [report(), report(), report({ device: null, model: "NEWONE" }), report({ tag: "dev" }),
+    readoutReport()]);
+  assert.deepEqual(counted(), [["spike-sender:2026-11-09:<sender>:NEWONE", 1], ["spike-sender:2026-11-09:<sender>:sonoff-s60", 2]],
+    "by kind, else model, as a spike is counted: the maintainer's own and a readout's not");
+  await from(64500, [report()]);
+  await from(64500, [report()], "203.0.113.9");
+  assert.deepEqual(counted().filter(([name]) => name.endsWith("s60")).map(([, count]) => count).sort(), [1, 3],
+    "one sender's added up, another's its own");
+  await from(16509, [report()], "203.0.113.50");   // a big cloud's
+  await api.reports(post({ reports: [report()] }, {}, "203.0.113.51"), bindings, NOW);   // no network given
+  assert.equal(counted().length, 3, "a sender on no network that counts is none");
+  assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM counters")).includes("198.51.100"), "never the address");
+});
+
 test("what everyone's day has no room for is given back to the sender's", async () => {
   const bindings = env();
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
