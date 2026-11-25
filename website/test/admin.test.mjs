@@ -372,6 +372,25 @@ test("all of one device's held on one day for one reason are released at once, a
   assert.deepEqual(rows(db, "SELECT count(*) AS n FROM held_reports WHERE day = '2026-11-09'"), [{ n: 3 }]);
 });
 
+test("a readout's report held is listed, counted, and released or deleted as a run's is", async () => {
+  const { bindings, db } = await held();
+  const sample = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).readoutValid[0];
+  const readout = (model) => ({ ...structuredClone(sample), id: randomBytes(8).toString("hex"), model });
+  const [one, other] = [readout("HELDONE"), readout("HELDTWO")];
+  for (const report of [one, other]) {
+    await db.batch(writes(db, report, null, "2026-11-09", "words no report would hold"));
+  }
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  const section = html.split('id="held">')[1].split("</section>")[0];
+  assert.ok(section.includes("<td>readout</td>") && section.includes("HELDONE") && section.includes("HELDTWO"), section);
+  assert.match(html, /Held for review<\/div><div class="tile-value">3</, "the run's and the two readouts'");
+  await db.batch(admin.release(db, one.id));
+  assert.deepEqual(rows(db, `SELECT quarantined FROM readout_reports WHERE id = '${one.id}'`), [{ quarantined: 0 }]);
+  await db.batch(admin.remove(db, other.id));
+  assert.deepEqual(rows(db, `SELECT id FROM readout_reports WHERE id = '${other.id}'`), []);
+  assert.deepEqual(rows(db, "SELECT count(*) AS n FROM held_reports"), [{ n: 1 }], "the run's alone is left");
+});
+
 test("only a report held can be released or deleted from here", async () => {
   const { db } = await held();
   const [{ id }] = rows(db, "SELECT id FROM reports WHERE quarantined = 0");
