@@ -14,7 +14,7 @@
 # after 8 s of uptime.
 RUN=/run/autoflash-emu
 LOG=/state/logs/uart.log
-. "$RUN/env"
+. /run/autoflash-emu-root/env   # entrypoint.sh's, root's
 
 # The chip the device's flash is for (emu.sh). A classic ESP32 boots from flash by
 # its strapping pins, which the fork takes as a value; every input idles high,

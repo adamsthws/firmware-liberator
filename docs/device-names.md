@@ -293,7 +293,7 @@ add today's names to these lists rather than replacing them.
    installer READMEs, and the changelog.
 6. Test every name in the emulator, as [`testing.md`](testing.md) says: each
    firmware's hostname is in the emulator's DHCP log
-   (`/run/autoflash-emu/dnsmasq.log` in the container), the network it
+   (`/run/autoflash-emu-root/dnsmasq.log` in the container), the network it
    raises in `/run/autoflash-emu/softap`, and every network that went out in
    the device's serial log (`esp32_wifi: guest SoftAP <name> up`). Run every route
    from stock and between the firmwares, and the routes through each

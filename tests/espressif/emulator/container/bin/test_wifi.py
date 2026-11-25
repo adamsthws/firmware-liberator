@@ -23,17 +23,19 @@ class WifiJoinTests(unittest.TestCase):
 
     def run_wifi(self, *args, softap=""):
         with tempfile.TemporaryDirectory() as tmp:
-            run = Path(tmp, "run")
+            run, root_run = Path(tmp, "run"), Path(tmp, "root")
             run.mkdir()
+            root_run.mkdir()
             (run / "softap").write_text(softap + "\n" if softap else "", encoding="utf-8")
-            (run / "gateway").write_text("192.168.4.1\n", encoding="utf-8")
+            (root_run / "gateway").write_text("192.168.4.1\n", encoding="utf-8")   # wifi-root's
             calls = Path(tmp, "calls")
             for name, text in {"nmcli": f"#!/bin/sh\necho PICSimLabWifi\n{'echo ' + softap if softap else ''}\n",
                                "sudo": f'#!/bin/sh\necho "$*" >> {calls}\n'}.items():
                 Path(tmp, name).write_text(text, encoding="utf-8")
                 Path(tmp, name).chmod(0o755)
             done = subprocess.run(["bash", str(WIFI), *args], capture_output=True, text=True, timeout=30,
-                                  env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "AUTOFLASH_EMU_RUN": str(run)})
+                                  env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "AUTOFLASH_EMU_RUN": str(run),
+                                       "AUTOFLASH_EMU_ROOT_RUN": str(root_run)})
             return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
 
     def test_without_a_name_the_devices_network_on_the_air_is_joined(self):

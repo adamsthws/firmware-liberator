@@ -48,7 +48,11 @@ together and what it changes, for working on it. How to use it is in
   fetches an offered file. With no systemd in the
   container, a stand-in answers the tool's `systemctl is-active ufw` from ufw's
   own setting. The `wifi` command needs no password, as a desktop's Wi-Fi menu
-  does not. `--no-firewall` leaves ufw off.
+  does not: its root half, `wifi-root`, is the one command sudo runs without
+  it, so it reads and writes only `/run/autoflash-emu-root` (the router's DHCP
+  log and leases, the network joined, its settings), which only root can
+  change, and refuses to run where that, or what it reads there, could be
+  anyone else's. `/run/autoflash-emu` is yours. `--no-firewall` leaves ufw off.
 - **Power.** `device-supervisor` restarts QEMU whenever it exits, as a power
   cut looks.
 - **The API** the tool's readouts go to is the project's own code

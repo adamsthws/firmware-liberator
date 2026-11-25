@@ -168,6 +168,10 @@ NET = "192.168.60"   # the emulator's home Wi-Fi (container/bin/wifi-root)
 # The device's address there as it starts (wifi-root): a readdress moves it,
 # so where it is now is the suite's address() or device_addresses().
 DEVICE_IP = f"{NET}.50"
+# What the emulator's router (wifi-root, as root) keeps: its DHCP log and
+# leases, where the device is to be given next, this computer's gateway on the
+# device's own network.
+ROUTER = "/run/autoflash-emu-root"
 # An MQTT host for a device set up by its owner (notemplate): nobody's (RFC 5737).
 NOTEMPLATE_MQTT_HOST = "192.0.2.10"
 APP0_OFFSET = 0xE0000  # Tasmota's own firmware, on its layout (tools/espressif/safeboot/safeboot_migration.py)
@@ -768,8 +772,8 @@ def addresses_of(moved_to, dhcp_log):
 def device_addresses(n):
     """addresses_of the device in emulator `n` (or named `n`)."""
     container = n if isinstance(n, str) else name(n)
-    moved_to = sh("docker", "exec", container, "cat", "/run/autoflash-emu/device-ip").stdout
-    return addresses_of(moved_to, sh("docker", "exec", container, "cat", "/run/autoflash-emu/dnsmasq.log").stdout)
+    moved_to = sh("docker", "exec", container, "cat", f"{ROUTER}/device-ip").stdout
+    return addresses_of(moved_to, sh("docker", "exec", container, "cat", f"{ROUTER}/dnsmasq.log").stdout)
 
 
 def device_internet(n, on):
@@ -1958,7 +1962,7 @@ class Scenario:
                 # Dropped off a network that came back by the same name - the
                 # device restarted on it (the installer into Tasmota, say), too
                 # quickly to be seen gone: joined again while the run asks.
-                gateway = self.ex("cat", "/run/autoflash-emu/gateway").stdout.strip() or "192.168.4.1"
+                gateway = self.ex("cat", f"{ROUTER}/gateway").stdout.strip() or "192.168.4.1"
                 silent = 0 if self.ex("ping", "-c1", "-W1", gateway).returncode == 0 else silent + 1
                 if silent >= 5:  # about 15 s: not a moment's drop as Tasmota tests the details
                     self.say(f"PERSON: dropped off {joined}; joining it again")
@@ -2257,7 +2261,7 @@ class Scenario:
         """The device's address on the home network, as its router gave it:
         DEVICE_IP, unless a readdress moved it (wifi-root readdress) and the
         device has asked again since."""
-        leases = self.ex("cat", "/run/autoflash-emu/leases").stdout
+        leases = self.ex("cat", f"{ROUTER}/leases").stdout
         return fault_verdicts.device_address(leases, self.dhcp_log(), MAC) or DEVICE_IP
 
     def tasmota(self, command):
@@ -2902,7 +2906,7 @@ class Scenario:
     def dhcp_log(self):
         """Every address the emulator's router gave the device, and any it gave
         back, as its dnsmasq logged them (container/bin/wifi-root)."""
-        return self.ex("cat", "/run/autoflash-emu/dnsmasq.log").stdout
+        return self.ex("cat", f"{ROUTER}/dnsmasq.log").stdout
 
     def names_seen(self):
         """The names the device went by on the home network (DHCP, in order,

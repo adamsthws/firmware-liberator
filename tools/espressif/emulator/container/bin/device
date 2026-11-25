@@ -11,6 +11,7 @@
 #   device router on       the Wi-Fi is back, and the device rejoins by itself
 set -euo pipefail
 RUN=/run/autoflash-emu
+ROOT_RUN=/run/autoflash-emu-root   # the router's (wifi-root)
 LOG=/state/logs/uart.log
 
 kill_qemu() {
@@ -52,7 +53,7 @@ status)
     echo "Power:    $state"
     softap=$(cat "$RUN/softap" 2>/dev/null || true)
     echo "Its own network: ${softap:-(none)}"
-    lease=$(awk '{print $3}' "$RUN/leases" 2>/dev/null | head -1)
+    lease=$(awk '{print $3}' "$ROOT_RUN/leases" 2>/dev/null | head -1)
     echo "Address on the home network: ${lease:-(none yet)}"
     [ -e "$RUN/router-off" ] && echo "Router:   off - the device's Wi-Fi is down (device router on)"
     ;;

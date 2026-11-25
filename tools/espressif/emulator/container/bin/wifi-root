@@ -8,21 +8,51 @@
 #                          the router forgets the device's address and gives it
 #                          ADDRESS when it next asks, as a home router may (the
 #                          fault suite's readdress); .50 until then
+#
+# It runs as root, through sudo without a password: everything it reads or
+# writes is in ROOT_RUN, which only root can change (entrypoint.sh makes it),
+# never in RUN, which is yours - an env sourced from there, or a file written
+# through a link you put there, would be root's for anything. It refuses to
+# run where ROOT_RUN or what it reads there could be anyone else's.
 set -euo pipefail
-RUN=${AUTOFLASH_EMU_RUN:-/run/autoflash-emu}   # another for its tests, as `wifi` takes
-. "$RUN/env"
+RUN=${AUTOFLASH_EMU_RUN:-/run/autoflash-emu}   # others for its tests, as `wifi` takes
+ROOT_RUN=${AUTOFLASH_EMU_ROOT_RUN:-/run/autoflash-emu-root}
+
+# The router runs as this user, which writes its pid, leases and log.
+ROUTER_USER=nobody
+
+# Whether PATH is not a link, is owned by one of the user ids after it, and
+# can be written by no one else.
+owned() {
+    local path=$1 owner; shift
+    owner=$(stat -c %u "$path")
+    [ ! -L "$path" ] && [ $(( 0$(stat -c %a "$path") & 022 )) = 0 ] || return 1
+    for uid in "$@"; do [ "$owner" = "$uid" ] && return 0; done
+    return 1
+}
+refuse() { echo "wifi-root: $1 is not root's alone: not run" >&2; exit 1; }
+me=$(id -u)
+for path in "$ROOT_RUN" "$ROOT_RUN"/{env,device-ip,tap-mac}; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    owned "$path" "$me" || refuse "$path"
+done
+if [ -e "$ROOT_RUN/dnsmasq.pid" ] || [ -L "$ROOT_RUN/dnsmasq.pid" ]; then
+    owned "$ROOT_RUN/dnsmasq.pid" "$me" "$(id -u "$ROUTER_USER")" || refuse "$ROOT_RUN/dnsmasq.pid"
+fi
+[ -d "$ROOT_RUN" ] && [ -f "$ROOT_RUN/env" ] || { echo "wifi-root: no $ROOT_RUN/env: not run" >&2; exit 1; }
+. "$ROOT_RUN/env"
 HOME_SSID=PICSimLabWifi
 NET=192.168.60
 # The device's address on the home network: .50, unless readdress gave it another.
-DEVICE_IP=$(cat "$RUN/device-ip" 2>/dev/null || echo "$NET.50")
+DEVICE_IP=$(cat "$ROOT_RUN/device-ip" 2>/dev/null || echo "$NET.50")
 JOINED=devicenet   # this computer's interface on the device's network
 
 # This computer's own traffic (the tool and its servers run as the user who
-# started the emulator); the router's, dnsmasq's, is root's.
-user=$(stat -c %u "$RUN/env")
+# started the emulator); the router's, dnsmasq's, is its own user's (ROUTER_USER).
+user=$HOST_UID
 
 router_up() {
-    [ -f "$RUN/dnsmasq.pid" ] && kill -0 "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null
+    [ -f "$ROOT_RUN/dnsmasq.pid" ] && kill -0 "$(cat "$ROOT_RUN/dnsmasq.pid")" 2>/dev/null
 }
 
 leave_device_network() {
@@ -39,44 +69,44 @@ start_router() {
         --dhcp-range="$NET.100,$NET.199,255.255.255.0,1h" \
         --dhcp-host="$DEVICE_MAC,$DEVICE_IP" \
         --dhcp-option=option:router,"$NET.1" --dhcp-option=option:dns-server,"$NET.1" \
-        --dhcp-leasefile="$RUN/leases" --pid-file="$RUN/dnsmasq.pid" \
-        --log-dhcp --log-facility="$RUN/dnsmasq.log" "${dns[@]}"
+        --dhcp-leasefile="$ROOT_RUN/leases" --pid-file="$ROOT_RUN/dnsmasq.pid" \
+        --log-dhcp --log-facility="$ROOT_RUN/dnsmasq.log" --user="$ROUTER_USER" "${dns[@]}"
 }
 
 # tap0's own MAC, from a join of an earlier version that took tap0 over
-[ -f "$RUN/tap-mac" ] || cat /sys/class/net/tap0/address > "$RUN/tap-mac"
+[ -f "$ROOT_RUN/tap-mac" ] || cat /sys/class/net/tap0/address > "$ROOT_RUN/tap-mac"
 
 case "${1:-}" in
 home)
     leave_device_network
     ip route replace 224.0.0.0/4 dev "$LAN"   # mDNS discovery goes to the device's network
     if ! router_up; then
-        [ "$(cat /sys/class/net/tap0/address)" = "$(cat "$RUN/tap-mac")" ] || {
-            ip link set tap0 down; ip link set tap0 address "$(cat "$RUN/tap-mac")"; ip link set tap0 up; }
+        [ "$(cat /sys/class/net/tap0/address)" = "$(cat "$ROOT_RUN/tap-mac")" ] || {
+            ip link set tap0 down; ip link set tap0 address "$(cat "$ROOT_RUN/tap-mac")"; ip link set tap0 up; }
         ip address flush dev "$LAN"
         ip address add "$NET.1/24" dev "$LAN"
         start_router
     fi
-    echo "$HOME_SSID" > "$RUN/network"
-    echo "$DEVICE_IP:80" > "$RUN/browser-target"
+    echo "$HOME_SSID" > "$ROOT_RUN/network"
+    echo "$DEVICE_IP:80" > "$ROOT_RUN/browser-target"
     ;;
 readdress)
     address=${2:?which address}
     case "$address" in "$NET".[1-9]|"$NET".[1-9][0-9]) ;;
         *) echo "readdress: an address from $NET.1 to $NET.99, not $address" >&2; exit 2 ;; esac
-    echo "$address" > "$RUN/device-ip"
+    echo "$address" > "$ROOT_RUN/device-ip"
     DEVICE_IP=$address
     # Its DHCP alone started again: the router keeps its own address, as a
     # home router forgetting a lease does - taken off for a moment, as home
     # does, it cut off what the tool serves the device (seen: D5's plan never
     # fetched).
-    if router_up; then kill "$(cat "$RUN/dnsmasq.pid")"; sleep 1; fi
+    if router_up; then kill "$(cat "$ROOT_RUN/dnsmasq.pid")"; sleep 1; fi
     # Its pid forgotten too: nothing in the container reaps it, and its
     # zombie answers kill -0 (router_up).
-    rm -f "$RUN/dnsmasq.pid"
-    : > "$RUN/leases"
+    rm -f "$ROOT_RUN/dnsmasq.pid"
+    : > "$ROOT_RUN/leases"
     start_router
-    echo "$address:80" > "$RUN/browser-target"
+    echo "$address:80" > "$ROOT_RUN/browser-target"
     # The ARP filter (entrypoint.sh) lets requests for the device's own address
     # alone reach its emulated Wi-Fi: the new one now.
     tc filter del dev tap0 egress pref 1 2>/dev/null || true
@@ -93,6 +123,8 @@ join)
     # The fork's station on the device's network (lcgamboa/qemu #15) joins it by
     # itself once it is on air, within a second or two, and has a MAC of its own,
     # which this side takes; udhcpc, below, asks until it has.
+    # The network on the air, as device-supervisor (yours) says: only whether
+    # it says one is read.
     for _ in $(seq 40); do
         [ -n "$(cat "$RUN/softap" 2>/dev/null)" ] && break
         sleep 0.5
@@ -108,9 +140,9 @@ join)
     iptables -I OUTPUT 1 -o "$LAN" -m owner --uid-owner "$user" -j DROP
     iptables -I OUTPUT 1 -o eth0 -m owner --uid-owner "$user" -j DROP
     ip route replace 224.0.0.0/4 dev "$JOINED"
-    echo "$ssid" > "$RUN/network"
-    if udhcpc -i "$JOINED" -q -n -t 8 -T 2 -s /opt/autoflash-emu/udhcpc.script >"$RUN/udhcpc.log" 2>&1; then
-        echo "$(cat "$RUN/gateway"):80" > "$RUN/browser-target"
+    echo "$ssid" > "$ROOT_RUN/network"
+    if udhcpc -i "$JOINED" -q -n -t 8 -T 2 -s /opt/autoflash-emu/udhcpc.script >"$ROOT_RUN/udhcpc.log" 2>&1; then
+        echo "$(cat "$ROOT_RUN/gateway"):80" > "$ROOT_RUN/browser-target"
     else
         echo "no address from $ssid" >&2
         exit 1
@@ -121,4 +153,3 @@ join)
     exit 2
     ;;
 esac
-chown -R "$(stat -c %u "$RUN/env"):$(stat -c %g "$RUN/env")" "$RUN" 2>/dev/null || true

@@ -26,6 +26,17 @@ class SudoTests(unittest.TestCase):
         rules = re.findall(r'"\$user ([^"]*)"', written.group(1))
         self.assertEqual(rules, ["ALL=(ALL) ALL", "ALL=(root) NOPASSWD: /opt/autoflash-emu/bin/wifi-root"])
 
+    def test_what_the_wifi_rule_runs_on_is_roots_alone(self):
+        """wifi-root, run as root without a password, sources the env written
+        here: in a folder of root's, never in yours (/run/autoflash-emu)."""
+        text = ENTRYPOINT.read_text(encoding="utf-8")
+        self.assertIn('ROOT_RUN=/run/autoflash-emu-root\n', text)
+        self.assertIn('install -d -m 0755 -o root -g root "$ROOT_RUN"\n', text)
+        self.assertIn('cat > "$ROOT_RUN/env" <<EOF\n', text)
+        self.assertNotIn('"$RUN/env"', text)
+        made, written = text.index('install -d -m 0755 -o root -g root "$ROOT_RUN"'), text.index('"$ROOT_RUN/env"')
+        self.assertLess(made, written)
+
 
 class StubToTheApiTests(unittest.TestCase):
     """The stub serves its files in plaintext on the Docker network, where the

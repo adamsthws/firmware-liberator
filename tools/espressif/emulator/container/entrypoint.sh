@@ -5,11 +5,15 @@ set -euo pipefail
 
 : "${HOST_UID:?}" "${HOST_GID:?}" "${DEVICE_MAC:?}" "${CLOUD:=0}" "${PCAP:=0}" "${FIREWALL:=1}" "${WINDOWS:=0}" "${STUB_CLOUD:=0}" "${STUB_PRODUCT_MODEL:=}"
 RUN=/run/autoflash-emu
+# What wifi-root, run through sudo without a password, reads and writes: root's
+# alone, apart from RUN, which is yours.
+ROOT_RUN=/run/autoflash-emu-root
 # The home network: the device's tap on its own, or with emu.sh --windows a
 # bridge of it and the wire to Windows, which is then the computer on it.
 LAN=tap0
 [ "$WINDOWS" = 1 ] && LAN=br0 && cp /opt/autoflash-emu/motd.windows /opt/autoflash-emu/motd
 mkdir -p "$RUN" /state/logs
+install -d -m 0755 -o root -g root "$ROOT_RUN"
 
 # -- you, with sudo that asks for your password, as on a real computer ----------
 # The password is autoflash: the welcome message says so, and the conversion tool
@@ -125,7 +129,8 @@ if [ "$WINDOWS" = 1 ]; then
     ip link set br0 up
     iptables -I FORWARD 1 -i br0 -o br0 -j ACCEPT
 fi
-cat > "$RUN/env" <<EOF
+cat > "$ROOT_RUN/env" <<EOF
+HOST_UID=$HOST_UID
 LAN=$LAN
 WINDOWS=$WINDOWS
 DEVICE_MAC=$DEVICE_MAC

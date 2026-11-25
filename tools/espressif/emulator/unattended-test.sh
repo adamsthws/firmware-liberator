@@ -56,7 +56,7 @@ NAME=autoflash-emu PORT=8080
 # The device's address in emulator $1: where it starts (container/bin/wifi-root),
 # unless the fault suite's readdress has the router give it another.
 device_address() {
-    docker exec "$1" cat /run/autoflash-emu/device-ip 2>/dev/null || echo 192.168.60.50
+    docker exec "$1" cat /run/autoflash-emu-root/device-ip 2>/dev/null || echo 192.168.60.50
 }
 
 # emu.sh's own API would outlive this run: the run starts one of its own (below).
