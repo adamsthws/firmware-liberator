@@ -241,12 +241,10 @@ test("a held report deleted takes what it said of its offers, a table refused an
   const db = env().DB;
   const id = await offered(db, "2026-11-09", {}, { table_refused: { sha256: "ab".repeat(32), at: "0x8000" },
     stock_check: "neither-answers" }, "held for review");
-  assert.equal(rows(db, "SELECT id FROM refused_tables").length, 1);
-  assert.equal(rows(db, "SELECT id FROM stock_checks").length, 1);
+  assert.equal(rows(db, "SELECT id FROM reports WHERE table_refused_at = '0x8000' AND stock_check = 'neither-answers'").length, 1);
   await db.batch(admin.remove(db, id));
   assert.deepEqual(rows(db, "SELECT id FROM report_offers"), []);
-  assert.deepEqual(rows(db, "SELECT id FROM refused_tables"), []);
-  assert.deepEqual(rows(db, "SELECT id FROM stock_checks"), []);
+  assert.deepEqual(rows(db, "SELECT id FROM reports"), []);
 });
 
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {

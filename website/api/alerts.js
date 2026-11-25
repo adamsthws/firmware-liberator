@@ -133,14 +133,14 @@ export async function alertLines(db, today, limits) {
 // told once, as the night after is the only one its first day is yesterday.
 async function refusedTableLines(db, yesterday) {
   const converted = schema.convertedKinds;
-  const { results } = await db.prepare(`SELECT reports.device, refused_tables.sha256, refused_tables.at,
-      group_concat(DISTINCT reports.model) AS models, count(*) AS n
-    FROM refused_tables JOIN reports USING (id)
-    WHERE reports.tag = 'user' AND reports.quarantined = 0
-      AND reports.device IN (${converted.map(() => "?").join(", ")})
-    GROUP BY reports.device, refused_tables.sha256, refused_tables.at
-    HAVING min(reports.day) = ?
-    ORDER BY reports.device, refused_tables.sha256`).bind(...converted, yesterday).all();
+  const { results } = await db.prepare(`SELECT device, table_refused_sha256 AS sha256, table_refused_at AS at,
+      group_concat(DISTINCT model) AS models, count(*) AS n
+    FROM reports
+    WHERE table_refused_sha256 IS NOT NULL AND tag = 'user' AND quarantined = 0
+      AND device IN (${converted.map(() => "?").join(", ")})
+    GROUP BY device, table_refused_sha256, table_refused_at
+    HAVING min(day) = ?
+    ORDER BY device, table_refused_sha256`).bind(...converted, yesterday).all();
   return results.map((row) => `A partition table was refused on the ${schema.deviceNames[row.device]} `
     + `(${row.models ? `model ${row.models.split(",").sort().join(", ")}` : "model not known"}), a kind the tool `
     + `converts, first on ${yesterday}: ${row.n} ${row.n === 1 ? "report" : "reports"}, its SHA-256 ${row.sha256}, `

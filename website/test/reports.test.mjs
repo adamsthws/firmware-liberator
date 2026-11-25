@@ -221,9 +221,6 @@ const KEPT = {
       proof: "checked as the report comes in, then of no use",
       stages: "a row a stage, in report_stages",
       offers: "a row a report, in report_offers: none from a tool that sent none",
-      table_refused: "a row a report that gives one, in refused_tables",
-      "stopped.question": "a row a report that gives one, in stop_questions",
-      stock_check: "a row a report that gives one, in stock_checks",
       nth_device: "the device's place, in devices, given once",
     },
     own: ["day", "quarantined"],   // the API's, from no field
@@ -234,24 +231,12 @@ const KEPT = {
       format: "the schema's version, the same for every report kept",
       proof: "checked as the report comes in, then of no use",
       kind: "readout_reports holds readouts' alone",
-      stopped: "a row a report that gives each, in readout_steps and stop_questions",
-      stock_check: "a row a report that gives one, in stock_checks",
     },
     own: ["day", "quarantined"],
   },
   stage: { table: "report_stages", elsewhere: {}, own: ["id", "stage"] },
   offer: { table: "report_offers", elsewhere: {}, own: ["id"] },
-  refused: { table: "refused_tables", elsewhere: {}, own: ["id"] },
-  question: { table: "stop_questions", elsewhere: {}, own: ["id"] },
-  readoutStep: { table: "readout_steps", elsewhere: {}, own: ["id"] },
-  stockCheck: { table: "stock_checks", elsewhere: {}, own: ["id"] },
 };
-// The question a run or readout was stopped at, and a readout's stage, as
-// rules of their own: each a row of its table.
-const QUESTION_RULE = { properties: { question: SCHEMA.readout.properties.stopped.properties.question } };
-const READOUT_STEP_RULE = { properties: { step: SCHEMA.readout.properties.stopped.properties.step } };
-// What the check of Sonoff's firmware found, a run's or a readout's, as a row of stock_checks.
-const STOCK_CHECK_RULE = { properties: { outcome: SCHEMA.properties.stock_check } };
 
 // Each field `rule` has, by its path: a nested one's as "os.arch".
 const fields = (rule, path = []) => Object.entries(rule.properties).flatMap(([name, inner]) =>
@@ -272,8 +257,7 @@ function columnsFor(bindings, rule, kept) {
 test("each field of a report has a column of its own, and each column a field", () => {
   const bindings = env();
   const rules = { run: SCHEMA, readout: SCHEMA.readout, stage: SCHEMA.properties.stages.additionalProperties,
-    offer: SCHEMA.properties.offers, refused: SCHEMA.properties.table_refused, question: QUESTION_RULE,
-    readoutStep: READOUT_STEP_RULE, stockCheck: STOCK_CHECK_RULE };
+    offer: SCHEMA.properties.offers };
   for (const [what, rule] of Object.entries(rules)) {
     const kept = KEPT[what];
     const mapped = columnsFor(bindings, rule, kept);
@@ -320,28 +304,11 @@ test("each field of a report is kept, as the report gave it", async () => {
   check("offer", SCHEMA.properties.offers, offers, byId("report_offers"));
   assert.equal(rows(bindings, "SELECT count(*) AS n FROM report_offers")[0].n, offers.length,
     "none for a report from a tool that sent none");
-  const refused = sent.run.filter((made) => made.table_refused).map((made) => ({ ...made.table_refused, id: made.id }));
-  check("refused", SCHEMA.properties.table_refused, refused, byId("refused_tables"));
-  assert.equal(rows(bindings, "SELECT count(*) AS n FROM refused_tables")[0].n, refused.length,
-    "none for a report that refused no table, or from a tool that sends no such field");
-  const stoppedAt = (made) => made.stopped?.question;
-  assert.ok(sent.run.some(stoppedAt) && sent.readout.some(stoppedAt), "a run's question and a readout's alike");
-  const stops = [...sent.run, ...sent.readout].filter(stoppedAt)
-    .map((made) => ({ question: made.stopped.question, id: made.id }));
-  check("question", QUESTION_RULE, stops, byId("stop_questions"));
-  assert.equal(rows(bindings, "SELECT count(*) AS n FROM stop_questions")[0].n, stops.length,
-    "none for a report stopped at no question, or from a tool that sends none");
-  const steps = sent.readout.filter((made) => made.stopped?.step).map((made) => ({ step: made.stopped.step, id: made.id }));
-  check("readoutStep", READOUT_STEP_RULE, steps, byId("readout_steps"));
-  assert.equal(rows(bindings, "SELECT count(*) AS n FROM readout_steps")[0].n, steps.length,
-    "none for a readout that ended well, or from a tool that sends none");
-  assert.ok(sent.run.some((made) => made.stock_check) && sent.readout.some((made) => made.stock_check),
-    "a run's check and a readout's alike");
-  const checked = [...sent.run, ...sent.readout].filter((made) => made.stock_check)
-    .map((made) => ({ outcome: made.stock_check, id: made.id }));
-  check("stockCheck", STOCK_CHECK_RULE, checked, byId("stock_checks"));
-  assert.equal(rows(bindings, "SELECT count(*) AS n FROM stock_checks")[0].n, checked.length,
-    "none where no check ran, or from a tool that sends none");
+  // Each needs a sample that gives it, a run's and a readout's alike; one that gives none keeps none.
+  const plain = sent.run.find((made) => !made.table_refused && !made.stopped?.question && !made.stock_check);
+  assert.deepEqual(rows(bindings, `SELECT question, stock_check, table_refused_sha256, table_refused_at
+    FROM reports WHERE id = ?`, plain.id), [{ question: null, stock_check: null, table_refused_sha256: null,
+    table_refused_at: null }], "none for a report that gives none, or from a tool that sends no such field");
 });
 
 test("offers' counts are held to the schema: out of range, or a word the tool never gives, turned away", async () => {

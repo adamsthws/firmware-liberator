@@ -263,9 +263,6 @@ export const remove = (db, id) => [
     WHERE device_hash = devices.device_hash AND id != ?1)`).bind(id),
   db.prepare("DELETE FROM report_stages WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM report_offers WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
-  db.prepare("DELETE FROM refused_tables WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
-  db.prepare("DELETE FROM stop_questions WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
-  db.prepare("DELETE FROM stock_checks WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
 ];
@@ -339,10 +336,10 @@ export const SYSTEM_NAMES = { all: "All systems", windows: "Windows", macos: "ma
 // A report's device kind, as a person calls it (report-schema.json); "" for none.
 const deviceName = (row) => schema.deviceNames[row.device] ?? row.device ?? "";
 // Where a run or readout stopped: its step, how, and the question it was
-// stopped at (stop_questions), where each is known.
+// stopped at, where each is known.
 const stoppedAt = (row) => [row.step, row.error, row.question && `at ${row.question}`].filter(Boolean).join(" ");
 // What the check of Sonoff's firmware found before a switch off and on was
-// asked for (stock_checks), shown beside where it stopped: "" where none ran.
+// asked for, shown beside where it stopped: "" where none ran.
 const STOCK_CHECK = ["Sonoff's firmware", (row) => row.stock_check ?? ""];
 
 // Everything the view shows, in a fixed few queries.
@@ -359,20 +356,18 @@ export async function gather(env, now) {
   return {
     today, counters, devices, lastFolded: folded?.day ?? null,
     held: await all(`SELECT held_reports.id, held_reports.day, why, device, model, tool, result, step, error, text, tag,
-        question, stock_checks.outcome AS stock_check
-      FROM held_reports JOIN reports ON reports.id = held_reports.id LEFT JOIN stop_questions USING (id)
-        LEFT JOIN stock_checks USING (id)
+        question, stock_check
+      FROM held_reports JOIN reports ON reports.id = held_reports.id
       ORDER BY held_reports.day DESC LIMIT 100`),
     heldGroups: await all(`SELECT held_reports.day, why, ${NAMED} AS named, max(device) AS device, count(*) AS n
       FROM held_reports JOIN reports ON reports.id = held_reports.id GROUP BY held_reports.day, why, named
       ORDER BY held_reports.day DESC, n DESC`),
     recent: await all(`SELECT day, tag, tool, result, step, error, text, device, model, firmware, source, os_family, seconds, quarantined,
-        crash_site, firmware_name, firmware_name_expected AS name_expected, question, stock_checks.outcome AS stock_check
-      FROM reports LEFT JOIN stop_questions USING (id) LEFT JOIN stock_checks USING (id) ORDER BY day DESC LIMIT 40`),
+        crash_site, firmware_name, firmware_name_expected AS name_expected, question, stock_check
+      FROM reports ORDER BY day DESC LIMIT 40`),
     recentReadouts: await all(`SELECT day, tag, tool, result, step, error, question, device, model, stock_model,
-        stock_version, whole, os_family, seconds, quarantined, stock_checks.outcome AS stock_check
-      FROM readout_reports LEFT JOIN readout_steps USING (id) LEFT JOIN stop_questions USING (id)
-        LEFT JOIN stock_checks USING (id)
+        stock_version, whole, os_family, seconds, quarantined, stock_check
+      FROM readout_reports
       ORDER BY day DESC LIMIT 40`),
     week: await all(`SELECT day, ${OUTCOMES.map(([, results], at) =>
       `sum(result IN (${results.map((result) => `'${result}'`).join(", ")})) AS o${at}`).join(", ")}

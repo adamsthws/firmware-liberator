@@ -127,6 +127,9 @@ const COLUMNS = (report, hash, day, held) => {
     ctrl_c_carried_on: report.ctrl_c_carried_on, launcher: report.launcher, install: report.install,
     begun_on: report.begun_on, back_after_power_cycle: report.back_after_power_cycle,
     firmware_name: report.firmware_name, firmware_name_expected: flag(report.firmware_name_expected),
+    question: stopped.question ?? null, stock_check: report.stock_check ?? null,
+    // The partition table the run refused (alerts.js tells the maintainer of a new one).
+    table_refused_sha256: report.table_refused?.sha256 ?? null, table_refused_at: report.table_refused?.at ?? null,
     quarantined: Number(held !== null),
   };
 };
@@ -139,8 +142,8 @@ const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, t
   FROM json_each(?2)`;
 const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,
   stock_model, stock_version, whole, device_hash, os_family, os_version, os_arch, python_version, python_source, seconds,
-  converted_here, quarantined)
-  VALUES (${Array(21).fill("?").join(", ")})`;
+  converted_here, quarantined, step, question, stock_check)
+  VALUES (${Array(24).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
 // What a run's report says of the offers sent beside it (its "offers",
 // counts and flags alone; none from a tool that sent none), one row a
@@ -151,17 +154,6 @@ const OFFER_COLUMNS = ["ran", "why_not", "done", "due", "requests", "sent", "tak
 const OFFERS = `INSERT OR IGNORE INTO report_offers (id, ${OFFER_COLUMNS.join(", ")})
   VALUES (${Array(OFFER_COLUMNS.length + 1).fill("?").join(", ")})`;
 const offerValue = (value) => (typeof value === "boolean" ? Number(value) : value);
-// The partition table the run refused, one row a report that gives one
-// (alerts.js tells the maintainer of a new one).
-const REFUSED = "INSERT OR IGNORE INTO refused_tables (id, sha256, at) VALUES (?, ?, ?)";
-// Where a run or readout stopped, beyond its own table's columns (migration
-// 0003): the question it was stopped at, and a readout's stage, one row each
-// a report that gives one.
-const QUESTION = "INSERT OR IGNORE INTO stop_questions (id, question) VALUES (?, ?)";
-const READOUT_STEP = "INSERT OR IGNORE INTO readout_steps (id, step) VALUES (?, ?)";
-// What the check of Sonoff's firmware found before a switch off and on was
-// asked for (migration 0003), one row a run's or readout's report that gives one.
-const STOCK_CHECK = "INSERT OR IGNORE INTO stock_checks (id, outcome) VALUES (?, ?)";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -196,18 +188,9 @@ export function writes(db, report, hash, day, held = null) {
       report.id, day, report.tag, report.tool, report.result, report.error, report.family, report.device,
       report.model, report.stock_model, report.stock_version, flag(report.whole), hash, report.os.family, report.os.version,
       report.os.arch, report.python.version, report.python.source, report.seconds, report.converted_here,
-      Number(held !== null));
-    const statements = [statement];
-    if (report.stopped?.step) {
-      statements.push(db.prepare(READOUT_STEP).bind(report.id, report.stopped.step));
-    }
-    if (report.stopped?.question) {
-      statements.push(db.prepare(QUESTION).bind(report.id, report.stopped.question));
-    }
-    if (report.stock_check) {
-      statements.push(db.prepare(STOCK_CHECK).bind(report.id, report.stock_check));
-    }
-    return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
+      Number(held !== null), report.stopped?.step ?? null, report.stopped?.question ?? null,
+      report.stock_check ?? null);
+    return held === null ? [statement] : [statement, db.prepare(HOLD).bind(report.id, day, held)];
   }
   const statements = [db.prepare(INSERT).bind(...Object.values(COLUMNS(report, hash, day, held)))];
   // A run the person stopped makes no device's record: those count the runs
@@ -223,15 +206,6 @@ export function writes(db, report, hash, day, held = null) {
   statements.push(db.prepare(STAGES).bind(report.id, JSON.stringify(report.stages)));
   if (report.offers) {
     statements.push(db.prepare(OFFERS).bind(report.id, ...OFFER_COLUMNS.map((name) => offerValue(report.offers[name]))));
-  }
-  if (report.table_refused) {
-    statements.push(db.prepare(REFUSED).bind(report.id, report.table_refused.sha256, report.table_refused.at));
-  }
-  if (report.stopped?.question) {
-    statements.push(db.prepare(QUESTION).bind(report.id, report.stopped.question));
-  }
-  if (report.stock_check) {
-    statements.push(db.prepare(STOCK_CHECK).bind(report.id, report.stock_check));
   }
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }

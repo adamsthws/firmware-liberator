@@ -232,17 +232,17 @@ computer, never from CI.
 ### Where runs and readouts stop
 
 A run's report says the step it stopped at (`reports.step`); a readout's,
-the stage it was in (`readout_steps`, from `readout.STAGES`), for one
+the stage it was in (`readout_reports.step`, from `readout.STAGES`), for one
 cancelled, failed or crashed. Either stopped at a question by the person
-says which, as a word (`report_data.QUESTION_WORDS`, kept in
-`stop_questions`, one vocabulary for both): A1's questions each have their
+says which, as a word (`report_data.QUESTION_WORDS`, in its `question`
+column, one vocabulary for both): A1's questions each have their
 own, as most runs stopped there. A report from 3.1.0 or before says no
 question, nor a readout's stage. The admin view's latest reports and latest
 readout reports show them; for the questions A1 stops at:
 
 ```sh
 python3 tools/repo/database.py "SELECT question, count(*) AS runs FROM reports
-  LEFT JOIN stop_questions USING (id) WHERE result = 'cancelled' AND step = 'A1'
+  WHERE result = 'cancelled' AND step = 'A1'
   AND tag = 'user' GROUP BY question ORDER BY runs DESC"
 ```
 
@@ -252,7 +252,7 @@ Where the firmware Sonoff's firmware sent a Beken device (OpenBeken, the
 interim firmware, a readout's reader) does not answer, the tool checks
 whether Sonoff's firmware still does before it asks for the device to be
 switched off and on (`arrival.still_on_sonoff`). A run's or readout's
-report says what it found (`stock_check`, kept in `stock_checks`):
+report says what it found (its `stock_check` column):
 `sonoff-answers` (not installed: sent again, or the readout stopped),
 `neither-answers` (most likely installed, not joining the Wi-Fi), or
 `cannot-tell`; nothing where no check ran, nor from 3.1.0 or before. The
@@ -260,9 +260,8 @@ admin view shows it beside where each report stopped; with the question
 people quit at:
 
 ```sh
-python3 tools/repo/database.py "SELECT outcome, question, count(*) AS runs FROM stock_checks
-  JOIN reports USING (id) LEFT JOIN stop_questions USING (id)
-  WHERE tag = 'user' GROUP BY outcome, question ORDER BY runs DESC"
+python3 tools/repo/database.py "SELECT stock_check, question, count(*) AS runs FROM reports
+  WHERE stock_check IS NOT NULL AND tag = 'user' GROUP BY stock_check, question ORDER BY runs DESC"
 ```
 
 ### A partition table refused
@@ -271,8 +270,8 @@ Before writing anything, the tool checks the device's partition table is
 the one pinned for its kind (`tools/espressif/layouts.py`), or on a Beken
 kind that Sonoff's update file holds a table `tools/beken/layouts.py` knows,
 and stops while the device can still go back if not. Its report then carries
-the table's SHA-256 and where it was read (`table_refused`, kept in
-`refused_tables`). The nightly email names each table first refused the day
+the table's SHA-256 and where it was read (`table_refused`, in the
+columns `table_refused_sha256` and `table_refused_at`). The nightly email names each table first refused the day
 before on a kind the tool converts (`convertedKinds` in
 `api/report-schema.json`, from `devices/status.json`), once, with its kind,
 models and reports (`api/alerts.js`): the pinned table may be wrong, as the
@@ -283,8 +282,8 @@ entries as `python3 tools/beken/layouts.py FILE` prints them, with the hash.
 The reports behind it, with their models and Sonoff firmware versions:
 
 ```sh
-python3 tools/repo/database.py "SELECT day, model, stock_version, chip_flash_id, at
-  FROM refused_tables JOIN reports USING (id) WHERE sha256 = '<the hash>'"
+python3 tools/repo/database.py "SELECT day, model, stock_version, chip_flash_id, table_refused_at
+  FROM reports WHERE table_refused_sha256 = '<the hash>'"
 ```
 
 A readout of such a device shows its table.

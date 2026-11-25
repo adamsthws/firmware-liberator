@@ -5,14 +5,23 @@
 // names, and records each in d1_migrations, as wrangler would.
 // - A migration, once committed, is never changed: a change is a new file,
 //   with the next number (0002_..., ...).
-// - Each can be run again harmlessly (CREATE ... IF NOT EXISTS): running one
-//   over the API is not atomic, so one cut off part way is run again.
-// - Each only adds (a table, a column, an index): the Worker deployed before
-//   a migration is applied, or after, must still work.
+// - One value a row is a column of that row's table, NULL where it has
+//   none, so a report's every field is read from the report's own row. A
+//   table of its own is for many rows to one (report_stages), or a group of
+//   values most rows have none of (report_offers).
+// - A migration may change what is there: add a column, copy, drop a table.
+//   Running one over the API is not atomic, and only one that makes tables
+//   alone (CREATE ... IF NOT EXISTS) can be run again: one that changes any,
+//   cut off part way, stops the next `apply` at what it had done already
+//   (duplicate column name, no such table). Run the statements it had left
+//   by hand, in the D1 console, then its row into d1_migrations.
+// - `apply` comes before the push that deploys the Worker needing it. That
+//   Worker answers 503 until the migration is there (ready, below); the one
+//   deployed before may fail, between the two, on what a migration took away.
 
 // The newest migration this code needs (test/database.test.mjs holds it to
 // the newest file in migrations/).
-export const LATEST_MIGRATION = "0003_report_details.sql";
+export const LATEST_MIGRATION = "0004_report_details_as_columns.sql";
 
 // Whether the database has every migration this code needs, asked at most
 // once a minute in a Worker: false until `apply` has run the newest, so a

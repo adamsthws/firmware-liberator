@@ -990,8 +990,10 @@ class DatabaseTests(unittest.TestCase):
 
     def test_what_apply_sends_runs_as_sqlite_runs_it(self):
         # The SQL a migration is sent as, run where D1's engine runs: it makes
-        # what it should, records itself once, and runs again harmlessly
-        # but for the record, which is why a recorded one is never sent again.
+        # what it should and records itself once. One that only makes tables
+        # runs again harmlessly but for the record; one that changes what is
+        # there does not (website/api/database.js), which is why a recorded
+        # one is never sent again.
         db = sqlite3.connect(":memory:")
         for name in cs.migration_files():
             fake = FakeCloudflare()
@@ -1002,7 +1004,8 @@ class DatabaseTests(unittest.TestCase):
             sql = changes[0][2]["sql"]
             db.executescript(sql)
             body = sql[:sql.rindex("INSERT INTO d1_migrations")]
-            db.executescript(body)   # the migration itself, again
+            if not re.search(r"^\s*(ALTER|UPDATE|DROP|INSERT|DELETE)\b", body, re.I | re.M):
+                db.executescript(body)   # the migration itself, again
         self.assertEqual([row[0] for row in db.execute("SELECT name FROM d1_migrations ORDER BY id")],
                          cs.migration_files())
 

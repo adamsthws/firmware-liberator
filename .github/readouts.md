@@ -385,14 +385,14 @@ with that readout's object.
 
 - **Where readouts stop.** Each device's readout sends a report as it ends
   (`readout_reports`; `report_data.readout_payload`). One cancelled, failed
-  or crashed says the stage it was in (`readout.STAGES`, kept in
-  `readout_steps`) and, where the person stopped it at a question, which one
-  (`report_data.QUESTION_WORDS`, kept in `stop_questions`, as a run's is).
+  or crashed says the stage it was in (`readout.STAGES`, its
+  `step` column) and, where the person stopped it at a question, which one
+  (`report_data.QUESTION_WORDS`, its `question` column, as a run's is).
   The admin view's latest readout reports show both; by device:
 
   ```sh
   python3 tools/repo/database.py "SELECT day, tool, model, result, step, question
-    FROM readout_reports LEFT JOIN readout_steps USING (id) LEFT JOIN stop_questions USING (id)
+    FROM readout_reports
     WHERE result IN ('cancelled', 'failed', 'crashed') ORDER BY day DESC"
   ```
 
@@ -400,7 +400,7 @@ with that readout's object.
 - **Whether the reader was installed.** A Beken readout whose reader does
   not answer checks whether Sonoff's firmware still does
   (`arrival.still_on_sonoff`); its report says what it found, as a run's
-  does (`stock_check`, kept in `stock_checks`): `sonoff-answers` where the
+  does (its `stock_check` column): `sonoff-answers` where the
   reader was not installed, `neither-answers`, or `cannot-tell`. The admin
   view's latest readout reports show it beside where one stopped.
 - **Reviewing.** `readouts.py review` lists the readouts waiting, by key,
