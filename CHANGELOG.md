@@ -14,6 +14,13 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
+## Unreleased
+
+- On macOS 27, device discovery can read current hardware addresses even when
+  Homebrew Python's child processes see an empty ARP table. The launcher uses
+  a private live reader under Apple's system Python, keeping the existing
+  account/device matching and removing the reader when the run ends.
+
 ## 3.2.1
 
 - A run stopped while the bootloader step was putting a TH Elite's own

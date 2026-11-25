@@ -30,6 +30,29 @@ your own.
 
 ## Your computer
 
+**macOS 27: device answers, but Python sees no hardware addresses**
+
+macOS 27 can hide the ARP table from children of Homebrew Python even while
+ping and normal connections work. Local Network permission alone does not
+restore this topology information. Compare `arp -an | wc -l` with:
+
+```sh
+python3 -c 'import subprocess; print(len(subprocess.check_output(["/usr/sbin/arp", "-an"]).splitlines()))'
+```
+
+A nonempty shell result and zero from Python explains a misleading "not found
+on this network" result. Run `sh start.sh`: on macOS with Apple's command-line developer tools available,
+the launcher uses the system Python as a small live ARP reader. The main tool uses a
+supported Python 3.10+. The reader does not read device credentials and accepts no
+commands. Its private socket is removed when the tool exits, and no topology
+cache or permanent background service is installed. Each lookup gets a fresh
+table and still uses the same MAC/account identity check. If the system Python
+or reader cannot provide it, the tool does not invent a MAC or trust the typed
+address. Direct `python3 -m tools.autoflash` runs do not start this reader.
+
+Apple describes the separate macOS 27 topology-observation capability in
+[this developer discussion](https://developer.apple.com/forums/thread/822025?page=2).
+
 **"the device did not fetch the ... instructions from this computer"**
 
 The device could not reach your computer. The tool adds a firewall rule itself
