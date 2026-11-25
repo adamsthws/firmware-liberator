@@ -29,7 +29,7 @@ from typing import Any, TYPE_CHECKING
 from tools.autoflash import errors, firewall, hostsys, names, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash import setup_network
 from tools.autoflash.errors import Abort, NothingWritten
-from tools.autoflash.routes.espressif import images, installer
+from tools.autoflash.routes.espressif import identity, images, installer
 from tools.autoflash.runs import ROOT
 from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, flashmap, scrub
 from tools.ewelink.get_device_key import CALLS
@@ -64,6 +64,10 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
     if fresh:
         output.say(f"    Kept on this computer too, in {runs.display_path(saved)}: private, as it holds")
         output.say("    your Wi-Fi password. Going back to Sonoff's firmware later can use it.")
+    # Before anything is taken out: whether its identity could be rebuilt
+    # from its account record, sent as outcomes alone (identity.checked).
+    manifest["identity_check"] = readout.became(ctx).identity_check = identity.checked(ctx, flash, efuse, device,
+                                                                                       chip)
     scrubbed, blanked = scrub.wifi(flash)
     scrubbed, replaced = scrub.identity(scrubbed)
     manifest["wifi_blanked"], manifest["identity_replaced"] = blanked, replaced

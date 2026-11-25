@@ -8,7 +8,7 @@ from unittest import mock
 
 from tests.autoflash.test_readout import learned, record, start_run
 from tests.espressif.test_scrub import flash as wifi_flash
-from tools.autoflash import account, hostsys, kinds, records, prompts, readout, readout_espressif, safety_locks
+from tools.autoflash import account, hostsys, kinds, output, records, prompts, readout, readout_espressif, safety_locks
 from tools.espressif import flashmap
 
 # A kind a whole readout is for (Readout wanted) that the tool does not convert:
@@ -78,6 +78,15 @@ class BridgeTests(unittest.TestCase):
             self.assertIn(key, manifest)
         self.assertEqual(manifest["flash"], {"size": 1, "sha256": "ab", "matches_device": None})
         self.assertTrue(manifest["wifi_blanked"])
+        # The identity checked on the flash as read, before it was anonymised:
+        # outcomes alone, in the manifest, the readout's report and the log.
+        checked = manifest["identity_check"]
+        self.assertEqual((checked["platform"], checked["fields"]["frame_params.deviceid"]), ("esf", "unknown"))
+        self.assertEqual(readout.became(self.ctx).identity_check, checked)
+        logged = " ".join(str(call.args) for call in output.log_only.call_args_list)
+        self.assertIn("Identity check (esf)", logged)
+        for value in (DEVICE["deviceid"], "SN-ESP32C3-NEW-01", "12345678-1234-4abc-8def-123456789abc"):
+            self.assertNotIn(value, logged + json.dumps(checked))
         self.assertEqual(files["info.txt"], b"chip: ESP32-C3")
         self.assertEqual(state_then, ["sent"])
         self.assertIs(waited.call_args.kwargs["sent"], True)

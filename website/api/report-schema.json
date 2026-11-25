@@ -468,6 +468,71 @@
           "cannot-tell",
           null
         ]
+      },
+      "identity_check": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "esf",
+              "ais",
+              "neither"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "maxProperties": 26,
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "frame_params.init",
+                "frame_params.uiid",
+                "frame_params.deviceid",
+                "frame_params.apikey",
+                "frame_params.model",
+                "frame_params.dis_server",
+                "frame_params.dis_port",
+                "frame_params.encrypt_key",
+                "frame_params.is_encrypt",
+                "data_backups.init",
+                "data_backups.deviceid",
+                "data_backups.apikey",
+                "data_backups.model",
+                "productId.present",
+                "channel_params.present",
+                "PID.present",
+                "rebuild_whole_matches",
+                "record_version_known",
+                "deviceid_matches",
+                "apikey_matches_devicekey",
+                "model_matches",
+                "uiid_matches",
+                "checksum_recomputes",
+                "chip_mac_is_efuse_mac",
+                "sta_mac_is_efuse_mac",
+                "sap_mac_is_efuse_mac_plus_one"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "yes",
+                "no",
+                "missing",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "required": [
+          "platform",
+          "fields"
+        ],
+        "additionalProperties": false
       }
     },
     "required": [
@@ -1228,6 +1293,71 @@
         "cannot-tell",
         null
       ]
+    },
+    "identity_check": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": [
+            "esf",
+            "ais",
+            "neither"
+          ]
+        },
+        "fields": {
+          "type": "object",
+          "maxProperties": 26,
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "frame_params.init",
+              "frame_params.uiid",
+              "frame_params.deviceid",
+              "frame_params.apikey",
+              "frame_params.model",
+              "frame_params.dis_server",
+              "frame_params.dis_port",
+              "frame_params.encrypt_key",
+              "frame_params.is_encrypt",
+              "data_backups.init",
+              "data_backups.deviceid",
+              "data_backups.apikey",
+              "data_backups.model",
+              "productId.present",
+              "channel_params.present",
+              "PID.present",
+              "rebuild_whole_matches",
+              "record_version_known",
+              "deviceid_matches",
+              "apikey_matches_devicekey",
+              "model_matches",
+              "uiid_matches",
+              "checksum_recomputes",
+              "chip_mac_is_efuse_mac",
+              "sta_mac_is_efuse_mac",
+              "sap_mac_is_efuse_mac_plus_one"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no",
+              "missing",
+              "unknown"
+            ]
+          }
+        }
+      },
+      "required": [
+        "platform",
+        "fields"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

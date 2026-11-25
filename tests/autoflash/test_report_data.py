@@ -120,6 +120,17 @@ class PayloadTests(RouteTestCase):
         ctx.state.set_input(arrival.STOCK_CHECK, "sonoff answers")   # never words the schema does not name
         self.assertIsNone(self.payload(ctx)["stock_check"])
 
+    def test_the_identity_check_is_sent_as_its_outcomes_and_null_where_none_ran(self):
+        from tools.espressif import identity_check
+        ctx = self.ctx(device_kind="sonoff-s60")
+        self.assertIsNone(self.payload(ctx)["identity_check"])
+        found = {"platform": "esf", "fields": dict.fromkeys(identity_check.ESF_FIELDS, "yes")}
+        ctx.state.set_input(report_data.IDENTITY_CHECK, found)
+        self.assertEqual(self.payload(ctx)["identity_check"], found)
+        # Never anything but the check's own outcomes: a value kept by mistake is not sent.
+        ctx.state.set_input(report_data.IDENTITY_CHECK, {"platform": "esf", "fields": {"frame_params.apikey": "1000abcdef"}})
+        self.assertIsNone(self.payload(ctx)["identity_check"])
+
     def test_the_firmware_name_the_device_checks_is_sent_and_whether_it_is_the_tools(self):
         from tools.autoflash import kinds
         for name, expected in ((kinds.SONOFF_S60.wrapper_model, True), ("FWSW-E32S60B-S60-ESP32C3FN4", False)):
@@ -399,6 +410,17 @@ class ReadoutPayloadTests(unittest.TestCase):
         self.assertEqual(sent["stock_check"], "sonoff-answers")
         self.assertEqual(report_schema.validate(schema, {**sent, "proof": "1794000000:198"}), [])
         self.assertIsNone(self.payload(stock_check="still answers")["stock_check"])
+
+    def test_the_identity_check_is_sent_as_a_runs_is(self):
+        from tools.espressif import identity_check
+        schema = report_schema.current()["readout"]
+        self.assertIsNone(self.payload()["identity_check"])
+        found = {"platform": "ais", "fields": dict.fromkeys(identity_check.AIS_FIELDS, "no")}
+        sent = self.payload(identity_check=found)
+        self.assertEqual(sent["identity_check"], found)
+        self.assertEqual(report_schema.validate(schema, {**sent, "proof": "1794000000:198"}), [])
+        self.assertIsNone(self.payload(identity_check={"platform": "ais", "fields": {"deviceid": "1000abcdef"}})
+                          ["identity_check"])
 
     def test_what_is_not_as_the_tool_writes_it_is_sent_as_not_known(self):
         sent = self.payload(product="a product", model="", version="v1", mac=None, whole=None)

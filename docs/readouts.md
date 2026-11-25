@@ -160,7 +160,7 @@ A readout is one file, `readout.tar`, holding:
 
 | File | What | ESP32 | Beken |
 |---|---|---|---|
-| `manifest.json` | what eWeLink and the device said they are (model, firmware version, chip), the tool's version, how many things were taken out, and your contact if you gave one | yes | yes |
+| `manifest.json` | what eWeLink and the device said they are (model, firmware version, chip), the tool's version, how many things were taken out, whether the device's identity could be rebuilt from your account as yes-or-no outcomes alone ([the identity check](what-the-tool-sends.md#the-identity-check)), and your contact if you gave one | yes | yes |
 | `flash.bin.xz` | the whole memory, anonymised, compressed | yes | yes |
 | `efuse.bin.xz` | the chip's fixed settings (its eFuses), as the reading program saw them, compressed | yes | |
 | `info.txt` | what the reading program said about the device | yes | yes |

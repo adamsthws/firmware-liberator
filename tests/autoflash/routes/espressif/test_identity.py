@@ -8,8 +8,9 @@ from unittest import mock
 
 from tests.autoflash.test_device import FakeDevice
 from tests.autoflash.test_plans import stock_flash
+from tests.espressif.test_identity_check import efuse
 from tests.espressif.test_sonoff_identity import sonoff_nvs
-from tools.autoflash import kinds, output, plans, records
+from tools.autoflash import kinds, output, plans, records, report_data
 from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import espressif
 from tools.autoflash.routes.espressif import hub, identity, images
@@ -120,6 +121,50 @@ class AccountRecordTests(Fixture):
         ctx.account_devices = lambda: [other, by_id]
         self.assertIs(identity.account_record(ctx, IDENTITY), by_id)
         self.assertIsNone(identity.account_record(ctx))
+
+
+class CheckBackupTests(Fixture):
+    """The identity check on the backup C3 takes, for the run's report."""
+
+    def backup(self):
+        flash, _ = stock_flash()
+        flash = bytearray(flash)
+        flash[0x9000:0x19000] = sonoff_nvs()
+        return bytes(flash), efuse()
+
+    def signed_in(self, devices):
+        ctx = self.ctx(on_tasmota(), device_mac=None)
+        ctx.ewelink = SimpleNamespace(held=("eu", {"at": "token"}))
+        ctx.account_devices = lambda: devices
+        return ctx
+
+    def test_its_outcomes_are_kept_for_the_report_found_by_the_chips_mac(self):
+        frame = sonoff_identity.from_nvs(sonoff_nvs()).frame()
+        record = {"deviceid": frame["deviceid"], "devicekey": frame["apikey"], "params": {"staMac": MAC.upper()},
+                  "extra": {"model": frame["model"], "uiid": frame["uiid"]}}
+        other = {**record, "deviceid": "1000000001", "params": {"staMac": "12:34:56:ab:cd:01"}}
+        ctx = self.signed_in([other, record])
+        identity.check_backup(ctx, *self.backup())
+        found = ctx.state.input(report_data.IDENTITY_CHECK)
+        self.assertEqual(found["platform"], "esf")
+        self.assertEqual((found["fields"]["frame_params.deviceid"], found["fields"]["frame_params.apikey"]),
+                         ("yes", "yes"))
+        logged = " ".join(str(call.args) for call in output.log_only.call_args_list)
+        self.assertIn("Identity check (esf)", logged)
+        for value in (frame["deviceid"], frame["apikey"], MAC):
+            self.assertNotIn(value, logged)
+
+    def test_a_run_not_signed_in_asks_nothing(self):
+        ctx = self.signed_in([])
+        ctx.ewelink = SimpleNamespace(held=None)
+        ctx.account_devices = mock.Mock(side_effect=AssertionError("eWeLink asked"))
+        identity.check_backup(ctx, *self.backup())
+        self.assertIsNone(ctx.state.input(report_data.IDENTITY_CHECK))
+
+    def test_a_device_not_in_the_account_has_none(self):
+        ctx = self.signed_in([{"deviceid": "1000000001", "params": {"staMac": "12:34:56:ab:cd:01"}}])
+        identity.check_backup(ctx, *self.backup())
+        self.assertIsNone(ctx.state.input(report_data.IDENTITY_CHECK))
 
 
 class KeepIdentityTests(Fixture):

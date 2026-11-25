@@ -244,6 +244,7 @@ class Became:
     step: str | None = None     # the stage (STAGES) one stopped, failed or crashed in
     question: str | None = None   # the question one was stopped at (report_data.QUESTION_WORDS)
     stock_check: str | None = None   # what the check of Sonoff's firmware found (arrival.still_on_sonoff)
+    identity_check: dict[str, Any] | None = None   # its outcomes alone (tools/espressif/identity_check.py)
     report_id: str | None = None   # its report's, once kept to send (report_upload.send_readout)
 
     @classmethod

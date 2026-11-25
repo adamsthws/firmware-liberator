@@ -222,6 +222,7 @@ const KEPT = {
       stages: "a row a stage, in report_stages",
       offers: "a row a report, in report_offers: none from a tool that sent none",
       nth_device: "the device's place, in devices, given once",
+      "identity_check.fields": "a row a field, in identity_checks",
     },
     own: ["day", "quarantined", "released"],   // the API's, from no field
   },
@@ -231,6 +232,7 @@ const KEPT = {
       format: "the schema's version, the same for every report kept",
       proof: "checked as the report comes in, then of no use",
       kind: "readout_reports holds readouts' alone",
+      "identity_check.fields": "a row a field, in identity_checks",
     },
     own: ["day", "quarantined"],
   },
@@ -619,4 +621,42 @@ test("a readout's report with words no report would hold is held for review, and
   assert.deepEqual(answer.accepted, [sent.id]);
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM readout_reports"), [{ quarantined: 1 }]);
   assert.deepEqual(rows(bindings, "SELECT id FROM held_reports"), [{ id: sent.id }]);
+});
+
+test("an identity check is kept as its outcomes, a row a field, and a report without one keeps none", async () => {
+  const bindings = env();
+  const fields = { "frame_params.deviceid": "yes", "frame_params.apikey": "no", "productId.present": "yes",
+    rebuild_whole_matches: "unknown" };
+  const run = report({ identity_check: { platform: "esf", fields } });
+  const read = readoutReport({ identity_check: { platform: "ais", fields: { deviceid_matches: "missing" } } });
+  const older = report();   // from a tool that sends no identity check
+  delete older.identity_check;
+  const { proof, ...olderReadout } = readoutReport();
+  delete olderReadout.identity_check;
+  const sent = [run, read, older, { ...olderReadout, proof }, report({ identity_check: null })];
+  assert.equal((await send(bindings, sent)).accepted.length, sent.length, "with the check, without, or null");
+  assert.deepEqual(rows(bindings, "SELECT id, field, outcome FROM identity_checks ORDER BY id, field"), [
+    ...Object.entries(fields).map(([field, outcome]) => ({ id: run.id, field, outcome })),
+    { id: read.id, field: "deviceid_matches", outcome: "missing" }].sort((a, b) =>
+    (a.id + a.field < b.id + b.field ? -1 : 1)));
+  assert.deepEqual(rows(bindings, "SELECT identity_check_platform AS p FROM reports WHERE id = ?", run.id), [{ p: "esf" }]);
+  assert.deepEqual(rows(bindings, "SELECT identity_check_platform AS p FROM readout_reports WHERE id = ?", read.id),
+    [{ p: "ais" }]);
+  assert.deepEqual(rows(bindings, `SELECT identity_check_platform AS p FROM reports WHERE id IN (?, ?)
+    UNION ALL SELECT identity_check_platform FROM readout_reports WHERE id = ?`, older.id, sent[4].id, olderReadout.id),
+  [{ p: null }, { p: null }, { p: null }]);
+});
+
+test("an identity check holding a value, or a field no check names, is turned away", async () => {
+  const bindings = env();
+  const cases = [
+    [report({ identity_check: { platform: "esf", fields: { "frame_params.deviceid": "1000abcdef" } } }),
+      /identity_check\.fields\.frame_params\.deviceid: not one of the allowed words/],
+    [report({ identity_check: { platform: "esf", fields: { deviceid: "yes" } } }), /identity_check\.fields name deviceid/],
+  ];
+  for (const [sent, why] of cases) {
+    const { rejected } = await send(bindings, [sent]);
+    assert.match(rejected[0]?.why ?? "", why);
+  }
+  assert.deepEqual(rows(bindings, "SELECT * FROM identity_checks"), []);
 });

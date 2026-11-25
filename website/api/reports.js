@@ -134,6 +134,7 @@ const COLUMNS = (report, hash, day, held) => {
     question: stopped.question ?? null, stock_check: report.stock_check ?? null,
     // The partition table the run refused (alerts.js tells the maintainer of a new one).
     table_refused_sha256: report.table_refused?.sha256 ?? null, table_refused_at: report.table_refused?.at ?? null,
+    identity_check_platform: report.identity_check?.platform ?? null,
     quarantined: Number(held !== null),
   };
 };
@@ -146,8 +147,14 @@ const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, t
   FROM json_each(?2)`;
 const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,
   stock_model, stock_version, whole, device_hash, os_family, os_version, os_arch, python_version, python_source, seconds,
-  converted_here, quarantined, step, question, stock_check)
-  VALUES (${Array(24).fill("?").join(", ")})`;
+  converted_here, quarantined, step, question, stock_check, identity_check_platform)
+  VALUES (${Array(25).fill("?").join(", ")})`;
+// The identity check's outcomes (a report's identity_check), one row a field,
+// from its `fields` as JSON: none from a report that gave no check.
+const IDENTITY = `INSERT OR IGNORE INTO identity_checks (id, field, outcome)
+  SELECT ?1, key, value FROM json_each(?2)`;
+const identity = (db, report) => (report.identity_check
+  ? [db.prepare(IDENTITY).bind(report.id, JSON.stringify(report.identity_check.fields))] : []);
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
 const SPIKE_SENDER = `INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)
   ON CONFLICT (name) DO UPDATE SET count = count + excluded.count`;
@@ -195,8 +202,9 @@ export function writes(db, report, hash, day, held = null) {
       report.model, report.stock_model, report.stock_version, flag(report.whole), hash, report.os.family, report.os.version,
       report.os.arch, report.python.version, report.python.source, report.seconds, report.converted_here,
       Number(held !== null), report.stopped?.step ?? null, report.stopped?.question ?? null,
-      report.stock_check ?? null);
-    return held === null ? [statement] : [statement, db.prepare(HOLD).bind(report.id, day, held)];
+      report.stock_check ?? null, report.identity_check?.platform ?? null);
+    const statements = [statement, ...identity(db, report)];
+    return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
   }
   const statements = [db.prepare(INSERT).bind(...Object.values(COLUMNS(report, hash, day, held)))];
   // A run the person stopped makes no device's record: those count the runs
@@ -213,6 +221,7 @@ export function writes(db, report, hash, day, held = null) {
   if (report.offers) {
     statements.push(db.prepare(OFFERS).bind(report.id, ...OFFER_COLUMNS.map((name) => offerValue(report.offers[name]))));
   }
+  statements.push(...identity(db, report));
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }
 

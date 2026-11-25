@@ -16,6 +16,7 @@ const WRITTEN = {
   "0003_report_details.sql": "5f6751ceb29b13a5cb46b6217639422c05e45225fb441f3252e28553c71cbb00",
   "0004_report_details_as_columns.sql": "feb5a113fa27832bc8dcc06cf51688f568d92aec7a846a072a30e65df231f570",
   "0005_released_reports.sql": "c66629f23b60d8876128ac038d45262ac1fadf6ebd03fb5b3a8b68ba11b76b9a",
+  "0006_identity_checks.sql": "b4bfd6076c75e32df4885abe56de10c7abeb3d5a922268b3fa70005f6ae26a89",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {
@@ -76,6 +77,26 @@ test("what migration 0003 kept in tables of their own is in its report's columns
     [{ id: "readout", step: "probe", question: "which-device", stock_check: "sonoff-answers" }]);
   assert.deepEqual(all(`SELECT name FROM sqlite_master WHERE name IN ('stop_questions', 'stock_checks',
     'refused_tables', 'readout_steps')`), []);
+});
+
+test("migration 0006 keeps every report, with no identity check, and takes checks after", () => {
+  const db = d1({ migrated: false });
+  migrate(db, migrations().slice(0, 5));
+  const row = (table, id) => {
+    const needed = db.db.prepare(`SELECT name, type FROM pragma_table_info('${table}')
+      WHERE "notnull" AND dflt_value IS NULL AND name != 'id'`).all();
+    db.db.prepare(`INSERT INTO ${table} (id, ${needed.map((column) => column.name).join(", ")})
+      VALUES (?, ${needed.map((column) => (column.type === "INTEGER" ? "0" : "'x'")).join(", ")})`).run(id);
+  };
+  row("reports", "run");
+  row("readout_reports", "readout");
+  migrate(db, ["0006_identity_checks.sql"]);
+  const all = (sql) => db.db.prepare(sql).all().map((found) => ({ ...found }));
+  assert.deepEqual(all(`SELECT id, identity_check_platform FROM reports
+    UNION ALL SELECT id, identity_check_platform FROM readout_reports`),
+  [{ id: "run", identity_check_platform: null }, { id: "readout", identity_check_platform: null }]);
+  db.db.exec("INSERT INTO identity_checks VALUES ('run', 'frame_params.deviceid', 'yes')");
+  assert.deepEqual(all("SELECT * FROM identity_checks"), [{ id: "run", field: "frame_params.deviceid", outcome: "yes" }]);
 });
 
 test("a database is ready only once it has the newest migration", async () => {

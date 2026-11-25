@@ -14,6 +14,19 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
+## 3.3.0
+
+- A readout of an Espressif device, and a conversion that backs one up while
+  signed in to its eWeLink account, now check whether the device's eWeLink
+  identity could be rebuilt from that account: on the S60 and the classic
+  ESP32 devices, field by field against what the tool rebuilds to go back to
+  Sonoff's firmware without a backup; on the BASICR4 and MINIR4, their
+  factory record against the account and the chip. The check runs on your
+  computer, on the memory as read, before anything is taken out of a
+  readout. Only its outcomes are sent, in the readout and in its or the
+  run's report: for each field yes, no, missing or unknown, never a value
+  ([what the tool sends](docs/what-the-tool-sends.md)).
+
 ## 3.2.1
 
 - A run stopped while the bootloader step was putting a TH Elite's own

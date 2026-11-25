@@ -134,7 +134,10 @@
       "firmware_name": null, "firmware_name_expected": null,
       "begun_on": null, "back_after_power_cycle": null,
       "table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0xc000"},
-      "stock_check": "sonoff-answers"
+      "stock_check": "sonoff-answers",
+      "identity_check": {"platform": "esf", "fields": {"frame_params.deviceid": "yes", "frame_params.apikey": "yes",
+        "frame_params.encrypt_key": "missing", "data_backups.apikey": "no", "productId.present": "yes",
+        "rebuild_whole_matches": "no"}}
     },
     {
       "format": 1, "id": "adadadadadadadad", "proof": "1794000000:41", "tag": "user",
@@ -205,7 +208,16 @@
     {"why": "a question no word names", "set": {"stopped": {"step": "A1", "error": "quit", "text": "", "crash_site": null, "question": "Which eWeLink account is this device in"}}},
     {"why": "a refused table with a key the schema does not name", "set": {"table_refused": {"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "at": "0x8000", "table": "00ff"}}},
     {"why": "a check of Sonoff's firmware no word names", "set": {"stock_check": "sonoff answers"}},
-    {"why": "a check of Sonoff's firmware as true or false", "set": {"stock_check": true}}
+    {"why": "a check of Sonoff's firmware as true or false", "set": {"stock_check": true}},
+    {"why": "an identity check's value, not its outcome", "set": {"identity_check": {"platform": "esf",
+      "fields": {"frame_params.deviceid": "1000abcdef"}}}},
+    {"why": "an identity check's field no check names", "set": {"identity_check": {"platform": "esf",
+      "fields": {"frame_params.sha256": "yes"}}}},
+    {"why": "an identity check's outcome as true or false", "set": {"identity_check": {"platform": "esf",
+      "fields": {"frame_params.deviceid": true}}}},
+    {"why": "an identity check of a platform no word names", "set": {"identity_check": {"platform": "tuya",
+      "fields": {}}}},
+    {"why": "an identity check without its platform", "set": {"identity_check": {"fields": {}}}}
   ],
   "readoutValid": [
     {
@@ -216,7 +228,11 @@
       "device_hash": "b5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
       "os": {"family": "linux", "version": "Ubuntu 24.04.5 LTS", "arch": "x86-64"},
       "python": {"version": "3.12.3", "source": "venv"},
-      "seconds": 75, "converted_here": 3
+      "seconds": 75, "converted_here": 3,
+      "identity_check": {"platform": "ais", "fields": {"record_version_known": "yes", "deviceid_matches": "yes",
+        "apikey_matches_devicekey": "yes", "model_matches": "no", "uiid_matches": "yes", "checksum_recomputes": "yes",
+        "chip_mac_is_efuse_mac": "yes", "sta_mac_is_efuse_mac": "yes", "sap_mac_is_efuse_mac_plus_one": "unknown",
+        "rebuild_whole_matches": "no"}}
     },
     {
       "format": 1, "id": "2123456789abcdef", "proof": "1794000000:198", "tag": "dev",
@@ -253,6 +269,10 @@
     {"why": "a question no word names", "set": {"stopped": {"step": "read", "question": "proceed"}}},
     {"why": "a run's stopped, with its words", "set": {"stopped": {"step": "read", "question": null, "text": "it stopped"}}},
     {"why": "stopped without its question", "set": {"stopped": {"step": "read"}}},
-    {"why": "a check of Sonoff's firmware no word names", "set": {"stock_check": "still answers"}}
+    {"why": "a check of Sonoff's firmware no word names", "set": {"stock_check": "still answers"}},
+    {"why": "an identity check's value, not its outcome", "set": {"identity_check": {"platform": "ais",
+      "fields": {"deviceid_matches": "1000abcdef"}}}},
+    {"why": "an identity check's field no check names", "set": {"identity_check": {"platform": "ais",
+      "fields": {"deviceid": "yes"}}}}
   ]
 }

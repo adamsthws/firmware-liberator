@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import hostsys, kinds, output, plans, records
+from tools.autoflash import hostsys, kinds, output, plans, records, report_data
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import hub
 from tools.autoflash.state import PENDING
-from tools.espressif import flashmap, sonoff_identity
+from tools.espressif import chips, flashmap, identity_check, sonoff_identity
 from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TABLE_SHA256
 from tools.espressif.sonoff_identity import Identity, IdentityError
 from tools.ewelink.get_device_key import dispatch_server
@@ -83,13 +83,13 @@ def kept_in_sector(ctx: Context) -> Identity | None:
     return identity
 
 
-def account_record(ctx: Context, identity: Identity | None = None) -> dict[str, Any] | None:
+def account_record(ctx: Context, identity: Identity | None = None, mac: str | None = None) -> dict[str, Any] | None:
     """The device's record in its eWeLink account: by its id where that is known,
-    else by its Wi-Fi MAC, which the record carries."""
+    else by its Wi-Fi MAC (`mac`, else the run's), which the record carries."""
     if SIMULATE_NONE:
         return None
     devices = ctx.account_devices() or []
-    mac = hostsys.normalise_mac(str(ctx.state.input("device_mac") or ""))
+    mac = hostsys.normalise_mac(str(mac or ctx.state.input("device_mac") or ""))
     for device in devices:
         params = device.get("params") or {}
         if (identity and device.get("deviceid") == identity.deviceid) or (
@@ -109,6 +109,30 @@ def from_account(ctx: Context, kind: kinds.Kind) -> Identity | None:
     except IdentityError as exc:
         output.tell(f"    The device's eWeLink record cannot rebuild its identity: {exc}.")
         return None
+
+
+def checked(ctx: Context, flash: bytes, efuse: bytes | None, device: dict[str, Any],
+            chip: chips.Chip) -> dict[str, Any]:
+    """Whether the identity in `flash` could be rebuilt from the account's
+    record `device` (tools/espressif/identity_check.py), as from_account
+    would: its outcomes alone, which go in the log too. Worked out here, on
+    the flash as read; nothing of either leaves the computer."""
+    found = identity_check.check(flash, device, efuse=efuse, dispatch=dispatch_server(ctx.ewelink_region()),
+                                 encrypted=chip.key == "esp32")
+    output.log_only(f"    {identity_check.describe(found)}")
+    return found
+
+
+def check_backup(ctx: Context, flash: bytes, efuse: bytes) -> None:
+    """The identity check (checked) on the backup C3 has just taken, for the
+    run's report, where the run is signed in to the device's eWeLink account,
+    found by the MAC its chip gives: a run that is not asks eWeLink nothing."""
+    if not getattr(getattr(ctx, "ewelink", None), "held", None):
+        return
+    device = account_record(ctx, mac=flashmap.mac_of_efuse(efuse))
+    if device is not None:
+        ctx.state.set_input(report_data.IDENTITY_CHECK,
+                            checked(ctx, flash, efuse, device, images.chip_of(kinds.of_run(ctx.state))))
 
 
 def for_tasmota(ctx: Context, layout: Layout) -> tuple[Identity | None, str]:

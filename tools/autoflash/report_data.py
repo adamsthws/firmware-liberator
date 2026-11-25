@@ -20,7 +20,7 @@ from typing import Any, TYPE_CHECKING
 from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, openbeken, records, routes, runs
 from tools.autoflash import prompts, report
 from tools.autoflash.routes import arrival
-from tools.espressif import layouts as espressif_layouts
+from tools.espressif import identity_check, layouts as espressif_layouts
 from tools.ewelink.firmware_name import A_NAME
 from tools.ewelink.get_device_key import API
 
@@ -293,6 +293,9 @@ def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str,
                     if became.outcome in (CANCELLED, FAILED, CRASHED) else None),
         # Whether Sonoff's firmware still answered once the reader had not, as a run's.
         "stock_check": stock_check(became.stock_check),
+        # Whether its identity could be rebuilt from its account record, as
+        # outcomes alone (identity_check): None where its memory was not read.
+        "identity_check": identity_check.valid(became.identity_check),
     }
 
 
@@ -409,7 +412,14 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "offers": offers_info(ctx),
         "table_refused": table_refused(state),
         "stock_check": stock_check(state.input(arrival.STOCK_CHECK)),
+        # Whether the identity in the backup C3 took could be rebuilt from the
+        # account record, as outcomes alone (identity.check_backup).
+        "identity_check": identity_check.valid(state.input(IDENTITY_CHECK)),
     }
+
+
+# Where a run keeps its identity check's outcomes (routes/espressif/identity.check_backup).
+IDENTITY_CHECK = "identity_check"
 
 
 def table_refused(state: Any) -> dict[str, str] | None:

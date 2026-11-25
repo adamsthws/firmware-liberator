@@ -16,6 +16,8 @@ const TEAM = "liberator";
 const AUD = "a".repeat(64);
 const NOW = Date.parse("2026-11-10T09:00:00Z");
 const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).valid[0];
+const READOUT_REPORT = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8"))
+  .readoutValid[0];
 
 const { privateKey, publicKey } = await crypto.subtle.generateKey(
   { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
@@ -245,6 +247,39 @@ test("a held report deleted takes what it said of its offers, a table refused an
   await db.batch(admin.remove(db, id));
   assert.deepEqual(rows(db, "SELECT id FROM report_offers"), []);
   assert.deepEqual(rows(db, "SELECT id FROM reports"), []);
+});
+
+test("a held report deleted takes its identity check with it", async () => {
+  const db = env().DB;
+  const id = await offered(db, "2026-11-09", {}, { identity_check: { platform: "esf",
+    fields: { "frame_params.deviceid": "yes" } } }, "held for review");
+  assert.equal(rows(db, "SELECT id FROM identity_checks").length, 1);
+  await db.batch(admin.remove(db, id));
+  assert.deepEqual(rows(db, "SELECT id FROM identity_checks"), []);
+});
+
+test("the view tallies each identity check's outcomes by model and field, your own and held ones left out", async () => {
+  const bindings = env();
+  const db = bindings.DB;
+  const view = async () => sectionOf(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys),
+    "identity");
+  assert.match(await view(), /None yet\./);
+  const check = (deviceid, whole) => ({ identity_check: { platform: "esf",
+    fields: { "frame_params.deviceid": deviceid, rebuild_whole_matches: whole } } });
+  await offered(db, "2026-11-09", {}, { model: "S60TPF", ...check("yes", "yes") });
+  await offered(db, "2026-11-09", {}, { model: "S60TPF", ...check("yes", "no") });
+  await offered(db, "2026-11-09", {}, { model: "S60TPF", ...check("no", "no"), tag: "dev" });   // your own testing
+  await offered(db, "2026-11-09", {}, { model: "S60TPF", ...check("no", "no") }, "held for review");
+  const readout = { ...structuredClone(READOUT_REPORT), id: randomBytes(8).toString("hex"), model: "BASICR4",
+    identity_check: { platform: "ais", fields: { deviceid_matches: "missing" } } };
+  await db.batch(writes(db, readout, null, "2026-11-09"));
+  const section = await view();
+  const row = (model, platform, field, ...counts) => `<tr><td>${model}</td><td>${platform}</td><td>${field}</td>`
+    + counts.map((n) => `<td class="number">${n}</td>`).join("") + "</tr>";
+  for (const expected of [row("BASICR4", "ais", "deviceid_matches", 0, 0, 1, 0),
+    row("S60TPF", "esf", "frame_params.deviceid", 2, 0, 0, 0), row("S60TPF", "esf", "rebuild_whole_matches", 1, 1, 0, 0)]) {
+    assert.ok(section.includes(expected), `${expected}\n${section}`);
+  }
 });
 
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {

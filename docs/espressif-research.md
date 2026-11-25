@@ -281,6 +281,26 @@ same with `sha256` as it was, without it, and as 64 zeros, and with
 dispatch nor in `register`. Whether the real eWeLink accepts a device rebuilt
 this way has not been tried.
 
+Whether the rebuild is a real device's own, field by field, is measured on
+people's devices by the identity check
+([`identity_check.py`](../tools/espressif/identity_check.py)): a readout,
+and a conversion's backup taken while signed in, compare the flash as read
+with what `from_account` rebuilds from its account record, on the person's
+computer, and send for each field (`ESF_FIELDS`) only `yes`, `no`, `missing`
+or `unknown` ([what is sent](what-the-tool-sends.md#the-identity-check)).
+Beside the fields `from_account` fills, it says whether the device has
+`productId`, `channel_params` and `PID`, which the rebuild leaves out, and
+whether the device matches in every field the rebuild writes
+(`rebuild_whole_matches`); a field the device holds and the rebuild leaves
+out is told on its own line but not counted there. The admin view tallies the
+outcomes by model.
+A readout of the emulated S60 (its public dump, against the stub's account
+record) gave `yes` for every field `from_account` fills but `encrypt_key`
+and `is_encrypt`, which the S60's `frame_params` holds too
+([cloud-stub.md](cloud-stub.md#its-identity-in-nvs)) and the rebuild gives
+only a classic ESP32. An S60 still goes online rebuilt without them (above),
+so they are told as `no` but leave `rebuild_whole_matches` `yes`.
+
 The ESPHome route keeps Sonoff's layout and NVS, identity included; the Tasmota
 route shrinks the NVS to 20 KB, losing it. So the tool keeps the identity in a
 sector of its own at `0x3FF000` ([its
@@ -372,6 +392,18 @@ needs:
   factory by `AT+LICENSE_WRITE`, from a license whose fields hash to its
   `sha256_check`; without one the firmware stays in `factory mode`.
   `aisFactoryLoadInfo` checks only the magic and version.
+
+  Whether the record can be rebuilt from the device's eWeLink account record
+  is not known yet: whether its `deviceid` is the account's, its
+  `factory_apikey` the account's `devicekey`, its `device_model` and `uiid`
+  the account's `extra.model` and `extra.uiid`, whether `sha256_check` is
+  worked out again from the fields as read, its MACs the chip's own (the
+  soft AP's one more), and whether a record rebuilt from those is the
+  device's byte for byte. The identity check (`AIS_FIELDS` in
+  [`identity_check.py`](../tools/espressif/identity_check.py)) answers each
+  from people's readouts and backups, as outcomes alone. Until they show it
+  can, the tool takes these devices back to Sonoff's firmware only from their
+  backup.
 
   | Offset | Field | Size |
   |---|---|---|
@@ -651,6 +683,10 @@ ESP32 says revision 0.0. A real chip's answer has not been seen.
   nothing to compare.
 - Whether the real eWeLink accepts a device whose identity was
   [rebuilt from its account record](#a-devices-identity-and-stores).
+- Whether a real device's identity is what its account record rebuilds, on
+  each model, and whether an ais SDK device's factory record can be rebuilt
+  at all: the [identity check](#a-devices-identity-and-stores) gathers it,
+  model by model.
 - How a Dual R3 out of the box is set to
   [relay mode](#the-dual-r3s-work-mode), and what its work mode 3 is.
 - What GPIO3, the BASICR4's [temperature input](#sonoffs-ais-sdk), is wired to.

@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from tools.autoflash import (failures, join, kinds, offers, readout, records, report, report_data,  # noqa: E402
                              report_upload, routes)
 from tools.autoflash.routes import arrival  # noqa: E402
+from tools.espressif import identity_check  # noqa: E402
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -88,6 +89,14 @@ def schema() -> dict[str, Any]:
     # What the check of Sonoff's firmware found before a switch off and on was
     # asked for (report_data.stock_check): null where none ran.
     stock_check = nullable(words(*arrival.STOCK_CHECKS.values()))
+    # Whether the device's identity could be rebuilt from its eWeLink account
+    # record (identity_check.check): its platform, and each field's outcome
+    # alone, never a value. Null where none ran.
+    identity = nullable(record({
+        "platform": words(*identity_check.PLATFORMS),
+        "fields": {"type": "object", "maxProperties": len(identity_check.ALL_FIELDS),
+                   "propertyNames": words(*identity_check.ALL_FIELDS),
+                   "additionalProperties": words(*identity_check.OUTCOMES)}}))
     return {
         "$comment": "Written by tools/repo/report_schema.py: change that, not this.",
         "maxBytes": MAX_BYTES,
@@ -128,7 +137,8 @@ def schema() -> dict[str, Any]:
             "stopped": nullable(record({"step": nullable(words(*(key for key, _ in readout.STAGES))),
                                         "question": question})),
             "stock_check": stock_check,
-        }, optional=("stopped", "stock_check")),
+            "identity_check": identity,
+        }, optional=("stopped", "stock_check", "identity_check")),
         **record({
             **shared,
             "kind": words("run"),
@@ -196,7 +206,8 @@ def schema() -> dict[str, Any]:
             "table_refused": nullable(record({"sha256": string("^[0-9a-f]{64}$", 64),
                                               "at": words(*report_data.TABLE_PLACES)})),
             "stock_check": stock_check,
-        }, optional=("offers", "table_refused", "stock_check")),
+            "identity_check": identity,
+        }, optional=("offers", "table_refused", "stock_check", "identity_check")),
     }
 
 

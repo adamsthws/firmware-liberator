@@ -38,7 +38,7 @@ from tools.autoflash.runs import ROOT
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED
 from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
 from tools.autoflash.routes import arrival
-from tools.autoflash.routes.espressif import images
+from tools.autoflash.routes.espressif import identity, images
 from tools.ewelink import ota_push
 from tools.ewelink.get_device_key import CALLS, own_time
 
@@ -695,6 +695,9 @@ def back_up_stock(ctx: Context, host: str) -> str:
     out, _ = records.save_backup(flash, efuse, report, ctx.state.input("stock_version"),
                                kind=kinds.of_run(ctx.state).name)
     ctx.state.set_input("stock_backup", runs.display_path(out))
+    # Whether its identity could be rebuilt from its account record, for the
+    # report: worked out here, on the backup, and sent as outcomes alone.
+    identity.check_backup(ctx, flash, efuse)
     for line in dump_stock_flash.summary(report):
         output.say(f"    {line}")
     output.say(f"    Saved in {runs.display_path(out)}, under the device's MAC (private: it holds the")

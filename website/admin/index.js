@@ -266,6 +266,7 @@ export const remove = (db, id) => [
     WHERE device_hash = devices.device_hash AND id != ?1)`).bind(id),
   db.prepare("DELETE FROM report_stages WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM report_offers WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
+  db.prepare("DELETE FROM identity_checks WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM readout_reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
@@ -398,6 +399,7 @@ export async function gather(env, now) {
     notKept: (await all("SELECT coalesce(sum(count), 0) AS n FROM counters WHERE name GLOB ?", linksNotKeptOn("*")))[0].n,
     every: await everyLink(env.DB),
     offerRuns: await all(OFFER_RUNS, since(OFFER_DAYS - 1)),
+    identity: await all(IDENTITY_CHECKS),
     networks: await all(`SELECT name, json_array_length(asns) AS asns, previous, taken, problem FROM network_lists
       ORDER BY name`),
     popularity: await modelTrends(all, now),
@@ -441,6 +443,18 @@ const OFFER_RUNS = `SELECT r.day, count(*) AS runs, sum(o.sent) AS sent, sum(o.t
   WHERE r.day >= ? AND r.tag = 'user' AND r.quarantined = 0 AND r.id NOT IN (SELECT id FROM held_reports)
     AND o.requests > 0
   GROUP BY r.day ORDER BY r.day DESC`;
+// The identity check runs and readouts send (api/migrations/0006): by model
+// and field, how many reports said each outcome - whether a device's identity
+// could be rebuilt from its eWeLink account record. Your own testing, the
+// emulator's included, and held reports left out.
+export const IDENTITY_OUTCOMES = schema.properties.identity_check.properties.fields.additionalProperties.enum;
+const IDENTITY_CHECKS = `SELECT coalesce(r.model, r.device, '') AS model, r.platform, c.field,
+    ${IDENTITY_OUTCOMES.map((outcome, at) => `sum(c.outcome = '${outcome.replace(/'/g, "")}') AS o${at}`).join(", ")}
+  FROM identity_checks AS c JOIN (
+    SELECT id, model, device, identity_check_platform AS platform FROM reports WHERE tag = 'user' AND quarantined = 0
+    UNION ALL SELECT id, model, device, identity_check_platform FROM readout_reports WHERE tag = 'user' AND quarantined = 0
+  ) AS r ON r.id = c.id
+  GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`;
 // The rows' `key` added up, and a share as a percentage to one decimal, "-" of none.
 const total = (rows, key) => rows.reduce((sum, row) => sum + (row[key] ?? 0), 0);
 const share = (part, whole) => (whole ? `${Math.round((1000 * part) / whole) / 10}%` : "-");
@@ -667,6 +681,14 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + table([["Day", "day"], ["Runs that asked", "runs", "number"], ["Offers sent", "sent", "number"],
         ["Taken", "taken", "number"], ["Sign-in ended", (row) => share(row.ended, row.runs)],
         ["Run's sign-in ended after", (row) => share(row.runEnded, row.runKnown)]], data.offerRuns, "None yet.")
+      + `</section>`,
+    `<section class="card" id="identity"><h2>Identity rebuilt from the account</h2><p class="sub">Whether a
+      device's eWeLink identity, as its runs and readouts read it, is what its account record rebuilds, field by
+      field: how many reports said each, by model. Checked on people's computers; only the outcomes are sent.
+      Your own testing left out.</p>`
+      + table([["Model", "model"], ["Platform", "platform"], ["Field", "field"],
+        ...IDENTITY_OUTCOMES.map((outcome, at) => [outcome[0].toUpperCase() + outcome.slice(1), `o${at}`, "number"])],
+      data.identity, "None yet.")
       + `</section>`,
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,

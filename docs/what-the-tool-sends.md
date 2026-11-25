@@ -50,13 +50,18 @@ stages people choose to stop at, and which devices people want supported next: s
   tool found when it checked whether Sonoff's firmware still did, before
   asking you to switch the device off and on, as a word: `sonoff-answers`
   (it was not installed), `neither-answers`, or `cannot-tell`.
+- **Whether the device's eWeLink identity could be rebuilt from your
+  account** ([below](#the-identity-check)): for each of a fixed list of
+  fields, yes, no, missing or unknown. Never the identity itself.
 - **A readout's report** (one for each device read out): how it ended -
   accepted by the website, kept on your computer unsent, not needed (one like
   it is in already), turned away as the website was full, not read as the
   device now runs other firmware, skipped, stopped by you, or failed, with
   the kind of problem; one stopped or failed part way says the stage it was
   in, and the question you stopped it at, and what a check of Sonoff's
-  firmware found, as a conversion's does - the device's kind, its model and
+  firmware found, as a conversion's does, and the
+  [identity check](#the-identity-check)'s outcomes where its memory was
+  read - the device's kind, its model and
   the name and version
   of its Sonoff firmware, whether its whole memory was read, and how long it
   took. Never the readout itself, nor its reference.
@@ -106,6 +111,35 @@ stages people choose to stop at, and which devices people want supported next: s
   an issue, and puts it with the report on your clipboard to paste in, so the
   issue names its report. An issue is public: one that names a report lets
   anyone see that report's details beside it.
+
+## The identity check
+
+Going back to Sonoff's firmware without a backup, the tool rebuilds the
+device's eWeLink identity (its device ID and key, its model and kind) from
+your eWeLink account. Whether that rebuild is the device's own on every
+model is what the identity check finds out. Where the tool holds both the
+device's memory and your signed-in account - a readout of an Espressif
+device, or a conversion's backup of one taken while signed in - it compares
+the two on your computer, before anything is taken out of a readout, and
+sends only the outcomes.
+
+- **Each outcome is a word:** `yes` (the device's value is the rebuilt one),
+  `no` (it is not, or the device has a value the rebuild leaves out),
+  `missing` (the device has none) or `unknown` (it cannot be told, as when
+  your account's record lacks the key). Beside them, a word for where the
+  device's firmware keeps its identity: `esf` (the S60's and the classic
+  ESP32 devices'), `ais` (the BASICR4's and MINIR4's) or `neither`.
+- **The fields are a fixed list**, `ESF_FIELDS` and `AIS_FIELDS` in
+  [`tools/espressif/identity_check.py`](../tools/espressif/identity_check.py):
+  the device ID, key, model and kind, and the other fields the tool rebuilds
+  or leaves out; on the BASICR4 and MINIR4 also whether their identity's
+  checksum is worked out from its fields, whether the hardware addresses it
+  holds are the chip's own, and whether the whole record rebuilt is the
+  device's. Each is compared, never sent.
+- **Never sent:** any value compared, a hash or the length of one, your
+  account or anything of it. The outcomes go in the readout's
+  `manifest.json` and its report, or in the run's report; the run's log on
+  your computer holds the outcomes too, and no value either.
 
 ## What eWeLink offers your devices
 

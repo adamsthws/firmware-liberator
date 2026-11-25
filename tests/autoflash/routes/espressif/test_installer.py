@@ -768,6 +768,12 @@ class StockBackupTests(unittest.TestCase):
         self.assertIn("sonoff-backup", self.inputs["stock_backup"])
         self.assertEqual(self.records.read_device(self.MAC)["stock_version"], "1.2.0")
 
+    def test_the_identity_is_checked_on_the_backup_as_read(self):
+        from tools.autoflash.routes.espressif import identity
+        with mock.patch.object(identity, "check_backup") as checked:
+            self.back_up([self.dump])
+        checked.assert_called_once_with(self.ctx, self.dump[0], self.dump[1])
+
     def test_one_failed_read_is_retried(self):
         self.back_up([OSError("timed out"), self.dump])
         self.assertIn("stock_backup", self.inputs)
