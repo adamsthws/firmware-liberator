@@ -26,7 +26,8 @@
 // - Before a day is folded, a device's reports that day far above its usual
 //   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
 //   SPIKE_DAYS before) are held for review (held_reports): a flood of
-//   made-up reports of one device, or a real rush the maintainer releases. A
+//   made-up reports of one device, or a real rush the maintainer releases
+//   (reports.released: never counted towards a spike or held again). A
 //   device is its kind (NAMED), so a flood naming no model, or a new one in
 //   each report, is one; one of no kind, by its model.
 // The work is done in SQL, on the database's side, in a fixed few queries:
@@ -157,7 +158,7 @@ export function pruning(db, today) {
 // else its model; NAMED): two queries, whatever the number of days.
 export async function spikes(db, today) {
   const { results: days } = await db.prepare(`SELECT day, ${NAMED} AS named, count(*) AS n FROM reports
-    WHERE day IN (${UNFOLDED}) AND tag = 'user' AND quarantined = 0 AND ${NAMED} IS NOT NULL
+    WHERE day IN (${UNFOLDED}) AND tag = 'user' AND quarantined = 0 AND released = 0 AND ${NAMED} IS NOT NULL
     GROUP BY day, named HAVING count(*) >= ?2`).bind(today, SPIKE_SMALLEST).all();
   if (!days.length) {
     return [];
@@ -176,7 +177,7 @@ export async function spikes(db, today) {
 
 // The statements holding each spike's reports for review.
 function holding(db, found) {
-  const which = `FROM reports WHERE day = ?1 AND ${NAMED} = ?2 AND tag = 'user' AND quarantined = 0`;
+  const which = `FROM reports WHERE day = ?1 AND ${NAMED} = ?2 AND tag = 'user' AND quarantined = 0 AND released = 0`;
   return found.flatMap(({ day, named }) => [
     db.prepare(`INSERT OR IGNORE INTO held_reports (id, day, why) SELECT id, day, ?3 ${which}`).bind(day, named, SPIKE_WHY),
     db.prepare(`UPDATE reports SET quarantined = 1 WHERE id IN (SELECT id ${which})`).bind(day, named),

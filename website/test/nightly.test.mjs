@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { releaseAll } from "../admin/index.js";
 import { LATEST_MIGRATION } from "../api/database.js";
 import { d1 } from "../api/local-d1.mjs";
 import * as night from "../api/nightly.js";
@@ -512,6 +513,22 @@ test("the devices the tool converts are counted by kind, whether their model was
   assert.deepEqual(stats.stock.map((row) => [row.device, row.stock_version, row.runs]),
     [["sonoff-s60", "1.2.0", 5]], "1.3.0's four under five");
   assert.ok(!JSON.stringify(stats).includes("S60TPF"), "a model with too few devices is not named");
+});
+
+test("a spike released is counted the next night and not held again, though more of that day are", async () => {
+  const bindings = env();
+  await many(bindings.DB, "2026-11-09", 30);
+  assert.equal((await night.nightly(bindings, NIGHT)).held.length, 1);
+  await bindings.DB.batch(releaseAll(bindings.DB, "2026-11-09", night.SPIKE_WHY, "sonoff-s60"));
+  const later = new Date("2026-11-11T03:17:00Z");
+  assert.deepEqual((await night.nightly(bindings, later)).held, [], "released: not a spike again");
+  assert.deepEqual(rows(bindings, "SELECT count(*) AS n FROM held_reports"), [{ n: 0 }]);
+  assert.equal(rows(bindings, "SELECT sum(n) AS n FROM daily_totals WHERE day = '2026-11-09'")[0].n, 30, "counted");
+  // More of that day, sent late and enough for a spike of their own, are held: the released ones stay.
+  await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST, "S60TPG", { device_hash: null });
+  bindings.DB.db.prepare("DELETE FROM folded WHERE day = '2026-11-09'").run();
+  assert.equal((await night.nightly(bindings, later)).held[0].n, night.SPIKE_SMALLEST);
+  assert.deepEqual(rows(bindings, "SELECT count(*) AS n FROM reports WHERE quarantined = 0"), [{ n: 30 }]);
 });
 
 test("a busy model at its usual pace is not held, and five times it is", async () => {

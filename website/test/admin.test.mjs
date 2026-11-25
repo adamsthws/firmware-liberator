@@ -311,7 +311,8 @@ test("the view counts your users' runs and devices in all and by system, your ow
 test("a held report released is counted again: its day folded afresh tonight", async () => {
   const { db, junk } = await held();
   await db.batch(admin.release(db, junk.id));
-  assert.deepEqual(rows(db, `SELECT quarantined FROM reports WHERE id = '${junk.id}'`), [{ quarantined: 0 }]);
+  assert.deepEqual(rows(db, `SELECT quarantined, released FROM reports WHERE id = '${junk.id}'`),
+    [{ quarantined: 0, released: 1 }], "and never held as a spike's again");
   assert.deepEqual(rows(db, "SELECT * FROM held_reports"), []);
   assert.deepEqual(rows(db, "SELECT * FROM folded"), [], "counted again tonight");
 });

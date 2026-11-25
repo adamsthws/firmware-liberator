@@ -242,11 +242,13 @@ async function held(request, env) {
 }
 const SHORT_FIELD = /^[\x20-\x7e]{1,200}$/;
 
-// Released: counted again, its day folded afresh the next night - the
-// reports `which` selects of those held, in three statements however many.
+// Released: counted again, its day folded afresh the next night, and marked
+// released so that night's spike check does not hold it again (nightly.js
+// spikes) - the reports `which` selects of those held, in three statements
+// however many.
 const releasing = (db, which, ...values) => [
   db.prepare(`DELETE FROM folded WHERE day IN (SELECT day FROM held_reports WHERE id IN (${which}))`).bind(...values),
-  db.prepare(`UPDATE reports SET quarantined = 0 WHERE id IN (${which})`).bind(...values),
+  db.prepare(`UPDATE reports SET quarantined = 0, released = 1 WHERE id IN (${which})`).bind(...values),
   db.prepare(`DELETE FROM held_reports WHERE id IN (${which})`).bind(...values),
 ];
 export const release = (db, id) => releasing(db, "SELECT id FROM held_reports WHERE id = ?1", id);

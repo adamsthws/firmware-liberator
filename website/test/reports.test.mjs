@@ -223,7 +223,7 @@ const KEPT = {
       offers: "a row a report, in report_offers: none from a tool that sent none",
       nth_device: "the device's place, in devices, given once",
     },
-    own: ["day", "quarantined"],   // the API's, from no field
+    own: ["day", "quarantined", "released"],   // the API's, from no field
   },
   readout: {
     table: "readout_reports",

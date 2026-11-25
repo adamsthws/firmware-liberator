@@ -15,6 +15,7 @@ const WRITTEN = {
   "0002_offer_links.sql": "fd78305794b574ee6aba2a7144446c6d01d8839c6d0bce0b99b7e399077922ff",
   "0003_report_details.sql": "5f6751ceb29b13a5cb46b6217639422c05e45225fb441f3252e28553c71cbb00",
   "0004_report_details_as_columns.sql": "feb5a113fa27832bc8dcc06cf51688f568d92aec7a846a072a30e65df231f570",
+  "0005_released_reports.sql": "c66629f23b60d8876128ac038d45262ac1fadf6ebd03fb5b3a8b68ba11b76b9a",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {
