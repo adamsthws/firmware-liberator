@@ -732,9 +732,12 @@ def neighbour_table() -> dict[str, str]:
         pattern = re.compile(
             r"(\d+\.\d+\.\d+\.\d+)\)?\s+(?:at\s+)?((?:[0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2})"
         )
+    text = completed.stdout if completed and completed.returncode == 0 else ""
+    if IS_MAC and not text.strip():
+        text = _macos_topology_table()
     table: dict[str, str] = {}
-    if completed and completed.returncode == 0:
-        for ip, mac in pattern.findall(completed.stdout):
+    if text:
+        for ip, mac in pattern.findall(text):
             mac = normalise_mac(mac)
             # Windows lists the broadcast address (ff-ff-ff-ff-ff-ff) and each
             # multicast group (01-00-5e-...) too: no device's, and asking one
@@ -742,6 +745,34 @@ def neighbour_table() -> dict[str, str]:
             if not int(mac[:2], 16) & 0x01:
                 table[ip] = mac
     return table
+
+
+def _macos_topology_table() -> str:
+    """The launcher's private live reader, only when direct ARP is unavailable.
+
+    No file cache or inferred MAC: failure leaves discovery unknown. The
+    launcher's socket lives in a mode-0700 temporary directory and answers
+    only fixed read-only ARP queries for this run.
+    """
+    path = os.environ.get("AUTOFLASH_MACOS_ARP_SOCKET")
+    if not path:
+        return ""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as reader:
+            reader.settimeout(3)
+            reader.connect(path)
+            chunks: list[bytes] = []
+            size = 0
+            while True:
+                block = reader.recv(65536)
+                if not block:
+                    return b"".join(chunks).decode("utf-8", errors="replace")
+                size += len(block)
+                if size > 1048576:
+                    return ""
+                chunks.append(block)
+    except OSError:
+        return ""
 
 
 def mac_of(address: str) -> str | None:

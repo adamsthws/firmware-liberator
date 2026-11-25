@@ -203,7 +203,15 @@ fi
 trap ':' INT
 status=0
 # How it was started, for the run's report (report_data.LAUNCHERS).
-AUTOFLASH_LAUNCHER=start.sh "$python" "$here/tools/autoflash/cli.py" "$@" || status=$?
+# macOS 27 hides ARP from children of non-platform interpreters, separately
+# from Local Network permission. Start Apple's reader before that boundary;
+# it owns a live private socket only until the selected Python exits.
+if [ "$(uname -s)" = Darwin ] && [ -x /usr/bin/python3 ] && /usr/bin/xcode-select -p >/dev/null 2>&1; then
+    AUTOFLASH_LAUNCHER=start.sh /usr/bin/python3 "$here/tools/macos_topology.py" \
+        "$python" "$here/tools/autoflash/cli.py" "$@" || status=$?
+else
+    AUTOFLASH_LAUNCHER=start.sh "$python" "$here/tools/autoflash/cli.py" "$@" || status=$?
+fi
 trap - INT
 offer_removal
 exit "$status"
